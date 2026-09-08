@@ -22,6 +22,21 @@ import { useHRPagination } from '@/hooks/useHRPagination';
 
 export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobForm, parseInt, creatingJob, openApplicants, decideJob, closeJob, applicantsDialog, setApplicantsDialog, submitApplicant, applicantForm, setApplicantForm, savingApplicant, setApplicantStatus }) {
     const { t } = useTranslation();
+    const downloadApplicantCv = async (applicant) => {
+      try {
+        const response = await axios.get(`/hr/applicant-cvs/${applicant.cv_document_id}/download`, { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: applicant.cv_content_type }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = applicant.cv_filename || 'aday-cv';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        toast.error(error.response?.status === 403 ? 'CV dosyasını görüntüleme yetkiniz yok' : 'CV dosyası indirilemedi');
+      }
+    };
     return (
         <TabsContent value="recruitment" className="mt-4">
           <div className="space-y-4">
@@ -266,6 +281,13 @@ export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobF
           cv_url: e.target.value
         }))} />
                 <div className="md:col-span-2">
+                  <Label className="text-xs">CV Dosyası (PDF/Word/JPEG/PNG, en fazla 5 MB)</Label>
+                  <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" onChange={e => setApplicantForm(prev => ({
+                    ...prev,
+                    cv_file: e.target.files?.[0] || null
+                  }))} />
+                </div>
+                <div className="md:col-span-2">
                   <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)" value={applicantForm.notes} onChange={e => setApplicantForm(prev => ({
             ...prev,
             notes: e.target.value
@@ -294,6 +316,9 @@ export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobF
                           {a.cv_url && <a href={a.cv_url} target="_blank" rel="noreferrer" className="text-xs text-sky-600 hover:underline">
                               <ExternalLink className="w-3 h-3 inline mr-0.5" />CV
                             </a>}
+                          {a.cv_document_id && <Button type="button" size="sm" variant="link" className="h-auto p-0 text-xs" onClick={() => downloadApplicantCv(a)}>
+                              <Download className="w-3 h-3 mr-0.5" />CV Dosyasını İndir
+                            </Button>}
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <select value={a.status || 'new'} onChange={e => setApplicantStatus(a.id, e.target.value)} className="text-xs rounded border border-input px-2 py-1">

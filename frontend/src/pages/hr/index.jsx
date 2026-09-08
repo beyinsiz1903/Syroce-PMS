@@ -172,7 +172,8 @@ const HRComplete = () => {
     email: '',
     phone: '',
     notes: '',
-    cv_url: ''
+    cv_url: '',
+    cv_file: null
   });
   const [savingApplicant, setSavingApplicant] = useState(false);
 
@@ -432,7 +433,8 @@ const HRComplete = () => {
         email: '',
         phone: '',
         notes: '',
-        cv_url: ''
+        cv_url: '',
+        cv_file: null
       });
     } catch (err) {
       toast.error('Adaylar yüklenemedi');
@@ -457,14 +459,29 @@ const HRComplete = () => {
     }
     try {
       setSavingApplicant(true);
-      await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, applicantForm);
-      toast.success('Aday eklendi');
+      const { cv_file, ...payload } = applicantForm;
+      const created = await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, payload);
+      let cvUploaded = true;
+      if (cv_file && created.data?.applicant?.id) {
+        const formData = new FormData();
+        formData.append('file', cv_file);
+        try {
+          await axios.post(`/hr/applicants/${created.data.applicant.id}/cv`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        } catch {
+          cvUploaded = false;
+        }
+      }
+      if (cvUploaded) toast.success('Aday eklendi');
+      else toast.warning('Aday eklendi; CV dosyası yüklenemedi. Aday kaydı tekrar oluşturulmadı.');
       setApplicantForm({
         name: '',
         email: '',
         phone: '',
         notes: '',
-        cv_url: ''
+        cv_url: '',
+        cv_file: null
       });
       refreshApplicants();
       loadJobs();
@@ -647,7 +664,9 @@ const HRComplete = () => {
       setSelectedRun(null);
       setRunRevisions([]);
     } catch (error) {
-      const msg = error.response?.status === 403 ? 'Bordro görüntüleme yetkiniz yok' : 'Önizleme alınamadı';
+      const msg = error.response?.status === 403
+        ? 'Bordro görüntüleme yetkiniz yok'
+        : error.response?.data?.detail || 'Önizleme alınamadı';
       toast.error(msg);
     }
   };

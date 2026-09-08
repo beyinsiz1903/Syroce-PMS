@@ -32,6 +32,12 @@ describe('moduleAccess', () => {
     expect(hasAnyModuleAccess(user, moduleScopesForPath('/app/ai'))).toBe(true);
   });
 
+  it('lets legacy finance users reach read-only HR payroll', () => {
+    const finance = { role: 'finance' };
+    expect(hasModuleAccess(finance, 'hr')).toBe(true);
+    expect(hasAnyModuleAccess(finance, moduleScopesForPath('/hr'))).toBe(true);
+  });
+
   it('maps protected routes to the expected user module scope', () => {
     expect(moduleScopesForPath('/app/procurement')).toEqual(['procurement']);
     expect(moduleScopesForPath('/maintenance/work-orders')).toEqual(['maintenance']);
