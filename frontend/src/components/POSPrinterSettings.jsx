@@ -119,7 +119,7 @@ const POSPrinterSettings = () => {
   const outletName = useCallback((id) => {
     if (!id) return null;
     const o = outlets.find((x) => x.id === id);
-    return o ? (o.name || o.id) : id;
+    return o ? (o.outlet_name || o.name || o.id) : id;
   }, [outlets]);
 
   useEffect(() => { load(); loadOutlets(); }, [load, loadOutlets]);
@@ -278,7 +278,7 @@ const POSPrinterSettings = () => {
               <SelectContent>
                 <SelectItem value="_all">Tum outletler (varsayilan)</SelectItem>
                 {outlets.map(o => (
-                  <SelectItem key={o.id} value={o.id}>{o.name || o.id}</SelectItem>
+                  <SelectItem key={o.id} value={o.id}>{o.outlet_name || o.name || o.id}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
