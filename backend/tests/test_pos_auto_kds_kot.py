@@ -11,7 +11,6 @@ it without any extra step:
     second KDS row or a second print job.
   * An empty order (no items) is a no-op.
 """
-from datetime import UTC, datetime
 
 import pytest
 
@@ -82,7 +81,7 @@ def _patch_db(monkeypatch, request):
     kitchen = _FakeKitchenColl()
     monkeypatch.setattr(pos_core.db, "kitchen_orders", kitchen, raising=False)
     # Stub the kitchen order number + broadcast so the helper is hermetic.
-    monkeypatch.setattr(pos_core, "_next_kitchen_order_number", _async_const(101))
+    monkeypatch.setattr(pos_core, "next_kitchen_order_number", _async_const(101))
     monkeypatch.setattr(pos_core, "_broadcast_kitchen_queue", _async_noop)
 
     enqueued: list[dict] = []

@@ -20,9 +20,13 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
   const loadTables = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`/pos/tables?outlet_id=${outletId}`);
+      const response = await axios.get(`/pos/table-layout/${outletId}`);
       setTables(response.data.tables || []);
-      setStatusCounts(response.data.status_counts || {});
+      setStatusCounts({
+        available: response.data.available || 0,
+        occupied: response.data.occupied || 0,
+        reserved: response.data.reserved || 0,
+      });
     } catch (error) {
       // POS masa yönetimi backend'de henüz provizyonlanmamış olabilir
       // (endpoint yok → 404). Bu durumda sessiz boş duruma düş; toast
@@ -143,7 +147,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                   </Badge>
                   <p className="text-xs text-gray-600 mb-3">
                     <Users className="w-3 h-3 inline mr-1" />
-                    {table.capacity} seats
+                    {table.seats ?? table.capacity ?? 0} seats
                   </p>
 
                   {/* Quick Actions */}

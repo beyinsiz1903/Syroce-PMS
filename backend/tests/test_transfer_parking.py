@@ -301,7 +301,14 @@ async def test_no_active_booking_fails_closed(_patch):
         _user("front_desk"),
     )
     assert res["folio_charge"]["charged"] is False
+    assert res["folio_charge"]["reason"] == "no_active_booking_or_folio"
     assert _patch.folio_charges.insert_calls == 0
+    assert len(_patch.transport_late_charges.docs) == 1
+    late_charge = _patch.transport_late_charges.docs[0]
+    assert late_charge["status"] == "pending_review"
+    assert late_charge["booking_id"] is None
+    assert late_charge["room_number"] == "101"
+    assert late_charge["total"] == 50.0
 
 
 async def test_idempotency_key_returns_prior_no_recharge(_patch):

@@ -31,6 +31,7 @@ from core.security import (
     security,
 )
 from domains.pms.pos_extensions._idem import ensure_compound_unique, ensure_idem_index
+from domains.pms.pos_fnb_router.kitchen_numbering import next_kitchen_order_number
 from models.enums import ChargeCategory, FolioStatus
 from models.schemas import CreatePOSTransactionRequest, FolioCharge, User
 from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
@@ -52,16 +53,6 @@ async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None 
     else:
         query["status"] = {"$in": ["pending", "preparing"]}
     return await db.kitchen_orders.find(query, {"_id": 0}).sort([("priority", -1), ("ordered_at", 1)]).to_list(200)
-
-
-async def _next_kitchen_order_number(tenant_id: str) -> int:
-    last_order = await db.kitchen_orders.find({"tenant_id": tenant_id}).sort("order_number", -1).limit(1).to_list(1)
-    if not last_order:
-        return 1
-    try:
-        return int(last_order[0].get("order_number", 0)) + 1
-    except (TypeError, ValueError):
-        return 1
 
 
 async def _broadcast_kitchen_queue(tenant_id: str) -> None:
@@ -186,7 +177,7 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
             kds_doc = {
                 "id": str(uuid.uuid4()),
                 "tenant_id": tenant_id,
-                "order_number": await _next_kitchen_order_number(tenant_id),
+                "order_number": await next_kitchen_order_number(tenant_id),
                 "adisyon_number": order.adisyon_number,
                 "business_date": order.business_date,
                 "outlet_id": order.outlet_id,
@@ -1397,6 +1388,26 @@ async def update_table_layout(
     await db.table_layouts.update_one({"id": table_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
 
     return {"success": True, "message": "Table layout updated"}
+
+
+@router.put("/pos/tables/{table_id}/status")
+async def update_pos_table_status(
+    table_id: str,
+    new_status: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Update a restaurant table state from the POS management screen."""
+    allowed = {"available", "occupied", "reserved", "dirty"}
+    if new_status not in allowed:
+        raise HTTPException(status_code=422, detail="Geçersiz masa durumu")
+    result = await db.table_layouts.update_one(
+        {"id": table_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"status": new_status, "updated_at": datetime.now(UTC).isoformat()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Masa bulunamadı")
+    return {"success": True, "table_id": table_id, "status": new_status}
 
 
 # ── GET /pos/split-bill-ui/{transaction_id} ──
