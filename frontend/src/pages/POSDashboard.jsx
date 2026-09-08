@@ -15,6 +15,7 @@ import {
   TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor,
 } from 'lucide-react';
 import { useEntitlements } from '@/context/EntitlementContext';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 
 /* ── helper ── */
 const fmt = (n, digits = 0) =>
@@ -78,6 +79,7 @@ const POSDashboard = () => {
   const [stats,           setStats]           = useState({ outlet_count: 0, menu_count: 0, today_orders: 0, today_revenue: 0 });
   const [loadingStats,    setLoadingStats]    = useState(true);
   const { hasFeature } = useEntitlements();
+  const businessDate = useBusinessDate();
 
   /* ── data ── */
   const loadOutlets = useCallback(async () => {
@@ -93,10 +95,15 @@ const POSDashboard = () => {
   const loadStats = useCallback(async () => {
     try {
       setLoadingStats(true);
-      const params = selectedOutletId !== 'all' ? { outlet_id: selectedOutletId } : {};
+      const menuParams = {};
+      const reportParams = { date: businessDate };
+      if (selectedOutletId !== 'all') {
+        menuParams.outlet_id = selectedOutletId;
+        reportParams.outlet_id = selectedOutletId;
+      }
       const [menuRes, zRes] = await Promise.all([
-        axios.get('/pos/menu-items', { params }).catch(() => ({ data: [] })),
-        axios.get('/pos/z-report',   { params }).catch(() => ({ data: { transaction_count: 0, gross_sales: 0 } })),
+        axios.get('/pos/menu-items', { params: menuParams }).catch(() => ({ data: [] })),
+        axios.get('/pos/z-report',   { params: reportParams }).catch(() => ({ data: { transaction_count: 0, gross_sales: 0 } })),
       ]);
       const menuList = Array.isArray(menuRes.data) ? menuRes.data : (menuRes.data.menu_items || []);
       setStats(prev => ({
@@ -108,7 +115,7 @@ const POSDashboard = () => {
     } catch { /* silent */ } finally {
       setLoadingStats(false);
     }
-  }, [selectedOutletId]);
+  }, [businessDate, selectedOutletId]);
 
   useEffect(() => { loadOutlets(); }, [loadOutlets]);
   useEffect(() => { setStats(prev => ({ ...prev, outlet_count: outlets.length })); }, [outlets.length]);

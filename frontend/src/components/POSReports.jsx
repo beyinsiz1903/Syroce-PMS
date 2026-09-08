@@ -14,6 +14,7 @@ import {
   TrendingUp, CreditCard, DollarSign, AlertCircle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 
 const PAYMENT_LABEL = {
   cash: 'Nakit',
@@ -31,11 +32,13 @@ const fmt = (n) => Number(n || 0).toLocaleString('tr-TR', {
 
 const POSReports = ({ outletId }) => {
   const { t } = useTranslation();
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState(today);
+  const businessDate = useBusinessDate();
+  const [date, setDate] = useState(businessDate);
   const [report, setReport] = useState(null);
   const [voids, setVoids] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => { setDate(businessDate); }, [businessDate]);
 
   const load = useCallback(async () => {
     try {
