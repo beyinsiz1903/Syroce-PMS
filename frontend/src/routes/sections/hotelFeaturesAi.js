@@ -24,7 +24,13 @@ export function hotelFeaturesAiRoutes({ p, pm }) {
     // profile APIs enforce tenant + object-level self access, so keep the
     // management entry points module-gated and let the backend authorize this
     // detail route.
-    { path: "/staff/:id", ...p(StaffProfile), wrapLayout: true, layoutModule: "hr" },
+    {
+      path: "/staff/:id",
+      ...p(StaffProfile),
+      wrapLayout: true,
+      layoutModule: "hr",
+      skipModuleScopeBoundary: true,
+    },
     { path: "/hr/shifts", ...pm(ShiftPlannerPage, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },
     { path: "/hr-complete", type: "redirect", to: "/hr?tab=suite" },
     { path: "/hr", ...pm(HRHub, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },
