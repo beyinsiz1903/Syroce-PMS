@@ -20,6 +20,18 @@ describe("module availability route gates", () => {
     }
   });
 
+  it("keeps staff self-service outside the HR module gate", () => {
+    const route = hotelFeaturesAiRoutes({ p, pm }).find((item) => item.path === "/staff/:id");
+
+    expect(route).toMatchObject({
+      type: "protected",
+      wrapLayout: true,
+      layoutModule: "hr",
+    });
+    expect(route.component).toBeTruthy();
+    expect(route).not.toHaveProperty("moduleKey");
+  });
+
   it("preserves feature route type after composing protected props", () => {
     const revenueHub = channelManagerRoutes({ p, pa }).find((route) => route.path === "/app/revenue-hub");
     const rms = revenueRmsRoutes({ p }).find((route) => route.path === "/app/rms");
