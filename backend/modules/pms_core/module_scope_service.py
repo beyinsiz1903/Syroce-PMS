@@ -18,7 +18,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 
 from core.security import get_current_user
 
@@ -133,7 +133,30 @@ def has_module_scope(user: Any, scope: str) -> bool:
     return "*" in granted or normalized in granted
 
 
-def require_module_scope(scope: str):
+def _is_own_hr_profile_request(request: Request, user: Any) -> bool:
+    """Allow the employee self-profile without granting the whole HR module.
+
+    The HR router is protected as a whole at mount time.  Employees deliberately
+    have no ``hr`` module scope, but ``GET /api/hr/staff/{own-user-id}/profile``
+    is their self-service entry point.  Keep the exception exact and fail closed:
+    other methods, other HR endpoints and another employee's id still require the
+    normal module scope (and the endpoint's record-level checks remain in force).
+    """
+    if request.method.upper() != "GET":
+        return False
+
+    prefix = "/api/hr/staff/"
+    suffix = "/profile"
+    path = request.url.path.rstrip("/")
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return False
+
+    requested_id = path[len(prefix) : -len(suffix)]
+    own_id = str(_value(user, "id", "") or _value(user, "user_id", ""))
+    return bool(own_id and requested_id and "/" not in requested_id and requested_id == own_id)
+
+
+def require_module_scope(scope: str, *, allow_own_hr_profile: bool = False):
     """Build a FastAPI dependency that enforces one module scope.
 
     Router migrations can use ``Depends(require_module_scope("frontdesk"))``.
@@ -142,8 +165,10 @@ def require_module_scope(scope: str):
     """
     normalized = normalize_module_scope(scope)
 
-    async def dependency(current_user: Any = Depends(get_current_user)) -> Any:
+    async def dependency(request: Request, current_user: Any = Depends(get_current_user)) -> Any:
         if not has_module_scope(current_user, normalized):
+            if allow_own_hr_profile and normalized == "hr" and _is_own_hr_profile_request(request, current_user):
+                return current_user
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="MODULE_ACCESS_DENIED",

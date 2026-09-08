@@ -79,7 +79,14 @@ def _router_dependencies(module_path: str, declared: list | None) -> list:
     dependencies = list(declared or [])
     scope = ROUTER_MODULE_SCOPES.get(module_path)
     if scope:
-        dependencies.append(Depends(require_module_scope(scope)))
+        dependencies.append(
+            Depends(
+                require_module_scope(
+                    scope,
+                    allow_own_hr_profile=module_path == "domains.hr.router",
+                )
+            )
+        )
     return dependencies
 
 
