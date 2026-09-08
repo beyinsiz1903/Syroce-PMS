@@ -2359,7 +2359,7 @@ const HRComplete = ({ user }) => {
               </div>
             </div>
 
-            <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+            {canManageHR && <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
               <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                 <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
                   <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><Plus className="w-5 h-5" /></div>
@@ -2448,7 +2448,7 @@ const HRComplete = ({ user }) => {
                   </div>
                 </form>
               </CardContent>
-            </Card>
+            </Card>}
 
             <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden flex flex-col">
               <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-3 pt-4">

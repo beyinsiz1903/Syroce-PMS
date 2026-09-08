@@ -94,6 +94,8 @@ it('keeps recruitment mutations hidden for a read-only HR/finance session', asyn
 
   render(<MemoryRouter><HRHub user={{ role: 'finance', granted_permissions: [] }} /></MemoryRouter>);
   await userEvent.click(screen.getByRole('tab', { name: 'Personel Talebi' }));
+  expect(screen.queryByText('Yeni Personel Talebi')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: "Talep Oluştur (HR'a Gönder)" })).not.toBeInTheDocument();
   const row = await screen.findByRole('row', { name: /Salt Okunur Pozisyon/ });
   await userEvent.click(within(row).getByRole('button', { name: 'Adayları Gör' }));
 
