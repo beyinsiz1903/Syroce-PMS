@@ -385,9 +385,11 @@ async def _verify_staff_in_tenant(staff_id: str, tenant_id: str) -> dict | None:
     if user:
         return {
             "id": user["id"],
+            "user_id": user["id"],
             "tenant_id": tenant_id,
             "name": user.get("name") or "Personel",
             "department": user.get("role") or "staff",
+            "active": True,
             "derived_from": "users",
         }
     return None
@@ -4012,6 +4014,7 @@ async def delete_staff_member(
             "$set": {
                 "is_active": False,
                 "deactivated_at": now_iso,
+                "tokens_invalid_before": datetime.now(UTC).timestamp(),
             }
         },
     )
@@ -6299,7 +6302,12 @@ async def terminate_staff(
         },
     )
 
-    linked_user_id = staff.get("user_id")
+    # Users-derived staff records use the user id as their staff id. Older
+    # derived payloads may not include an explicit user_id, so retain the
+    # derived_from fallback to ensure termination closes the login account.
+    linked_user_id = staff.get("user_id") or (
+        staff_id if staff.get("derived_from") == "users" else None
+    )
     if linked_user_id:
         await db.users.update_one(
             {
