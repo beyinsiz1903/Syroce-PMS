@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -12,11 +13,16 @@ def _dependency_for(module_path: str):
     return dependencies[0].dependency
 
 
+def _request(path: str, method: str = "GET"):
+    return SimpleNamespace(method=method, url=SimpleNamespace(path=path))
+
+
 def test_dedicated_router_gets_module_scope_dependency():
     dependency = _dependency_for("routers.procurement")
 
     allowed = asyncio.run(
         dependency(
+            request=_request("/api/procurement/orders"),
             current_user={
                 "role": "staff",
                 "module_scopes": ["procurement"],
@@ -28,6 +34,7 @@ def test_dedicated_router_gets_module_scope_dependency():
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
             dependency(
+                request=_request("/api/procurement/orders"),
                 current_user={
                     "role": "staff",
                     "module_scopes": ["stock"],
@@ -36,6 +43,34 @@ def test_dedicated_router_gets_module_scope_dependency():
         )
     assert exc.value.status_code == 403
     assert exc.value.detail == "MODULE_ACCESS_DENIED"
+
+
+def test_hr_router_allows_only_own_read_only_self_profile_without_module_scope():
+    dependency = _dependency_for("domains.hr.router")
+    user = {"id": "user-1", "role": "staff", "module_scopes": []}
+
+    assert asyncio.run(
+        dependency(
+            request=_request("/api/hr/staff/user-1/profile"),
+            current_user=user,
+        )
+    ) is user
+
+    for path, method in (
+        ("/api/hr/staff/user-2/profile", "GET"),
+        ("/api/hr/staff/user-1/profile", "POST"),
+        ("/api/hr/staff/user-1", "GET"),
+        ("/api/hr/staff/user-1/profile/history", "GET"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(
+                dependency(
+                    request=_request(path, method),
+                    current_user=user,
+                )
+            )
+        assert exc.value.status_code == 403
+        assert exc.value.detail == "MODULE_ACCESS_DENIED"
 
 
 def test_provider_and_public_webhook_routers_are_not_user_scope_wrapped():
