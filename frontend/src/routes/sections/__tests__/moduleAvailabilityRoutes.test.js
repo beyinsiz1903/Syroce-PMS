@@ -4,6 +4,7 @@ import { channelManagerRoutes } from "../channelManager";
 import { hotelFeaturesAiRoutes } from "../hotelFeaturesAi";
 import { marketplaceLoyaltyRoutes } from "../marketplaceLoyalty";
 import { revenueRmsRoutes } from "../revenueRms";
+import { getRouteConfigs } from "../../routeDefinitions";
 
 const p = (component) => ({ type: "protected", component });
 const pm = (component, moduleKey) => ({ type: "module", component, moduleKey });
@@ -27,9 +28,20 @@ describe("module availability route gates", () => {
       type: "protected",
       wrapLayout: true,
       layoutModule: "hr",
+      skipModuleScopeBoundary: true,
     });
     expect(route.component).toBeTruthy();
     expect(route).not.toHaveProperty("moduleKey");
+
+    const composed = getRouteConfigs({
+      user: { role: "staff", module_scopes: [] },
+      tenant: {},
+      modules: {},
+      isAuthenticated: true,
+      onLogout: () => {},
+      hasFeature: () => false,
+    }).find((item) => item.path === "/staff/:id");
+    expect(composed.moduleScopes).toBeUndefined();
   });
 
   it("preserves feature route type after composing protected props", () => {
