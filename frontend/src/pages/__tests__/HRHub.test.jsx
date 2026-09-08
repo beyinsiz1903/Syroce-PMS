@@ -80,6 +80,28 @@ it('loads saved payroll runs without requiring a new preview', async () => {
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/hr/payroll/runs', { params: { month: expect.stringMatching(/^\d{4}-\d{2}$/) } }));
 });
 
+it('keeps recruitment mutations hidden for a read-only HR/finance session', async () => {
+  const originalGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, ...args) => {
+    if (url === '/hr/job-postings') {
+      return Promise.resolve({ data: { items: [{ id: 'job-ro', title: 'Salt Okunur Pozisyon', department: 'front_desk', status: 'active', applicants_count: 1 }] } });
+    }
+    if (url === '/hr/job-postings/job-ro/applicants') {
+      return Promise.resolve({ data: { items: [{ id: 'candidate-ro', name: 'Aday Görüntüleme', status: 'interview' }], counts: { interview: 1 } } });
+    }
+    return originalGet(url, ...args);
+  });
+
+  render(<MemoryRouter><HRHub user={{ role: 'finance', granted_permissions: [] }} /></MemoryRouter>);
+  await userEvent.click(screen.getByRole('tab', { name: 'Personel Talebi' }));
+  const row = await screen.findByRole('row', { name: /Salt Okunur Pozisyon/ });
+  await userEvent.click(within(row).getByRole('button', { name: 'Adayları Gör' }));
+
+  expect(await screen.findByTestId('hr-readonly-notice')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Adayı Kaydet' })).not.toBeInTheDocument();
+  expect(screen.getByText('Görüşme')).toBeInTheDocument();
+});
+
 it.each([['Onayla', 'approve', 'active', 'Açık'], ['Reddet', 'reject', 'rejected', 'Reddedildi']])(
   'refreshes the actual routed job list before reporting %s success', async (button, action, status, label) => {
     let resolveRefresh;

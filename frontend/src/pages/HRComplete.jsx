@@ -29,6 +29,7 @@ import { useEntitlements } from '@/context/EntitlementContext';
 import PaginationBar from '@/components/PaginationBar';
 import SkeletonRow from '@/components/SkeletonRow';
 import { useHRPagination } from '@/hooks/useHRPagination';
+import { hasGrantedPermission, hasRole } from '@/utils/authRoles';
 
 const LEAVE_TYPE_LABEL = {
   annual: 'Yıllık İzin',
@@ -65,11 +66,16 @@ const todayMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-const HRComplete = () => {
+const HRComplete = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { hasFeature, loading: entitlementsLoading } = useEntitlements();
   const [activeTab, setActiveTab] = useHRTab();
+  // Route tests and older embeds may omit `user`; keep their historical
+  // manager-capable behaviour while real authenticated screens follow RBAC.
+  const canManageHR = !user
+    || hasRole(user, 'admin', 'supervisor')
+    || hasGrantedPermission(user, 'manage_hr');
 
   useEffect(() => {
     if (entitlementsLoading) return;
@@ -1775,7 +1781,7 @@ const HRComplete = () => {
                                     <StatusBadge intent={STATUS_INTENT[item.status]}>{STATUS_LABEL[item.status] || item.status}</StatusBadge>
                                   </td>
                                   <td className="py-3 px-4 text-right">
-                                    {item.status === 'pending' && (
+                                    {canManageHR && item.status === 'pending' && (
                                       <div className="flex justify-end gap-1.5 flex-wrap">
                                         <Button size="sm" className="h-7 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'dept_approve')} data-testid={`btn-dept-approve-${item.id}`}>
                                           <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Departman Onayı
@@ -1785,7 +1791,7 @@ const HRComplete = () => {
                                         </Button>
                                       </div>
                                     )}
-                                    {item.status === 'dept_approved' && (
+                                    {canManageHR && item.status === 'dept_approved' && (
                                       <div className="flex justify-end gap-1.5 flex-wrap">
                                         <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'approve')} data-testid={`btn-hr-final-${item.id}`}>
                                           <CheckCircle2 className="w-3.5 h-3.5 mr-1" />İK Final Onayı
@@ -2502,7 +2508,7 @@ const HRComplete = () => {
                           </td>
                           <td className="py-3 px-5 text-right">
                             <div className="flex justify-end gap-2 flex-wrap">
-                              {job.status === 'pending_approval' && (
+                              {canManageHR && job.status === 'pending_approval' && (
                                 <>
                                   <Button size="sm" onClick={() => decideJob(job.id, 'approve')} title="HR yöneticisi olarak onayla" className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm">
                                     <ThumbsUp className="w-3.5 h-3.5 mr-1" />Onayla
@@ -2515,11 +2521,13 @@ const HRComplete = () => {
                               {job.status === 'active' && (
                                 <>
                                   <Button size="sm" variant="outline" onClick={() => openApplicants(job)} className="border-sky-200 text-sky-700 hover:bg-sky-50">
-                                    <UserPlus className="w-3.5 h-3.5 mr-1" />Aday İşlemleri
+                                    <UserPlus className="w-3.5 h-3.5 mr-1" />{canManageHR ? 'Aday İşlemleri' : 'Adayları Gör'}
                                   </Button>
-                                  <Button size="sm" variant="outline" onClick={() => closeJob(job.id)} title="Pozisyonu Kapat" className="text-slate-500 hover:text-slate-700 hover:bg-slate-50">
-                                    <XCircle className="w-4 h-4" />
-                                  </Button>
+                                  {canManageHR && (
+                                    <Button size="sm" variant="outline" onClick={() => closeJob(job.id)} title="Pozisyonu Kapat" className="text-slate-500 hover:text-slate-700 hover:bg-slate-50">
+                                      <XCircle className="w-4 h-4" />
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -2568,6 +2576,7 @@ const HRComplete = () => {
 
               <div className="p-6 space-y-6">
                 {/* Yeni aday formu */}
+                {canManageHR ? (
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                   <div className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4">
                     <div className="p-1 rounded-md bg-teal-100 text-teal-700"><UserPlus className="w-4 h-4" /></div>
@@ -2600,6 +2609,11 @@ const HRComplete = () => {
                     </div>
                   </form>
                 </div>
+                ) : (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" data-testid="hr-readonly-notice">
+                    Bu oturum aday kayıtlarını yalnızca görüntüleyebilir. Aday ekleme, CV erişimi ve durum değişikliği için İK yönetim yetkisi gerekir.
+                  </div>
+                )}
 
                 {/* Aday listesi */}
                 <div>
@@ -2630,16 +2644,22 @@ const HRComplete = () => {
                           )}
                         </div>
                         <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 w-full md:w-auto shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
-                          <select value={a.status || 'new'}
-                            onChange={(e) => setApplicantStatus(a.id, e.target.value)}
-                            className="text-sm font-semibold rounded-lg border-slate-200 bg-slate-50 px-3 py-1.5 focus:ring-teal-500 focus:bg-white w-full md:w-auto">
-                            <option value="new">Yeni</option>
-                            <option value="screening">Eleme</option>
-                            <option value="interview">Görüşme</option>
-                            <option value="offer">Teklif</option>
-                            <option value="hired">İşe Alındı</option>
-                            <option value="rejected">Reddedildi</option>
-                          </select>
+                          {canManageHR ? (
+                            <select value={a.status || 'new'}
+                              onChange={(e) => setApplicantStatus(a.id, e.target.value)}
+                              className="text-sm font-semibold rounded-lg border-slate-200 bg-slate-50 px-3 py-1.5 focus:ring-teal-500 focus:bg-white w-full md:w-auto">
+                              <option value="new">Yeni</option>
+                              <option value="screening">Eleme</option>
+                              <option value="interview">Görüşme</option>
+                              <option value="offer">Teklif</option>
+                              <option value="hired">İşe Alındı</option>
+                              <option value="rejected">Reddedildi</option>
+                            </select>
+                          ) : (
+                            <StatusBadge intent={a.status === 'hired' ? 'success' : a.status === 'rejected' ? 'danger' : 'neutral'}>
+                              {({ new: 'Yeni', screening: 'Eleme', interview: 'Görüşme', offer: 'Teklif', hired: 'İşe Alındı', rejected: 'Reddedildi' })[a.status] || a.status || 'Yeni'}
+                            </StatusBadge>
+                          )}
                           <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {(a.created_at || '').slice(0, 10)}
