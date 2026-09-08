@@ -1390,6 +1390,26 @@ async def update_table_layout(
     return {"success": True, "message": "Table layout updated"}
 
 
+@router.put("/pos/tables/{table_id}/status")
+async def update_pos_table_status(
+    table_id: str,
+    new_status: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Update a restaurant table state from the POS management screen."""
+    allowed = {"available", "occupied", "reserved", "dirty"}
+    if new_status not in allowed:
+        raise HTTPException(status_code=422, detail="Geçersiz masa durumu")
+    result = await db.table_layouts.update_one(
+        {"id": table_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"status": new_status, "updated_at": datetime.now(UTC).isoformat()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Masa bulunamadı")
+    return {"success": True, "table_id": table_id, "status": new_status}
+
+
 # ── GET /pos/split-bill-ui/{transaction_id} ──
 @router.get("/pos/split-bill-ui/{transaction_id}")
 async def get_split_bill_ui_data(transaction_id: str, current_user: User = Depends(get_current_user)):
