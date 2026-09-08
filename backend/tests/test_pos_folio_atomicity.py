@@ -36,7 +36,6 @@ from core.outbox_service import POS_CHARGE_POSTED
 from domains.pms.pos_extensions import _idem
 from domains.pms.pos_fnb_router import pos_core
 
-
 # ---------------------------------------------------------------------------
 # In-memory fakes
 # ---------------------------------------------------------------------------
@@ -48,10 +47,10 @@ class _FakeCursor:
 
     async def to_list(self, _n):
         return list(self._data)
-        
+
     def sort(self, *args, **kwargs):
         return self
-        
+
     def __aiter__(self):
         class _AsyncIter:
             def __init__(self, data):
@@ -174,7 +173,7 @@ class _Coll:
             self.docs.append(nd)
             return SimpleNamespace(matched_count=0, modified_count=1, upserted_id="x")
         return SimpleNamespace(matched_count=0, modified_count=0)
-        
+
     async def delete_many(self, flt, session=None):
         initial_len = len(self.docs)
         self.docs = [d for d in self.docs if not self._match_doc(d, flt)]
@@ -217,12 +216,12 @@ class _Coll:
         else:
             match = pipeline[0]["$match"]
             group = pipeline[1]["$group"]
-            
+
         groups = {}
         for d in self.docs:
             if match and "$match" in pipeline[0] and not self._match_doc(d, match):
                 continue
-            
+
             gid = {}
             if isinstance(group["_id"], dict):
                 for k, v in group["_id"].items():
@@ -232,7 +231,7 @@ class _Coll:
                         gid[k] = v
             else:
                 gid = group["_id"]
-                    
+
             gk = str(gid)
             if gk not in groups:
                 groups[gk] = {"_id": gid}
@@ -241,7 +240,7 @@ class _Coll:
                     if "$sum" in v: groups[gk][k] = 0
                     if "$push" in v: groups[gk][k] = []
                     if "$addToSet" in v: groups[gk][k] = []
-            
+
             for k, v in group.items():
                 if k == "_id": continue
                 if "$sum" in v:
@@ -263,11 +262,11 @@ class _Coll:
                 if "$addToSet" in v:
                     val = d.get(v["$addToSet"][1:])
                     if val not in groups[gk][k]: groups[gk][k].append(val)
-                    
+
         res = list(groups.values())
         if match and "$match" in pipeline[1]:
             res = [r for r in res if self._match_doc(r, match)]
-        
+
         # apply project if exists
         project = next((p["$project"] for p in pipeline if "$project" in p), None)
         if project:
@@ -283,7 +282,7 @@ class _Coll:
                         pr[pk] = r.get(pk)
                 proj_res.append(pr)
             res = proj_res
-            
+
         from tests.test_pos_folio_atomicity import _FakeCursor
         return _FakeCursor(res)
 
@@ -535,3 +534,22 @@ async def test_no_folio_order_is_idempotent_no_intent(_patch):
     assert _patch.pos_orders.insert_calls == 1
     assert len(_posted_events(_patch)) == 0
     assert len(_patch.folio_charges.docs) == 0
+
+
+async def test_dashboard_legacy_menu_contract_creates_real_priced_order(_patch):
+    """Dashboard historically wrote name/price while the terminal expected
+    item_name/unit_price.  The order boundary must accept both without ever
+    degrading a real product into a zero-value line."""
+    _patch.pos_menu_items.docs.append({
+        "id": "legacy", "tenant_id": "tenant-A", "name": "QA Burger",
+        "category": "Ana Yemek", "price": 120.0, "tax_rate": 0.10,
+    })
+    result = await pos_core.create_pos_order(
+        data=_req([("legacy", 1)], folio_id=None, idem="LEGACY-1"), credentials=None,
+    )
+    order = result["order"]
+    assert order["order_items"][0]["item_name"] == "QA Burger"
+    assert order["order_items"][0]["unit_price"] == 120.0
+    assert order["subtotal"] == 120.0
+    assert order["tax_amount"] == 12.0
+    assert order["total_amount"] == 132.0

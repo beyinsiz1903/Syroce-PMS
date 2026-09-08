@@ -249,6 +249,17 @@ class MenuItemCreate(BaseModel):
     outlet_id: str | None = None
 
 
+_POS_CATEGORY_ALIASES = {
+    "Ana Yemek": "food",
+    "Başlangıç": "appetizer",
+    "Tatlı": "dessert",
+    "İçecek": "beverage",
+    "Alkollü": "alcohol",
+    "Atıştırmalık": "appetizer",
+    "main": "food",
+}
+
+
 # --------------------------------------------------------------------------
 # Finance - P&L Report and Cashier Shift Report
 # --------------------------------------------------------------------------
@@ -282,13 +293,23 @@ async def create_menu_item(
     """Create a new menu item"""
     current_user = await get_current_user(credentials)
 
+    if not item.outlet_id:
+        raise HTTPException(status_code=422, detail="Menü ürünü için satış noktası seçin")
+    outlet = await db.pos_outlets.find_one(
+        {"id": item.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"}
+    )
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Aktif satış noktası bulunamadı")
+
     item_id = str(uuid.uuid4())
     menu_item = {
         "id": item_id,
         "tenant_id": current_user.tenant_id,
         "name": item.name,
-        "category": item.category,
+        "item_name": item.name,
+        "category": _POS_CATEGORY_ALIASES.get(item.category, item.category),
         "price": item.price,
+        "unit_price": item.price,
         "description": item.description,
         "cost": item.cost,
         "available": item.available,
@@ -320,13 +341,23 @@ async def update_menu_item(
     if not existing_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
 
+    if not item.outlet_id:
+        raise HTTPException(status_code=422, detail="Menü ürünü için satış noktası seçin")
+    outlet = await db.pos_outlets.find_one(
+        {"id": item.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"}
+    )
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Aktif satış noktası bulunamadı")
+
     await db.pos_menu_items.update_one(
         {"id": item_id, "tenant_id": current_user.tenant_id},
         {
             "$set": {
                 "name": item.name,
-                "category": item.category,
+                "item_name": item.name,
+                "category": _POS_CATEGORY_ALIASES.get(item.category, item.category),
                 "price": item.price,
+                "unit_price": item.price,
                 "description": item.description,
                 "cost": item.cost,
                 "available": item.available,

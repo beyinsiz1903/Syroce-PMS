@@ -489,6 +489,7 @@ class POSOrderItem(BaseModel):
     quantity: int
     unit_price: float
     total_price: float
+    tax_rate: float = 0.18
 
 
 class POSOrderItemRequest(BaseModel):
@@ -1563,6 +1564,16 @@ async def create_pos_order(
 
     if not data.order_items:
         raise HTTPException(status_code=400, detail="Order items required")
+    # Legacy/API callers may create a non-terminal order without an outlet.
+    # When an outlet is supplied (the waiter terminal always does), validate it
+    # fail-closed so deleted or cross-tenant outlets cannot receive new checks.
+    if data.outlet_id:
+        outlet = await db.pos_outlets.find_one(
+            {"id": data.outlet_id, "tenant_id": tenant_id, "status": "active"},
+            {"_id": 0, "id": 1},
+        )
+        if not outlet:
+            raise HTTPException(status_code=404, detail="Aktif satış noktası bulunamadı")
 
     # Normalize idempotency key (bounded so it can't be abused as storage).
     idem_raw = data.idempotency_key
@@ -1640,27 +1651,66 @@ async def create_pos_order(
     # Build order items
     order_items_list = []
     subtotal = 0.0
+    tax_amount = 0.0
+
+    category_aliases = {
+        "Ana Yemek": "food",
+        "Başlangıç": "appetizer",
+        "Tatlı": "dessert",
+        "İçecek": "beverage",
+        "Alkollü": "alcohol",
+        "Atıştırmalık": "appetizer",
+        "main": "food",
+    }
 
     for item_data in data.order_items:
         # Get menu item
-        menu_item = await db.pos_menu_items.find_one({"id": item_data.item_id, "tenant_id": tenant_id})
+        menu_item = await db.pos_menu_items.find_one(
+            {
+                "id": item_data.item_id,
+                "tenant_id": tenant_id,
+                "outlet_id": data.outlet_id,
+            }
+        )
 
         if not menu_item:
-            continue
+            raise HTTPException(status_code=400, detail="Menü ürünü bu satış noktasında bulunamadı")
+        if menu_item.get("available", menu_item.get("status", "active") == "active") is False:
+            raise HTTPException(status_code=400, detail="Menü ürünü satışta değil")
 
         quantity = item_data.quantity
-        total_price = menu_item["unit_price"] * quantity
+        unit_price = menu_item.get("unit_price")
+        if unit_price is None:
+            unit_price = menu_item.get("price")
+        item_name = menu_item.get("item_name") or menu_item.get("name")
+        if not item_name or unit_price is None or float(unit_price) < 0:
+            raise HTTPException(status_code=422, detail="Menü ürünü fiyat/ad sözleşmesi geçersiz")
+        category = category_aliases.get(menu_item.get("category"), menu_item.get("category") or "food")
+        try:
+            category_enum = POSCategory(category)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Geçersiz POS kategorisi: {category}") from exc
+        line_tax_rate = float(menu_item.get("tax_rate", 0.18) or 0)
+        if not 0 <= line_tax_rate <= 1:
+            raise HTTPException(status_code=422, detail="Geçersiz KDV oranı")
+        total_price = round(float(unit_price) * quantity, 2)
         subtotal += total_price
+        tax_amount += round(total_price * line_tax_rate, 2)
 
         order_items_list.append(
             POSOrderItem(
-                item_id=menu_item["id"], item_name=menu_item["item_name"], category=POSCategory(menu_item["category"]), quantity=quantity, unit_price=menu_item["unit_price"], total_price=total_price
+                item_id=menu_item["id"], item_name=item_name, category=category_enum,
+                quantity=quantity, unit_price=float(unit_price), total_price=total_price,
+                tax_rate=line_tax_rate,
             )
         )
 
-    # Calculate tax (18% VAT for Turkey)
-    tax_amount = subtotal * 0.18
-    total_amount = subtotal + tax_amount
+    if not order_items_list:
+        raise HTTPException(status_code=400, detail="Geçerli sipariş kalemi bulunamadı")
+
+    subtotal = round(subtotal, 2)
+    tax_amount = round(tax_amount, 2)
+    total_amount = round(subtotal + tax_amount, 2)
 
     # Adisyon (check) numbering — sequential per outlet, resets each business day.
     business_date = await _get_pos_business_date(tenant_id)
@@ -1704,8 +1754,8 @@ async def create_pos_order(
                 quantity=order_item.quantity,
                 unit_price=order_item.unit_price,
                 amount=order_item.total_price,
-                tax_amount=order_item.total_price * 0.18,
-                total=order_item.total_price * 1.18,
+                tax_amount=round(order_item.total_price * order_item.tax_rate, 2),
+                total=round(order_item.total_price * (1 + order_item.tax_rate), 2),
                 voided=False,
             )
             cdoc = charge.model_dump()
