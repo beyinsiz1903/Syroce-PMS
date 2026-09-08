@@ -3586,6 +3586,8 @@ async def add_staff_member(
         "name": staff_data["name"],
         "email": staff_data.get("email"),
         "phone": staff_data.get("phone"),
+        "national_id": staff_data.get("national_id"),
+        "iban": staff_data.get("iban"),
         "department": staff_data.get("department"),
         "position": staff_data.get("position"),
         "hire_date": staff_data.get("hire_date"),
@@ -3853,6 +3855,8 @@ class StaffUpdatePayload(BaseModel):
     name: str | None = Field(None, max_length=200)
     email: str | None = Field(None, max_length=200)
     phone: str | None = Field(None, max_length=40)
+    national_id: str | None = Field(None, pattern=r"^\d{11}$")
+    iban: str | None = Field(None, min_length=15, max_length=34, pattern=r"^[A-Z]{2}\d{2}[A-Z0-9]+$")
     department: str | None = Field(None, max_length=80)
     position: str | None = Field(None, max_length=120)
     hire_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -3861,6 +3865,22 @@ class StaffUpdatePayload(BaseModel):
     monthly_hours: float | None = Field(None, ge=0, le=400)
     annual_leave_entitlement: int | None = Field(None, ge=0, le=365)
     active: bool | None = None
+
+    @field_validator("national_id", mode="before")
+    @classmethod
+    def normalize_national_id(cls, value):
+        if value is None:
+            return None
+        normalized = "".join(ch for ch in str(value) if ch.isdigit())
+        return normalized or None
+
+    @field_validator("iban", mode="before")
+    @classmethod
+    def normalize_iban(cls, value):
+        if value is None:
+            return None
+        normalized = "".join(str(value).split()).upper()
+        return normalized or None
 
     @field_validator("hire_date", mode="before")
     @classmethod
@@ -3926,15 +3946,16 @@ async def update_staff_member(
             await release_quota(current_user.tenant_id, "hr", "active_employees", resource_id)
 
         # Audit: salary alanı değiştiyse severity=warning, diğerleri info.
-        sev = "warning" if any(k in update for k in _PII_SALARY_FIELDS) else "info"
+        sensitive_fields = set(_PII_PHONE_FIELDS + _PII_ID_FIELDS + _PII_BANK_FIELDS + _PII_SALARY_FIELDS)
+        sev = "warning" if any(k in update for k in sensitive_fields) else "info"
         await _audit(
             current_user,
             "hr.staff.update",
             "staff_member",
             staff_id,
             f"Personel güncellendi (alan sayısı={len(update) - 1})",
-            before={k: existing.get(k) for k in update.keys() if k != "updated_at" and k not in _PII_SALARY_FIELDS},
-            after={k: v for k, v in update.items() if k not in _PII_SALARY_FIELDS},
+            before={k: existing.get(k) for k in update.keys() if k != "updated_at" and k not in sensitive_fields},
+            after={k: v for k, v in update.items() if k not in sensitive_fields},
             severity=sev,
         )
         return {"success": True, "updated_fields": len(update) - 1, "source": "staff"}

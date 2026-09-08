@@ -113,6 +113,8 @@ const EMPTY_STAFF = {
   name: '',
   email: '',
   phone: '',
+  national_id: '',
+  iban: '',
   department: '',
   position: '',
   hire_date: '',
@@ -365,6 +367,8 @@ const StaffManagement = ({ user }) => {
         name: s.name || '',
         email: s.email || '',
         phone: s.phone || '',
+        national_id: s.national_id || '',
+        iban: s.iban || '',
         department: s.department || '',
         position: s.position || '',
         hire_date: s.hire_date || '',
@@ -399,6 +403,8 @@ const StaffManagement = ({ user }) => {
     } else {
       payload = {
         ...f,
+        national_id: f.national_id ? f.national_id.replace(/\D/g, '') : undefined,
+        iban: f.iban ? f.iban.replace(/\s/g, '').toUpperCase() : undefined,
         hire_date: f.hire_date || undefined,
         hourly_rate: f.salary_agreement || f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
         monthly_hours: f.monthly_hours === '' ? undefined : Number(f.monthly_hours),
@@ -790,6 +796,22 @@ const StaffManagement = ({ user }) => {
               <Label className="text-xs">{t("cm.pages_StaffManagement.telefon")}</Label>
               <Input value={staffDialog.form.phone} onChange={e => updateStaffField('phone', e.target.value)} />
             </div>
+            {!staffDialog.derived && <>
+              <div>
+                <Label className="text-xs">T.C. Kimlik Numarası</Label>
+                <Input inputMode="numeric" autoComplete="off" maxLength={11}
+                  value={staffDialog.form.national_id}
+                  onChange={e => updateStaffField('national_id', e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder="11 haneli" />
+              </div>
+              <div>
+                <Label className="text-xs">IBAN</Label>
+                <Input autoComplete="off" maxLength={42}
+                  value={staffDialog.form.iban}
+                  onChange={e => updateStaffField('iban', e.target.value.toUpperCase())}
+                  placeholder="TR00 0000 0000 0000 0000 0000 00" />
+              </div>
+            </>}
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.departman")}</Label>
               <select value={staffDialog.form.department} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('department', e.target.value)} className="w-full rounded-md border border-input px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed">

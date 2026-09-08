@@ -667,6 +667,8 @@ const StaffProfile = ({ user }) => {
         <CardContent className="grid gap-3 md:grid-cols-4 py-4">
           <div className="flex items-center gap-2 text-sm text-slate-700"><Mail className="w-4 h-4 text-slate-400" /> {s.email || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Phone className="w-4 h-4 text-slate-400" /> {s.phone || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-slate-400" /> T.C. Kimlik: {s.national_id || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" /> IBAN: {s.iban || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Building2 className="w-4 h-4 text-slate-400" /> {s.department || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Briefcase className="w-4 h-4 text-slate-400" /> {s.employment_type || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Calendar className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.i_\u015Fe_giri\u015F")}{s.hire_date || '—'}</div>
