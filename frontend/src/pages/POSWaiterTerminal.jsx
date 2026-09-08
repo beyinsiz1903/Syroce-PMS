@@ -20,6 +20,16 @@ const STEPS = {
   TABLE: 'table',
   ORDER: 'order'
 };
+
+export const normalizeWaiterMenuItems = list => list
+  .filter(item => !['inactive', 'deleted'].includes(item.status))
+  .map(item => ({
+    ...item,
+    item_name: item.item_name || item.name || '',
+    unit_price: Number(item.unit_price ?? item.price ?? 0),
+    tax_rate: Number(item.tax_rate ?? 0.18),
+  }));
+
 const POSWaiterTerminal = () => {
   const {
     t
@@ -73,14 +83,7 @@ const POSWaiterTerminal = () => {
         }
       });
       const list = Array.isArray(res.data) ? res.data : res.data.menu_items || [];
-      setMenuItems(list
-        .filter(item => item.available !== false && !['inactive', 'deleted'].includes(item.status))
-        .map(item => ({
-          ...item,
-          item_name: item.item_name || item.name || '',
-          unit_price: Number(item.unit_price ?? item.price ?? 0),
-          tax_rate: Number(item.tax_rate ?? 0.18),
-        })));
+      setMenuItems(normalizeWaiterMenuItems(list));
     } catch (err) {
       console.error('Menu yuklenemedi:', err); toast.error('Menu yuklenemedi');
       setMenuItems([]);
@@ -108,6 +111,7 @@ const POSWaiterTerminal = () => {
     setStep(STEPS.ORDER);
   };
   const addToCart = item => {
+    if (item.available === false) return;
     setCart(prev => {
       const existing = prev.find(c => c.item_id === item.id);
       if (existing) {
@@ -348,9 +352,17 @@ const POSWaiterTerminal = () => {
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {visibleItems.map(item => <Card key={item.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => addToCart(item)} data-testid={`menu-item-${item.id}`}>
+              {visibleItems.map(item => <Card key={item.id}
+                aria-disabled={item.available === false}
+                className={item.available === false
+                  ? 'cursor-not-allowed opacity-60'
+                  : 'cursor-pointer hover:shadow-md transition-shadow'}
+                onClick={() => addToCart(item)} data-testid={`menu-item-${item.id}`}>
                   <CardContent className="p-3">
-                    <div className="font-semibold text-sm leading-tight">{item.item_name}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-semibold text-sm leading-tight">{item.item_name}</div>
+                      {item.available === false && <Badge variant="destructive">Tükendi</Badge>}
+                    </div>
                     <Badge variant="outline" className="mt-1 text-xs">{item.category}</Badge>
                     <div className="mt-2 font-bold text-amber-700">
                       {formatAmount(item.unit_price)}{t("cm.pages_POSWaiterTerminal.tl")}</div>

@@ -299,7 +299,9 @@ const TransferParkingPage = () => {
     try {
       await axios.delete(`/transfer-parking/bookings/${bk.id}`);
       toast.success('Rezervasyon iptal edildi');
-      await loadBookings();
+      // Cancellation also closes a possible late-charge record. Refresh both
+      // views together so the badge and table never expose stale receivables.
+      await Promise.all([loadBookings(), loadLateCharges()]);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'İptal başarısız');
     }
