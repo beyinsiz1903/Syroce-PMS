@@ -958,6 +958,34 @@ async def _startup():
             )
 
 
+@register_startup
+async def _start_observability_trace_flush():
+    """Share request traces across uvicorn workers without blocking startup."""
+    import asyncio
+
+    from modules.observability.distributed_tracing import tracing
+
+    app.state.observability_trace_flush_task = asyncio.create_task(
+        tracing.run_flush_loop(),
+        name="observability-trace-flush",
+    )
+
+
+@register_shutdown
+async def _stop_observability_trace_flush():
+    import asyncio
+    from contextlib import suppress
+
+    from modules.observability.distributed_tracing import tracing
+
+    task = getattr(app.state, "observability_trace_flush_task", None)
+    if task:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    await tracing.flush_to_db()
+
+
 @register_shutdown
 async def _shutdown():
     await on_shutdown(app)

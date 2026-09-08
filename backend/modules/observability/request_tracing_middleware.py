@@ -40,6 +40,7 @@ class RequestTracingMiddleware:
             return
 
         path = scope.get("path", "")
+        normalized_path = _normalize_path(path)
         method = scope.get("method", "GET")
 
         # Skip non-API / health paths
@@ -94,7 +95,7 @@ class RequestTracingMiddleware:
             from modules.observability.distributed_tracing import tracing
 
             trace_id = tracing.start_trace(
-                request_path=path,
+                request_path=normalized_path,
                 method=method,
                 tenant_id=tenant_id,
                 correlation_id=correlation_id,
@@ -138,13 +139,13 @@ class RequestTracingMiddleware:
             try:
                 from modules.observability.metrics_collector import metrics
 
-                metrics.histogram("http_request_duration_ms", elapsed_ms, {"method": method, "path": _normalize_path(path)})
+                metrics.histogram("http_request_duration_ms", elapsed_ms, {"method": method, "path": normalized_path})
                 metrics.increment("http_requests_total", tags={"method": method, "status": str(status_code)})
 
                 if is_error:
-                    metrics.increment("http_errors_total", tags={"method": method, "path": _normalize_path(path), "status": str(status_code)})
+                    metrics.increment("http_errors_total", tags={"method": method, "path": normalized_path, "status": str(status_code)})
                 if is_slow:
-                    metrics.increment("http_slow_requests", tags={"path": _normalize_path(path)})
+                    metrics.increment("http_slow_requests", tags={"path": normalized_path})
             except Exception:
                 pass
 
@@ -159,7 +160,7 @@ class RequestTracingMiddleware:
                         error_tracker.track_error(
                             error_type="http_500",
                             message=error_msg[:300],
-                            module=_normalize_path(path),
+                            module=normalized_path,
                             tenant_id=tenant_id,
                             severity="high",
                         )
@@ -168,7 +169,7 @@ class RequestTracingMiddleware:
                     pass
 
             if is_slow:
-                logger.warning(f"SLOW REQUEST: {method} {path} took {elapsed_ms}ms")
+                logger.warning(f"SLOW REQUEST: {method} {normalized_path} took {elapsed_ms}ms")
 
 
 def _normalize_path(path: str) -> str:

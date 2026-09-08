@@ -121,7 +121,7 @@ export default function ObservabilityDashboard() {
           <CardContent className="p-4">
             <div className="text-xs text-zinc-400 uppercase flex items-center gap-1"><Gauge className="w-3 h-3" /> İstek (1h)</div>
             <div className="text-2xl font-bold text-zinc-100 mt-1">{traces?.total_requests || 0}</div>
-            <div className="text-xs text-zinc-500">Aktif trace: {traces?.active_traces || 0}</div>
+            <div className="text-xs text-zinc-500">Yavaş: {traces?.total_slow || 0} · Aktif: {traces?.active_traces || 0}</div>
           </CardContent>
         </Card>
         <Card className={`border ${(traces?.error_rate || 0) > 0.05 ? "bg-red-950/30 border-red-900/40" : "bg-zinc-900/60 border-zinc-800"}`}>
@@ -153,7 +153,7 @@ export default function ObservabilityDashboard() {
         <Card className="bg-zinc-900/60 border-zinc-800" data-testid="endpoint-performance">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-zinc-200 flex items-center gap-2">
-              <Clock className="w-4 h-4" /> Endpoint Performansi (1h)
+              <Clock className="w-4 h-4" /> API Performansı (son 1 saat)
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 max-h-80 overflow-y-auto">
@@ -161,10 +161,14 @@ export default function ObservabilityDashboard() {
                   <span className="text-xs font-mono text-zinc-300 truncate flex-1">{ep.path}</span>
                   <div className="flex gap-3 ml-2 shrink-0">
                     <span className="text-xs text-zinc-400">{ep.count}x</span>
-                    <span className={`text-xs ${ep.avg_ms > 1000 ? "text-red-400" : "text-zinc-400"}`}>{ep.avg_ms}ms</span>
-                    {ep.slow > 0 && <Badge variant="destructive" className="text-xs">{ep.slow} slow</Badge>}
+                    <span className="text-xs text-zinc-400">Ort. {ep.avg_ms}ms</span>
+                    <span className={`text-xs ${ep.p95_ms > 1000 ? "text-red-400 font-medium" : "text-zinc-400"}`}>P95 {ep.p95_ms ?? ep.max_ms}ms</span>
+                    <span className="text-xs text-zinc-500">Maks. {ep.max_ms}ms</span>
+                    {ep.errors > 0 && <Badge variant="destructive" className="text-xs">{ep.errors} hata</Badge>}
+                    {ep.slow > 0 && <Badge variant="destructive" className="text-xs">{ep.slow} yavaş</Badge>}
                   </div>
                 </div>) : <p className="text-xs text-zinc-500">Henüz trace verisi yok. Flush yaparak veri toplayin.</p>}
+            <p className="pt-2 text-[11px] text-zinc-500">WebSocket bağlantıları bu API sürelerine dahil değildir.</p>
           </CardContent>
         </Card>
 
