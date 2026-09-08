@@ -45,7 +45,7 @@ def test_dedicated_router_gets_module_scope_dependency():
     assert exc.value.detail == "MODULE_ACCESS_DENIED"
 
 
-def test_hr_router_allows_only_own_read_only_self_profile_without_module_scope():
+def test_hr_router_delegates_read_only_profile_authorization_to_record_level_rbac():
     dependency = _dependency_for("domains.hr.router")
     user = {"id": "user-1", "role": "staff", "module_scopes": []}
 
@@ -56,8 +56,16 @@ def test_hr_router_allows_only_own_read_only_self_profile_without_module_scope()
         )
     ) is user
 
+    # A linked staff_members record has a different id from the login user. The
+    # profile endpoint authorizes it by user id/e-mail after the module layer.
+    assert asyncio.run(
+        dependency(
+            request=_request("/api/hr/staff/linked-staff-id/profile"),
+            current_user=user,
+        )
+    ) is user
+
     for path, method in (
-        ("/api/hr/staff/user-2/profile", "GET"),
         ("/api/hr/staff/user-1/profile", "POST"),
         ("/api/hr/staff/user-1", "GET"),
         ("/api/hr/staff/user-1/profile/history", "GET"),
