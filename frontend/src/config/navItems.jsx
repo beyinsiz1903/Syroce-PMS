@@ -46,10 +46,21 @@ export const NAV_GROUP_SECTIONS = {
     { id: "integrations", label: "Entegrasyon Operasyonları" },
     { id: "platform", label: "Platform Operasyonları" },
     { id: "governance", label: "Yetki, İçerik & Geliştirici" },
+    { id: "security_compliance", label: "Güvenlik ve Uyumluluk" },
   ],
 };
 
 export const NAV_ITEMS = [
+  {
+    key: "gdpr_compliance",
+    label: "KVKK ve Veri Koruma",
+    path: "/gdpr-compliance",
+    tier: "basic",
+    group: "admin",
+    navGroup: "admin",
+    navSection: "security_compliance",
+    allowedRoles: ["admin", "super_admin", "general_manager", "gdpr_officer"],
+  },
   {
     key: "tenant_users",
     label: "Otel Kullanıcıları",
@@ -228,6 +239,14 @@ export const NAV_ITEMS = [
     navSection: "reservations",
   },
   {
+    key: "agency_requests",
+    label: "Acenta Talepleri",
+    path: "/agency-requests",
+    tier: "basic",
+    group: "core",
+    navGroup: "frontdesk",
+    navSection: "reservations",
+  },
     key: "pms",
     label: "PMS",
     path: "/app/pms",
@@ -394,6 +413,15 @@ export const NAV_ITEMS = [
     navSection: "incidents",
   },
   {
+    key: "cross_property_guests",
+    label: "Zincir Misafir Profilleri",
+    path: "/cross-property-guests",
+    tier: "basic",
+    group: "core",
+    navGroup: "guest",
+    requireChain: true,
+    allowedRoles: ["admin", "super_admin", "manager", "general_manager", "crm", "crm_manager"],
+  },
     key: "service_recovery",
     label: "Şikayet Yönetimi",
     path: "/service-recovery",

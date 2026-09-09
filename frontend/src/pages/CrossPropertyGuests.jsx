@@ -105,7 +105,7 @@ export default function CrossPropertyGuests({
                               <td className="p-3 font-medium">{g.name}</td>
                               <td className="p-3 text-sm">{g.email}</td>
                               <td className="p-3 text-sm">{g.phone}</td>
-                              <td className="p-3"><Badge variant="outline">{g.tenant_id}</Badge></td>
+                              <td className="p-3"><Badge variant="outline">{g.property_name || g.tenant_id}</Badge></td>
                               <td className="p-3"><Button size="sm" variant="outline">Profil</Button></td>
                             </tr>)}
                         </tbody>

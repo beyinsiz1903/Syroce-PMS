@@ -279,7 +279,6 @@ export const CapXIntegration = lazy(() => import("@/pages/CapXIntegration"));
 
 // Opera-parity additions
 export const FolioRoutingPage = lazy(() => import("@/pages/FolioRoutingPage"));
-export const LoyaltyAdminPage = lazy(() => import("@/pages/LoyaltyAdminPage"));
 export const ActivitySchedulerPage = lazy(() => import("@/pages/ActivitySchedulerPage"));
 export const BlockManagementPage = lazy(() => import("@/pages/BlockManagementPage"));
 export const ForecastReportsPage = lazy(() => import("@/pages/ForecastReportsPage"));

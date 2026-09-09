@@ -301,6 +301,32 @@ async def hotel_booking_request_approve(
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadi")
     now = datetime.now(UTC).isoformat()
+    
+    # Rezervasyonu oluştur
+    booking_id = str(uuid.uuid4())
+    booking_doc = {
+        "id": booking_id,
+        "tenant_id": current_user.tenant_id,
+        "guest_name": req.get("customer_name"),
+        "guest_email": req.get("customer_email"),
+        "guest_phone": req.get("customer_phone"),
+        "check_in": req.get("check_in"),
+        "check_out": req.get("check_out"),
+        "nights": req.get("nights", 1),
+        "adults": req.get("adults", 1),
+        "children": req.get("children", 0),
+        "total_amount": float(req.get("total_price", 0)),
+        "total_price": float(req.get("total_price", 0)),
+        "currency": req.get("currency", "TRY"),
+        "status": "confirmed",
+        "channel": "agency",
+        "agency_id": req.get("agency_id"),
+        "room_type_id": req.get("room_type_id"),
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.bookings.insert_one(booking_doc)
+    
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
         {
@@ -309,10 +335,11 @@ async def hotel_booking_request_approve(
                 "approved_at": now,
                 "approved_by": current_user.id,
                 "updated_at": now,
+                "booking_id": booking_id,
             }
         },
     )
-    return {"approved": True, "request_id": request_id}
+    return {"approved": True, "request_id": request_id, "booking_id": booking_id}
 
 
 class BookingRequestRejectBody(BaseModel):

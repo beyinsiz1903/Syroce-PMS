@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 const BACKEND = "";
 const headers = {};
 export default function GDPRCompliance({
@@ -23,7 +24,6 @@ export default function GDPRCompliance({
   const [retentionPolicy, setRetentionPolicy] = useState(null);
   const [dpas, setDPAs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
   const [retentionForm, setRetentionForm] = useState(null);
   const [retentionPreview, setRetentionPreview] = useState(null);
   const [dpaForm, setDPAForm] = useState({
@@ -60,15 +60,14 @@ export default function GDPRCompliance({
   const saveRetentionPolicy = async () => {
     if (!retentionForm) return;
     setLoading(true);
-    setMessage('');
     try {
       const response = await axios.put('/gdpr/retention-policy', retentionForm, { headers });
       setRetentionPolicy(response.data);
       setRetentionForm(response.data);
-      setMessage('Veri saklama politikası kaydedildi ve denetim kaydı oluşturuldu.');
+      toast.success('Veri saklama politikası kaydedildi ve denetim kaydı oluşturuldu.');
       await fetchData();
     } catch (error) {
-      setMessage(error.response?.data?.detail || 'Veri saklama politikası kaydedilemedi.');
+      toast.error(error.response?.data?.detail || 'Veri saklama politikası kaydedilemedi.');
     } finally {
       setLoading(false);
     }
@@ -79,30 +78,28 @@ export default function GDPRCompliance({
       return;
     }
     setLoading(true);
-    setMessage('');
     try {
       await axios.post('/gdpr/dpa', {
         ...dpaForm,
         retention_period_days: Number(dpaForm.retention_period_days)
       }, { headers });
       setDPAForm({ processor_name: '', purpose: '', retention_period_days: 365, status: 'draft' });
-      setMessage('Veri işleme sözleşmesi kaydedildi.');
+      toast.success('Veri işleme sözleşmesi kaydedildi.');
       await fetchData();
     } catch (error) {
-      setMessage(error.response?.data?.detail || 'Veri işleme sözleşmesi kaydedilemedi.');
+      toast.error(error.response?.data?.detail || 'Veri işleme sözleşmesi kaydedilemedi.');
     } finally {
       setLoading(false);
     }
   };
   const previewRetention = async () => {
     setLoading(true);
-    setMessage('');
     try {
       const response = await axios.post('/gdpr/retention/run', { dry_run: true, limit: 500 }, { headers });
       setRetentionPreview(response.data);
-      setMessage('Saklama politikası etkisi güvenli biçimde önizlendi; veri değiştirilmedi.');
+      toast.success('Saklama politikası etkisi güvenli biçimde önizlendi; veri değiştirilmedi.');
     } catch (error) {
-      setMessage(error.response?.data?.detail || 'Saklama politikası önizlenemedi.');
+      toast.error(error.response?.data?.detail || 'Saklama politikası önizlenemedi.');
     } finally {
       setLoading(false);
     }
@@ -124,7 +121,7 @@ export default function GDPRCompliance({
           </Button>
         </div>
 
-        {message && <div className="p-3 bg-blue-50 rounded-lg text-blue-700">{message}</div>}
+        
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>

@@ -1,5 +1,5 @@
 import {
-  FolioRoutingPage, LoyaltyAdminPage, ActivitySchedulerPage, BlockManagementPage,
+  FolioRoutingPage, ActivitySchedulerPage, BlockManagementPage,
   ForecastReportsPage, FunctionSpacePage, TrialBalancePage, ProfileUdfPage,
   CateringMenuPage, SuiteConnectingPage, HurdleRatesPage,
 } from "./lazyPages";
@@ -15,7 +15,6 @@ export function operaParityRoutes({ p, pm }) {
       wrapLayout: true,
       layoutModule: "pms",
     },
-    { path: "/loyalty-admin", ...p(LoyaltyAdminPage) },
     {
       path: "/activities",
       ...pm(ActivitySchedulerPage, "pms", undefined, { strict: true }),
