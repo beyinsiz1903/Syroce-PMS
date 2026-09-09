@@ -182,8 +182,8 @@ export const NAV_ITEMS = [
     path: "/id-photo-admin",
     tier: "basic",
     group: "core",
-    navGroup: "system",
-    navSection: "compliance",
+    navGroup: "operations",
+    navSection: "guest_requests",
   },
   {
     // Task #28: kullanıcı bazında acil mesaj iznini açıp/kapatma sayfası.
@@ -192,8 +192,8 @@ export const NAV_ITEMS = [
     path: "/admin/urgent-permissions",
     tier: "basic",
     group: "core",
-    navGroup: "system",
-    navSection: "compliance",
+    navGroup: "admin",
+    navSection: "governance",
   },
   {
     key: "contact_center_dashboard",
@@ -312,8 +312,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "settings",
-    navGroup: "system",
-    navSection: "distribution",
+    navGroup: null,
   },
   {
     key: "eod_report",
@@ -588,8 +587,7 @@ export const NAV_ITEMS = [
     path: "/app/help",
     tier: "starter",
     group: "starter",
-    navGroup: "system",
-    navSection: "setup",
+    navGroup: null,
   },
   {
     key: "academy",
@@ -597,8 +595,7 @@ export const NAV_ITEMS = [
     path: "/app/academy",
     tier: "addon",
     group: "core",
-    navGroup: "system",
-    navSection: "setup",
+    navGroup: null,
     moduleKey: "academy",
   },
 
@@ -623,7 +620,7 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: null,
     hidden: true,
   },
   {
@@ -876,8 +873,8 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "advanced",
     moduleKey: "ai",
-    navGroup: "system",
-    navSection: "growth",
+    navGroup: "guest",
+    navSection: "marketing",
   },
   {
     key: "mailing",
@@ -885,8 +882,8 @@ export const NAV_ITEMS = [
     path: "/app/mailing",
     tier: "basic",
     group: "core",
-    navGroup: "system",
-    navSection: "growth",
+    navGroup: "guest",
+    navSection: "marketing",
   },
   {
     key: "onboarding_wizard",
@@ -894,8 +891,7 @@ export const NAV_ITEMS = [
     path: "/app/onboarding",
     tier: "basic",
     group: "core",
-    navGroup: "system",
-    navSection: "setup",
+    navGroup: null,
   },
   {
     key: "module_store",
@@ -903,8 +899,7 @@ export const NAV_ITEMS = [
     path: "/app/module-store",
     tier: "basic",
     group: "core",
-    navGroup: "system",
-    navSection: "setup",
+    navGroup: null,
   },
   {
     key: "pci_compliance",
@@ -912,8 +907,8 @@ export const NAV_ITEMS = [
     path: "/app/compliance/pci",
     tier: "basic",
     group: "core",
-    navGroup: "system",
-    navSection: "compliance",
+    navGroup: "admin",
+    navSection: "governance",
   },
   {
     key: "webhook_outbox_admin",
@@ -961,8 +956,8 @@ export const NAV_ITEMS = [
     path: "/app/xchange",
     tier: "basic",
     group: "core",
-    navGroup: "system",
-    navSection: "integrations",
+    navGroup: "admin",
+    navSection: "platform",
   },
   {
     key: "pos_dashboard",
