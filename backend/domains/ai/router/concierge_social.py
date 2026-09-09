@@ -12,7 +12,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from pydantic import Field as _PydField
 
@@ -51,6 +51,22 @@ class MaintenanceAlert(BaseModel):
     recommended_action: str
     estimated_failure_days: int = 0
     created_at: datetime = _PydField(default_factory=lambda: datetime.now(UTC))
+
+
+class SocialAutomationRuleIn(BaseModel):
+    name: str = _PydField(min_length=1, max_length=120)
+    keywords: list[str] = _PydField(min_length=1, max_length=30)
+    reply: str = _PydField(min_length=1, max_length=2000)
+    active: bool = True
+
+
+def _social_rule_payload(payload: SocialAutomationRuleIn) -> dict:
+    name = payload.name.strip()
+    reply = payload.reply.strip()
+    keywords = list(dict.fromkeys(keyword.strip().lower() for keyword in payload.keywords if keyword.strip()))
+    if not name or not reply or not keywords:
+        raise HTTPException(status_code=422, detail="Kural adı, en az bir anahtar kelime ve yanıt zorunludur")
+    return {"name": name, "keywords": keywords, "reply": reply, "active": payload.active}
 
 
 async def create_predictive_maintenance_task(tenant_id: str, room_id: str, room_number: str, title: str, severity: str, alert_id: str) -> None:
@@ -272,3 +288,60 @@ async def get_crisis_alerts(current_user: User = Depends(get_current_user)):
         "data_available": False,
         "message": "Sosyal medya entegrasyonu yapılandırılmamış. Veri yok.",
     }
+
+
+@router.get("/social-media/automation-rules")
+async def list_social_automation_rules(current_user: User = Depends(get_current_user)):
+    rules = await db.social_automation_rules.find(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    return rules
+
+
+@router.post("/social-media/automation-rules", status_code=status.HTTP_201_CREATED)
+async def create_social_automation_rule(
+    payload: SocialAutomationRuleIn,
+    current_user: User = Depends(get_current_user),
+):
+    now = datetime.now(UTC).isoformat()
+    rule = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        **_social_rule_payload(payload),
+        "created_at": now,
+        "updated_at": now,
+        "updated_by": current_user.id,
+    }
+    await db.social_automation_rules.insert_one(rule)
+    return {key: value for key, value in rule.items() if key != "_id"}
+
+
+@router.put("/social-media/automation-rules/{rule_id}")
+async def update_social_automation_rule(
+    rule_id: str,
+    payload: SocialAutomationRuleIn,
+    current_user: User = Depends(get_current_user),
+):
+    query = {"id": rule_id, "tenant_id": current_user.tenant_id}
+    if not await db.social_automation_rules.find_one(query, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=404, detail="Otomasyon kuralı bulunamadı")
+    updates = {
+        **_social_rule_payload(payload),
+        "updated_at": datetime.now(UTC).isoformat(),
+        "updated_by": current_user.id,
+    }
+    await db.social_automation_rules.update_one(query, {"$set": updates})
+    return await db.social_automation_rules.find_one(query, {"_id": 0})
+
+
+@router.delete("/social-media/automation-rules/{rule_id}")
+async def delete_social_automation_rule(
+    rule_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.social_automation_rules.delete_one(
+        {"id": rule_id, "tenant_id": current_user.tenant_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Otomasyon kuralı bulunamadı")
+    return {"deleted": True, "id": rule_id}

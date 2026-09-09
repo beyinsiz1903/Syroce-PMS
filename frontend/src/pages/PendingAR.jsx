@@ -32,6 +32,10 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountStatement, setAccountStatement] = useState(null);
   const [statementLoading, setStatementLoading] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [companyDetails, setCompanyDetails] = useState(null);
+  const [companyDetailsLoading, setCompanyDetailsLoading] = useState(false);
+  const [remindingCompanyId, setRemindingCompanyId] = useState(null);
 
   useEffect(() => {
     loadARData();
@@ -215,6 +219,36 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const closeAccountStatement = () => {
     setSelectedAccount(null);
     setAccountStatement(null);
+  };
+
+  const openCompanyDetails = async (company) => {
+    setSelectedCompany(company);
+    setCompanyDetails(null);
+    setCompanyDetailsLoading(true);
+    try {
+      const { data } = await axios.get(`/folio/pending-ar/${company.company_id}`);
+      setCompanyDetails(data);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Alacak detayları yüklenemedi');
+    } finally {
+      setCompanyDetailsLoading(false);
+    }
+  };
+
+  const sendReminder = async (company) => {
+    if (!company.contact_email) {
+      toast.error('Bu cari hesap için iletişim e-postası tanımlı değil');
+      return;
+    }
+    setRemindingCompanyId(company.company_id);
+    try {
+      const { data } = await axios.post(`/folio/pending-ar/${company.company_id}/send-reminder`);
+      toast.success(`Hatırlatma ${data.recipient} adresine gönderildi`);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Hatırlatma gönderilemedi');
+    } finally {
+      setRemindingCompanyId(null);
+    }
   };
 
   if (loading && agingLoading) {
@@ -450,10 +484,15 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                             </div>
 
                             <div className="flex flex-col space-y-2">
-                              <Button size="sm">View Details</Button>
-                              <Button variant="outline" size="sm">
+                              <Button size="sm" onClick={() => openCompanyDetails(item)}>Detayları Gör</Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => sendReminder(item)}
+                                disabled={remindingCompanyId === item.company_id}
+                              >
                                 <Mail className="w-4 h-4 mr-2" />
-                                Send Reminder
+                                {remindingCompanyId === item.company_id ? 'Gönderiliyor...' : 'Hatırlatma Gönder'}
                               </Button>
                             </div>
                           </div>
@@ -577,6 +616,60 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             )}
           </TabsContent>
         </Tabs>
+
+        <Dialog open={!!selectedCompany} onOpenChange={(open) => {
+          if (!open) {
+            setSelectedCompany(null);
+            setCompanyDetails(null);
+          }
+        }}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{selectedCompany ? `${selectedCompany.company_name} · Açık Alacak Detayı` : 'Açık Alacak Detayı'}</DialogTitle>
+            </DialogHeader>
+            {companyDetailsLoading ? (
+              <div className="py-12 text-center text-gray-500">Alacak detayları yükleniyor...</div>
+            ) : !companyDetails ? (
+              <div className="py-12 text-center text-gray-500">Detay verisi bulunamadı.</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">Toplam açık bakiye</div><div className="text-2xl font-bold text-red-600">{companyDetails.total_outstanding.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</div></CardContent></Card>
+                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">Açık folyo</div><div className="text-2xl font-bold">{companyDetails.folios.length}</div></CardContent></Card>
+                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">İletişim</div><div className="font-semibold">{companyDetails.company.contact_person || '—'}</div><div className="text-sm text-gray-600">{companyDetails.company.contact_email || 'E-posta tanımlı değil'}</div></CardContent></Card>
+                </div>
+                <div className="border rounded-lg overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-left text-gray-600">
+                      <tr><th className="p-3">Folyo</th><th className="p-3">Rezervasyon</th><th className="p-3">Oda</th><th className="p-3">Misafir</th><th className="p-3">Konaklama</th><th className="p-3 text-right">Bakiye</th></tr>
+                    </thead>
+                    <tbody>
+                      {companyDetails.folios.map((folio) => (
+                        <tr key={folio.folio_id} className="border-t">
+                          <td className="p-3 font-medium">{folio.folio_number}</td>
+                          <td className="p-3">{folio.reservation_number || '—'}</td>
+                          <td className="p-3 font-semibold">{folio.room_number}</td>
+                          <td className="p-3">{folio.guest_name}</td>
+                          <td className="p-3 whitespace-nowrap">{folio.check_in || '—'} → {folio.check_out || '—'}</td>
+                          <td className="p-3 text-right font-semibold text-red-600">{folio.balance.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    onClick={() => sendReminder(selectedCompany)}
+                    disabled={remindingCompanyId === selectedCompany?.company_id}
+                  >
+                    <Mail className="w-4 h-4 mr-2" />
+                    {remindingCompanyId === selectedCompany?.company_id ? 'Gönderiliyor...' : 'Bu dökümü e-posta ile gönder'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Account Statement Dialog */}
         <Dialog open={!!selectedAccount} onOpenChange={(open) => !open && closeAccountStatement()}>
