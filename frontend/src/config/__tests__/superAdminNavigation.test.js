@@ -39,6 +39,19 @@ describe('professional super admin navigation', () => {
     ]));
   });
 
+  it('exposes the system health dashboard from super admin platform operations', () => {
+    const item = NAV_ITEMS.find(({ key }) => key === 'observability');
+
+    expect(item).toMatchObject({
+      label: 'Sistem Sağlığı',
+      path: '/observability',
+      navGroup: 'admin',
+      navSection: 'platform',
+      requireSuperAdmin: true,
+    });
+    expect(item.hidden).not.toBe(true);
+  });
+
   it('places every visible system and admin link under a named section', () => {
     for (const group of ['system', 'admin']) {
       const allowedSections = new Set(NAV_GROUP_SECTIONS[group].map(({ id }) => id));

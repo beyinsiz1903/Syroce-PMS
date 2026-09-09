@@ -25,7 +25,7 @@ import {
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
   ChevronDown, Server, CalendarCheck, X, Undo2,
-  BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare
+  BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare, Activity
 , Utensils, Briefcase, ConciergeBell} from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
@@ -97,6 +97,7 @@ const ICON_BY_KEY = {
   contact_center_dashboard: Headset,
   cashier_workspace: DollarSign,
   tasks_workspace: ClipboardCheck,
+  observability: Activity,
 };
 
 const GROUP_ICONS = {
