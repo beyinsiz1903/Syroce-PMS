@@ -5,7 +5,9 @@
 > Phase 2 (May 2026): sandbox-only real `mongodump` → restore → prune →
 > validate → report. ✅ Local smoke PASS (24/24 tests, manual run leak=0,
 > FK orphans=0). Atlas/prod hard-BLOCK guardrail koda gömüldü.
-> Phase 3 (planned): periodic Celery drill + DR plan integration.
+> CI doğrulaması: sandbox `mongodump → mongorestore → prune → FK/leak`
+> testi tam backend suite içinde her PR'da çalışır. Production snapshot
+> tazeliği ayrıca Atlas Admin API readiness kontrolüyle doğrulanır.
 
 ## Amaç
 
@@ -118,13 +120,11 @@ modunda çalışır. Aşağıdaki kurallar koda gömülüdür ve bypass edilemez
 Drill helper bu klasörü doğrudan tüketir. Tar arşivi olarak gelirse önce
 `tar -xzf` ile açın.
 
-> **Bilinen boşluk (Phase 1 sonu):** `BACKUP_PATH` varsayılanı
-> `/tmp/backups` ephemeral'dır. Production öncesi kalıcı bir hedef
-> (volume mount veya S3 senkronizasyonu) yapılandırılmalıdır. Ayrıca
-> backup task'ı şu an Celery beat'te schedule edilmemiştir
-> (`backend/celery_app.py`); manuel `POST /api/infra/backup/trigger`
-> ile tetikleniyor. Bu boşluk hard-blocker takip kalemi olarak
-> `docs/PILOT_READINESS_CHECKLIST.md`'e eklenmelidir.
+> Yerel `BACKUP_PATH` varsayılanı `/tmp/backups` ve ephemeral'dır; bu yol
+> production kanıtı sayılmaz. Atlas kullanan kurulumlarda birincil kanıt,
+> Cloud Backup/PITR durumunun açıkça bildirilmesi ve son snapshot'ın Admin API
+> üzerinden taze doğrulanmasıdır. Self-host kurulumlarda `infra/backup`
+> servisi kalıcı S3-uyumlu depoya yükleme yapar.
 
 ## Tenant scope classification
 
@@ -393,16 +393,14 @@ PASS / FAIL
 - ...
 ```
 
-## Known gaps (Phase 1 → Phase 2 takibi)
+## Kalan operasyonel işler
 
-1. **Backup automation Celery'de schedule edilmemiş.** `backend/celery_app.py`
-   beat schedule'ında backup task'ı yok. Restore drill'in işe yaraması için
-   gerçek backup'ın alınıyor olması şarttır. Ayrı hard-blocker takibi:
-   *"Backup automation currently not scheduled and default `BACKUP_PATH` is
-   ephemeral. Restore drill cannot fully close until a durable backup
-   destination and scheduled backup job are verified."*
-2. **`BACKUP_PATH=/tmp/backups`** container ephemeral. Production için
-   kalıcı volume + off-site sync (S3/GCS) gerekir.
+1. **Canlı Atlas kimlik bilgileri ve durum bayrakları:** `ATLAS_TIER`,
+   `ATLAS_CLOUD_BACKUP_ENABLED`, `ATLAS_PITR_ENABLED`, `ATLAS_PROJECT_ID`,
+   `ATLAS_CLUSTER_NAME` ve iki Atlas API anahtarı DigitalOcean'da tanımlanmalı.
+2. **Gerçek veri tatbikatı:** CI sandbox drill'i her PR'da çalışsa da canlı
+   snapshot'tan ayrı bir restore cluster'ına periyodik tatbikat operatör ve
+   ikinci onaylayanla yapılmalıdır.
 3. **Post-restore prune** ✅ Faz 2'de `motor` ile implement edildi
    (`prune_cross_tenant`).
 4. **Drill report yazıcısı** ✅ Faz 2'de eklendi (`write_drill_report`,
@@ -411,8 +409,9 @@ PASS / FAIL
    görüşülüp tenant-scope'larının netleştirilmesi gerekiyor:
    `connector_dlq`, `connector_outbox`, `connector_metrics`,
    `cm_webhook_events`, `raw_channel_events`, `reservation_lineage`.
-6. **Periodic drill (Phase 3)** Celery beat ile quarterly çalıştırılacak;
-   Faz 1/2'de schedule entry yok.
+6. **Periodic production drill** quarterly change-control takvimine bağlanmalı;
+   CI sandbox testi production snapshot'ının gerçekten restore edilebilir
+   olduğunun yerini tutmaz.
 7. **Production tenant restore** Faz 2 sandbox-only'dir; gerçek tenant
    verisi restore senaryosu Faz 3 change-control kapsamına aittir
    (4-eyes onay + maintenance window + post-restore audit).

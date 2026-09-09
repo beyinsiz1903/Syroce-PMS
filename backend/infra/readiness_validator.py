@@ -96,8 +96,8 @@ class ReadinessValidator:
         )
 
     async def _check_backup(self):
-        # Atlas-aware — see infra/atlas_backup_check.py. URI detection avoids
-        # any network call here. Sync internals → to_thread.
+        # Atlas-aware — see infra/atlas_backup_check.py. The cached Admin API
+        # verification is synchronous, so the whole check runs in a worker.
         from infra.atlas_backup_check import resolve_backup_check
         from infra.backup_manager import backup_manager
 

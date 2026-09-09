@@ -128,7 +128,14 @@ class DeploymentOrchestrator:
             risks.append({**RISK_FACTORS["no_redis"], "factor": "no_redis"})
             risk_score += RISK_FACTORS["no_redis"]["weight"]
 
-        if os.environ.get("BACKUP_ENABLED", "false").lower() != "true":
+        # Use the same evidence-based decision as the readiness endpoint.
+        # BACKUP_ENABLED alone is not a recovery point, while verified Atlas
+        # Cloud Backup/PITR does not require the local mongodump flag.
+        from infra.atlas_backup_check import resolve_backup_check
+        from infra.backup_manager import backup_manager
+
+        _backup_payload, backup_score = resolve_backup_check(backup_manager.get_status())
+        if backup_score < 1.0:
             risks.append({**RISK_FACTORS["no_backup"], "factor": "no_backup"})
             risk_score += RISK_FACTORS["no_backup"]["weight"]
 
@@ -177,7 +184,9 @@ class DeploymentOrchestrator:
             if factor == "no_redis":
                 mitigations.append("Configure REDIS_URL with a managed Redis instance (ElastiCache, Cloud Memorystore)")
             elif factor == "no_backup":
-                mitigations.append("Set BACKUP_ENABLED=true and configure cloud backup target (S3, GCS)")
+                mitigations.append(
+                    "Verify Atlas Cloud Backup/PITR and a fresh snapshot, or configure a scheduled backup on durable offsite storage"
+                )
             elif factor == "no_monitoring":
                 mitigations.append("Configure OTEL_EXPORTER_ENDPOINT or SENTRY_DSN for production observability")
             elif factor == "no_alerting":
