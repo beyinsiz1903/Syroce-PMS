@@ -5,12 +5,13 @@ import {
   PIIStrictModeDashboard, IntegrationObservabilityDashboard, CredentialVaultDashboard,
 } from "./lazyPages";
 
-export function infrastructureRoutes({ p }) {
+export function infrastructureRoutes({ p, pa }) {
+  const adminRoute = pa || p;
   return [
     { path: "/data-pipeline", ...p(DataPipelineDashboard) },
     { path: "/event-bus", ...p(EventBusDashboard) },
     { path: "/system-health", ...p(SystemHealthDashboard), wrapLayout: true, layoutModule: "system_health" },
-    { path: "/observability", ...p(ObservabilityDashboard) },
+    { path: "/observability", ...adminRoute(ObservabilityDashboard), wrapLayout: true, layoutModule: "observability" },
     { path: "/integration-observability", ...p(IntegrationObservabilityDashboard), wrapLayout: true },
     { path: "/integration-credentials", ...p(CredentialVaultDashboard), wrapLayout: true },
     { path: "/security-hardening", type: "redirect", to: "/security?tab=hardening" },
