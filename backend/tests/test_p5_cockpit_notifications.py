@@ -385,13 +385,13 @@ class TestAllAPIs:
         from server import app
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             login = await c.post("/api/auth/login", json={"email": "demo@hotel.com", "password": "demo123"})
-            assert login.status_code == 200
+            assert login.status_code == 200, f"Login failed: {login.text}"
             token = login.json()["access_token"]
             h = {"Authorization": f"Bearer {token}"}
 
             # ── Cockpit: all sections ──
             res = await c.get("/api/lockdown/runtime/cockpit", headers=h)
-            assert res.status_code == 200
+            assert res.status_code == 200, f"Cockpit failed: {res.text}"
             data = res.json()
             for s in ["health", "flow", "reliability", "drift_heal", "hard_fail", "quarantine"]:
                 assert s in data, f"Missing cockpit section: {s}"
