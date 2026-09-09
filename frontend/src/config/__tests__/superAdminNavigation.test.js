@@ -52,6 +52,28 @@ describe('professional super admin navigation', () => {
     expect(item.hidden).not.toBe(true);
   });
 
+  it('exposes platform tools that were previously assigned to an undefined menu group', () => {
+    const expected = {
+      control_plane: 'platform',
+      runtime_cockpit: 'platform',
+      incident_panel: 'platform',
+      encryption_management: 'platform',
+      production_golive: 'platform',
+      integration_observability: 'platform',
+      data_model: 'platform',
+      infra_hardening: 'platform',
+      hrv2_ops: 'integrations',
+    };
+
+    for (const [key, navSection] of Object.entries(expected)) {
+      expect(NAV_ITEMS.find((candidate) => candidate.key === key)).toMatchObject({
+        navGroup: 'admin',
+        navSection,
+        requireSuperAdmin: true,
+      });
+    }
+  });
+
   it('places every visible system and admin link under a named section', () => {
     for (const group of ['system', 'admin']) {
       const allowedSections = new Set(NAV_GROUP_SECTIONS[group].map(({ id }) => id));

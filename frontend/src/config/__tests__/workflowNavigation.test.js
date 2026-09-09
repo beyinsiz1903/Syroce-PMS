@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { sectionNavItems } from '@/components/Layout';
-import { NAV_GROUP_SECTIONS, NAV_ITEMS } from '@/config/navItems';
+import { NAV_GROUPS, NAV_GROUP_SECTIONS, NAV_ITEMS } from '@/config/navItems';
 import { SUPPLEMENTAL_MODULE_NAV_ITEMS } from '@/utils/moduleAccess';
 
 const item = (key) => NAV_ITEMS.find((candidate) => candidate.key === key);
@@ -56,5 +56,16 @@ describe('workflow-oriented hotel navigation', () => {
       expect(configuredItems.every((candidate) => allowedSections.has(candidate.navSection))).toBe(true);
       expect(sectionNavItems(group, configuredItems).some(({ id }) => id === 'other')).toBe(false);
     }
+  });
+
+  it('does not assign visible links to a navigation group that cannot render', () => {
+    const knownGroups = new Set(NAV_GROUPS.map(({ id }) => id));
+    const invalidItems = NAV_ITEMS.filter((candidate) => (
+      !candidate.hidden
+      && candidate.navGroup
+      && !knownGroups.has(candidate.navGroup)
+    ));
+
+    expect(invalidItems).toEqual([]);
   });
 });

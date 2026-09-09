@@ -971,8 +971,10 @@ export const NAV_ITEMS = [
     navGroup: "reports",
   },
 
-  // ──── INFRASTRUCTURE GROUP ─────────────────────────
-  // Moved from channels: platform-level ops tools
+  // ──── PLATFORM OPERATIONS ───────────────────────────
+  // Technical screens live under the existing super-admin menu. Keeping a
+  // separate, undefined `infrastructure` group made these links impossible to
+  // render on both desktop and mobile navigation.
   {
     key: "control_plane",
     label: "Control Plane",
@@ -980,7 +982,8 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
-    navGroup: "infrastructure",
+    navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
   {
@@ -990,7 +993,8 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
-    navGroup: "infrastructure",
+    navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
   {
@@ -1000,7 +1004,8 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
-    navGroup: "infrastructure",
+    navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
   {
@@ -1011,6 +1016,7 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "enterprise",
     navGroup: "infrastructure",
+    hidden: true,
   },
   {
     key: "security_hardening",
@@ -1020,6 +1026,7 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "enterprise",
     navGroup: "infrastructure",
+    hidden: true,
   },
   {
     key: "encryption_management",
@@ -1028,7 +1035,9 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
-    navGroup: "infrastructure",
+    navGroup: "admin",
+    navSection: "platform",
+    requireSuperAdmin: true,
   },
   {
     key: "production_golive",
@@ -1037,7 +1046,53 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
-    navGroup: "infrastructure",
+    navGroup: "admin",
+    navSection: "platform",
+    requireSuperAdmin: true,
+  },
+  {
+    key: "integration_observability",
+    label: "Entegrasyon Gözlemlenebilirliği",
+    path: "/integration-observability",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "admin",
+    navSection: "platform",
+    requireSuperAdmin: true,
+  },
+  {
+    key: "data_model",
+    label: "Veri Modeli",
+    path: "/data-model",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "admin",
+    navSection: "platform",
+    requireSuperAdmin: true,
+  },
+  {
+    key: "hrv2_ops",
+    label: "HotelRunner V2 Operasyonları",
+    path: "/hrv2-ops",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "admin",
+    navSection: "integrations",
+    requireSuperAdmin: true,
+  },
+  {
+    key: "infra_hardening",
+    label: "Altyapı Güçlendirme",
+    path: "/infra-hardening",
+    moduleKey: "advanced_analytics",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "admin",
+    navSection: "platform",
+    requireSuperAdmin: true,
   },
 
   // ──── INFRASTRUCTURE — Hidden (deep platform ops, direct URL still works) ──

@@ -14,4 +14,19 @@ describe("infrastructure routes", () => {
     expect(observability.wrapLayout).toBe(true);
     expect(observability.layoutModule).toBe("observability");
   });
+
+  it("protects every platform screen exposed in super-admin navigation", () => {
+    const p = vi.fn((component) => ({ type: "protected", component }));
+    const pa = vi.fn((component) => ({ type: "protected", component, requireSuperAdmin: true }));
+    const routes = infrastructureRoutes({ p, pa });
+
+    for (const path of [
+      "/observability",
+      "/integration-observability",
+      "/infra-hardening",
+      "/production-golive",
+    ]) {
+      expect(routes.find((route) => route.path === path)?.requireSuperAdmin, path).toBe(true);
+    }
+  });
 });
