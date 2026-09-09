@@ -5,6 +5,7 @@ Provides live dashboard metrics, booking updates, and notifications
 
 import asyncio
 import logging
+import os
 from collections import defaultdict
 from datetime import datetime
 from http.cookies import SimpleCookie
@@ -113,8 +114,15 @@ async def _delayed_offline_check(tenant_id: str, user_id: str) -> None:
             logger.warning(f"[CC-VOICE] Failed to transition agent {user_id} to offline: {e}")
 
 
-# Create Socket.IO server
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*", logger=True, engineio_logger=True)
+# Engine.IO's frame-by-frame PING/PONG logs are very noisy in production and
+# obscure real slow requests. They remain opt-in for incident debugging.
+_SOCKETIO_DEBUG = os.getenv("SOCKETIO_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+sio = socketio.AsyncServer(
+    async_mode="asgi",
+    cors_allowed_origins="*",
+    logger=_SOCKETIO_DEBUG,
+    engineio_logger=_SOCKETIO_DEBUG,
+)
 
 # Track connected clients by room. Task #43 removed the legacy global
 # ``'pms'`` bucket: PMS broadcasts now target ``pms:{tenant_id}`` rooms

@@ -423,6 +423,11 @@ async def ensure_performance_indexes():
             {"unique": True, "partialFilterExpression": {"idempotency_key": {"$type": "string"}}},
         ),
         ("idempotency_cache", [("expires_at", 1)], "ttl_idempotency_cache", {"expireAfterSeconds": 0}),
+        # Multi-worker request tracing. Workers flush every 30 seconds and the
+        # dashboard reads a rolling time window across all processes.
+        ("observability_traces", [("completed_at", -1)], "idx_observability_completed_at", {}),
+        ("observability_traces", [("started_at_iso", -1)], "idx_observability_started_at", {}),
+        ("observability_traces", [("expires_at", 1)], "ttl_observability_traces", {"expireAfterSeconds": 0}),
         # Agency v1 Adim 3 — HMAC replay-cache (Karar 2). `_id = "{key_id}:{nonce}"`
         # zaten otomatik unique → ayni nonce ikinci insert DuplicateKeyError verir
         # (replay race-free); ek unique index GEREKMEZ. Tek index: expires_at TTL.
