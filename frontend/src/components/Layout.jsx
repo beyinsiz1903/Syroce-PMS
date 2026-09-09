@@ -243,6 +243,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
         if (isSuperAdmin) visible.push(item);
         return;
       }
+      if (item.requireChain && !tenant?.chain_id) {
+        return;
+      }
       if (
         Array.isArray(item.allowedRoles)
         && !isSuperAdmin
@@ -261,7 +264,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     });
 
     return { visibleNav: visible };
-  }, [hasModule, isSuperAdmin, hiddenNavGroups, hiddenNavItems, navCandidates, user]);
+  }, [hasModule, isSuperAdmin, hiddenNavGroups, hiddenNavItems, navCandidates, user, tenant]);
 
   const { standaloneItems, groupedItems } = useMemo(() => {
     const standalone = [];

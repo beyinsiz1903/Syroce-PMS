@@ -31,6 +31,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from core.atomic_booking import create_booking_atomic
 from core.database import db
 from core.security import get_current_user
 from core.tenant_db import get_system_db
@@ -300,7 +301,70 @@ async def hotel_booking_request_approve(
     req = await db.agency_booking_requests.find_one({"request_id": request_id, "tenant_id": current_user.tenant_id})
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadi")
+    if req.get("status") == "approved" and req.get("booking_id"):
+        return {"approved": True, "request_id": request_id, "booking_id": req.get("booking_id"), "message": "Zaten onaylanmis"}
     now = datetime.now(UTC).isoformat()
+    # Rezervasyonu oluştur
+    booking_id = str(uuid.uuid4())
+    booking_doc = {
+        "id": booking_id,
+        "tenant_id": current_user.tenant_id,
+        "guest_name": req.get("customer_name"),
+        "guest_email": req.get("customer_email"),
+        "guest_phone": req.get("customer_phone"),
+        "check_in": req.get("check_in"),
+        "check_out": req.get("check_out"),
+        "nights": req.get("nights", 1),
+        "adults": req.get("adults", 1),
+        "children": req.get("children", 0),
+        "total_amount": float(req.get("total_price", 0)),
+        "total_price": float(req.get("total_price", 0)),
+        "currency": req.get("currency", "TRY"),
+        "status": "confirmed",
+        "channel": "agency",
+        "agency_id": req.get("agency_id"),
+        "room_type_id": req.get("room_type_id"),
+        "created_at": now,
+        "updated_at": now,
+    }
+    # Rezervasyonu oluştur
+    try:
+        await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking_doc)
+    except Exception as e:
+        if "Conflict" in str(e) or "already booked" in str(e):
+            raise HTTPException(status_code=409, detail=f"Oda müsait değil: {e}")
+        raise HTTPException(status_code=500, detail=f"Rezervasyon oluşturulamadı: {e}")
+    folio_id = str(uuid.uuid4())
+    folio_doc = {
+        "id": folio_id,
+        "tenant_id": current_user.tenant_id,
+        "booking_id": booking_id,
+        "folio_number": f"F-{datetime.now(UTC).year}-{uuid.uuid4().hex[:5].upper()}",
+        "folio_type": "guest",
+        "guest_id": None,
+        "status": "open",
+        "balance": float(req.get("total_price", 0)),
+        "total": float(req.get("total_price", 0)),
+        "room_charge": float(req.get("total_price", 0)),
+        "currency": req.get("currency", "TRY"),
+        "created_at": now,
+    }
+    await db.folios.insert_one(folio_doc)
+
+    await db.audit_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "action": "CREATE_BOOKING",
+            "entity": "booking",
+            "entity_id": booking_id,
+            "actor_id": current_user.id,
+            "created_at": now,
+            "details": {"source": "agency_request", "request_id": request_id},
+        }
+    )
+
+
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
         {
@@ -309,10 +373,11 @@ async def hotel_booking_request_approve(
                 "approved_at": now,
                 "approved_by": current_user.id,
                 "updated_at": now,
+                "booking_id": booking_id,
             }
         },
     )
-    return {"approved": True, "request_id": request_id}
+    return {"approved": True, "request_id": request_id, "booking_id": booking_id}
 
 
 class BookingRequestRejectBody(BaseModel):
@@ -340,6 +405,8 @@ async def hotel_booking_request_reject(
     req = await db.agency_booking_requests.find_one({"request_id": request_id, "tenant_id": current_user.tenant_id})
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadi")
+    if req.get("status") == "approved" and req.get("booking_id"):
+        return {"approved": True, "request_id": request_id, "booking_id": req.get("booking_id"), "message": "Zaten onaylanmis"}
     now = datetime.now(UTC).isoformat()
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},

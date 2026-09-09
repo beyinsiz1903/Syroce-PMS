@@ -25,7 +25,7 @@ export function securityAdminRoutes({ p, pa, pm }) {
     { path: "/app/physical-security", ...pa(PhysicalSecurityDashboard), wrapLayout: true, layoutModule: "physical_security" },
     { path: "/security-center", type: "redirect", to: "/security?tab=center" },
     { path: "/app/güvenlik", type: "redirect", to: "/security?tab=monitor" },
-    { path: "/gdpr-compliance", ...p(GDPRCompliance), wrapLayout: true },
+    { path: "/gdpr-compliance", ...moduleRoute(GDPRCompliance, null, {}, { allowedRoles: ["admin", "super_admin", "general_manager", "gdpr_officer"] }), wrapLayout: true },
     { path: "/encryption-management", ...pa(EncryptionManagementPage), wrapLayout: true, layoutModule: "encryption_management" },
     { path: "/central-office", ...p(CentralOfficeDashboard), wrapLayout: true },
     { path: "/central-pricing", ...p(CentralPricingManager) },
