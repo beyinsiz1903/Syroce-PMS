@@ -1458,16 +1458,6 @@ export default function MessagingDashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  useEffect(() => {
-    // Auto-seed demo data on first load (only when truly empty)
-    (async () => {
-      const r = await safe(() => get('/messaging-center/delivery-logs?limit=1'));
-      if (r.ok && (!r.data.logs || r.data.logs.length === 0)) {
-        await safe(() => post('/messaging-center/seed-demo', {}));
-      }
-    })();
-  }, []);
-
   return (
     <div data-testid="messaging-dashboard" className="p-4 lg:p-6 max-w-7xl mx-auto" key={refreshKey}>
       <PageHeader
