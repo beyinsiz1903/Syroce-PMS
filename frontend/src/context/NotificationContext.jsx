@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { listNotifications, logNotification, clearNotification } from '@/utils/offlineQueueDB';
 import { websocket } from '@/lib/websocket';
+import axios from 'axios';
 
 const NotificationContext = createContext({
   notifications: [],
@@ -45,7 +46,7 @@ const readUserFromStorage = () => {
 };
 
 const isStaffUser = (user) => {
-  if (!user) return false;
+  if (!user || user.requires_password_change) return false;
   const role = user.role || (user.roles && user.roles[0]);
   return role && role !== 'guest';
 };
@@ -70,7 +71,10 @@ export const NotificationProvider = ({ children }) => {
 
   useEffect(() => {
     if (!isClient) return undefined;
-    const refresh = () => setAuthUser(readUserFromStorage());
+    const refresh = () => {
+      const next = readUserFromStorage();
+      setAuthUser((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+    };
 
     const onStorage = (e) => {
       if (!e.key || e.key === 'user' || e.key === 'token') refresh();
@@ -228,7 +232,6 @@ export const NotificationProvider = ({ children }) => {
   const refreshInternalUnread = useCallback(async () => {
     if (!isClient || !isStaffUser(authUser)) return 0;
     try {
-      const axios = (await import('axios')).default;
       const res = await axios.get('/messaging/internal/inbox', {
         params: { unread_only: true, limit: 1 },
       });
@@ -243,7 +246,13 @@ export const NotificationProvider = ({ children }) => {
   const refreshGuestRequestsUnread = useCallback(async () => {
     if (!isClient || !isStaffUser(authUser)) return 0;
     try {
-      const axios = (await import('axios')).default;
+      // Guest-request visibility is configurable per hotel and role. Ask the
+      // non-throwing capability endpoint before fetching protected threads.
+      const access = await axios.get('/messaging/guest-requests/access');
+      if (!access.data?.can_view) {
+        setGuestRequestsUnreadCount(0);
+        return 0;
+      }
       const res = await axios.get('/messaging/guest-requests/threads', {
         params: { limit: 1 },
       });
@@ -320,7 +329,6 @@ export const NotificationProvider = ({ children }) => {
     setInternalMessages((prev) => prev.map((m) => ({ ...m, read: true })));
     setInternalUnreadCount(0);
     try {
-      const axios = (await import('axios')).default;
       const res = await axios.post('/messaging/internal/mark-all-read');
       // Refresh from the server so we converge on the truth — covers the
       // case where new messages arrived between the optimistic update and
