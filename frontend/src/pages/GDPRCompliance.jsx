@@ -74,7 +74,7 @@ export default function GDPRCompliance({
   };
   const createDPA = async () => {
     if (!dpaForm.processor_name.trim() || !dpaForm.purpose.trim()) {
-      setMessage('Veri işleyen adı ve işleme amacı zorunludur.');
+      toast.info('Veri işleyen adı ve işleme amacı zorunludur.');
       return;
     }
     setLoading(true);

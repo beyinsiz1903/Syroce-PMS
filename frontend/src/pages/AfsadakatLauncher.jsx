@@ -134,9 +134,14 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
     try {
       const r = await axios.get("/integrations/afsadakat/status");
       setStatus(r.data);
+    } catch (e) {
+      console.error("Af-sadakat status fetch failed", e);
+    }
+    
+    try {
       await refreshLoyalty();
     } catch (e) {
-      toast.error("Durum alınamadı");
+      console.error("Local loyalty fetch failed", e);
     }
     setLoading(false);
   };
