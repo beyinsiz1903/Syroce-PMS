@@ -29,6 +29,7 @@ async def seed_test_user():
     from core.security import hash_password
     test_user = {
         "email": "infra-test@hotel.com",
+        "name": "Infra Test Admin",
         "username": "demo",
         "hashed_password": hash_password("demo123"),
         "role": "admin",
