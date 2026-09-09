@@ -98,6 +98,15 @@ const ICON_BY_KEY = {
   cashier_workspace: DollarSign,
   tasks_workspace: ClipboardCheck,
   observability: Activity,
+  control_plane: Server,
+  runtime_cockpit: Activity,
+  incident_panel: Zap,
+  encryption_management: Shield,
+  production_golive: Rocket,
+  integration_observability: Activity,
+  data_model: Layers,
+  hrv2_ops: Server,
+  infra_hardening: Shield,
 };
 
 const GROUP_ICONS = {
