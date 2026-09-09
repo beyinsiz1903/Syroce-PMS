@@ -128,8 +128,6 @@ export default function ObservabilityDashboard() {
 
   useEffect(() => {
     fetchData({ silent: true });
-    const interval = setInterval(() => fetchData({ silent: true }), 20000);
-    return () => clearInterval(interval);
   }, [fetchData]);
 
   const flush = async () => {
@@ -169,7 +167,7 @@ export default function ObservabilityDashboard() {
             <div className="rounded-xl bg-blue-600 p-2.5 text-white shadow-sm"><Activity className="h-5 w-5" aria-hidden="true" /></div>
             <div>
               <h1 className="text-2xl font-bold text-slate-950">Sistem Sağlığı</h1>
-              <p className="mt-1 text-sm text-slate-600">Teknik servislerin durumu, hatalar ve yanıt süreleri</p>
+              <p className="mt-1 text-sm text-slate-600">Teknik servislerin durumu, hatalar ve yanıt süreleri. Otomatik yenileme kapalı; güncel veriler için “Verileri yenile” düğmesini kullanın.</p>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={refreshing} data-testid="refresh-btn">

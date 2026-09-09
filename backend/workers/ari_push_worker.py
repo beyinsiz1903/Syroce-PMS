@@ -16,6 +16,11 @@ from domains.channel_manager.ari.outbound_service import push_pending_changes
 logger = logging.getLogger(__name__)
 
 PUSH_INTERVAL_SECONDS = 5  # Check every 5 seconds
+MAX_IDLE_INTERVAL_SECONDS = 30  # Bound detection delay even without a wake-up event.
+
+
+def next_poll_delay(previous: int, has_work: bool) -> int:
+    return PUSH_INTERVAL_SECONDS if has_work else min(previous * 2, MAX_IDLE_INTERVAL_SECONDS)
 
 # Per-tenant + outer-loop streak tracker so transient Atlas hiccups
 # (AutoReconnect / NoPrimary / SSL timeout) do not flood Sentry on every
@@ -28,6 +33,7 @@ async def ari_push_worker_loop():
     """Main push worker loop. Processes pending change sets for all tenants."""
     logger.info("ARI push worker started")
     tracker = get_failure_tracker()
+    delay = PUSH_INTERVAL_SECONDS
 
     while True:
         try:
@@ -37,6 +43,7 @@ async def ari_push_worker_loop():
                 {"$group": {"_id": "$tenant_id"}},
             ]
             tenants = await db["ari_change_sets"].aggregate(pipeline).to_list(100)
+            delay = next_poll_delay(delay, bool(tenants))
 
             active_tids = {str(t["_id"]) for t in tenants if t.get("_id")}
             _transient_tracker.prune(active_tids)
@@ -80,6 +87,7 @@ async def ari_push_worker_loop():
                         )
 
         except Exception as e:
+            delay = PUSH_INTERVAL_SECONDS
             _transient_tracker.log_exception(
                 logger,
                 e,
@@ -90,7 +98,7 @@ async def ari_push_worker_loop():
         else:
             _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
 
-        await asyncio.sleep(PUSH_INTERVAL_SECONDS)
+        await asyncio.sleep(delay)
 
 
 async def start_push_worker():

@@ -139,7 +139,9 @@ class TracingService:
             persisted = await asyncio.wait_for(
                 db.observability_traces.find(
                     {"completed_at": {"$gte": cutoff.isoformat()}},
-                    {"_id": 0},
+                    # Summaries never need spans, attributes or request payloads.
+                    {"_id": 0, "trace_id": 1, "request_path": 1,
+                     "duration_ms": 1, "status_code": 1, "is_slow": 1},
                 )
                 .sort("completed_at", -1)
                 .to_list(self._max_buffer * 5),

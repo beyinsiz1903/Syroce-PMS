@@ -219,7 +219,8 @@ async def get_hr_rate_grid(
             "tenant_id": tenant_id,
             "date": {"$gte": start_date, "$lte": end_date},
         },
-        {"_id": 0},
+        {"_id": 0, "room_type_code": 1, "rate_plan_code": 1, "date": 1,
+         "availability": 1, "rate": 1, "min_stay": 1, "stop_sell": 1},
     ).to_list(5000)
 
     cal_index = {}
