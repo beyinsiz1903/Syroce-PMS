@@ -426,6 +426,9 @@ async def ensure_performance_indexes():
         # Multi-worker request tracing. Workers flush every 30 seconds and the
         # dashboard reads a rolling time window across all processes.
         ("observability_traces", [("completed_at", -1)], "idx_observability_completed_at", {}),
+        ("kbs_alerts", [("kind", 1), ("created_at", -1)], "idx_kbs_alert_kind_created", {}),
+        ("room_night_locks", [("lock_type", 1), ("hold_expires_at", 1)], "idx_hold_expiry_sweep", {}),
+        ("ari_change_sets", [("status", 1), ("tenant_id", 1)], "idx_ari_pending_tenant", {}),
         ("observability_traces", [("started_at_iso", -1)], "idx_observability_started_at", {}),
         ("observability_traces", [("expires_at", 1)], "ttl_observability_traces", {"expireAfterSeconds": 0}),
         # Agency v1 Adim 3 — HMAC replay-cache (Karar 2). `_id = "{key_id}:{nonce}"`

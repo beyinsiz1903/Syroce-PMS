@@ -126,6 +126,8 @@ async def ensure_room_type_inventory_indexes() -> None:
 async def compute_room_type_inventory(
     tenant_id: str,
     date: str,
+    *,
+    room_groups: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Compute room-type inventory for a single date by aggregating room_night_locks.
@@ -141,8 +143,9 @@ async def compute_room_type_inventory(
         {"$match": {"tenant_id": tenant_id, "is_active": True}},
         {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
     ]
-    with tenant_context(tenant_id):
-        room_groups = await db.rooms.aggregate(room_type_pipeline).to_list(200)
+    if room_groups is None:
+        with tenant_context(tenant_id):
+            room_groups = await db.rooms.aggregate(room_type_pipeline).to_list(200)
 
     # Build room_id → room_type lookup for this tenant
     room_id_to_type: dict[str, str] = {}
@@ -231,19 +234,28 @@ async def reconcile_date_range(
     drift_count = 0
     drifts = []
 
+    # One operation-local snapshot, not a cross-request availability cache.
+    # Night locks are still read fresh for each day; booking guards are unchanged.
+    with tenant_context(tenant_id):
+        room_groups = await db.rooms.aggregate([
+            {"$match": {"tenant_id": tenant_id, "is_active": True}},
+            {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
+        ]).to_list(200)
+
     current = start
     while current <= end:
         date_str = current.isoformat()
-        inventory = await compute_room_type_inventory(tenant_id, date_str)
+        inventory = await compute_room_type_inventory(tenant_id, date_str, room_groups=room_groups)
+        with tenant_context(tenant_id):
+            existing_items = await db.room_type_inventory.find(
+                {"tenant_id": tenant_id, "date": date_str},
+                {"_id": 0, "room_type": 1, "sellable": 1},
+            ).to_list(200)
+        existing_by_type = {row["room_type"]: row for row in existing_items}
 
         for item in inventory:
             # Check for drift against existing record
-            from core.tenant_db import tenant_context
-            with tenant_context(tenant_id):
-                    existing = await db.room_type_inventory.find_one(
-                    {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
-                    {"_id": 0, "sellable": 1, "locked_booking": 1},
-                    )
+            existing = existing_by_type.get(item["room_type"])
             if existing and existing.get("sellable") != item["sellable"]:
                 drift_count += 1
                 drifts.append(
@@ -257,11 +269,11 @@ async def reconcile_date_range(
 
             # Upsert
             with tenant_context(tenant_id):
-                    await db.room_type_inventory.update_one(
+                await db.room_type_inventory.update_one(
                     {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
                     {"$set": item},
                     upsert=True,
-                    )
+                )
             types_processed += 1
 
         dates_processed += 1

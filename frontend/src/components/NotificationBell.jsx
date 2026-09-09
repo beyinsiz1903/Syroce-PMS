@@ -39,10 +39,18 @@ const NotificationBell = () => {
   const [isOpen, setIsOpen] = useState(false);
   const markingRef = useRef(false);
   useEffect(() => {
-    // Cache taze + aynı user ise mount fetch'i atla — interval zaten 15sn'de yenileyecek
-    if (!cached) loadNotifications();
-    const interval = setInterval(loadNotifications, 15000);
-    return () => clearInterval(interval);
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') loadNotifications();
+    };
+    if (!cached) refreshVisible();
+    // Live messaging uses its socket stream; this general notification list
+    // only needs a visible-tab fallback, not a background 15-second poll.
+    const interval = setInterval(refreshVisible, 60000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

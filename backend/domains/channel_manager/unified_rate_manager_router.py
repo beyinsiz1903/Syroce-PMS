@@ -401,7 +401,8 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
 
     calendar_data = await db.hr_rate_calendar.find(
         {"tenant_id": tenant_id, "date": {"$gte": start_date, "$lte": end_date}},
-        {"_id": 0},
+        {"_id": 0, "room_type_code": 1, "rate_plan_code": 1, "date": 1,
+         "availability": 1, "rate": 1, "min_stay": 1, "stop_sell": 1},
     ).to_list(5000)
 
     cal_index = {}

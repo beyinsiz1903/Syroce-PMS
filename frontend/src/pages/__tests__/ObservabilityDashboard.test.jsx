@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import axios from "axios";
 
 import ObservabilityDashboard from "@/pages/ObservabilityDashboard";
@@ -36,10 +36,21 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
 describe("ObservabilityDashboard", () => {
+  it("does not poll and refreshes only on user request after initial load", async () => {
+    render(<ObservabilityDashboard />);
+    await screen.findByRole("heading", { name: "Sistem Sağlığı" });
+    expect(axios.get).toHaveBeenCalledTimes(5);
+    vi.useFakeTimers();
+    await act(async () => { vi.advanceTimersByTime(120000); });
+    expect(axios.get).toHaveBeenCalledTimes(5);
+    await act(async () => { fireEvent.click(screen.getByTestId("refresh-btn")); });
+    expect(axios.get).toHaveBeenCalledTimes(10);
+  });
   it("renders readable Turkish labels and distinguishes missing delivery data from zero percent", async () => {
     render(<ObservabilityDashboard />);
 
