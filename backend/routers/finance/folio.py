@@ -4,6 +4,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 import asyncio
+import html
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -221,8 +223,8 @@ async def get_pending_ar(
                 "status": "open",
                 "balance": {"$gt": 0},
             },
-            {"_id": 0, "company_id": 1, "balance": 1, "created_at": 1},
-        ).to_list(10000)
+            {"_id": 0, "id": 1, "booking_id": 1, "folio_number": 1, "company_id": 1, "balance": 1, "created_at": 1},
+            ).to_list(10000)
 
         if not all_folios:
             return []
@@ -294,6 +296,131 @@ async def get_pending_ar(
 
         traceback.print_exc()
         return []
+
+
+@router.get("/folio/pending-ar/{company_id}")
+async def get_pending_ar_details(
+    company_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    tenant_id = current_user.tenant_id
+    company = await db.companies.find_one(
+        {"id": company_id, "tenant_id": tenant_id}, {"_id": 0}
+    )
+    if not company:
+        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+
+    folios = await db.folios.find(
+        {
+            "tenant_id": tenant_id,
+            "company_id": company_id,
+            "status": "open",
+            "balance": {"$gt": 0},
+        },
+        {"_id": 0},
+    ).sort("created_at", 1).to_list(1000)
+    booking_ids = [folio.get("booking_id") for folio in folios if folio.get("booking_id")]
+    bookings = []
+    if booking_ids:
+        bookings = await db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
+            {"_id": 0, "id": 1, "reservation_number": 1, "confirmation_number": 1,
+             "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1},
+        ).to_list(len(booking_ids))
+    booking_map = {booking["id"]: booking for booking in bookings}
+    rows = []
+    for folio in folios:
+        booking = booking_map.get(folio.get("booking_id"), {})
+        rows.append({
+            "folio_id": folio.get("id"),
+            "folio_number": folio.get("folio_number") or f"F-{str(folio.get('id') or '')[:8]}",
+            "booking_id": folio.get("booking_id"),
+            "reservation_number": booking.get("reservation_number") or booking.get("confirmation_number"),
+            "guest_name": booking.get("guest_name") or folio.get("guest_name") or "—",
+            "room_number": booking.get("room_number") or folio.get("room_number") or "—",
+            "check_in": booking.get("check_in"),
+            "check_out": booking.get("check_out"),
+            "created_at": folio.get("created_at"),
+            "balance": round(float(folio.get("balance") or 0), 2),
+        })
+    return {
+        "company": {
+            "id": company_id,
+            "name": company.get("name", ""),
+            "contact_person": company.get("contact_person", ""),
+            "contact_email": company.get("contact_email", ""),
+            "contact_phone": company.get("contact_phone", ""),
+        },
+        "folios": rows,
+        "total_outstanding": round(sum(row["balance"] for row in rows), 2),
+    }
+
+
+@router.post("/folio/pending-ar/{company_id}/send-reminder")
+async def send_pending_ar_reminder(
+    company_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
+):
+    details = await get_pending_ar_details(company_id, current_user, None)
+    company = details["company"]
+    recipient = (company.get("contact_email") or "").strip()
+    if not recipient:
+        raise HTTPException(status_code=422, detail="Cari hesap için iletişim e-postası tanımlı değil")
+
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0, "name": 1})
+    hotel_name = (tenant or {}).get("name") or "Syroce PMS"
+    rows_html = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(row['folio_number']))}</td>"
+        f"<td>{html.escape(str(row['room_number']))}</td>"
+        f"<td>{html.escape(str(row['guest_name']))}</td>"
+        f"<td style='text-align:right'>{row['balance']:,.2f} TL</td>"
+        "</tr>"
+        for row in details["folios"]
+    )
+    body = (
+        f"<p>Sayın {html.escape(company.get('contact_person') or company.get('name') or 'Yetkili')},</p>"
+        f"<p>{html.escape(hotel_name)} nezdindeki toplam <strong>{details['total_outstanding']:,.2f} TL</strong> "
+        "tutarındaki açık bakiyenize ilişkin döküm aşağıdadır.</p>"
+        "<table style='border-collapse:collapse;width:100%'><thead><tr>"
+        "<th>Folyo</th><th>Oda</th><th>Misafir</th><th style='text-align:right'>Bakiye</th>"
+        f"</tr></thead><tbody>{rows_html}</tbody></table>"
+        "<p>Ödeme durumu hakkında bilgi vermenizi rica ederiz.</p>"
+    )
+    from core.email import send_email
+
+    result = await send_email(
+        to=recipient,
+        subject=f"{hotel_name} açık bakiye hatırlatması",
+        html=body,
+    )
+    if not result.get("sent"):
+        raise HTTPException(status_code=502, detail=result.get("error") or "Hatırlatma e-postası gönderilemedi")
+
+    reminder = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "company_id": company_id,
+        "recipient": recipient,
+        "amount": details["total_outstanding"],
+        "folio_ids": [row["folio_id"] for row in details["folios"]],
+        "sent_by": current_user.id,
+        "sent_at": datetime.now(UTC).isoformat(),
+        "provider": result.get("provider"),
+        "provider_id": result.get("id"),
+    }
+    await db.ar_reminders.insert_one(reminder)
+    await create_audit_log(
+        tenant_id=current_user.tenant_id,
+        user=current_user,
+        action="pending_ar_reminder_sent",
+        entity_type="company",
+        entity_id=company_id,
+        changes={"recipient": recipient, "amount": details["total_outstanding"]},
+    )
+    return {"sent": True, "recipient": recipient, "sent_at": reminder["sent_at"]}
 
 
 @router.get("/folio/booking/{booking_id}", response_model=list[Folio])

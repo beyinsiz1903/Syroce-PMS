@@ -499,6 +499,15 @@ export const NAV_ITEMS = [
     navGroup: "backoffice",
   },
   {
+    key: "pending_ar",
+    label: "Bekleyen Alacaklar",
+    path: "/pending-ar",
+    moduleKey: "invoices",
+    tier: "professional",
+    group: "professional",
+    navGroup: "backoffice",
+  },
+  {
     key: "general_ledger",
     label: "Genel Muhasebe",
     path: "/app/general-ledger",

@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
+import { confirmDialog } from '@/lib/dialogs';
 
 const MOCK_INBOX_LIST = [
   { id: 1, platform: 'instagram', user: 'travel_lover99', name: 'Mark Smith', lastMessage: 'Odalarda wifi çekmiyor.', time: '09:15', unread: 1, status: 'open' },
@@ -76,12 +77,22 @@ const SocialMediaRadar = () => {
   const currentChatHistory = chatHistories[selectedChat.id] || [];
   const [isAddRuleModalOpen, setIsAddRuleModalOpen] = useState(false);
   const [newRule, setNewRule] = useState({ name: '', keywords: '', reply: '' });
+  const [editingRuleId, setEditingRuleId] = useState(null);
+  const [rulesLoading, setRulesLoading] = useState(true);
+  const [ruleSaving, setRuleSaving] = useState(false);
+  const [automationRules, setAutomationRules] = useState([]);
 
-  const [automationRules, setAutomationRules] = useState([
-    { id: 1, name: t('ai.radar.wifiPassword'), keywords: ['wifi', 'internet', 'şifre', 'bağlan'], reply: 'Değerli misafirimiz, geçerli Wi-Fi ağımız "Syroce Guest", şifremiz ise "Syroce2026"dır.', active: true },
-    { id: 2, name: t('ai.radar.checkinCheckout'), keywords: ['check-in', 'giriş saati', 'çıkış saati', 'erken giriş'], reply: t('ai.radar.replyCheckin'), active: true },
-    { id: 3, name: t('ai.radar.breakfastHours'), keywords: ['kahvaltı', 'sabah', 'yemek'], reply: t('ai.radar.replyBreakfast'), active: false },
-  ]);
+  useEffect(() => {
+    let active = true;
+    axios.get('/social-media/automation-rules')
+      .then(({ data }) => { if (active) setAutomationRules(Array.isArray(data) ? data : []); })
+      .catch((error) => {
+        console.error('Automation rules could not be loaded:', error);
+        toast.error(error?.response?.data?.detail || 'Otomasyon kuralları yüklenemedi');
+      })
+      .finally(() => { if (active) setRulesLoading(false); });
+    return () => { active = false; };
+  }, []);
 
 
   const anyConnected = connections.instagram || connections.facebook || connections.twitter;
@@ -186,23 +197,73 @@ const SocialMediaRadar = () => {
   };
 
 
-  const handleSaveRule = () => {
+  const openNewRule = () => {
+    setEditingRuleId(null);
+    setNewRule({ name: '', keywords: '', reply: '', active: true });
+    setIsAddRuleModalOpen(true);
+  };
+
+  const openEditRule = (rule) => {
+    setEditingRuleId(rule.id);
+    setNewRule({
+      name: rule.name,
+      keywords: rule.keywords.join(', '),
+      reply: rule.reply,
+      active: rule.active !== false,
+    });
+    setIsAddRuleModalOpen(true);
+  };
+
+  const handleSaveRule = async () => {
     if (!newRule.name || !newRule.keywords || !newRule.reply) {
       toast.error(t('messages.error.fillAllFields'));
       return;
     }
     const keywordArray = newRule.keywords.split(',').map(k => k.trim()).filter(k => k);
-    const ruleObj = {
-      id: Date.now(),
-      name: newRule.name,
+    if (!keywordArray.length) {
+      toast.error('En az bir tetikleyici kelime girin');
+      return;
+    }
+    const payload = {
+      name: newRule.name.trim(),
       keywords: keywordArray,
-      reply: newRule.reply,
-      active: true
+      reply: newRule.reply.trim(),
+      active: newRule.active !== false,
     };
-    setAutomationRules([ruleObj, ...automationRules]);
-    setIsAddRuleModalOpen(false);
-    setNewRule({ name: '', keywords: '', reply: '' });
-    toast.success(t('messages.success.saved'));
+    setRuleSaving(true);
+    try {
+      const { data } = editingRuleId
+        ? await axios.put(`/social-media/automation-rules/${editingRuleId}`, payload)
+        : await axios.post('/social-media/automation-rules', payload);
+      setAutomationRules(prev => editingRuleId
+        ? prev.map(rule => rule.id === editingRuleId ? data : rule)
+        : [data, ...prev]);
+      setIsAddRuleModalOpen(false);
+      setEditingRuleId(null);
+      setNewRule({ name: '', keywords: '', reply: '', active: true });
+      toast.success(editingRuleId ? 'Kural güncellendi' : 'Kural oluşturuldu');
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Kural kaydedilemedi');
+    } finally {
+      setRuleSaving(false);
+    }
+  };
+
+  const handleDeleteRule = async (rule) => {
+    const confirmed = await confirmDialog({
+      title: 'Otomasyon kuralını sil',
+      message: `“${rule.name}” kuralı kalıcı olarak silinsin mi?`,
+      confirmText: 'Sil',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await axios.delete(`/social-media/automation-rules/${rule.id}`);
+      setAutomationRules(prev => prev.filter(item => item.id !== rule.id));
+      toast.success('Kural silindi');
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Kural silinemedi');
+    }
   };
 
   const toggleChatStatus = () => {
@@ -476,12 +537,18 @@ const SocialMediaRadar = () => {
           </h2>
           <p className="text-sm text-slate-500 mt-1">Sık sorulan soruları yapay zeka maliyeti ödemeden, belirlediğiniz anahtar kelimelere göre otomatik yanıtlayın.</p>
         </div>
-        <Button onClick={() => setIsAddRuleModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
+        <Button onClick={openNewRule} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
           <Plus className="w-4 h-4 mr-2" /> Yeni Kural Ekle
         </Button>
       </div>
 
       <div className="space-y-4">
+        {rulesLoading && <div className="py-10 text-center text-sm text-slate-500">Kurallar yükleniyor...</div>}
+        {!rulesLoading && automationRules.length === 0 && (
+          <Card className="border-dashed border-slate-300">
+            <CardContent className="py-10 text-center text-sm text-slate-500">Henüz otomasyon kuralı yok. İlk kuralınızı ekleyin.</CardContent>
+          </Card>
+        )}
         {automationRules.map((rule) => (
           <Card key={rule.id} className={`border-slate-200 shadow-sm transition-all ${rule.active ? 'border-l-4 border-l-emerald-500' : 'opacity-75 grayscale-[0.5]'}`}>
             <CardContent className="p-5 flex flex-col md:flex-row gap-6">
@@ -511,10 +578,10 @@ const SocialMediaRadar = () => {
                 </div>
               </div>
               <div className="flex flex-row md:flex-col items-center justify-center gap-2 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 shrink-0">
-                <Button variant="outline" size="sm" className="w-full md:w-auto text-slate-600 hover:text-indigo-600">
+                <Button variant="outline" size="sm" className="w-full md:w-auto text-slate-600 hover:text-indigo-600" onClick={() => openEditRule(rule)}>
                   <Edit2 className="w-3.5 h-3.5 md:mr-0 lg:mr-2" /> <span className="hidden lg:inline">Düzenle</span>
                 </Button>
-                <Button variant="outline" size="sm" className="w-full md:w-auto text-slate-600 hover:text-red-600">
+                <Button variant="outline" size="sm" className="w-full md:w-auto text-slate-600 hover:text-red-600" onClick={() => handleDeleteRule(rule)}>
                   <Trash2 className="w-3.5 h-3.5 md:mr-0 lg:mr-2" /> <span className="hidden lg:inline">Sil</span>
                 </Button>
               </div>
@@ -614,6 +681,23 @@ const SocialMediaRadar = () => {
     </div>
   );
 
+  const renderDisconnectedState = () => (
+    <Card className="shadow-sm border-indigo-100 overflow-hidden bg-gradient-to-br from-indigo-50/50 to-indigo-50/30 mt-2">
+      <CardContent className="flex flex-col items-center justify-center text-center p-16 space-y-4">
+        <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
+          <Shield className="w-10 h-10 text-indigo-600" />
+        </div>
+        <h3 className="text-2xl font-bold text-slate-800 tracking-tight">Sosyal Medya Radarı Pasif</h3>
+        <p className="text-slate-600 max-w-md mx-auto text-sm leading-relaxed">
+          Veri toplamaya ve mesajları yönetmeye başlamak için en az bir sosyal medya hesabınızı (Instagram, Facebook veya X) bağlamanız gerekmektedir.
+        </p>
+        <Button onClick={() => setActiveTab('settings')} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors h-11 px-8 text-base">
+          <Settings className="w-5 h-5 mr-2" /> Ayarlar ve Bağlantılar
+        </Button>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
@@ -626,25 +710,7 @@ const SocialMediaRadar = () => {
         </div>
       </div>
 
-      {!anyConnected && activeTab !== 'settings' ? (
-        <Card className="shadow-sm border-indigo-100 overflow-hidden bg-gradient-to-br from-indigo-50/50 to-indigo-50/30 mt-8">
-          <CardContent className="flex flex-col items-center justify-center text-center p-16 space-y-4">
-            <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
-              <Shield className="w-10 h-10 text-indigo-600" />
-            </div>
-            <h3 className="text-2xl font-bold text-slate-800 tracking-tight">Sosyal Medya Radarı Pasif</h3>
-            <p className="text-slate-600 max-w-md mx-auto text-sm leading-relaxed">
-              Veri toplamaya ve mesajları yönetmeye başlamak için en az bir sosyal medya hesabınızı (Instagram, Facebook veya X) bağlamanız gerekmektedir.
-            </p>
-            <div className="mt-6 pt-6 border-t border-indigo-200/50 w-full max-w-sm flex justify-center">
-              <Button onClick={() => setActiveTab('settings')} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors h-11 px-8 text-base">
-                <Settings className="w-5 h-5 mr-2" /> Ayarlar ve Bağlantılar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-4">
           <TabsList className="bg-slate-100/60 p-1 mb-6 rounded-xl border border-slate-200 inline-flex h-auto gap-1">
             <TabsTrigger value="radar" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-indigo-600 px-6 py-2.5 transition-all font-semibold">
               <Activity className="w-4 h-4 mr-2" /> Genel Bakış (Radar)
@@ -662,21 +728,20 @@ const SocialMediaRadar = () => {
           </TabsList>
 
           <TabsContent value="radar" className="outline-none">
-            {renderRadarTab()}
+            {anyConnected ? renderRadarTab() : renderDisconnectedState()}
           </TabsContent>
 
           <TabsContent value="inbox" className="outline-none">
-            {renderInboxTab()}
+            {anyConnected ? renderInboxTab() : renderDisconnectedState()}
           </TabsContent>
 
           <TabsContent value="settings" className="outline-none">
             {renderSettingsTab()}
           </TabsContent>
-                  <TabsContent value="automation" className="outline-none">
+          <TabsContent value="automation" className="outline-none">
             {renderAutomationTab()}
           </TabsContent>
         </Tabs>
-      )}
 
       {/* Omnichannel Reply Modal for Radar Tab */}
       <Dialog open={!!replyingTo} onOpenChange={(open) => { if(!open) { setReplyingTo(null); setReplyText(''); } }}>
@@ -743,11 +808,14 @@ const SocialMediaRadar = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isAddRuleModalOpen} onOpenChange={setIsAddRuleModalOpen}>
+      <Dialog open={isAddRuleModalOpen} onOpenChange={(open) => {
+        setIsAddRuleModalOpen(open);
+        if (!open) setEditingRuleId(null);
+      }}>
         <DialogContent className="bg-white border-slate-200 text-slate-900 sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl font-bold">
-              <Zap className="w-5 h-5 text-amber-500" /> Yeni Otomasyon Kuralı Ekle
+              <Zap className="w-5 h-5 text-amber-500" /> {editingRuleId ? 'Otomasyon Kuralını Düzenle' : 'Yeni Otomasyon Kuralı Ekle'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -759,6 +827,14 @@ const SocialMediaRadar = () => {
                 onChange={(e) => setNewRule({...newRule, name: e.target.value})}
               />
             </div>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={newRule.active !== false}
+                onChange={(e) => setNewRule({...newRule, active: e.target.checked})}
+              />
+              Kural aktif
+            </label>
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700">Tetikleyici Kelimeler (Virgülle ayırın)</label>
               <Input 
@@ -779,8 +855,10 @@ const SocialMediaRadar = () => {
             </div>
           </div>
           <div className="flex justify-end gap-3 mt-4">
-            <Button variant="outline" onClick={() => setIsAddRuleModalOpen(false)}>İptal</Button>
-            <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleSaveRule}>Kaydet ve Aktifleştir</Button>
+            <Button variant="outline" onClick={() => setIsAddRuleModalOpen(false)} disabled={ruleSaving}>İptal</Button>
+            <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleSaveRule} disabled={ruleSaving}>
+              {ruleSaving ? 'Kaydediliyor...' : editingRuleId ? 'Değişiklikleri Kaydet' : 'Kaydet'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
