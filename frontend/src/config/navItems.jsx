@@ -247,6 +247,7 @@ export const NAV_ITEMS = [
     navGroup: "frontdesk",
     navSection: "reservations",
   },
+  {
     key: "pms",
     label: "PMS",
     path: "/app/pms",
@@ -422,6 +423,7 @@ export const NAV_ITEMS = [
     requireChain: true,
     allowedRoles: ["admin", "super_admin", "manager", "general_manager", "crm", "crm_manager"],
   },
+  {
     key: "service_recovery",
     label: "Şikayet Yönetimi",
     path: "/service-recovery",

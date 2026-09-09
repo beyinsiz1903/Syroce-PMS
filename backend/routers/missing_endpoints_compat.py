@@ -30,8 +30,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from core.atomic_booking import create_booking_atomic
 
+from core.atomic_booking import create_booking_atomic
 from core.database import db
 from core.security import get_current_user
 from core.tenant_db import get_system_db
@@ -304,7 +304,6 @@ async def hotel_booking_request_approve(
     if req.get("status") == "approved" and req.get("booking_id"):
         return {"approved": True, "request_id": request_id, "booking_id": req.get("booking_id"), "message": "Zaten onaylanmis"}
     now = datetime.now(UTC).isoformat()
-    
     # Rezervasyonu oluştur
     booking_id = str(uuid.uuid4())
     booking_doc = {
@@ -335,7 +334,6 @@ async def hotel_booking_request_approve(
         if "Conflict" in str(e) or "already booked" in str(e):
             raise HTTPException(status_code=409, detail=f"Oda müsait değil: {e}")
         raise HTTPException(status_code=500, detail=f"Rezervasyon oluşturulamadı: {e}")
-        
     folio_id = str(uuid.uuid4())
     folio_doc = {
         "id": folio_id,
@@ -352,7 +350,7 @@ async def hotel_booking_request_approve(
         "created_at": now,
     }
     await db.folios.insert_one(folio_doc)
-    
+
     await db.audit_logs.insert_one(
         {
             "id": str(uuid.uuid4()),
@@ -366,7 +364,7 @@ async def hotel_booking_request_approve(
         }
     )
 
-    
+
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
         {
