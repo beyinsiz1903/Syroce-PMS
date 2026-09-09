@@ -173,7 +173,7 @@ jobs:
             - name: Install Playwright browsers
               run: |
                   sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
-                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                      -exec grep -lE 'packages\.microsoft\.com|dl\.google\.com/linux/chrome(-stable)?/deb' {} + 2>/dev/null | xargs -r sudo rm -f || true
                   cd frontend && yarn e2e:install
 
             - name: Run Gates and Auth Provisioning
@@ -224,7 +224,7 @@ jobs:
             - name: Install Playwright browsers
               run: |
                   sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
-                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                      -exec grep -lE 'packages\.microsoft\.com|dl\.google\.com/linux/chrome(-stable)?/deb' {} + 2>/dev/null | xargs -r sudo rm -f || true
                   cd frontend && yarn e2e:install
 
             - name: Download Auth State
@@ -467,7 +467,7 @@ jobs:
             - name: Install Playwright browsers
               run: |
                   sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
-                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                      -exec grep -lE 'packages\.microsoft\.com|dl\.google\.com/linux/chrome(-stable)?/deb' {} + 2>/dev/null | xargs -r sudo rm -f || true
                   cd frontend && yarn e2e:install
 
             - name: Download Seeded Auth State
