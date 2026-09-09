@@ -125,6 +125,7 @@ async def seed() -> None:
 
     await _ensure_business_date(db, tenant_id)
     await _ensure_rooms(db, tenant_id)
+    await _ensure_guests(db, tenant_id)
 
 
 async def _ensure_business_date(db, tenant_id: str) -> None:
@@ -178,6 +179,29 @@ async def _ensure_rooms(db, tenant_id: str) -> None:
     ctx: dict = {"tenant_id": tenant_id, "rooms": []}
     await seed_rooms(db, ctx)
     log.info("seeded rooms tenant_id=%s count=%d", tenant_id, len(ctx["rooms"]))
+
+
+async def _ensure_guests(db, tenant_id: str) -> None:
+    """Seed the minimum guest data required by the HTTP lifecycle suites.
+
+    Like rooms, guests are normally supplied by the full bootstrap.  CI uses
+    this intentionally small seeder, so leaving them out made folio and tenant
+    isolation tests report skips instead of exercising the API.
+    """
+    existing_guests = await db.guests.count_documents({"tenant_id": tenant_id})
+    if existing_guests > 0:
+        log.info(
+            "guests exist tenant_id=%s count=%d — skip",
+            tenant_id,
+            existing_guests,
+        )
+        return
+
+    from seed.guests import seed_guests
+
+    ctx: dict = {"tenant_id": tenant_id, "guests": []}
+    await seed_guests(db, ctx)
+    log.info("seeded guests tenant_id=%s count=%d", tenant_id, len(ctx["guests"]))
 
 
 if __name__ == "__main__":

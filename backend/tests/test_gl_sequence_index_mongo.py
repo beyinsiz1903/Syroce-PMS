@@ -2,11 +2,13 @@
 
 Never reads deployment credentials or connects to the application's database.
 """
+import os
 import shutil
 import socket
 import subprocess
 import time
 from types import SimpleNamespace
+from urllib.parse import urlparse
 
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -21,7 +23,32 @@ from shared_kernel.gl_posting import ensure_gl_idem_index
 def mongo_uri(tmp_path):
     executable = shutil.which("mongod")
     if not executable:
-        pytest.skip("Local mongod required for real index regression test")
+        # GitHub service containers expose Mongo on localhost but do not place
+        # a `mongod` executable in the runner.  An explicit opt-in lets hard
+        # gates reuse that disposable service without ever falling back to a
+        # developer or production database implicitly.
+        service_uri = os.environ.get("MONGO_TEST_URI", "").strip()
+        parsed = urlparse(service_uri)
+        if not service_uri or parsed.hostname not in {"localhost", "127.0.0.1"}:
+            pytest.skip("Local mongod or explicit localhost MONGO_TEST_URI required")
+
+        client = MongoClient(service_uri, serverSelectionTimeoutMS=2000)
+        disposable_databases = (
+            "salary_agreement_qa",
+            "sequence_regression",
+            "hr_release_audit",
+            "payroll_atomic_test",
+        )
+        try:
+            client.admin.command("ping")
+            for name in disposable_databases:
+                client.drop_database(name)
+            yield service_uri
+        finally:
+            for name in disposable_databases:
+                client.drop_database(name)
+            client.close()
+        return
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]

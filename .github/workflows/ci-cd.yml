@@ -657,6 +657,7 @@ jobs:
           JWT_SECRET: ${{ env.JWT_SECRET }}
           TESTING: "1"
           VITE_BACKEND_URL: http://localhost:8001
+          MONGO_TEST_URI: ${{ env.MONGO_URL }}
 
       - name: Upload test results and backend logs
         uses: actions/upload-artifact@v5
