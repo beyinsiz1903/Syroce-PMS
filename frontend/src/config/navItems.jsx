@@ -907,6 +907,16 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
   },
   {
+    key: "observability",
+    label: "Sistem Sağlığı",
+    path: "/observability",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+    navSection: "platform",
+    requireSuperAdmin: true,
+  },
+  {
     key: "xchange",
     label: "Xchange (SXI)",
     path: "/app/xchange",
