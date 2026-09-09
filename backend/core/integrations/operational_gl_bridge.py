@@ -179,6 +179,16 @@ async def post_direct_pos_to_gl(
         return {"status": "skipped", "reason": "not_configured"}
     total = _minor(transaction.get("total_amount"))
     tax = _minor(order.get("tax_amount"))
+    # A fully complimentary order is a valid terminal POS transaction, but it
+    # has no financial value to post.  Treat it as a successful no-op instead
+    # of marking the already completed sale as a GL bridge failure.  The POS
+    # transaction remains the auditable operational record of the comp.
+    if total == 0 and tax == 0:
+        await db.pos_transactions.update_one(
+            {"tenant_id": tenant_id, "id": transaction["id"]},
+            {"$set": {"gl_bridge_status": "no_activity"}},
+        )
+        return {"status": "skipped", "reason": "no_activity"}
     if total <= 0 or tax < 0 or tax > total:
         raise OperationalGLBridgeError("POS total/tax values are not postable")
     settlement_account = _payment_account(mapping, str(transaction.get("payment_method") or "cash"))

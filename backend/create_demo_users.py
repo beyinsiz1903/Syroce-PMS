@@ -1,4 +1,9 @@
-"""CI/E2E seeder: tenant hotel_id=100001 + demo@syroce.com / demo123 user.
+"""CI/E2E seeder for the disposable Syroce demo tenant.
+
+Creates both the current demo login and the legacy ``demo@hotel.com`` login
+still used by the HTTP/battle suites.  Keeping the alias in the isolated test
+database prevents authentication setup from silently turning E2E cases into
+skips.
 
 Idempotent. Mirrors the relevant pieces of `seed/tenant_users.py` but does
 not depend on the full bootstrap pipeline so it can be invoked directly
@@ -26,6 +31,7 @@ log = logging.getLogger("seed_demo")
 HOTEL_ID = "100001"
 DEMO_EMAIL = "demo@syroce.com"
 DEMO_USERNAME = "demo"
+E2E_EMAIL = "demo@hotel.com"
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
 DEMO_HOTEL_NAME = "Syroce Demo Hotel"
 
@@ -93,30 +99,29 @@ async def seed() -> None:
         })
         log.info("created tenant hotel_id=%s id=%s", HOTEL_ID, tenant_id)
 
-    existing = await db.users.find_one({
-        "tenant_id": tenant_id,
-        "$or": [{"email": DEMO_EMAIL}, {"username": DEMO_USERNAME}],
-    })
-    if existing:
-        log.info("demo user exists email=%s id=%s", DEMO_EMAIL, existing.get("id"))
-    else:
+    for email, username in ((DEMO_EMAIL, DEMO_USERNAME), (E2E_EMAIL, "demo_hotel")):
+        existing = await db.users.find_one({"tenant_id": tenant_id, "email": email})
+        if existing:
+            log.info("demo user exists email=%s id=%s", email, existing.get("id"))
+            continue
         user_id = str(uuid.uuid4())
         await db.users.insert_one({
             "id": user_id,
             "tenant_id": tenant_id,
             "agency_id": None,
-            "email": DEMO_EMAIL,
-            "username": DEMO_USERNAME,
+            "email": email,
+            "username": username,
             "name": "Demo Admin",
             "role": "admin",
             "phone": "+905551234567",
             "is_active": True,
+            "active": True,
             "email_verified": True,
             "email_verified_at": _now_iso(),
             "hashed_password": _hash(DEMO_PASSWORD),
             "created_at": _now_iso(),
         })
-        log.info("created demo user email=%s id=%s tenant_id=%s", DEMO_EMAIL, user_id, tenant_id)
+        log.info("created demo user email=%s id=%s tenant_id=%s", email, user_id, tenant_id)
 
     await _ensure_business_date(db, tenant_id)
     await _ensure_rooms(db, tenant_id)

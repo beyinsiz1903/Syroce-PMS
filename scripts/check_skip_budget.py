@@ -81,6 +81,9 @@ def main() -> int:
         for path in (ROOT / "backend" / "tests").rglob("test_*.py")
         if "_quarantine" not in path.parts
     )
+    quarantine_test_files = list(
+        (ROOT / "backend" / "tests" / "_quarantine").rglob("test_*.py")
+    )
     actual = {
         "backend_skip_constructs": python_total,
         "backend_module_level_skips": python_module,
@@ -98,8 +101,25 @@ def main() -> int:
         failures.append(
             f"backend test inventory shrank: actual={test_files}, minimum={minimum_files}"
         )
+    maximum_quarantine_files = int(budget.get("maximum_quarantine_test_files", 0))
+    if len(quarantine_test_files) > maximum_quarantine_files:
+        relative = [str(path.relative_to(ROOT)) for path in quarantine_test_files]
+        failures.append(
+            "quarantine test-file budget exceeded: "
+            f"actual={len(quarantine_test_files)}, maximum={maximum_quarantine_files}; "
+            + ", ".join(relative)
+        )
 
-    print(json.dumps({**actual, "backend_test_files": test_files}, indent=2))
+    print(
+        json.dumps(
+            {
+                **actual,
+                "backend_test_files": test_files,
+                "quarantine_test_files": len(quarantine_test_files),
+            },
+            indent=2,
+        )
+    )
     if failures:
         for failure in failures:
             print(f"ERROR: {failure}", file=sys.stderr)
