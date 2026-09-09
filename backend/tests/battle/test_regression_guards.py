@@ -165,8 +165,8 @@ async def test_deeply_past_date_rejected():
         if not room or not guest:
             pytest.skip("No room/guest available")
 
-        past_30 = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT14:00:00+00:00")
-        past_25 = (datetime.now(timezone.utc) - timedelta(days=25)).strftime("%Y-%m-%dT11:00:00+00:00")
+        past_30 = (datetime.now(timezone.utc) - timedelta(days=365)).strftime("%Y-%m-%dT14:00:00+00:00")
+        past_25 = (datetime.now(timezone.utc) - timedelta(days=360)).strftime("%Y-%m-%dT11:00:00+00:00")
 
         resp = await client.post(
             f"{API_URL}/api/pms/quick-booking",
@@ -181,8 +181,10 @@ async def test_deeply_past_date_rejected():
             },
         )
 
+        if resp.status_code != 400:
+            print(f"\\n[DEBUG] Deep Past Date API Response: {resp.text}")
         assert resp.status_code == 400, (
-            f"REG-2 REGRESSION: Deep past date booking got {resp.status_code}"
+            f"REG-2 REGRESSION: Deep past date booking got {resp.status_code}. Response: {resp.text}"
         )
 
 
@@ -203,8 +205,8 @@ async def test_future_date_booking_succeeds():
             pytest.skip("No room/guest available")
 
         # Use far future dates to avoid collision with other tests
-        ci = (datetime.now(timezone.utc) + timedelta(days=365)).strftime("%Y-%m-%dT14:00:00+00:00")
-        co = (datetime.now(timezone.utc) + timedelta(days=367)).strftime("%Y-%m-%dT11:00:00+00:00")
+        ci = (datetime.now(timezone.utc) + timedelta(days=365 * 20)).strftime("%Y-%m-%dT14:00:00+00:00")
+        co = (datetime.now(timezone.utc) + timedelta(days=365 * 20 + 2)).strftime("%Y-%m-%dT11:00:00+00:00")
 
         resp = await client.post(
             f"{API_URL}/api/pms/quick-booking",

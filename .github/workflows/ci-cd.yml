@@ -168,7 +168,8 @@ jobs:
       - name: Seed test database (hard gate)
         run: |
           cd backend
-          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found — tests require a seeded database"; exit 1; }
+          DEMO_PASSWORD=demo123 python create_demo_users.py
+          python scripts/create_test_user.py
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
@@ -478,7 +479,8 @@ jobs:
       - name: Seed isolated test database
         run: |
           cd backend
-          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found"; exit 1; }
+          DEMO_PASSWORD=demo123 python create_demo_users.py
+          python scripts/create_test_user.py
 
       - name: Start isolated backend server
         run: |
@@ -578,7 +580,8 @@ jobs:
       - name: Seed test database (hard gate)
         run: |
           cd backend
-          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found — tests require a seeded database"; exit 1; }
+          DEMO_PASSWORD=demo123 python create_demo_users.py
+          python scripts/create_test_user.py
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
@@ -619,6 +622,43 @@ jobs:
           JWT_SECRET: ${{ env.JWT_SECRET }}
           VITE_BACKEND_URL: http://localhost:8001
 
+      - name: Run production control matrix (zero-skip hard gate)
+        run: |
+          cd backend
+          python -m pytest \
+            tests/test_operational_gl_bridge.py \
+            tests/test_folio_charge_payment_e2e.py \
+            tests/test_folio_checkout_reconciliation.py \
+            tests/test_reservation_invoice_charge_ledger.py \
+            tests/test_invoice_gl_bridge.py \
+            tests/test_gl_ledger.py \
+            tests/test_hr_v2_pii_rbac.py \
+            tests/test_cross_tenant_isolation_e2e.py \
+            tests/test_tenant_isolation_api.py \
+            tests/test_salary_agreements.py \
+            tests/test_payroll_completion.py \
+            tests/test_payroll_gl_bridge.py \
+            tests/test_tenant_restore_drill.py \
+            tests/test_hotelrunner_ari_reconciliation.py \
+            tests/test_hotelrunner_mutation_outcome_safety.py \
+            tests/test_exely_ari_delivery.py \
+            tests/test_exely_reservation_lifecycle.py \
+            -v --tb=short -q --timeout=60 \
+            --junitxml=production-control-matrix.xml
+          cd ..
+          python scripts/check_junit_policy.py \
+            backend/production-control-matrix.xml \
+            --min-tests 390 \
+            --max-skips 0
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          TESTING: "1"
+          VITE_BACKEND_URL: http://localhost:8001
+          MONGO_TEST_URI: ${{ env.MONGO_URL }}
+
       - name: Upload test results and backend logs
         uses: actions/upload-artifact@v5
         if: always()
@@ -626,6 +666,7 @@ jobs:
           name: battle-e2e-results
           path: |
             backend/battle-e2e-results.xml
+            backend/production-control-matrix.xml
             backend/battle-backend.log
 
   # ============ LOAD TESTS (HARD GATE) ============

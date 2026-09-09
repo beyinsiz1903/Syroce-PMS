@@ -28,17 +28,18 @@ async def seed_test_user():
 
     from core.security import hash_password
     test_user = {
-        "email": "demo@hotel.com",
+        "email": "infra-test@hotel.com",
+        "name": "Infra Test Admin",
         "username": "demo",
         "hashed_password": hash_password("demo123"),
         "role": "admin",
         "tenant_id": "test-tenant-123"
     }
-    await _raw_db.users.update_one({"email": "demo@hotel.com"}, {"$set": test_user}, upsert=True)
+    await _raw_db.users.update_one({"email": "infra-test@hotel.com"}, {"$set": test_user}, upsert=True)
     try:
         yield
     finally:
-        await _raw_db.users.delete_one({"email": "demo@hotel.com"})
+        await _raw_db.users.delete_one({"email": "infra-test@hotel.com"})
 
 @pytest_asyncio.fixture
 async def auth_client(seed_test_user):
@@ -47,7 +48,7 @@ async def auth_client(seed_test_user):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         with patch("security.auth_throttle.enforce", return_value=None):
             resp = await client.post("/api/auth/login", json={
-                "email": "demo@hotel.com",
+                "email": "infra-test@hotel.com",
                 "password": "demo123"
             })
             token = resp.json().get("access_token")

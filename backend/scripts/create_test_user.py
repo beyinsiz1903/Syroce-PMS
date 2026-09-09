@@ -4,8 +4,8 @@ Create test user for the test hotel
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
 import uuid
+from datetime import UTC, datetime
 
 # Ensure `backend/` is on sys.path so `core.*` resolves regardless of CWD
 # (CI invokes us from `backend/` but `core` lives at `backend/core/`).
@@ -14,6 +14,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from motor.motor_asyncio import AsyncIOMotorClient
+
 from core._pwd import BcryptContext
 
 pwd_context = BcryptContext()
@@ -22,10 +23,10 @@ async def create_test_user():
     # Connect to MongoDB
     mongo_url = os.getenv('MONGO_URL', 'mongodb://localhost:27017')
     client = AsyncIOMotorClient(mongo_url)
-    db = client['pms_db']
-    
+    db = client[os.getenv('DB_NAME', 'hotel_pms_test')]
+
     tenant_id = "test-hotel-001"
-    
+
     # Create test user
     test_user = {
         'id': str(uuid.uuid4()),
@@ -37,9 +38,9 @@ async def create_test_user():
         'role': 'manager',
         'permissions': ['all'],
         'active': True,
-        'created_at': datetime.now(timezone.utc).isoformat()
+        'created_at': datetime.now(UTC).isoformat()
     }
-    
+
     # Check if user exists
     existing = await db.users.find_one({'username': 'test@hotel.com', 'tenant_id': tenant_id})
     if existing:
@@ -47,7 +48,7 @@ async def create_test_user():
         await db.users.replace_one({'username': 'test@hotel.com', 'tenant_id': tenant_id}, test_user)
     else:
         await db.users.insert_one(test_user)
-    
+
     print("\n" + "="*60)
     print("✅ TEST USER CREATED!")
     print("="*60)
