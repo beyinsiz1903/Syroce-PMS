@@ -70,6 +70,7 @@ class RoomTypeValuesItem(BaseModel):
     rate: float | None = None
     availability: int | None = None
     min_stay: int | None = None
+    min_los_arrival: int | None = None
     max_stay: int | None = None
     stop_sell: bool | None = None
     cta: bool | None = None
@@ -93,6 +94,7 @@ class UnifiedBulkUpdateRequest(BaseModel):
     rate: float | None = None
     availability: int | None = None
     min_stay: int | None = None
+    min_los_arrival: int | None = None
     max_stay: int | None = None
     stop_sell: bool | None = None
     cta: bool | None = None
@@ -218,10 +220,12 @@ def _ari_write_block_for_targets(targets: list[dict]) -> str:
 def _provider_delivery_summary(results: list[dict]) -> dict:
     pending = [result for result in results if result.get("task_count", 0) > 0]
     if not pending:
+        errors = [code for result in results for code in result.get("error_codes", []) if code]
         return {
             "provider_verified": False,
             "provider_delivery_state": "NOT_SENT",
             "provider_write_count": 0,
+            "provider_error_codes": errors,
         }
 
     states = {result["delivery_state"] for result in pending}
@@ -751,6 +755,7 @@ async def unified_bulk_grid_update(
         v_rate = rv.rate if rv else request.rate
         v_avail = rv.availability if rv else request.availability
         v_min = rv.min_stay if rv else request.min_stay
+        v_min_arrival = rv.min_los_arrival if rv else request.min_los_arrival
         v_max = rv.max_stay if rv else request.max_stay
         v_stop = rv.stop_sell if rv else request.stop_sell
         v_cta = rv.cta if rv else request.cta
@@ -781,6 +786,8 @@ async def unified_bulk_grid_update(
                 set_fields["availability"] = v_avail
             if "min_stay" in update_fields and v_min is not None:
                 set_fields["min_stay"] = v_min
+            if "min_los_arrival" in update_fields and v_min_arrival is not None:
+                set_fields["min_los_arrival"] = v_min_arrival
             if "max_stay" in update_fields and v_max is not None:
                 set_fields["max_stay"] = v_max
             if "stop_sell" in update_fields and v_stop is not None:
@@ -865,15 +872,19 @@ async def unified_bulk_grid_update(
             current_user.id,
         )
 
+    delivery_summary = _provider_delivery_summary(provider_delivery_results)
     msg = f"{saved} kayit guncellendi"
-    if channel_push_count > 0:
+    if delivery_summary["provider_verified"]:
+        msg += ", provider teslimati dogrulandi"
+    elif delivery_summary["provider_delivery_state"] == "PARTIAL":
+        msg += ", provider teslimati kismen tamamlandi"
+    elif channel_push_count > 0:
         msg += ", kanal teslimati kuyruga alindi; provider sonucu henuz dogrulanmadi"
     else:
         msg += ", provider teslimati baslatilmadi"
     if agency_push_count > 0:
         msg += f", {agency_push_count} acenteye fiyat iletildi"
 
-    delivery_summary = _provider_delivery_summary(provider_delivery_results)
     return {
         "saved": saved,
         "provider": provider_type,
@@ -1051,7 +1062,6 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=property")
         return {"task_count": 0, "delivery_state": "NOT_SENT", "provider_verified": False, "provider_write_count": 0}
     from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
-    from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 
     # ── HR room code (HR:xxx / xxx) -> pms_room_type -> exely_room_code ──
     # Birincil kaynak: HotelRunner connection.cached_rooms
@@ -1184,121 +1194,88 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 mapped_seen.add(remote_key)
                 mapped_targets.append((str(rt_code), str(ex_code), rp))
 
-    push_tasks = []
     resend_token = str(uuid.uuid4())
     _cur_code, _ = await get_tenant_currency(tenant_id)
     push_currency = conn.get("currency") or _cur_code
+    date_ranges = _selected_date_ranges(request.start_date, request.end_date, selected_days_set)
+    availability_messages = []
+    rate_messages = []
+    restriction_messages = []
+
+    restriction_fields = {
+        "stop_sell": "stop_sell",
+        "min_stay": "min_los",
+        "min_los_arrival": "min_los_arrival",
+        "max_stay": "max_los",
+        "cta": "cta",
+        "ctd": "ctd",
+    }
+    for rt_code, ex_code, rp in mapped_targets:
+        rv = per_room_map.get(rt_code)
+        values = {
+            "availability": rv.availability if rv else request.availability,
+            "rate": rv.rate if rv else request.rate,
+            "stop_sell": rv.stop_sell if rv else request.stop_sell,
+            "min_stay": rv.min_stay if rv else request.min_stay,
+            "min_los_arrival": rv.min_los_arrival if rv else request.min_los_arrival,
+            "max_stay": rv.max_stay if rv else request.max_stay,
+            "cta": rv.cta if rv else request.cta,
+            "ctd": rv.ctd if rv else request.ctd,
+        }
+        for range_start, range_end in date_ranges:
+            base = {
+                "room_type_code": ex_code,
+                "rate_plan_code": rp,
+                "start_date": range_start,
+                "end_date": range_end,
+            }
+            if "availability" in update_fields and values["availability"] is not None:
+                availability_messages.append({**base, "availability": values["availability"]})
+            if "rate" in update_fields and values["rate"] is not None:
+                rate_messages.append({**base, "rate_amount": values["rate"], "currency": push_currency})
+            for field, operation in restriction_fields.items():
+                if field in update_fields and values[field] is not None:
+                    restriction_messages.append({**base, "operation": operation, "value": values[field]})
+
     confirmed_messages = 0
     confirmed_writes = 0
-    batch_failed = False
-
-    if "availability" in update_fields:
-        availability_messages = []
-        date_ranges = _selected_date_ranges(request.start_date, request.end_date, selected_days_set)
-        for rt_code, ex_code, rp in mapped_targets:
-            rv = per_room_map.get(rt_code)
-            availability = rv.availability if rv else request.availability
-            if availability is None:
-                continue
-            for range_start, range_end in date_ranges:
-                availability_messages.append(
-                    {
-                        "room_type_code": ex_code,
-                        "rate_plan_code": rp,
-                        "start_date": range_start,
-                        "end_date": range_end,
-                        "availability": availability,
-                    }
-                )
-        for chunk_index in range(0, len(availability_messages), 200):
-            chunk = availability_messages[chunk_index : chunk_index + 200]
+    failures = []
+    batches = (
+        ("availability_batch", availability_messages),
+        ("rate_batch", rate_messages),
+        ("restriction_batch", restriction_messages),
+    )
+    requested_messages = sum(len(messages) for _operation, messages in batches)
+    for operation, messages in batches:
+        for chunk_index in range(0, len(messages), 200):
+            chunk = messages[chunk_index : chunk_index + 200]
             result = await deliver_exely_ari(
                 tenant_id,
-                "availability_batch",
+                operation,
                 {
                     "property_id": hotel_code,
                     "value": chunk,
-                    "operation_identity": f"unified-rate-manager:{resend_token}:availability:{chunk_index // 200}",
+                    "operation_identity": f"unified-rate-manager:{resend_token}:{operation}:{chunk_index // 200}",
                 },
             )
             if result.success:
                 confirmed_messages += len(chunk)
                 confirmed_writes += result.provider_write_count
             else:
-                batch_failed = True
+                failures.append(result.error_code or result.state)
                 logger.error(
-                    "[UNIFIED] Exely availability batch failed delivery_state=%s error_code=%s",
+                    "[UNIFIED] Exely batch failed operation=%s delivery_state=%s error_code=%s",
+                    operation,
                     result.state,
                     result.error_code,
                 )
 
-    for rt_code, ex_code, rp in mapped_targets:
-        rv = per_room_map.get(rt_code)
-        push_rate = (rv.rate if rv else request.rate) if "rate" in update_fields else None
-        push_stop = (rv.stop_sell if rv else request.stop_sell) if "stop_sell" in update_fields else None
-        push_min = (rv.min_stay if rv else request.min_stay) if "min_stay" in update_fields else None
-        push_max = (rv.max_stay if rv else request.max_stay) if "max_stay" in update_fields else None
-        push_cta = (rv.cta if rv else request.cta) if "cta" in update_fields else None
-        push_ctd = (rv.ctd if rv else request.ctd) if "ctd" in update_fields else None
-
-        if all(value is None for value in (push_rate, push_stop, push_min, push_max, push_cta, push_ctd)):
-            continue
-
-        async def _push(
-            rt=ex_code,
-            rate_plan=rp,
-            rate=push_rate,
-            stop=push_stop,
-            minstay=push_min,
-            maxstay=push_max,
-            cta=push_cta,
-            ctd=push_ctd,
-            cur=push_currency,
-        ):
-            try:
-                result = await enqueue_exely_ari_update(
-                    tenant_id,
-                    hotel_code,
-                    room_type_code=rt,
-                    rate_plan_code=rate_plan,
-                    start_date=request.start_date,
-                    end_date=request.end_date,
-                    source_service="unified_rate_manager",
-                    rate_amount=rate,
-                    currency=cur,
-                    stop_sell=stop,
-                    min_los=minstay,
-                    max_los=maxstay,
-                    cta=cta,
-                    ctd=ctd,
-                    force_resend_token=resend_token,
-                )
-                logger.info(
-                    "[UNIFIED] Exely delivery_state=%s queued_operation_count=%d",
-                    result["delivery_state"],
-                    result["queued_operation_count"],
-                )
-                return result
-            except Exception as exc:
-                logger.error("[UNIFIED] Exely queue_failed exception_class=%s", type(exc).__name__)
-
-        push_tasks.append(_push())
-
-    queued_operations = 0
-    if push_tasks:
-        results = await asyncio.gather(*push_tasks, return_exceptions=True)
-        failures = sum(1 for result in results if isinstance(result, Exception) or result is None)
-        if failures:
-            logger.error("[UNIFIED] Exely queue_failed count=%d", failures)
-        logger.info("[UNIFIED] Exely durable queue completed: %d tasks", len(results))
-        queued_operations = sum(int(result.get("queued_operation_count", 0)) for result in results if isinstance(result, dict) and result.get("accepted") is True)
-
-    task_count = confirmed_messages + queued_operations
-    provider_verified = confirmed_messages > 0 and queued_operations == 0 and not batch_failed
+    task_count = confirmed_messages
+    provider_verified = requested_messages > 0 and confirmed_messages == requested_messages and not failures
     if provider_verified:
         delivery_state = "CONFIRMED"
-    elif task_count > 0:
-        delivery_state = "PENDING"
+    elif confirmed_messages > 0:
+        delivery_state = "PARTIAL"
     else:
         delivery_state = "NOT_SENT"
     return {
@@ -1306,6 +1283,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         "delivery_state": delivery_state,
         "provider_verified": provider_verified,
         "provider_write_count": confirmed_writes if provider_verified else None,
+        "error_codes": failures,
     }
 
 

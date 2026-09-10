@@ -67,7 +67,7 @@ export const BulkUpdatePanel = ({
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-2">
-            {UPDATE_FIELDS.map(f => (
+            {UPDATE_FIELDS.filter(f => !f.providers || f.providers.includes(channelProvider)).map(f => (
               <label key={f.key} className="flex items-center gap-2 cursor-pointer text-sm" data-testid={`field-${f.key}`}>
                 <Checkbox
                   checked={enabledFields.has(f.key)}
@@ -228,11 +228,11 @@ export const BulkUpdatePanel = ({
 };
 
 const gridColTemplate = (enabledFields) =>
-  `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}`;
+  `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('min_los_arrival') ? ' 180px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}`;
 
 const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTypes }) => {
   const { t } = useTranslation();
-  if (totalSelectedRoomTypes < 2 || !value) return null;
+  if (totalSelectedRoomTypes < 2 || value === null || value === undefined || value === '') return null;
   return (
     <button
       type="button"
@@ -264,6 +264,7 @@ const RoomTypeList = ({
         {enabledFields.has('rate') && <span className="flex items-center gap-1">{currencySymbol} Fiyat</span>}
         {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Musaitlik</span>}
         {enabledFields.has('min_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Min. konaklama</span>}
+        {enabledFields.has('min_los_arrival') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Varış bazlı min.</span>}
         {enabledFields.has('max_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Max. konaklama</span>}
         {enabledFields.has('stop_sell') && <span>{t('cm.pages_ratemanager_BulkUpdatePanel.satis_durdur')}</span>}
         {enabledFields.has('cta') && <span>CTA</span>}
@@ -333,6 +334,13 @@ const RoomTypeList = ({
                   <ApplyAllButton field="min_stay" value={rv.min_stay} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
+              {enabledFields.has('min_los_arrival') && (
+                <div className="flex items-center gap-1">
+                  <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <Input type="number" min="1" placeholder="Varış bazlı min." value={rv.min_los_arrival} onChange={e => updateRoomValue(rt.code, 'min_los_arrival', e.target.value)} className="h-8 text-sm" data-testid={`min-los-arrival-input-${rt.code}`} />
+                  <ApplyAllButton field="min_los_arrival" value={rv.min_los_arrival} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
+                </div>
+              )}
               {enabledFields.has('max_stay') && (
                 <div className="flex items-center gap-1">
                   <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
@@ -394,6 +402,7 @@ const RoomTypeList = ({
                 {enabledFields.has('rate') && <div className="text-xs text-gray-400 italic">{rv.rate ? `Ana Fiyat: ${rv.rate} ${currency}` : '\u2014'}</div>}
                 {enabledFields.has('availability') && <div className="text-xs text-gray-400 italic">{rv.availability ? rv.availability : '\u2014'}</div>}
                 {enabledFields.has('min_stay') && <div className="text-xs text-gray-400 italic">{rv.min_stay ? rv.min_stay : '\u2014'}</div>}
+                {enabledFields.has('min_los_arrival') && <div className="text-xs text-gray-400 italic">{rv.min_los_arrival ? rv.min_los_arrival : '\u2014'}</div>}
                 {enabledFields.has('max_stay') && <div className="text-xs text-gray-400 italic">{rv.max_stay ? rv.max_stay : '\u2014'}</div>}
                 {enabledFields.has('stop_sell') && <div />}
                 {enabledFields.has('cta') && <div />}

@@ -432,6 +432,60 @@ def build_availability_batch_rq(
     return _soap_envelope(username, password, hotel_code, rq)
 
 
+def build_restriction_batch_rq(
+    username: str,
+    password: str,
+    hotel_code: str,
+    messages: list[dict],
+) -> str:
+    """Build one availability-notification request for many restrictions."""
+    rq = etree.Element(
+        f"{{{OTA_NS}}}OTA_HotelAvailNotifRQ",
+        attrib={"Version": "1.17", "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")},
+    )
+    container = etree.SubElement(rq, f"{{{OTA_NS}}}AvailStatusMessages", attrib={"HotelCode": hotel_code})
+    for item in messages:
+        message = etree.SubElement(container, f"{{{OTA_NS}}}AvailStatusMessage")
+        etree.SubElement(
+            message,
+            f"{{{OTA_NS}}}StatusApplicationControl",
+            attrib={
+                "Start": str(item["start_date"]),
+                "End": str(item["end_date"]),
+                "InvTypeCode": str(item["room_type_code"]),
+                "RatePlanCode": str(item["rate_plan_code"]),
+            },
+        )
+        operation = str(item["operation"])
+        value = item["value"]
+        if operation == "stop_sell":
+            etree.SubElement(message, f"{{{OTA_NS}}}RestrictionStatus", attrib={"Status": "Close" if value else "Open"})
+        elif operation in {"cta", "ctd"}:
+            etree.SubElement(
+                message,
+                f"{{{OTA_NS}}}RestrictionStatus",
+                attrib={
+                    "Status": "Close" if value else "Open",
+                    "Restriction": "Arrival" if operation == "cta" else "Departure",
+                },
+            )
+        else:
+            los = etree.SubElement(
+                message,
+                f"{{{OTA_NS}}}LengthsOfStay",
+                attrib={"ArrivalDateBased": "true"} if operation == "min_los_arrival" else {},
+            )
+            etree.SubElement(
+                los,
+                f"{{{OTA_NS}}}LengthOfStay",
+                attrib={
+                    "Time": str(value),
+                    "MinMaxMessageType": "SetMaxLOS" if operation == "max_los" else "SetMinLOS",
+                },
+            )
+    return _soap_envelope(username, password, hotel_code, rq)
+
+
 def build_rate_amount_notif_rq(
     username: str,
     password: str,
@@ -490,4 +544,41 @@ def build_rate_amount_notif_rq(
         },
     )
 
+    return _soap_envelope(username, password, hotel_code, rq)
+
+
+def build_rate_amount_batch_rq(
+    username: str,
+    password: str,
+    hotel_code: str,
+    messages: list[dict],
+) -> str:
+    """Build one rate notification containing multiple room/date ranges."""
+    rq = etree.Element(
+        f"{{{OTA_NS}}}OTA_HotelRateAmountNotifRQ",
+        attrib={"Version": "1.17", "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")},
+    )
+    container = etree.SubElement(rq, f"{{{OTA_NS}}}RateAmountMessages", attrib={"HotelCode": hotel_code})
+    for item in messages:
+        message = etree.SubElement(container, f"{{{OTA_NS}}}RateAmountMessage")
+        etree.SubElement(
+            message,
+            f"{{{OTA_NS}}}StatusApplicationControl",
+            attrib={"InvTypeCode": str(item["room_type_code"]), "RatePlanCode": str(item["rate_plan_code"])},
+        )
+        rates = etree.SubElement(message, f"{{{OTA_NS}}}Rates")
+        rate = etree.SubElement(
+            rates,
+            f"{{{OTA_NS}}}Rate",
+            attrib={"Start": str(item["start_date"]), "End": str(item["end_date"])},
+        )
+        amounts = etree.SubElement(rate, f"{{{OTA_NS}}}BaseByGuestAmts")
+        etree.SubElement(
+            amounts,
+            f"{{{OTA_NS}}}BaseByGuestAmt",
+            attrib={
+                "AmountAfterTax": f"{float(item['rate_amount']):.2f}",
+                "CurrencyCode": str(item.get("currency") or "TRY"),
+            },
+        )
     return _soap_envelope(username, password, hotel_code, rq)
