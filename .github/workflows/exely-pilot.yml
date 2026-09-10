@@ -15,6 +15,7 @@ on:
           - reservation_import
           - reservation_replay
           - availability
+          - availability_batch
           - rate
           - stop_sell
           - min_los
@@ -95,7 +96,7 @@ jobs:
                 exit 1
               fi
               ;;
-            availability|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
+            availability|availability_batch|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
               if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
                 echo "::error::BLOCKED_MUTATION_RERUN"
                 exit 1
@@ -208,6 +209,8 @@ jobs:
           EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
           EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
           EXELY_PILOT_TEST_DATE: ${{ vars.EXELY_PILOT_TEST_DATE }}
+          EXELY_PILOT_DATE_FROM: ${{ vars.EXELY_PILOT_DATE_FROM }}
+          EXELY_PILOT_DATE_TO: ${{ vars.EXELY_PILOT_DATE_TO }}
           EXELY_PILOT_AVAILABILITY: ${{ vars.EXELY_PILOT_AVAILABILITY }}
           EXELY_PILOT_RATE: ${{ vars.EXELY_PILOT_RATE }}
           EXELY_PILOT_CURRENCY: ${{ vars.EXELY_PILOT_CURRENCY }}
@@ -219,6 +222,9 @@ jobs:
           EXELY_PILOT_HOTEL_CODE: ${{ secrets.EXELY_PILOT_HOTEL_CODE }}
           EXELY_PILOT_ROOM_TYPE_CODE: ${{ secrets.EXELY_PILOT_ROOM_TYPE_CODE }}
           EXELY_PILOT_RATE_PLAN_CODE: ${{ secrets.EXELY_PILOT_RATE_PLAN_CODE }}
+          EXELY_PILOT_STANDARD_ROOM_TYPE_CODE: ${{ vars.EXELY_PILOT_STANDARD_ROOM_TYPE_CODE }}
+          EXELY_PILOT_DELUXE_ROOM_TYPE_CODE: ${{ vars.EXELY_PILOT_DELUXE_ROOM_TYPE_CODE }}
+          EXELY_PILOT_BASE_RATE_PLAN_CODE: ${{ vars.EXELY_PILOT_BASE_RATE_PLAN_CODE }}
           EXELY_PILOT_HMAC_KEY: ${{ secrets.EXELY_PILOT_HMAC_KEY }}
         run: |
           cd backend

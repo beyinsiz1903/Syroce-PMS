@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Activity, AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical, Wand2, Trash2 } from 'lucide-react';
+import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Activity, AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical, Wand2, Trash2, Plus } from 'lucide-react';
 import TestBookingVerification from '@/components/TestBookingVerification';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
@@ -30,6 +30,7 @@ export const getExelyErrorMessage = (error, fallback) => {
   const detail = error?.response?.data?.detail;
   if (typeof detail === 'string' && detail.trim()) return detail;
   if (detail?.error_code) return detail.error_code;
+  if (error?.code) return `${fallback} (${error.code})`;
   return fallback;
 };
 
@@ -69,6 +70,13 @@ const ExelyIntegration = ({
   const [autoMapLoading, setAutoMapLoading] = useState(false);
   const [autoMapRateSelections, setAutoMapRateSelections] = useState({});
   const [mappingStatus, setMappingStatus] = useState(null);
+  const [manualMapOpen, setManualMapOpen] = useState(false);
+  const [manualMapSaving, setManualMapSaving] = useState(false);
+  const [manualMap, setManualMap] = useState({
+    pms_room_type: '',
+    exely_room_code: '',
+    exely_rate_plan_code: ''
+  });
   const [connectForm, setConnectForm] = useState({
     username: '',
     password: '',
@@ -199,6 +207,35 @@ const ExelyIntegration = ({
       fetchMappingStatus();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Silme hatası');
+    }
+  };
+  const handleCreateMapping = async () => {
+    const providerRoom = (mappingStatus?.provider_room_types || []).find(room => room.code === manualMap.exely_room_code);
+    if (!manualMap.pms_room_type || !manualMap.exely_room_code || !manualMap.exely_rate_plan_code) {
+      toast.error('PMS oda tipi, Exely oda tipi ve fiyat planı zorunludur');
+      return;
+    }
+    setManualMapSaving(true);
+    try {
+      await axios.post(`/channel-manager/exely/room-mappings`, {
+        ...manualMap,
+        exely_room_name: providerRoom?.name || manualMap.exely_room_code,
+        sync_availability: true,
+        sync_price: true,
+        sync_restrictions: true
+      }, requestConfig);
+      toast.success('Oda ve fiyat planı eşlemesi oluşturuldu');
+      setManualMapOpen(false);
+      setManualMap({
+        pms_room_type: '',
+        exely_room_code: '',
+        exely_rate_plan_code: ''
+      });
+      await Promise.all([fetchAll(), fetchMappingStatus()]);
+    } catch (error) {
+      toast.error(getExelyErrorMessage(error, 'Eşleme oluşturulamadı'));
+    } finally {
+      setManualMapSaving(false);
     }
   };
   const handleConnect = async () => {
@@ -342,7 +379,7 @@ const ExelyIntegration = ({
             {!isConnected ? <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Network className="w-5 h-5" /> Exely SOAP Baglantisi Kur</CardTitle>
-                  <CardDescription>Exely channel manager WSSE kimlik bilgilerinizi girin</CardDescription>
+                  <CardDescription>Exely PMSConnect kullanıcı adı, şifre ve otel kodunu girin</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -423,6 +460,12 @@ const ExelyIntegration = ({
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {connection.connection?.last_connection_test_status && <div className={`mb-4 rounded-lg border p-3 text-sm ${connection.connection.last_connection_test_status === 'healthy' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`} data-testid="exely-last-test-status">
+                        <div className="font-medium">
+                          {connection.connection.last_connection_test_status === 'healthy' ? 'Son bağlantı testi başarılı' : `Son bağlantı testi başarısız: ${connection.connection.last_connection_test_error || 'Bilinmeyen hata'}`}
+                        </div>
+                        {connection.connection.last_connection_test_at && <div className="mt-1 text-xs opacity-80">{new Date(connection.connection.last_connection_test_at).toLocaleString('tr-TR')}</div>}
+                      </div>}
                     <div className="flex flex-wrap gap-3 items-center">
                       <Button data-testid="exely-test-btn" variant="outline" onClick={handleTest} disabled={loading}>
                         {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
@@ -457,7 +500,7 @@ const ExelyIntegration = ({
                           <p className="text-lg font-bold">{syncStatus.pending_events || 0}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 border">
-                          <p className="text-xs text-slate-500">{t('cm.pages_ExelyIntegration.hata_event')}</p>
+                          <p className="text-xs text-slate-500">Son 24 Saat Hata</p>
                           <p className="text-lg font-bold text-red-600">{syncStatus.error_events || 0}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 border">
@@ -631,10 +674,15 @@ const ExelyIntegration = ({
                   <CardTitle>{t('cm.pages_ExelyIntegration.oda_eslemeleri')}</CardTitle>
                   <CardDescription>PMS oda tipleri ile Exely oda/fiyat planlarini esleyin</CardDescription>
                 </div>
-                {!mappingStatus && <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn-alt">
-                    {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
-                    Otomatik Esle
-                  </Button>}
+                <div className="flex gap-2">
+                  <Button variant="default" size="sm" onClick={() => setManualMapOpen(true)} data-testid="exely-add-rate-mapping-btn">
+                    <Plus className="w-4 h-4 mr-1" /> Oda / Fiyat Planı Eşle
+                  </Button>
+                  {!mappingStatus && <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn-alt">
+                      {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
+                      Otomatik Esle
+                    </Button>}
+                </div>
               </CardHeader>
               <CardContent>
                 {mappings.length === 0 ? <div className="text-center py-8">
@@ -690,6 +738,41 @@ const ExelyIntegration = ({
                   </div>}
               </CardContent>
             </Card>
+
+            <Dialog open={manualMapOpen} onOpenChange={setManualMapOpen}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Oda ve Fiyat Planı Eşle</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 mt-2">
+                  <div>
+                    <Label htmlFor="manual-pms-room">PMS oda tipi</Label>
+                    <select id="manual-pms-room" data-testid="manual-pms-room" value={manualMap.pms_room_type} onChange={event => setManualMap(previous => ({ ...previous, pms_room_type: event.target.value }))} className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm">
+                      <option value="">Oda tipi seçin</option>
+                      {(mappingStatus?.pms_room_types || []).map(room => <option key={room.code} value={room.code}>{room.name} ({room.room_count} oda)</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="manual-exely-room">Exely oda tipi</Label>
+                    <select id="manual-exely-room" data-testid="manual-exely-room" value={manualMap.exely_room_code} onChange={event => setManualMap(previous => ({ ...previous, exely_room_code: event.target.value }))} className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm">
+                      <option value="">Exely oda tipi seçin</option>
+                      {(mappingStatus?.provider_room_types || []).map(room => <option key={room.code} value={room.code}>{room.name} ({room.code})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="manual-exely-rate">Exely fiyat planı</Label>
+                    <select id="manual-exely-rate" data-testid="manual-exely-rate" value={manualMap.exely_rate_plan_code} onChange={event => setManualMap(previous => ({ ...previous, exely_rate_plan_code: event.target.value }))} className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm">
+                      <option value="">Fiyat planı seçin</option>
+                      {(mappingStatus?.provider_rate_plans || []).map(plan => <option key={plan.code} value={plan.code}>{plan.name || plan.code} ({plan.code})</option>)}
+                    </select>
+                  </div>
+                  <p className="text-xs text-slate-500">Aynı oda tipini Base, Non-refundable ve diğer fiyat planlarıyla ayrı ayrı eşleyebilirsiniz.</p>
+                  <Button className="w-full" onClick={handleCreateMapping} disabled={manualMapSaving} data-testid="manual-map-save">
+                    {manualMapSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />} Eşlemeyi Kaydet
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* Auto-Map Dialog */}
             <Dialog open={autoMapOpen} onOpenChange={setAutoMapOpen}>

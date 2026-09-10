@@ -55,7 +55,8 @@ logger = logging.getLogger("exely.pilot")
 
 _PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read"})
 _READ_OPERATIONS = frozenset({*_PROVIDER_READ_OPERATIONS, "reservation_import", "reservation_replay"})
-_ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
+_SINGLE_ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
+_ARI_OPERATIONS = frozenset({*_SINGLE_ARI_OPERATIONS, "availability_batch"})
 _WRITE_OPERATIONS = frozenset({*_ARI_OPERATIONS, "reservation_ack"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
@@ -74,6 +75,8 @@ class PilotSettings:
     correlation_label: str
     tenant_id: str = field(repr=False)
     test_date: date | None = None
+    date_from: date | None = None
+    date_to: date | None = None
     availability: int | None = None
     rate: Decimal | None = None
     currency: str = "USD"
@@ -84,6 +87,7 @@ class PilotSettings:
     password: str = field(default="", repr=False)
     hotel_code: str = field(default="", repr=False)
     room_type_code: str = field(default="", repr=False)
+    room_type_codes: tuple[str, ...] = field(default_factory=tuple, repr=False)
     rate_plan_code: str = field(default="", repr=False)
     pms_room_type: str = field(default="", repr=False)
     hmac_key: str = field(default="", repr=False)
@@ -254,7 +258,7 @@ def _load_settings() -> PilotSettings:
     ).hexdigest()[:12]
 
     values: dict[str, Any] = {}
-    if operation in {*_ARI_OPERATIONS, "inventory_read"}:
+    if operation in {*_SINGLE_ARI_OPERATIONS, "inventory_read"}:
         raw_date = _required_env("EXELY_PILOT_TEST_DATE")
         try:
             test_date = date.fromisoformat(raw_date)
@@ -265,7 +269,21 @@ def _load_settings() -> PilotSettings:
             raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_TEST_DATE")
         values["test_date"] = test_date
 
-    if operation == "availability":
+    if operation == "availability_batch":
+        try:
+            date_from = date.fromisoformat(_required_env("EXELY_PILOT_DATE_FROM"))
+            date_to = date.fromisoformat(_required_env("EXELY_PILOT_DATE_TO"))
+        except ValueError as exc:
+            raise PilotSafetyError("BLOCKED_INVALID_PILOT_DATE_RANGE") from exc
+        today = datetime.now(UTC).date()
+        days_ahead = (date_from - today).days
+        horizon_days = (date_to - today).days
+        period_days = (date_to - date_from).days + 1
+        if days_ahead < 1 or horizon_days < 365 or period_days > 730:
+            raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_DATE_RANGE")
+        values.update({"date_from": date_from, "date_to": date_to})
+
+    if operation in {"availability", "availability_batch"}:
         values["availability"] = _parse_int("EXELY_PILOT_AVAILABILITY", minimum=0, maximum=20)
     elif operation == "rate":
         try:
@@ -288,7 +306,17 @@ def _load_settings() -> PilotSettings:
         if os.environ.get("EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED") != "true":
             raise PilotSafetyError("BLOCKED_DURABLE_PMS_RESULT_NOT_ATTESTED")
 
-    if operation in {*_ARI_OPERATIONS, "inventory_read", "reservation_import", "reservation_replay", "reservation_ack"}:
+    room_type_codes: tuple[str, ...] = ()
+    if operation == "availability_batch":
+        room_type_codes = (
+            _required_env("EXELY_PILOT_STANDARD_ROOM_TYPE_CODE"),
+            _required_env("EXELY_PILOT_DELUXE_ROOM_TYPE_CODE"),
+        )
+        if len(set(room_type_codes)) != 2:
+            raise PilotSafetyError("BLOCKED_DUPLICATE_PILOT_ROOM_MAPPING")
+        room_type_code = ""
+        rate_plan_code = _required_env("EXELY_PILOT_BASE_RATE_PLAN_CODE")
+    elif operation in {*_ARI_OPERATIONS, "inventory_read", "reservation_import", "reservation_replay", "reservation_ack"}:
         room_type_code = _required_env("EXELY_PILOT_ROOM_TYPE_CODE")
         rate_plan_code = _required_env("EXELY_PILOT_RATE_PLAN_CODE")
     elif operation == "discovery":
@@ -318,6 +346,7 @@ def _load_settings() -> PilotSettings:
         password=_required_env("EXELY_PILOT_PASSWORD"),
         hotel_code=hotel_code,
         room_type_code=room_type_code,
+        room_type_codes=room_type_codes,
         rate_plan_code=rate_plan_code,
         pms_room_type=pms_room_type,
         hmac_key=hmac_key,
@@ -348,6 +377,7 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "exact_head_match",
         "exception_class",
         "match_count_class",
+        "message_count",
         "local_pms_write_count",
         "lineage_match",
         "operation",
@@ -417,12 +447,22 @@ async def _discover_mapping(
         _fail_safe(record_property, "BLOCKED_READONLY_DISCOVERY_RESPONSE_INVALID", metadata)
     room_candidates = [item for item in rooms if isinstance(item, dict) and item.get("code")]
     rate_candidates = [item for item in rates if isinstance(item, dict) and item.get("code")]
-    room_matches = [item for item in room_candidates if hmac.compare_digest(str(item["code"]), settings.room_type_code)] if settings.room_type_code else room_candidates
+    expected_room_codes = settings.room_type_codes or ((settings.room_type_code,) if settings.room_type_code else ())
+    room_matches = [
+        item
+        for item in room_candidates
+        if not expected_room_codes or any(hmac.compare_digest(str(item["code"]), code) for code in expected_room_codes)
+    ]
     rate_matches = [item for item in rate_candidates if hmac.compare_digest(str(item["code"]), settings.rate_plan_code)] if settings.rate_plan_code else rate_candidates
-    metadata["room_match"] = len(room_matches) == 1 if settings.room_type_code else bool(room_matches)
+    metadata["room_match"] = (
+        all(sum(hmac.compare_digest(str(item["code"]), code) for item in room_candidates) == 1 for code in expected_room_codes)
+        if expected_room_codes
+        else bool(room_matches)
+    )
     metadata["rate_plan_match"] = len(rate_matches) == 1 if settings.rate_plan_code else bool(rate_matches)
     metadata["capability_match"] = metadata["room_match"] and metadata["rate_plan_match"]
-    metadata["match_count_class"] = "ZERO" if not room_matches or not rate_matches else "ONE" if len(room_matches) == 1 and len(rate_matches) == 1 else "MULTIPLE"
+    expected_match_count = len(expected_room_codes) or 1
+    metadata["match_count_class"] = "ZERO" if not room_matches or not rate_matches else "ONE" if len(room_matches) == expected_match_count and len(rate_matches) == 1 else "MULTIPLE"
     if not metadata["capability_match"]:
         _fail_safe(record_property, "BLOCKED_PILOT_MAPPING_NOT_DISCOVERED", metadata)
     metadata["provider_status_class"] = str(result.metadata.get("provider_status_class") or "SUCCESS")
@@ -767,37 +807,70 @@ async def test_exely_pilot_single_write(record_property):
     try:
         if settings.operation in _ARI_OPERATIONS:
             metadata.update(await _discover_mapping(provider, settings, record_property))
-            await db[COLL_EXELY_ARI_DELIVERIES].delete_many({"tenant_id": tenant_id})
-            update = {
-                "property_id": settings.hotel_code,
-                "room_type_code": settings.room_type_code,
-                "rate_plan_code": settings.rate_plan_code,
-                "start_date": settings.test_date.isoformat(),
-                "end_date": settings.test_date.isoformat(),
-                "value": _ari_value(settings),
-                "currency": settings.currency,
-                "operation_identity": f"pilot:{settings.correlation_label}",
-            }
-            result = await deliver_exely_ari(
-                tenant_id,
-                settings.operation,
-                update,
-                provider=provider,
-                write_enabled=True,
-            )
-            reconciliation = await reconcile_pending_exely_ari(tenant_id, limit=1)
+            if settings.operation == "availability_batch":
+                if settings.date_from is None or settings.date_to is None or settings.availability is None:
+                    _fail_safe(record_property, "BLOCKED_BATCH_CONFIGURATION_MISSING", metadata)
+                messages = [
+                    {
+                        "room_type_code": room_type_code,
+                        "rate_plan_code": settings.rate_plan_code,
+                        "start_date": settings.date_from.isoformat(),
+                        "end_date": settings.date_to.isoformat(),
+                        "availability": settings.availability,
+                    }
+                    for room_type_code in settings.room_type_codes
+                ]
+                result = await provider.push_ari_operation(
+                    operation="availability_batch",
+                    room_type_code="",
+                    rate_plan_code="",
+                    start_date="",
+                    end_date="",
+                    value=messages,
+                    currency=settings.currency,
+                )
+                delivery_state = "CONFIRMED" if result.success else "FAILED"
+                provider_status_class = str(result.metadata.get("provider_status_class") or result.error_type or "MALFORMED")
+                provider_write_count = int(result.metadata.get("provider_write_count") or 0)
+                metadata["message_count"] = int(result.metadata.get("message_count") or 0)
+                if metadata["message_count"] != len(settings.room_type_codes):
+                    _fail_safe(record_property, "BLOCKED_BATCH_MESSAGE_COUNT_INVALID", metadata)
+                reconciliation = {"pending": 0, "provider_write_count": 0}
+            else:
+                await db[COLL_EXELY_ARI_DELIVERIES].delete_many({"tenant_id": tenant_id})
+                update = {
+                    "property_id": settings.hotel_code,
+                    "room_type_code": settings.room_type_code,
+                    "rate_plan_code": settings.rate_plan_code,
+                    "start_date": settings.test_date.isoformat(),
+                    "end_date": settings.test_date.isoformat(),
+                    "value": _ari_value(settings),
+                    "currency": settings.currency,
+                    "operation_identity": f"pilot:{settings.correlation_label}",
+                }
+                result = await deliver_exely_ari(
+                    tenant_id,
+                    settings.operation,
+                    update,
+                    provider=provider,
+                    write_enabled=True,
+                )
+                reconciliation = await reconcile_pending_exely_ari(tenant_id, limit=1)
+                delivery_state = result.state
+                provider_status_class = result.provider_status_class
+                provider_write_count = result.provider_write_count
             metadata.update(
                 {
-                    "delivery_state": result.state,
-                    "provider_status_class": result.provider_status_class,
+                    "delivery_state": delivery_state,
+                    "provider_status_class": provider_status_class,
                     "provider_write_count": guard.write_count,
                     "read_count": guard.read_count,
                 }
             )
-            if guard.write_count != 1 or result.provider_write_count != 1:
+            if guard.write_count != 1 or provider_write_count != 1:
                 _fail_safe(record_property, "FAIL_PROVIDER_WRITE_COUNT_INVALID", metadata)
-            if not result.success or result.state not in {STATE_CONFIRMED, STATE_WARNING_SUCCESS}:
-                _fail_safe(record_property, f"BLOCKED_ARI_{result.state.upper()}", metadata)
+            if not result.success or delivery_state not in {STATE_CONFIRMED, STATE_WARNING_SUCCESS, "CONFIRMED"}:
+                _fail_safe(record_property, f"BLOCKED_ARI_{delivery_state.upper()}", metadata)
             if reconciliation.get("pending") != 0 or reconciliation.get("provider_write_count") != 0:
                 _fail_safe(record_property, "BLOCKED_ARI_RECONCILIATION_PENDING", metadata)
         else:

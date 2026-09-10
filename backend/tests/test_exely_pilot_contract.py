@@ -27,7 +27,8 @@ def _workflow() -> dict:
 
 
 def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False):
-    future_date = (datetime.now(UTC).date() + timedelta(days=60)).isoformat()
+    today = datetime.now(UTC).date()
+    future_date = (today + timedelta(days=60)).isoformat()
     values = {
         "APP_ENV": "test",
         "TESTING": "1",
@@ -39,6 +40,9 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_AVAILABILITY": "2",
         "EXELY_PILOT_CREDENTIAL_SCOPE": "test",
         "EXELY_PILOT_CURRENCY": "USD",
+        "EXELY_PILOT_DATE_FROM": future_date,
+        "EXELY_PILOT_DATE_TO": (today + timedelta(days=365)).isoformat(),
+        "EXELY_PILOT_DELUXE_ROOM_TYPE_CODE": "synthetic-deluxe-room",
         "EXELY_PILOT_ENDPOINT_URL": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc",
         "EXELY_PILOT_HMAC_KEY": "synthetic-hmac-key-with-at-least-32-chars",
         "EXELY_PILOT_HOTEL_CODE": "synthetic-property",
@@ -47,8 +51,10 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_OPERATION": operation,
         "EXELY_PILOT_PASSWORD": "synthetic-password",
         "EXELY_PILOT_RATE": "100.00",
+        "EXELY_PILOT_BASE_RATE_PLAN_CODE": "synthetic-base-rate",
         "EXELY_PILOT_RATE_PLAN_CODE": "synthetic-rate",
         "EXELY_PILOT_ROOM_TYPE_CODE": "synthetic-room",
+        "EXELY_PILOT_STANDARD_ROOM_TYPE_CODE": "synthetic-standard-room",
         "EXELY_PILOT_PMS_ROOM_TYPE": "Synthetic Standard",
         "EXELY_PILOT_RUN_ATTEMPT": "1",
         "EXELY_PILOT_RUN_ID": "123456",
@@ -83,6 +89,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "reservation_import",
         "reservation_replay",
         "availability",
+        "availability_batch",
         "rate",
         "stop_sell",
         "min_los",
@@ -240,7 +247,7 @@ def test_settings_fail_closed_without_write_approval(monkeypatch):
 
 @pytest.mark.parametrize(
     "operation",
-    ["availability", "rate", "stop_sell", "min_los", "min_los_arrival", "reservation_ack"],
+    ["availability", "availability_batch", "rate", "stop_sell", "min_los", "min_los_arrival", "reservation_ack"],
 )
 def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation, write=True)
@@ -277,6 +284,26 @@ def test_ari_write_still_requires_mapping_secrets(monkeypatch):
     monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_MISSING_CONFIGURATION:EXELY_PILOT_ROOM_TYPE_CODE"):
+        pilot._load_settings()
+
+
+def test_batch_settings_load_two_distinct_rooms_and_one_year_horizon(monkeypatch):
+    _base_env(monkeypatch, operation="availability_batch", write=True)
+
+    settings = pilot._load_settings()
+
+    assert settings.room_type_codes == ("synthetic-standard-room", "synthetic-deluxe-room")
+    assert settings.rate_plan_code == "synthetic-base-rate"
+    assert settings.date_from is not None
+    assert settings.date_to is not None
+    assert (settings.date_to - datetime.now(UTC).date()).days >= 365
+
+
+def test_batch_settings_reject_duplicate_room_mappings(monkeypatch):
+    _base_env(monkeypatch, operation="availability_batch", write=True)
+    monkeypatch.setenv("EXELY_PILOT_DELUXE_ROOM_TYPE_CODE", "synthetic-standard-room")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_DUPLICATE_PILOT_ROOM_MAPPING"):
         pilot._load_settings()
 
 
@@ -320,6 +347,35 @@ async def test_discovery_without_target_mapping_reports_safe_capability_metadata
     assert "synthetic-room" not in str(metadata)
     assert "synthetic-rate" not in str(metadata)
     assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_batch_discovery_requires_both_named_room_mappings(monkeypatch):
+    _base_env(monkeypatch, operation="availability_batch", write=True)
+    settings = pilot._load_settings()
+    provider = SimpleNamespace(
+        discover_rooms=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                data={
+                    "room_types": [
+                        {"code": "synthetic-standard-room"},
+                        {"code": "synthetic-deluxe-room"},
+                        {"code": "synthetic-suite-room"},
+                    ],
+                    "rate_plans": [{"code": "synthetic-base-rate"}],
+                },
+                metadata={"provider_status_class": "SUCCESS"},
+            )
+        )
+    )
+
+    metadata = await pilot._discover_mapping(provider, settings, lambda *_: None)
+
+    assert metadata["capability_match"] is True
+    assert metadata["room_match"] is True
+    assert metadata["rate_plan_match"] is True
+    assert metadata["match_count_class"] == "ONE"
 
 
 @pytest.mark.asyncio

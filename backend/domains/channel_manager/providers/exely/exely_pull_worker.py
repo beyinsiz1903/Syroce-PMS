@@ -5,8 +5,12 @@ Scheduled pull via OTA_ReadRQ → common ingest pipeline.
 
 import asyncio
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Any
+
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.tenant_db import clear_tenant_context, set_tenant_context
@@ -50,6 +54,8 @@ class ExelyPullScheduler:
     def __init__(self):
         self._running = False
         self._task = None
+        self._interval_seconds = 60
+        self._lease_owner = str(uuid.uuid4())
 
     async def start(self, interval_seconds: int = 60, safety_window_minutes: int = 5):
         if self._running:
@@ -60,6 +66,7 @@ class ExelyPullScheduler:
             logger.warning("[EXELY-PULL] Scheduler blocked reason=%s", runtime_block)
             return False
         self._running = True
+        self._interval_seconds = interval_seconds
         self._task = asyncio.create_task(self._run_loop(interval_seconds, safety_window_minutes))
         logger.info(f"[EXELY-PULL] Scheduler started: every {interval_seconds}s")
         return True
@@ -116,6 +123,9 @@ class ExelyPullScheduler:
             active_keys.append(key)
             try:
                 set_tenant_context(tenant_id)
+                if not await self._acquire_tenant_lease(tenant_id):
+                    logger.info("[EXELY-PULL] tenant_tick_skipped reason=lease_held tenant=%s", key)
+                    continue
                 creds = await resolve_exely_credentials(
                     tenant_id,
                     conn,
@@ -148,6 +158,46 @@ class ExelyPullScheduler:
         # counters for connections no longer active (OUTER_LOOP_KEY preserved).
         _transient_tracker.prune(active_keys)
 
+    async def _acquire_tenant_lease(self, tenant_id: str) -> bool:
+        """Ensure only one application replica pulls a tenant per interval.
+
+        The lease deliberately remains held until its expiry. Releasing it as
+        soon as a pull completes would let a second replica perform the same
+        tick and consume Exely's request quota twice.
+        """
+        now = datetime.now(UTC)
+        lease_seconds = max(60, int(self._interval_seconds * 0.9))
+        expires_at = now.timestamp() + lease_seconds
+        query = {
+            "tenant_id": tenant_id,
+            "$or": [
+                {"lease_expires_at": {"$lte": now.timestamp()}},
+                {"owner_token": self._lease_owner},
+                {"lease_expires_at": {"$exists": False}},
+            ],
+        }
+        update = {
+            "$set": {
+                "tenant_id": tenant_id,
+                "owner_token": self._lease_owner,
+                "lease_expires_at": expires_at,
+                "updated_at": now.isoformat(),
+            }
+        }
+        try:
+            lease = await db.exely_scheduler_leases.find_one_and_update(
+                query,
+                update,
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            return False
+        except Exception as exc:
+            _record_scheduler_error(exc, safe_fingerprint(tenant_id), "lease_acquire")
+            return False
+        return bool(lease and lease.get("owner_token") == self._lease_owner)
+
     async def pull_for_tenant(
         self,
         tenant_id: str,
@@ -155,6 +205,7 @@ class ExelyPullScheduler:
         password: str,
         hotel_code: str,
         endpoint_url: str = "",
+        safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
         runtime_block = reservation_sync_block_reason()
         if runtime_block:
