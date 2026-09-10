@@ -29,6 +29,9 @@ def _workflow() -> dict:
 def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False):
     today = datetime.now(UTC).date()
     future_date = (today + timedelta(days=60)).isoformat()
+    date_to = today + timedelta(days=365)
+    if operation == "forced_availability_batch":
+        date_to = today + timedelta(days=64)
     values = {
         "APP_ENV": "test",
         "TESTING": "1",
@@ -41,7 +44,7 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_CREDENTIAL_SCOPE": "test",
         "EXELY_PILOT_CURRENCY": "USD",
         "EXELY_PILOT_DATE_FROM": future_date,
-        "EXELY_PILOT_DATE_TO": (today + timedelta(days=365)).isoformat(),
+        "EXELY_PILOT_DATE_TO": date_to.isoformat(),
         "EXELY_PILOT_DELUXE_ROOM_TYPE_CODE": "synthetic-deluxe-room",
         "EXELY_PILOT_ENDPOINT_URL": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc",
         "EXELY_PILOT_HMAC_KEY": "synthetic-hmac-key-with-at-least-32-chars",
@@ -90,6 +93,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "reservation_replay",
         "availability",
         "availability_batch",
+        "forced_availability_batch",
         "rate",
         "stop_sell",
         "min_los",
@@ -247,7 +251,16 @@ def test_settings_fail_closed_without_write_approval(monkeypatch):
 
 @pytest.mark.parametrize(
     "operation",
-    ["availability", "availability_batch", "rate", "stop_sell", "min_los", "min_los_arrival", "reservation_ack"],
+    [
+        "availability",
+        "availability_batch",
+        "forced_availability_batch",
+        "rate",
+        "stop_sell",
+        "min_los",
+        "min_los_arrival",
+        "reservation_ack",
+    ],
 )
 def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation, write=True)
@@ -304,6 +317,31 @@ def test_batch_settings_reject_duplicate_room_mappings(monkeypatch):
     monkeypatch.setenv("EXELY_PILOT_DELUXE_ROOM_TYPE_CODE", "synthetic-standard-room")
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_DUPLICATE_PILOT_ROOM_MAPPING"):
+        pilot._load_settings()
+
+
+def test_forced_batch_settings_allow_short_explicit_period(monkeypatch):
+    _base_env(monkeypatch, operation="forced_availability_batch", write=True)
+    start = datetime.now(UTC).date() + timedelta(days=60)
+    end = start + timedelta(days=4)
+    monkeypatch.setenv("EXELY_PILOT_DATE_FROM", start.isoformat())
+    monkeypatch.setenv("EXELY_PILOT_DATE_TO", end.isoformat())
+
+    settings = pilot._load_settings()
+
+    assert settings.operation == "forced_availability_batch"
+    assert settings.date_from == start
+    assert settings.date_to == end
+    assert settings.room_type_codes == ("synthetic-standard-room", "synthetic-deluxe-room")
+
+
+def test_forced_batch_settings_reject_more_than_31_days(monkeypatch):
+    _base_env(monkeypatch, operation="forced_availability_batch", write=True)
+    start = datetime.now(UTC).date() + timedelta(days=60)
+    monkeypatch.setenv("EXELY_PILOT_DATE_FROM", start.isoformat())
+    monkeypatch.setenv("EXELY_PILOT_DATE_TO", (start + timedelta(days=31)).isoformat())
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_UNSAFE_FORCED_PILOT_DATE_RANGE"):
         pilot._load_settings()
 
 

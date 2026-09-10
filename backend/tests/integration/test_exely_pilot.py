@@ -56,7 +56,8 @@ logger = logging.getLogger("exely.pilot")
 _PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read"})
 _READ_OPERATIONS = frozenset({*_PROVIDER_READ_OPERATIONS, "reservation_import", "reservation_replay"})
 _SINGLE_ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
-_ARI_OPERATIONS = frozenset({*_SINGLE_ARI_OPERATIONS, "availability_batch"})
+_BATCH_ARI_OPERATIONS = frozenset({"availability_batch", "forced_availability_batch"})
+_ARI_OPERATIONS = frozenset({*_SINGLE_ARI_OPERATIONS, *_BATCH_ARI_OPERATIONS})
 _WRITE_OPERATIONS = frozenset({*_ARI_OPERATIONS, "reservation_ack"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
@@ -269,7 +270,7 @@ def _load_settings() -> PilotSettings:
             raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_TEST_DATE")
         values["test_date"] = test_date
 
-    if operation == "availability_batch":
+    if operation in _BATCH_ARI_OPERATIONS:
         try:
             date_from = date.fromisoformat(_required_env("EXELY_PILOT_DATE_FROM"))
             date_to = date.fromisoformat(_required_env("EXELY_PILOT_DATE_TO"))
@@ -279,11 +280,15 @@ def _load_settings() -> PilotSettings:
         days_ahead = (date_from - today).days
         horizon_days = (date_to - today).days
         period_days = (date_to - date_from).days + 1
-        if days_ahead < 1 or horizon_days < 365 or period_days > 730:
+        if days_ahead < 1 or period_days < 1 or period_days > 730:
             raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_DATE_RANGE")
+        if operation == "availability_batch" and horizon_days < 365:
+            raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_DATE_RANGE")
+        if operation == "forced_availability_batch" and period_days > 31:
+            raise PilotSafetyError("BLOCKED_UNSAFE_FORCED_PILOT_DATE_RANGE")
         values.update({"date_from": date_from, "date_to": date_to})
 
-    if operation in {"availability", "availability_batch"}:
+    if operation in {"availability", *_BATCH_ARI_OPERATIONS}:
         values["availability"] = _parse_int("EXELY_PILOT_AVAILABILITY", minimum=0, maximum=20)
     elif operation == "rate":
         try:
@@ -307,7 +312,7 @@ def _load_settings() -> PilotSettings:
             raise PilotSafetyError("BLOCKED_DURABLE_PMS_RESULT_NOT_ATTESTED")
 
     room_type_codes: tuple[str, ...] = ()
-    if operation == "availability_batch":
+    if operation in _BATCH_ARI_OPERATIONS:
         room_type_codes = (
             _required_env("EXELY_PILOT_STANDARD_ROOM_TYPE_CODE"),
             _required_env("EXELY_PILOT_DELUXE_ROOM_TYPE_CODE"),
@@ -807,7 +812,7 @@ async def test_exely_pilot_single_write(record_property):
     try:
         if settings.operation in _ARI_OPERATIONS:
             metadata.update(await _discover_mapping(provider, settings, record_property))
-            if settings.operation == "availability_batch":
+            if settings.operation in _BATCH_ARI_OPERATIONS:
                 if settings.date_from is None or settings.date_to is None or settings.availability is None:
                     _fail_safe(record_property, "BLOCKED_BATCH_CONFIGURATION_MISSING", metadata)
                 messages = [

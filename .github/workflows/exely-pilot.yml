@@ -16,6 +16,7 @@ on:
           - reservation_replay
           - availability
           - availability_batch
+          - forced_availability_batch
           - rate
           - stop_sell
           - min_los
@@ -96,7 +97,7 @@ jobs:
                 exit 1
               fi
               ;;
-            availability|availability_batch|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
+            availability|availability_batch|forced_availability_batch|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
               if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
                 echo "::error::BLOCKED_MUTATION_RERUN"
                 exit 1
