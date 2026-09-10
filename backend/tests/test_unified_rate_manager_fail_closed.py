@@ -9,16 +9,18 @@ from domains.channel_manager import unified_rate_manager_router as rate_router
 
 @pytest.mark.asyncio
 async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeypatch):
-    hotelrunner_connections = SimpleNamespace(
-        find_one=AsyncMock(return_value={"tenant_id": "tenant-test", "is_active": True}),
-    )
-    exely_connections = SimpleNamespace(find_one=AsyncMock(return_value=None))
-    fake_db = SimpleNamespace(
-        hotelrunner_connections=hotelrunner_connections,
-        exely_connections=exely_connections,
-    )
+    fake_db = SimpleNamespace()
     monkeypatch.setattr(rate_router, "db", fake_db)
-    monkeypatch.setattr(rate_router, "_tenant_configured_provider", AsyncMock(return_value="hotelrunner"))
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(
+            return_value={
+                "provider": "hotelrunner",
+                "connection": {"tenant_id": "tenant-test", "is_active": True},
+            }
+        ),
+    )
     monkeypatch.setattr(
         rate_router,
         "hotelrunner_ari_write_block_reason",
@@ -59,3 +61,30 @@ def test_scheduled_delivery_is_not_provider_verified():
         "provider_delivery_state": "SCHEDULED",
         "provider_write_count": None,
     }
+
+
+def test_confirmed_delivery_is_reported_as_provider_verified():
+    summary = rate_router._provider_delivery_summary(
+        [
+            {
+                "provider": "exely",
+                "delivery_state": "CONFIRMED",
+                "task_count": 2,
+                "provider_verified": True,
+                "provider_write_count": 1,
+            }
+        ]
+    )
+
+    assert summary == {
+        "provider_verified": True,
+        "provider_delivery_state": "CONFIRMED",
+        "provider_write_count": 1,
+    }
+
+
+def test_selected_days_are_merged_without_including_gaps():
+    assert rate_router._selected_date_ranges("2026-11-01", "2026-11-10", {1, 2, 3, 4, 5}) == [
+        ("2026-11-02", "2026-11-06"),
+        ("2026-11-09", "2026-11-10"),
+    ]

@@ -39,4 +39,15 @@ describe('UnifiedRateManager write safety', () => {
       });
     },
   );
+
+  it('reports success only for provider-confirmed delivery', () => {
+    expect(getUnifiedRateDeliveryFeedback({
+      saved: 10,
+      provider_verified: true,
+      provider_delivery_state: 'CONFIRMED',
+    })).toEqual({
+      level: 'success',
+      message: '10 kayıt güncellendi ve provider teslimatı doğrulandı.',
+    });
+  });
 });
