@@ -29,12 +29,12 @@ HOTELRUNNER_CHECKLIST = [
 ]
 
 EXELY_CHECKLIST = [
-    {"step": "wsse_auth", "label": "WSSE Authentication", "description": "Verify WSSE token generation and auth handshake"},
+    {"step": "pmsconnect_auth", "label": "PMSConnect Authentication", "description": "Verify the HopenAPI Security header and authentication handshake"},
     {"step": "hotel_avail_rq", "label": "OTA_HotelAvailRQ", "description": "Query hotel availability from Exely"},
     {"step": "read_rq", "label": "OTA_ReadRQ", "description": "Read reservations from Exely"},
     {"step": "hotel_avail_notif", "label": "OTA_HotelAvailNotifRQ", "description": "Push availability notification to Exely"},
     {"step": "rate_amount_notif", "label": "OTA_HotelRateAmountNotifRQ", "description": "Push rate amount notification to Exely"},
-    {"step": "reservation_confirm", "label": "Reservation Confirm", "description": "Confirm a reservation via OTA_HotelResNotifRQ"},
+    {"step": "reservation_confirm", "label": "Reservation Delivery ACK", "description": "Confirm a durable reservation via OTA_NotifReportRQ"},
 ]
 
 
@@ -256,23 +256,23 @@ class ExelyTestRunner:
         for item in EXELY_CHECKLIST:
             r = await self.run_step(item["step"])
             results.append(r)
-            if not r["success"] and item["step"] == "wsse_auth":
+            if not r["success"] and item["step"] == "pmsconnect_auth":
                 for remaining in EXELY_CHECKLIST[1:]:
                     results.append(
                         {
                             "step": remaining["step"],
                             "success": False,
                             "duration_ms": 0,
-                            "detail": "Skipped: WSSE authentication failed",
+                            "detail": "Skipped: PMSConnect authentication failed",
                             "tested_at": datetime.now(UTC).isoformat(),
                         }
                     )
                 break
         return results
 
-    async def _test_wsse_auth(self) -> dict:
+    async def _test_pmsconnect_auth(self) -> dict:
         if not self._client:
-            return {"success": True, "detail": "DRY-RUN: WSSE token would be generated and validated"}
+            return {"success": True, "detail": "DRY-RUN: HopenAPI Security header would be generated and validated"}
         try:
             result = await self._client.test_auth()
             return {"success": result.get("success", False), "detail": str(result)}
@@ -330,5 +330,5 @@ class ExelyTestRunner:
 
     async def _test_reservation_confirm(self) -> dict:
         if not self._client:
-            return {"success": True, "detail": "DRY-RUN: OTA_HotelResNotifRQ would confirm a reservation"}
+            return {"success": True, "detail": "DRY-RUN: OTA_NotifReportRQ would acknowledge a durable reservation"}
         return {"success": True, "detail": "Reservation confirmation completed"}

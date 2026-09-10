@@ -389,6 +389,49 @@ def build_ari_update_rq(
     return _soap_envelope(username, password, hotel_code, rq)
 
 
+def build_availability_batch_rq(
+    username: str,
+    password: str,
+    hotel_code: str,
+    messages: list[dict],
+) -> str:
+    """Build one availability request containing multiple room/date ranges.
+
+    Exely applies ``Start`` and ``End`` inclusively.  Keeping every range in a
+    single ``AvailStatusMessages`` container avoids one SOAP request per room
+    and date during initial inventory uploads.
+    """
+    rq = etree.Element(
+        f"{{{OTA_NS}}}OTA_HotelAvailNotifRQ",
+        attrib={
+            "Version": "1.17",
+            "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+    )
+    container = etree.SubElement(
+        rq,
+        f"{{{OTA_NS}}}AvailStatusMessages",
+        attrib={"HotelCode": hotel_code},
+    )
+    for item in messages:
+        message = etree.SubElement(
+            container,
+            f"{{{OTA_NS}}}AvailStatusMessage",
+            attrib={"BookingLimit": str(item["availability"])},
+        )
+        etree.SubElement(
+            message,
+            f"{{{OTA_NS}}}StatusApplicationControl",
+            attrib={
+                "Start": str(item["start_date"]),
+                "End": str(item["end_date"]),
+                "InvTypeCode": str(item["room_type_code"]),
+                "RatePlanCode": str(item["rate_plan_code"]),
+            },
+        )
+    return _soap_envelope(username, password, hotel_code, rq)
+
+
 def build_rate_amount_notif_rq(
     username: str,
     password: str,

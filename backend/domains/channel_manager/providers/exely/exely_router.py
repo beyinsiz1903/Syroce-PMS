@@ -235,13 +235,28 @@ async def test_connection(
     client, _conn = await _get_client(current_user.tenant_id)
     result = await client.test_connection()
     data = result.data or {}
+    tested_at = datetime.now(UTC).isoformat()
+    health_status = "healthy" if result.success and data.get("connected") else "failed"
+    safe_error_code = str(result.error_type or "EXELY_CONNECTION_TEST_FAILED") if health_status == "failed" else None
+    await db.exely_connections.update_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {
+            "$set": {
+                "last_connection_test_at": tested_at,
+                "last_connection_test_status": health_status,
+                "last_connection_test_error": safe_error_code,
+                **({"last_connection_success_at": tested_at} if health_status == "healthy" else {}),
+            }
+        },
+    )
     return {
         "success": result.success,
         "connected": bool(result.success and data.get("connected")),
         "room_types": data.get("room_types", []),
         "rate_plans": data.get("rate_plans", []),
         "duration_ms": result.duration_ms,
-        "error_type": result.error_type if not result.success else None,
+        "error_type": safe_error_code,
+        "tested_at": tested_at,
     }
 
 
@@ -328,6 +343,17 @@ async def create_room_mapping(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
+    duplicate = await db.exely_room_mappings.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "pms_room_type": payload.pms_room_type,
+            "exely_room_code": payload.exely_room_code,
+            "exely_rate_plan_code": payload.exely_rate_plan_code,
+        },
+        {"_id": 1},
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Bu oda ve fiyat plani eslemesi zaten mevcut")
     mapping = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -821,7 +847,15 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
     pending_events = await db.exely_raw_events.count_documents(
         {"tenant_id": current_user.tenant_id, "status": "pending"},
     )
+    error_cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     error_events = await db.exely_raw_events.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": "error",
+            "received_at": {"$gte": error_cutoff},
+        },
+    )
+    historical_error_events = await db.exely_raw_events.count_documents(
         {"tenant_id": current_user.tenant_id, "status": "error"},
     )
     total_reservations = await db.exely_reservations.count_documents(
@@ -833,6 +867,8 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
         "last_pull": cursor,
         "pending_events": pending_events,
         "error_events": error_events,
+        "historical_error_events": historical_error_events,
+        "error_window_hours": 24,
         "total_reservations": total_reservations,
     }
 

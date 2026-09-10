@@ -119,6 +119,28 @@ class TestExelyARIResponseContract:
 
 class TestExelySingleWriteProvider:
     @pytest.mark.asyncio
+    async def test_availability_batch_makes_one_transport_call(self):
+        provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=0)
+        provider._transport.send_soap = AsyncMock(return_value=SOAP_SUCCESS)
+        result = await provider.push_ari_operation(
+            operation="availability_batch",
+            room_type_code="",
+            rate_plan_code="",
+            start_date="",
+            end_date="",
+            value=[
+                {"room_type_code": "R1", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-12-31", "availability": 8},
+                {"room_type_code": "R2", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-12-31", "availability": 8},
+            ],
+        )
+        assert result.success is True
+        provider._transport.send_soap.assert_awaited_once()
+        sent_xml = provider._transport.send_soap.await_args.args[0]
+        assert sent_xml.count(":AvailStatusMessage BookingLimit=") == 2
+        assert 'Start="2030-01-01"' in sent_xml
+        assert 'End="2030-12-31"' in sent_xml
+
+    @pytest.mark.asyncio
     async def test_one_operation_makes_one_transport_call(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=5)
         provider._transport.send_soap = AsyncMock(return_value=SOAP_SUCCESS)
