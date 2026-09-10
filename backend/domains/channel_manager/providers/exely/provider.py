@@ -97,6 +97,7 @@ class ExelyProvider:
         connection_id: str = "",
         tenant_id: str = "",
         property_id: str = "",
+        connection_mode: str = "",
         quota_guard: ExelyProviderQuota | None = None,
         max_retries: int = 3,
     ):
@@ -110,7 +111,10 @@ class ExelyProvider:
         self._connection_id = connection_id
         self._tenant_id = tenant_id
         self._property_id = property_id or hotel_code
-        self._transport = ExelySoapTransport(endpoint_url)
+        self._transport = ExelySoapTransport(
+            endpoint_url,
+            connection_mode=connection_mode,
+        )
         self._retry = ExelyRetryPolicy(max_retries=max_retries)
         self._quota = quota_guard
         if self._quota is None and tenant_id and self._property_id:
