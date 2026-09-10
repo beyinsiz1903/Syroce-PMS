@@ -80,6 +80,11 @@ class ExelyARIUpdate(BaseModel):
     ctd: bool | None = None
 
 
+class ExelyARIWriteActivation(BaseModel):
+    enabled: bool
+    confirmation: str
+
+
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
@@ -295,6 +300,74 @@ async def update_currency(
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Active connection not found")
     return {"message": f"Currency updated to {payload.currency}", "currency": payload.currency}
+
+
+@router.post("/ari-write")
+async def update_ari_write_state(
+    payload: ExelyARIWriteActivation,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    """Enable or stop provider writes for exactly one tenant connection.
+
+    The global production gate remains controlled by the protected cutover
+    workflow.  Enabling here is deliberately tenant-scoped and requires a
+    healthy connection plus at least one complete availability mapping.
+    """
+    expected = "ENABLE_EXELY_ARI_WRITE" if payload.enabled else "DISABLE_EXELY_ARI_WRITE"
+    if payload.confirmation != expected:
+        raise HTTPException(status_code=400, detail="EXELY_ARI_WRITE_CONFIRMATION_REQUIRED")
+
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0},
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Exely connection not found")
+
+    if payload.enabled:
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            raise HTTPException(status_code=503, detail=runtime_block)
+
+        mapping = await db.exely_room_mappings.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "sync_availability": True,
+                "exely_room_code": {"$nin": [None, ""]},
+                "exely_rate_plan_code": {"$nin": [None, ""]},
+            },
+            {"_id": 1},
+        )
+        if not mapping:
+            raise HTTPException(status_code=409, detail="EXELY_ARI_MAPPING_REQUIRED")
+
+        client, _connection = await _get_client(current_user.tenant_id)
+        probe = await client.test_connection()
+        if not probe.success:
+            raise HTTPException(status_code=409, detail="EXELY_CONNECTION_PROBE_FAILED")
+
+    await db.exely_connections.update_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {
+            "$set": {
+                "ari_write_enabled": payload.enabled,
+                "ari_write_updated_at": datetime.now(UTC).isoformat(),
+                "ari_write_updated_by": current_user.name,
+            }
+        },
+    )
+    await log_sync(
+        PROVIDER,
+        current_user.tenant_id,
+        "ari_write_activation",
+        "enabled" if payload.enabled else "disabled",
+        user_name=current_user.name,
+    )
+    return {
+        "ari_write_enabled": payload.enabled,
+        "message": "Exely ARI gonderimi acildi" if payload.enabled else "Exely ARI gonderimi durduruldu",
+    }
 
 
 # ── Room Discovery ───────────────────────────────────────────────────
