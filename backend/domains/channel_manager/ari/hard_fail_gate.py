@@ -107,6 +107,24 @@ async def check_mapping_gate(
         },
         _NO_ID,
     )
+    legacy_exely_mapping = None
+    if room_mapping is None and provider == "exely":
+        legacy_query = {
+            "tenant_id": tenant_id,
+            "exely_room_code": room_type_code,
+        }
+        if rate_plan_code:
+            legacy_query["exely_rate_plan_code"] = rate_plan_code
+        legacy_exely_mapping = await db["exely_room_mappings"].find_one(
+            legacy_query,
+            _NO_ID,
+        )
+        if legacy_exely_mapping:
+            room_mapping = {
+                "is_active": legacy_exely_mapping.get("is_active", True),
+                "validation_status": legacy_exely_mapping.get("validation_status", "valid"),
+                "pms_room_type_id": legacy_exely_mapping.get("pms_room_type"),
+            }
     room_error = validate_room_mapping(room_mapping, room_type_code)
     if room_error:
         verdict.add_failure(
@@ -128,6 +146,12 @@ async def check_mapping_gate(
             },
             _NO_ID,
         )
+        if rate_mapping is None and legacy_exely_mapping:
+            rate_mapping = {
+                "is_active": legacy_exely_mapping.get("is_active", True),
+                "validation_status": legacy_exely_mapping.get("validation_status", "valid"),
+                "pms_rate_plan_id": legacy_exely_mapping.get("exely_rate_plan_code"),
+            }
         rate_error = validate_rate_plan_mapping(rate_mapping, rate_plan_code)
         if rate_error:
             verdict.add_failure(
