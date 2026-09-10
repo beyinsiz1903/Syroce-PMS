@@ -50,4 +50,16 @@ describe('UnifiedRateManager write safety', () => {
       message: '10 kayıt güncellendi ve provider teslimatı doğrulandı.',
     });
   });
+
+  it('makes partial and rejected provider deliveries visible', () => {
+    expect(getUnifiedRateDeliveryFeedback({ saved: 3, provider_delivery_state: 'PARTIAL' }).level).toBe('error');
+    expect(getUnifiedRateDeliveryFeedback({
+      saved: 3,
+      provider_delivery_state: 'NOT_SENT',
+      provider_error_codes: ['EXELY_ARI_REJECTED'],
+    })).toEqual({
+      level: 'error',
+      message: '3 yerel kayıt güncellendi; provider teslimatı başarısız: EXELY_ARI_REJECTED',
+    });
+  });
 });

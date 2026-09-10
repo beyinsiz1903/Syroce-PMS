@@ -22,7 +22,9 @@ from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.response_parser import parse_ari_update_rs
 from domains.channel_manager.providers.exely.soap_builder import (
     build_ari_update_rq,
+    build_rate_amount_batch_rq,
     build_rate_amount_notif_rq,
+    build_restriction_batch_rq,
 )
 from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 
@@ -94,6 +96,40 @@ class TestExelyGoldenXML:
         assert 'ArrivalDateBased="true"' in xml
         assert 'MinMaxMessageType="SetMinLOS"' in xml
 
+    def test_rate_batch_combines_room_types_and_periods(self):
+        xml = build_rate_amount_batch_rq(
+            "u",
+            "p",
+            "H",
+            [
+                {"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 100, "currency": "USD"},
+                {"room_type_code": "R2", "rate_plan_code": "NRF", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 90, "currency": "USD"},
+            ],
+        )
+        assert xml.count("<ns0:RateAmountMessage>") == 2
+        assert 'InvTypeCode="R1" RatePlanCode="BAR"' in xml
+        assert 'InvTypeCode="R2" RatePlanCode="NRF"' in xml
+        assert 'AmountAfterTax="90.00" CurrencyCode="USD"' in xml
+
+    def test_restriction_batch_supports_all_certification_controls(self):
+        base = {"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05"}
+        xml = build_restriction_batch_rq(
+            "u",
+            "p",
+            "H",
+            [
+                {**base, "operation": "stop_sell", "value": False},
+                {**base, "operation": "min_los_arrival", "value": 2},
+                {**base, "operation": "cta", "value": True},
+                {**base, "operation": "ctd", "value": False},
+            ],
+        )
+        assert xml.count("<ns0:AvailStatusMessage>") == 4
+        assert 'ArrivalDateBased="true"' in xml
+        assert 'Restriction="Arrival"' in xml
+        assert 'Restriction="Departure"' in xml
+        assert 'Status="Open"' in xml
+
 
 class TestExelyARIResponseContract:
     def test_explicit_success(self):
@@ -139,6 +175,37 @@ class TestExelySingleWriteProvider:
         assert sent_xml.count(":AvailStatusMessage BookingLimit=") == 2
         assert 'Start="2030-01-01"' in sent_xml
         assert 'End="2030-12-31"' in sent_xml
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("operation", "messages", "xml_marker"),
+        [
+            (
+                "rate_batch",
+                [{"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 100.0, "currency": "USD"}],
+                "RateAmountMessage",
+            ),
+            (
+                "restriction_batch",
+                [{"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05", "operation": "min_los_arrival", "value": 2}],
+                'ArrivalDateBased="true"',
+            ),
+        ],
+    )
+    async def test_certification_batches_make_one_transport_call(self, operation, messages, xml_marker):
+        provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=0)
+        provider._transport.send_soap = AsyncMock(return_value=SOAP_SUCCESS)
+        result = await provider.push_ari_operation(
+            operation=operation,
+            room_type_code="",
+            rate_plan_code="",
+            start_date="",
+            end_date="",
+            value=messages,
+        )
+        assert result.success is True
+        provider._transport.send_soap.assert_awaited_once()
+        assert xml_marker in provider._transport.send_soap.await_args.args[0]
 
     @pytest.mark.asyncio
     async def test_one_operation_makes_one_transport_call(self):
@@ -196,6 +263,24 @@ class TestExelyDurableDelivery:
         assert result.success is False
         assert result.state == "dry_run"
         assert result.provider_write_count == 0
+
+    @pytest.mark.parametrize(
+        ("operation", "message"),
+        [
+            (
+                "rate_batch",
+                {"room_type_code": "R", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 100.0, "currency": "USD"},
+            ),
+            (
+                "restriction_batch",
+                {"room_type_code": "R", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-01-05", "operation": "min_los_arrival", "value": 2},
+            ),
+        ],
+    )
+    def test_certification_batches_pass_durable_validation(self, operation, message):
+        result = preview_exely_ari(operation, {"tenant_id": "T", "property_id": "P", "value": [message]})
+        assert result.state == "dry_run"
+        assert result.error_code == ""
 
     def test_operation_identity_is_distinct_from_payload_fingerprint(self):
         first = preview_exely_ari(

@@ -36,6 +36,8 @@ SUPPORTED_OPERATIONS = frozenset(
         "availability",
         "availability_batch",
         "rate",
+        "rate_batch",
+        "restriction_batch",
         "stop_sell",
         "min_los",
         "min_los_arrival",
@@ -228,13 +230,13 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
     for field in ("tenant_id", "property_id"):
         if not str(update.get(field) or "").strip():
             return f"EXELY_ARI_{field.upper()}_MISSING"
-    if operation == "availability_batch":
+    if operation in {"availability_batch", "rate_batch", "restriction_batch"}:
         messages = update.get("value")
         if not isinstance(messages, list) or not messages or len(messages) > 200:
-            return "EXELY_ARI_AVAILABILITY_BATCH_INVALID"
+            return "EXELY_ARI_BATCH_INVALID"
         for message in messages:
             if not isinstance(message, dict):
-                return "EXELY_ARI_AVAILABILITY_BATCH_INVALID"
+                return "EXELY_ARI_BATCH_INVALID"
             for field in ("room_type_code", "rate_plan_code", "start_date", "end_date"):
                 if not str(message.get(field) or "").strip():
                     return f"EXELY_ARI_{field.upper()}_MISSING"
@@ -245,9 +247,29 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
                 return "EXELY_ARI_DATE_FORMAT_INVALID"
             if end < start:
                 return "EXELY_ARI_DATE_RANGE_INVALID"
-            availability = message.get("availability")
-            if isinstance(availability, bool) or not isinstance(availability, int) or not 0 <= availability <= 999:
-                return "EXELY_ARI_AVAILABILITY_INVALID"
+            if operation == "availability_batch":
+                availability = message.get("availability")
+                if isinstance(availability, bool) or not isinstance(availability, int) or not 0 <= availability <= 999:
+                    return "EXELY_ARI_AVAILABILITY_INVALID"
+            elif operation == "rate_batch":
+                try:
+                    amount = Decimal(str(message.get("rate_amount")))
+                except (InvalidOperation, TypeError, ValueError):
+                    return "EXELY_ARI_RATE_INVALID"
+                if not amount.is_finite() or amount < 0:
+                    return "EXELY_ARI_RATE_INVALID"
+                if not re.fullmatch(r"[A-Z]{3}", str(message.get("currency") or "")):
+                    return "EXELY_ARI_CURRENCY_INVALID"
+            else:
+                restriction = str(message.get("operation") or "")
+                value = message.get("value")
+                if restriction not in {"stop_sell", "min_los", "min_los_arrival", "max_los", "cta", "ctd"}:
+                    return "EXELY_ARI_RESTRICTION_INVALID"
+                if restriction in {"stop_sell", "cta", "ctd"}:
+                    if not isinstance(value, bool):
+                        return f"EXELY_ARI_{restriction.upper()}_INVALID"
+                elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                    return f"EXELY_ARI_{restriction.upper()}_INVALID"
         return ""
 
     for field in ("room_type_code", "rate_plan_code", "start_date", "end_date"):

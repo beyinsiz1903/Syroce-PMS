@@ -54,8 +54,10 @@ from .soap_builder import (
     build_availability_batch_rq,
     build_hotel_avail_rq,
     build_notif_report_rq,
+    build_rate_amount_batch_rq,
     build_rate_amount_notif_rq,
     build_read_rq,
+    build_restriction_batch_rq,
     get_soap_action_uri,
 )
 from .validators import extract_credentials, validate_ari_payload, validate_credentials
@@ -375,6 +377,8 @@ class ExelyProvider:
             "availability",
             "availability_batch",
             "rate",
+            "rate_batch",
+            "restriction_batch",
             "stop_sell",
             "min_los",
             "min_los_arrival",
@@ -386,26 +390,43 @@ class ExelyProvider:
             raise ExelyValidationError("Unsupported Exely ARI operation", field="operation")
 
         batch_messages: list[dict[str, Any]] = []
-        if operation == "availability_batch":
+        if operation in {"availability_batch", "rate_batch", "restriction_batch"}:
             if not isinstance(value, list) or not value or len(value) > 200:
-                raise ExelyValidationError("1-200 availability messages are required", field="value")
+                raise ExelyValidationError("1-200 batch messages are required", field="value")
             for item in value:
                 if not isinstance(item, dict):
-                    raise ExelyValidationError("Availability message must be an object", field="value")
+                    raise ExelyValidationError("Batch message must be an object", field="value")
                 validate_ari_payload(
                     str(item.get("room_type_code") or ""),
                     str(item.get("rate_plan_code") or ""),
                     str(item.get("start_date") or ""),
                     str(item.get("end_date") or ""),
                 )
-                availability = item.get("availability")
-                if isinstance(availability, bool) or not isinstance(availability, int) or not 0 <= availability <= 999:
-                    raise ExelyValidationError("Availability must be an integer from 0 to 999", field="availability")
+                if operation == "availability_batch":
+                    availability = item.get("availability")
+                    if isinstance(availability, bool) or not isinstance(availability, int) or not 0 <= availability <= 999:
+                        raise ExelyValidationError("Availability must be an integer from 0 to 999", field="availability")
+                elif operation == "rate_batch":
+                    rate_amount = item.get("rate_amount")
+                    if isinstance(rate_amount, bool) or not isinstance(rate_amount, (int, float)) or rate_amount < 0:
+                        raise ExelyValidationError("Rate amount must be zero or greater", field="rate_amount")
+                    if not isinstance(item.get("currency"), str) or len(item["currency"]) != 3:
+                        raise ExelyValidationError("Currency must be a three-letter code", field="currency")
+                else:
+                    restriction = item.get("operation")
+                    restriction_value = item.get("value")
+                    if restriction not in {"stop_sell", "min_los", "min_los_arrival", "max_los", "cta", "ctd"}:
+                        raise ExelyValidationError("Unsupported batch restriction", field="operation")
+                    if restriction in {"stop_sell", "cta", "ctd"}:
+                        if not isinstance(restriction_value, bool):
+                            raise ExelyValidationError("Restriction value must be boolean", field="value")
+                    elif isinstance(restriction_value, bool) or not isinstance(restriction_value, int) or restriction_value < 1:
+                        raise ExelyValidationError("Length of stay must be a positive integer", field="value")
                 batch_messages.append(item)
         else:
             validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
 
-        soap_operation = "OTA_HotelRateAmountNotifRQ" if operation == "rate" else "OTA_HotelAvailNotifRQ"
+        soap_operation = "OTA_HotelRateAmountNotifRQ" if operation in {"rate", "rate_batch"} else "OTA_HotelAvailNotifRQ"
         if operation == "availability_batch":
             xml = build_availability_batch_rq(
                 self._username,
@@ -425,6 +446,10 @@ class ExelyProvider:
                 float(value),
                 currency,
             )
+        elif operation == "rate_batch":
+            xml = build_rate_amount_batch_rq(self._username, self._password, self._hotel_code, batch_messages)
+        elif operation == "restriction_batch":
+            xml = build_restriction_batch_rq(self._username, self._password, self._hotel_code, batch_messages)
         else:
             kwargs = {
                 "availability": value if operation == "availability" else None,
@@ -450,7 +475,7 @@ class ExelyProvider:
         try:
             change_count = (
                 sum(_ari_change_count(str(item["start_date"]), str(item["end_date"])) for item in batch_messages)
-                if operation == "availability_batch"
+                if operation in {"availability_batch", "rate_batch", "restriction_batch"}
                 else _ari_change_count(start_date, end_date)
             )
             await self._reserve_quota(
@@ -474,7 +499,7 @@ class ExelyProvider:
                 "provider_codes": parsed.get("provider_codes", []),
                 "warning_codes": parsed.get("warning_codes", []),
             }
-            if operation == "availability_batch":
+            if operation in {"availability_batch", "rate_batch", "restriction_batch"}:
                 metadata["message_count"] = len(batch_messages)
             if parsed.get("retry_after_seconds"):
                 metadata["retry_after_seconds"] = int(parsed["retry_after_seconds"])

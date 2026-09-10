@@ -12,6 +12,7 @@ export const UPDATE_FIELDS = [
   { key: 'availability', label: 'Musaitlik' },
   { key: 'rate', label: 'Fiyat' },
   { key: 'min_stay', label: 'Minimum konaklama' },
+  { key: 'min_los_arrival', label: 'Varış tarihine göre min. konaklama', providers: ['exely'] },
   { key: 'max_stay', label: 'Maksimum konaklama' },
   { key: 'cta', label: 'CTA (Varisa Kapalı)' },
   { key: 'ctd', label: 'CTD (Cikisa Kapalı)' },

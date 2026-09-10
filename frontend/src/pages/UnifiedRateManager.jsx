@@ -32,6 +32,13 @@ export const getUnifiedRateDeliveryFeedback = data => {
   if (data?.provider_delivery_state === 'SCHEDULED' || data?.provider_delivery_state === 'QUEUED' || data?.provider_delivery_state === 'PENDING') {
     return { level: 'warning', message: `${data.saved || 0} yerel kayıt güncellendi; provider teslimatı henüz doğrulanmadı.` };
   }
+  if (data?.provider_delivery_state === 'PARTIAL') {
+    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı kısmen tamamlandı. İşlem günlüğünü kontrol edin.` };
+  }
+  const providerError = data?.provider_error_codes?.[0];
+  if (providerError) {
+    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı başarısız: ${providerError}` };
+  }
   return { level: 'warning', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı yapılmadı.` };
 };
 const UnifiedRateManager = ({
@@ -238,6 +245,7 @@ const UnifiedRateManager = ({
     rate: '',
     availability: '',
     min_stay: '',
+    min_los_arrival: '',
     max_stay: '',
     stop_sell: false,
     cta: false,
@@ -508,7 +516,7 @@ const UnifiedRateManager = ({
     const hasAnyValue = selectedRoomCodes.some(rtCode => {
       const rv = roomValues[rtCode];
       if (!rv) return false;
-      return enabledFields.has('rate') && hasValue(rv.rate) || enabledFields.has('availability') && hasValue(rv.availability) || enabledFields.has('min_stay') && hasValue(rv.min_stay) || enabledFields.has('max_stay') && hasValue(rv.max_stay) || enabledFields.has('stop_sell') && typeof rv.stop_sell === 'boolean' || enabledFields.has('cta') && typeof rv.cta === 'boolean' || enabledFields.has('ctd') && typeof rv.ctd === 'boolean';
+      return enabledFields.has('rate') && hasValue(rv.rate) || enabledFields.has('availability') && hasValue(rv.availability) || enabledFields.has('min_stay') && hasValue(rv.min_stay) || enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) || enabledFields.has('max_stay') && hasValue(rv.max_stay) || enabledFields.has('stop_sell') && typeof rv.stop_sell === 'boolean' || enabledFields.has('cta') && typeof rv.cta === 'boolean' || enabledFields.has('ctd') && typeof rv.ctd === 'boolean';
     });
     if (!hasAnyValue) {
       toast.error('Lutfen en az bir oda tipi için değer girin');
@@ -529,6 +537,7 @@ const UnifiedRateManager = ({
           rate: enabledFields.has('rate') && hasValue(rv.rate) ? parseFloat(rv.rate) : null,
           availability: enabledFields.has('availability') && hasValue(rv.availability) ? parseInt(rv.availability) : null,
           min_stay: enabledFields.has('min_stay') && hasValue(rv.min_stay) ? parseInt(rv.min_stay) : null,
+          min_los_arrival: enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) ? parseInt(rv.min_los_arrival) : null,
           max_stay: enabledFields.has('max_stay') && hasValue(rv.max_stay) ? parseInt(rv.max_stay) : null,
           stop_sell: enabledFields.has('stop_sell') ? rv.stop_sell : null,
           cta: enabledFields.has('cta') ? rv.cta : null,
