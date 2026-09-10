@@ -72,6 +72,7 @@ const ExelyIntegration = ({
   const [mappingStatus, setMappingStatus] = useState(null);
   const [manualMapOpen, setManualMapOpen] = useState(false);
   const [manualMapSaving, setManualMapSaving] = useState(false);
+  const [ariWriteLoading, setAriWriteLoading] = useState(false);
   const [manualMap, setManualMap] = useState({
     pms_room_type: '',
     exely_room_code: '',
@@ -351,6 +352,28 @@ const ExelyIntegration = ({
       toast.error(e.response?.data?.detail || 'Import hatası');
     }
   };
+  const handleAriWriteToggle = async () => {
+    const enabled = !connection?.connection?.ari_write_enabled;
+    if (!(await confirmDialog({
+      message: enabled ? 'Bu tesis için Exely stok, fiyat ve kısıtlama gönderimleri açılacak. Devam edilsin mi?' : 'Bu tesis için Exely stok, fiyat ve kısıtlama gönderimleri durdurulacak. Devam edilsin mi?',
+      variant: enabled ? 'warning' : 'danger'
+    }))) return;
+    setAriWriteLoading(true);
+    try {
+      const {
+        data
+      } = await axios.post(`/channel-manager/exely/ari-write`, {
+        enabled,
+        confirmation: enabled ? 'ENABLE_EXELY_ARI_WRITE' : 'DISABLE_EXELY_ARI_WRITE'
+      }, requestConfig);
+      toast.success(data.message);
+      await fetchConnection();
+    } catch (e) {
+      toast.error(getExelyErrorMessage(e, 'Exely ARI ayarı değiştirilemedi'));
+    } finally {
+      setAriWriteLoading(false);
+    }
+  };
   const isConnected = connection?.connected;
   return <>
       <div className="p-4 md:p-6 space-y-6" data-testid="exely-integration">
@@ -474,6 +497,19 @@ const ExelyIntegration = ({
                       <Button data-testid="exely-disconnect-btn" variant="destructive" onClick={handleDisconnect}>
                         <Unlink className="w-4 h-4 mr-2" /> Baglantivi Kes
                       </Button>
+                      <Button
+                        data-testid="exely-ari-write-toggle"
+                        variant={connection.connection?.ari_write_enabled ? 'destructive' : 'default'}
+                        onClick={handleAriWriteToggle}
+                        disabled={ariWriteLoading || !syncStatus?.production_safety?.ari_write_allowed}
+                        title={!syncStatus?.production_safety?.ari_write_allowed ? 'Önce global Exely ARI güvenlik anahtarı açılmalıdır' : undefined}
+                      >
+                        {ariWriteLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowDownUp className="w-4 h-4 mr-2" />}
+                        {connection.connection?.ari_write_enabled ? 'ARI Gönderimini Durdur' : 'ARI Gönderimini Aç'}
+                      </Button>
+                      <Badge variant={connection.connection?.ari_write_enabled ? 'default' : 'secondary'} className={connection.connection?.ari_write_enabled ? 'bg-emerald-600' : ''}>
+                        Tesis ARI: {connection.connection?.ari_write_enabled ? 'Açık' : 'Kapalı'}
+                      </Badge>
                       <div className="flex items-center gap-2 ml-auto">
                         <Label className="text-sm text-slate-600 whitespace-nowrap">Para Birimi:</Label>
                         <select

@@ -189,7 +189,11 @@ async def _push_to_exely(
 
         # PMS room type → Exely room code mapping
         mappings = await db.exely_room_mappings.find(
-            {"tenant_id": tenant_id, "pms_room_type": pms_room_type},
+            {
+                "tenant_id": tenant_id,
+                "pms_room_type": pms_room_type,
+                "sync_availability": {"$ne": False},
+            },
             {"_id": 0},
         ).to_list(10)
         if not mappings:
@@ -202,23 +206,21 @@ async def _push_to_exely(
             return {"configured": True, "queued_operations": 0, "errors": ["exely_property_mapping_missing"]}
         from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 
-        # Rate plan'ları al
-        rate_plans = conn.get("rate_plans", [])
-        if not rate_plans:
-            logger.debug("[AVAIL-AUTO-SYNC] Exely rate_plans empty")
-            return {"configured": True, "queued_operations": 0, "errors": ["exely_rate_plans_missing"]}
-
         # Tarihleri ardışık gruplara ayır
         sorted_dates = sorted(date_availability.keys())
         date_groups = _group_consecutive_dates_with_same_avail(sorted_dates, date_availability)
 
-        # Duplicate exely_room_code'ları filtrele
-        seen_room_codes = set()
+        # Every PMS mapping already identifies the exact Exely room/rate pair.
+        # Using every discovered connection rate plan here multiplies a single
+        # booking change into unrelated provider messages.
+        seen_pairs = set()
         unique_mappings = []
         for mapping in mappings:
             rc = mapping.get("exely_room_code", "")
-            if rc and rc not in seen_room_codes:
-                seen_room_codes.add(rc)
+            rp_code = mapping.get("exely_rate_plan_code", "")
+            pair = (rc, rp_code)
+            if rc and rp_code and pair not in seen_pairs:
+                seen_pairs.add(pair)
                 unique_mappings.append(mapping)
 
         # Her mapping ve rate plan için push et
@@ -226,39 +228,35 @@ async def _push_to_exely(
         errors = []
         for mapping in unique_mappings:
             exely_room_code = mapping.get("exely_room_code", "")
-            if not exely_room_code:
+            rp_code = mapping.get("exely_rate_plan_code", "")
+            if not exely_room_code or not rp_code:
                 continue
 
-            for rp in rate_plans:
-                rp_code = rp.get("code", "")
-                if not rp_code:
-                    continue
-
-                for group_start, group_end, avail in date_groups:
-                    try:
-                        result = await enqueue_exely_ari_update(
-                            tenant_id,
-                            hotel_code,
-                            room_type_code=exely_room_code,
-                            rate_plan_code=rp_code,
-                            start_date=group_start,
-                            end_date=group_end,
-                            source_service="availability_auto_sync",
-                            availability=avail,
+            for group_start, group_end, avail in date_groups:
+                try:
+                    result = await enqueue_exely_ari_update(
+                        tenant_id,
+                        hotel_code,
+                        room_type_code=exely_room_code,
+                        rate_plan_code=rp_code,
+                        start_date=group_start,
+                        end_date=group_end,
+                        source_service="availability_auto_sync",
+                        availability=avail,
+                    )
+                    if result["accepted"]:
+                        push_count += 1
+                        logger.info(
+                            "[AVAIL-AUTO-SYNC] Exely delivery_state=queued operation=availability",
                         )
-                        if result["accepted"]:
-                            push_count += 1
-                            logger.info(
-                                "[AVAIL-AUTO-SYNC] Exely delivery_state=queued operation=availability",
-                            )
-                        else:
-                            errors.append(str(result.get("error_code") or "exely_write_blocked"))
-                            logger.warning(
-                                "[AVAIL-AUTO-SYNC] Exely delivery_state=blocked operation=availability",
-                            )
-                    except Exception as e:
-                        errors.append(type(e).__name__)
-                        logger.error("[AVAIL-AUTO-SYNC] Exely queue failed: %s", type(e).__name__)
+                    else:
+                        errors.append(str(result.get("error_code") or "exely_write_blocked"))
+                        logger.warning(
+                            "[AVAIL-AUTO-SYNC] Exely delivery_state=blocked operation=availability",
+                        )
+                except Exception as e:
+                    errors.append(type(e).__name__)
+                    logger.error("[AVAIL-AUTO-SYNC] Exely queue failed: %s", type(e).__name__)
 
         logger.info("[AVAIL-AUTO-SYNC] Exely queued operations=%d", push_count)
         return {"configured": True, "queued_operations": push_count, "errors": errors}
