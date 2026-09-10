@@ -164,10 +164,7 @@ def _pricing_payload(docs: list[dict]) -> tuple[dict[str, str], dict[str, dict]]
         rule["provider_pricing_verified_at"] = doc.get("provider_pricing_verified_at")
         rule["provider_pricing_verified_by"] = doc.get("provider_pricing_verified_by")
         rule["provider_pricing_note"] = doc.get("provider_pricing_note")
-        rule["provider_sync_state"] = (
-            "VERIFIED" if rule["pricing_type"] != "per_person" or rule["provider_pricing_verified"]
-            else "MANUAL_CONFIGURATION_REQUIRED"
-        )
+        rule["provider_sync_state"] = "VERIFIED" if rule["pricing_type"] != "per_person" or rule["provider_pricing_verified"] else "MANUAL_CONFIGURATION_REQUIRED"
         rules[room_type_code] = rule
     return settings, rules
 
@@ -178,19 +175,12 @@ def _unsafe_hotelrunner_room_types(
     pricing_docs: list[dict],
 ) -> list[str]:
     """Return rate-write targets without a safe provider-side pricing attestation."""
-    remote_by_local = {
-        str(row["pms_room_type"]): str(row["hr_inv_code"])
-        for row in mappings
-        if row.get("pms_room_type") and row.get("hr_inv_code")
-    }
+    remote_by_local = {str(row["pms_room_type"]): str(row["hr_inv_code"]) for row in mappings if row.get("pms_room_type") and row.get("hr_inv_code")}
     pricing_by_code = {str(row["room_type_code"]): row for row in pricing_docs if row.get("room_type_code")}
     unsafe = []
     for local_code in selected_room_types:
         rule = pricing_by_code.get(local_code) or pricing_by_code.get(remote_by_local.get(local_code, ""))
-        if not rule or (
-            rule.get("pricing_type", "per_person") == "per_person"
-            and not rule.get("provider_pricing_verified", False)
-        ):
+        if not rule or (rule.get("pricing_type", "per_person") == "per_person" and not rule.get("provider_pricing_verified", False)):
             unsafe.append(local_code)
     return unsafe
 
@@ -199,14 +189,10 @@ async def _add_pms_rule_aliases(tenant_id: str, provider: str, rules: dict) -> d
     """Expose provider-code rules under their mapped PMS room type as well."""
     aliased = dict(rules)
     if provider == "hotelrunner":
-        mappings = await db.hotelrunner_room_mappings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(200)
+        mappings = await db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
         pairs = ((m.get("hr_inv_code"), m.get("pms_room_type")) for m in mappings)
     else:
-        mappings = await db.exely_room_mappings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(200)
+        mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
         pairs = ((m.get("exely_room_code"), m.get("pms_room_type")) for m in mappings)
     for remote_code, pms_type in pairs:
         if remote_code in rules and pms_type:
@@ -239,11 +225,11 @@ def _provider_delivery_summary(results: list[dict]) -> dict:
         }
 
     states = {result["delivery_state"] for result in pending}
+    verified = all(result.get("provider_verified") is True for result in pending)
     return {
-        "provider_verified": False,
+        "provider_verified": verified,
         "provider_delivery_state": states.pop() if len(states) == 1 else "PENDING",
-        # Scheduled or durable-queued work is not proof of a provider mutation.
-        "provider_write_count": None,
+        "provider_write_count": (sum(int(result.get("provider_write_count") or 0) for result in pending) if verified else None),
     }
 
 
@@ -255,62 +241,34 @@ def _provider_delivery_summary(results: list[dict]) -> dict:
 
 @router.get("/detect-provider")
 async def detect_provider(current_user: User = Depends(get_current_user)):
-    """Aktif kanal saglayicilari tespit et.
-
-    Returns the primary `provider` (back-compat) AND the full list of
-    active providers in `available` so the UI can render tabs for each.
-    Uses `_detect_active_provider` so legacy HR tenants (provider_connections
-    fallback) are also recognised.
-    """
+    """Return the single server-selected channel manager for the tenant."""
     tenant_id = current_user.tenant_id
-
-    # HR through canonical detector (handles legacy provider_connections)
-    hr_detect = await _detect_active_provider(tenant_id, prefer="hotelrunner")
-    hr_conn = hr_detect["connection"] if hr_detect["provider"] == "hotelrunner" else None
-
-    exely_conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True},
-        exely_connection_projection(),
-    )
-
-    # Otel icin super_admin bir altyapi sectiyse, operatore YALNIZCA o
-    # saglayici gosterilir (fail-closed: secilenin baglantisi yoksa liste bos).
-    configured = await _tenant_configured_provider(tenant_id)
-
-    available: list[dict] = []
-    if hr_conn and configured in (None, "hotelrunner"):
-        available.append(
-            {
-                "provider": "hotelrunner",
-                "provider_name": "HotelRunner",
-                "room_count": len(hr_conn.get("cached_rooms", [])),
-            }
-        )
-    if exely_conn and configured in (None, "exely"):
-        available.append(
-            {
-                "provider": "exely",
-                "provider_name": "Exely",
-                "room_count": len(exely_conn.get("room_types", [])),
-            }
-        )
-
-    if not available:
+    detection = await _detect_active_provider(tenant_id)
+    provider = detection.get("provider")
+    conn = detection.get("connection") or {}
+    if not provider:
         return {
             "provider": None,
             "provider_name": None,
             "has_connection": False,
             "room_count": 0,
             "available": [],
+            "configuration_error": detection.get("configuration_error"),
         }
 
-    primary = available[0]
+    provider_name = "HotelRunner" if provider == "hotelrunner" else "Exely"
+    room_count = len(conn.get("cached_rooms", [])) if provider == "hotelrunner" else len(conn.get("room_types", []))
+    selected = {
+        "provider": provider,
+        "provider_name": provider_name,
+        "room_count": room_count,
+    }
     return {
-        "provider": primary["provider"],
-        "provider_name": primary["provider_name"],
+        "provider": provider,
+        "provider_name": provider_name,
         "has_connection": True,
-        "room_count": primary["room_count"],
-        "available": available,
+        "room_count": room_count,
+        "available": [selected],
     }
 
 
@@ -401,8 +359,7 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
 
     calendar_data = await db.hr_rate_calendar.find(
         {"tenant_id": tenant_id, "date": {"$gte": start_date, "$lte": end_date}},
-        {"_id": 0, "room_type_code": 1, "rate_plan_code": 1, "date": 1,
-         "availability": 1, "rate": 1, "min_stay": 1, "stop_sell": 1},
+        {"_id": 0, "room_type_code": 1, "rate_plan_code": 1, "date": 1, "availability": 1, "rate": 1, "min_stay": 1, "stop_sell": 1},
     ).to_list(5000)
 
     cal_index = {}
@@ -680,60 +637,22 @@ async def unified_bulk_grid_update(
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
 
-    # Resolve target providers.
-    # If `request.provider` is one of "hotelrunner" / "exely", STRICTLY
-    # restrict the push to that single provider — the UI's per-provider
-    # tab is the source of truth and avoids cross-channel mix-ups.
-    # Otherwise (None / "all" / unknown) fan out to every active provider.
-    targets: list[dict] = []
-
-    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
-    if not hr_conn:
-        pc = await db.provider_connections.find_one({"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"})
-        if pc:
-            legacy = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1})
-            hr_conn = {
-                "tenant_id": tenant_id,
-                "is_active": True,
-                "hr_id": pc.get("credentials", {}).get("hr_id", ""),
-                "environment": pc.get("environment", "live"),
-                "cached_rooms": (legacy or {}).get("cached_rooms", []),
-            }
-
-    exely_conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True},
-        exely_connection_projection(),
-    )
-
-    # Per-tenant secili altyapi (super_admin) OTORITERDIR; istemcinin
-    # request.provider'i bunu ezemez: configured-exely otel yalnizca Exely'ye
-    # push eder (baglantisi yoksa 404), HR'a ASLA. Secimi seciliyle CAKISAN
-    # request.provider -> target bos -> 404 (fail-closed). Secim yoksa (alan
-    # null) eski explicit/fan-out davranisi korunur (pilot_drift=0).
-    configured = await _tenant_configured_provider(tenant_id)
-    explicit = request.provider if request.provider in ("hotelrunner", "exely") else None
-
-    if configured is not None:
-        if explicit is None or explicit == configured:
-            if configured == "hotelrunner" and hr_conn:
-                targets.append({"provider": "hotelrunner", "connection": hr_conn})
-            elif configured == "exely" and exely_conn:
-                targets.append({"provider": "exely", "connection": exely_conn})
-        # explicit != configured -> targets bos kalir -> 404 (fail-closed)
-    elif explicit == "hotelrunner":
-        if hr_conn:
-            targets.append({"provider": "hotelrunner", "connection": hr_conn})
-    elif explicit == "exely":
-        if exely_conn:
-            targets.append({"provider": "exely", "connection": exely_conn})
-    else:
-        if hr_conn:
-            targets.append({"provider": "hotelrunner", "connection": hr_conn})
-        if exely_conn:
-            targets.append({"provider": "exely", "connection": exely_conn})
-
-    if not targets:
-        raise HTTPException(status_code=404, detail="Aktif kanal saglayici bulunamadi")
+    # The browser never chooses the outbound provider. The superadmin tenant
+    # configuration is authoritative; with one legacy connection we can still
+    # auto-detect it, while two active unconfigured providers fail closed.
+    detection = await _detect_active_provider(tenant_id)
+    if not detection["provider"]:
+        error_code = detection.get("configuration_error") or "connection_missing"
+        raise HTTPException(
+            status_code=409 if error_code == "multiple_active_providers" else 404,
+            detail={
+                "error_code": f"CHANNEL_MANAGER_{error_code.upper()}",
+                "delivery_state": "BLOCKED",
+                "provider_status_class": "NOT_SENT",
+                "provider_write_count": 0,
+            },
+        )
+    targets = [detection]
 
     runtime_block = _ari_write_block_for_targets(targets)
     if runtime_block:
@@ -751,7 +670,7 @@ async def unified_bulk_grid_update(
         "[UNIFIED] bulk-grid-update fan-out targets=%s tenant=%s primary=%s",
         [t["provider"] for t in targets],
         tenant_id,
-        request.provider,
+        detection["provider"],
     )
 
     # Keep `detection` / `provider_type` populated for downstream code that
@@ -780,7 +699,18 @@ async def unified_bulk_grid_update(
             for rp_code in request.rate_plan_codes:
                 pairs.append((rt_code, rp_code))
 
-    selected_days_set = set(request.selected_days) if request.selected_days else None
+    selected_days_set = set(request.selected_days) if request.selected_days is not None else None
+    if selected_days_set is not None and not selected_days_set:
+        raise HTTPException(status_code=422, detail="En az bir gün seçilmelidir")
+    if selected_days_set is not None and not selected_days_set.issubset(set(range(7))):
+        raise HTTPException(status_code=422, detail="Geçersiz gün seçimi")
+    try:
+        parsed_start = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+        parsed_end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Geçersiz tarih biçimi") from exc
+    if parsed_end < parsed_start:
+        raise HTTPException(status_code=422, detail="Bitiş tarihi başlangıç tarihinden önce olamaz")
     update_fields = set(request.update_fields)
 
     # HotelRunner's public inventory API accepts only the base rate. Guest and
@@ -793,11 +723,7 @@ async def unified_bulk_grid_update(
             {"tenant_id": tenant_id, "pms_room_type": {"$in": selected_room_types}},
             {"_id": 0, "pms_room_type": 1, "hr_inv_code": 1},
         ).to_list(200)
-        remote_by_local = {
-            str(row["pms_room_type"]): str(row["hr_inv_code"])
-            for row in mappings
-            if row.get("pms_room_type") and row.get("hr_inv_code")
-        }
+        remote_by_local = {str(row["pms_room_type"]): str(row["hr_inv_code"]) for row in mappings if row.get("pms_room_type") and row.get("hr_inv_code")}
         candidate_codes = sorted(set(selected_room_types) | set(remote_by_local.values()))
         pricing_docs = await db.hr_pricing_settings.find(
             {"tenant_id": tenant_id, "room_type_code": {"$in": candidate_codes}},
@@ -808,10 +734,7 @@ async def unified_bulk_grid_update(
             codes = ", ".join(unsafe_room_types)
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    "HotelRunner yalnız taban fiyat kabul eder. Önce HotelRunner panelindeki ek yetişkin/çocuk "
-                    f"kurallarının Syroce ile eşleştiğini doğrulayın: {codes}"
-                ),
+                detail=(f"HotelRunner yalnız taban fiyat kabul eder. Önce HotelRunner panelindeki ek yetişkin/çocuk kurallarının Syroce ile eşleştiğini doğrulayın: {codes}"),
             )
 
     # Determine which calendar collection to use
@@ -897,7 +820,7 @@ async def unified_bulk_grid_update(
                 )
                 delivery_state = "SCHEDULED" if cnt else "NOT_SENT"
             else:
-                cnt = await _push_to_exely(
+                exely_delivery = await _push_to_exely(
                     tenant_id,
                     tgt["connection"],
                     request,
@@ -906,15 +829,17 @@ async def unified_bulk_grid_update(
                     update_fields,
                     selected_days_set,
                 )
-                delivery_state = "QUEUED" if cnt else "NOT_SENT"
+                cnt = exely_delivery["task_count"]
+                delivery_state = exely_delivery["delivery_state"]
             channel_push_count += cnt or 0
-            provider_delivery_results.append(
-                {
-                    "provider": tgt["provider"],
-                    "delivery_state": delivery_state,
-                    "task_count": cnt or 0,
-                }
-            )
+            delivery_result = {
+                "provider": tgt["provider"],
+                "delivery_state": delivery_state,
+                "task_count": cnt or 0,
+            }
+            if tgt["provider"] == "exely":
+                delivery_result.update(exely_delivery)
+            provider_delivery_results.append(delivery_result)
         except Exception as e:
             logger.error("[UNIFIED] %s push exception_class=%s", tgt["provider"], type(e).__name__)
             provider_delivery_results.append(
@@ -1091,6 +1016,28 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
     return len(push_tasks)
 
 
+def _selected_date_ranges(start_date: str, end_date: str, selected_days_set: set[int] | None) -> list[tuple[str, str]]:
+    """Return only selected calendar days, merged into contiguous ranges."""
+    cursor = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    ranges: list[tuple[str, str]] = []
+    range_start = None
+    previous = None
+    while cursor <= end:
+        selected = selected_days_set is None or cursor.isoweekday() % 7 in selected_days_set
+        if selected:
+            if range_start is None:
+                range_start = cursor
+            previous = cursor
+        elif range_start is not None:
+            ranges.append((range_start.isoformat(), previous.isoformat()))
+            range_start = previous = None
+        cursor += timedelta(days=1)
+    if range_start is not None:
+        ranges.append((range_start.isoformat(), previous.isoformat()))
+    return ranges
+
+
 async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set):
     """Queue Exely changes through the canonical durable ARI outbox.
 
@@ -1099,11 +1046,11 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
       HR:xxx -> hotelrunner_room_mappings.pms_room_type_name -> exely_room_mappings.exely_room_code
       rate_plan -> Exely connection'daki rate_plans listesi.
     """
-    del selected_days_set
     hotel_code = str(conn.get("hotel_code") or "")
     if not hotel_code:
         logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=property")
-        return 0
+        return {"task_count": 0, "delivery_state": "NOT_SENT", "provider_verified": False, "provider_write_count": 0}
+    from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
     from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 
     # ── HR room code (HR:xxx / xxx) -> pms_room_type -> exely_room_code ──
@@ -1152,7 +1099,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         rc = m.get("exely_room_code", "")
         pt = m.get("pms_room_type", "")
         if rc and pt:
-            pms_to_exely_codes.setdefault(pt, []).append(rc)
+            if rc not in pms_to_exely_codes.get(pt, []):
+                pms_to_exely_codes.setdefault(pt, []).append(rc)
     # 2) Birlesik room_mappings (provider=exely): provider_room_id -> Exely API kodu
     rm_exely = await db.room_mappings.find(
         {"tenant_id": tenant_id, "provider": "exely", "provider_room_code": {"$in": pms_types}, "is_active": True},
@@ -1184,14 +1132,14 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         filtered = [p for p in selected_exely_plans if str(p) in valid_plan_set]
         if not filtered:
             logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=rate_plan")
-            return 0
+            return {"task_count": 0, "delivery_state": "NOT_SENT", "provider_verified": False, "provider_write_count": 0}
         exely_rate_plans = filtered
     else:
         exely_rate_plans = conn_exely_plans
 
     if not exely_rate_plans:
         logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=rate_plan")
-        return 0
+        return {"task_count": 0, "delivery_state": "NOT_SENT", "provider_verified": False, "provider_write_count": 0}
 
     logger.info(
         "[UNIFIED] Exely mapping_state=ready room_mapping_count=%d rate_plan_count=%d",
@@ -1221,76 +1169,144 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             continue
         seen_exely_for_rt[rt_code] = exely_codes
 
+    mapped_targets: list[tuple[str, str, str]] = []
+    mapped_seen: set[tuple[str, str]] = set()
+    for rt_code, requested_plan in pairs:
+        exely_codes = seen_exely_for_rt.get(rt_code) or []
+        plans = [str(requested_plan)] if requested_plan else [str(plan) for plan in exely_rate_plans]
+        for ex_code in exely_codes:
+            for rp in plans:
+                if valid_plan_set and rp not in valid_plan_set:
+                    continue
+                remote_key = (str(ex_code), rp)
+                if remote_key in mapped_seen:
+                    continue
+                mapped_seen.add(remote_key)
+                mapped_targets.append((str(rt_code), str(ex_code), rp))
+
     push_tasks = []
+    resend_token = str(uuid.uuid4())
     _cur_code, _ = await get_tenant_currency(tenant_id)
     push_currency = conn.get("currency") or _cur_code
-    for rt_code, _rp_code_ignored in pairs:
-        exely_codes = seen_exely_for_rt.get(rt_code)
-        if not exely_codes:
-            continue
+    confirmed_messages = 0
+    confirmed_writes = 0
+    batch_failed = False
 
+    if "availability" in update_fields:
+        availability_messages = []
+        date_ranges = _selected_date_ranges(request.start_date, request.end_date, selected_days_set)
+        for rt_code, ex_code, rp in mapped_targets:
+            rv = per_room_map.get(rt_code)
+            availability = rv.availability if rv else request.availability
+            if availability is None:
+                continue
+            for range_start, range_end in date_ranges:
+                availability_messages.append(
+                    {
+                        "room_type_code": ex_code,
+                        "rate_plan_code": rp,
+                        "start_date": range_start,
+                        "end_date": range_end,
+                        "availability": availability,
+                    }
+                )
+        for chunk_index in range(0, len(availability_messages), 200):
+            chunk = availability_messages[chunk_index : chunk_index + 200]
+            result = await deliver_exely_ari(
+                tenant_id,
+                "availability_batch",
+                {
+                    "property_id": hotel_code,
+                    "value": chunk,
+                    "operation_identity": f"unified-rate-manager:{resend_token}:availability:{chunk_index // 200}",
+                },
+            )
+            if result.success:
+                confirmed_messages += len(chunk)
+                confirmed_writes += result.provider_write_count
+            else:
+                batch_failed = True
+                logger.error(
+                    "[UNIFIED] Exely availability batch failed delivery_state=%s error_code=%s",
+                    result.state,
+                    result.error_code,
+                )
+
+    for rt_code, ex_code, rp in mapped_targets:
         rv = per_room_map.get(rt_code)
         push_rate = (rv.rate if rv else request.rate) if "rate" in update_fields else None
-        push_avail = (rv.availability if rv else request.availability) if "availability" in update_fields else None
         push_stop = (rv.stop_sell if rv else request.stop_sell) if "stop_sell" in update_fields else None
         push_min = (rv.min_stay if rv else request.min_stay) if "min_stay" in update_fields else None
         push_max = (rv.max_stay if rv else request.max_stay) if "max_stay" in update_fields else None
         push_cta = (rv.cta if rv else request.cta) if "cta" in update_fields else None
         push_ctd = (rv.ctd if rv else request.ctd) if "ctd" in update_fields else None
 
-        for ex_code in exely_codes:
-            for rp in exely_rate_plans:
+        if all(value is None for value in (push_rate, push_stop, push_min, push_max, push_cta, push_ctd)):
+            continue
 
-                async def _push(
-                    rt=ex_code,
-                    rp=rp,
-                    rate=push_rate,
-                    avail=push_avail,
-                    stop=push_stop,
-                    minstay=push_min,
-                    maxstay=push_max,
-                    cta=push_cta,
-                    ctd=push_ctd,
-                    cur=push_currency,
-                ):
-                    try:
-                        result = await enqueue_exely_ari_update(
-                            tenant_id,
-                            hotel_code,
-                            room_type_code=rt,
-                            rate_plan_code=rp,
-                            start_date=request.start_date,
-                            end_date=request.end_date,
-                            source_service="unified_rate_manager",
-                            availability=avail,
-                            rate_amount=rate,
-                            currency=cur,
-                            stop_sell=stop,
-                            min_los=minstay,
-                            max_los=maxstay,
-                            cta=cta,
-                            ctd=ctd,
-                        )
-                        logger.info(
-                            "[UNIFIED] Exely delivery_state=%s queued_operation_count=%d",
-                            result["delivery_state"],
-                            result["queued_operation_count"],
-                        )
-                        return result
-                    except Exception as exc:
-                        logger.error("[UNIFIED] Exely queue_failed exception_class=%s", type(exc).__name__)
+        async def _push(
+            rt=ex_code,
+            rate_plan=rp,
+            rate=push_rate,
+            stop=push_stop,
+            minstay=push_min,
+            maxstay=push_max,
+            cta=push_cta,
+            ctd=push_ctd,
+            cur=push_currency,
+        ):
+            try:
+                result = await enqueue_exely_ari_update(
+                    tenant_id,
+                    hotel_code,
+                    room_type_code=rt,
+                    rate_plan_code=rate_plan,
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    source_service="unified_rate_manager",
+                    rate_amount=rate,
+                    currency=cur,
+                    stop_sell=stop,
+                    min_los=minstay,
+                    max_los=maxstay,
+                    cta=cta,
+                    ctd=ctd,
+                    force_resend_token=resend_token,
+                )
+                logger.info(
+                    "[UNIFIED] Exely delivery_state=%s queued_operation_count=%d",
+                    result["delivery_state"],
+                    result["queued_operation_count"],
+                )
+                return result
+            except Exception as exc:
+                logger.error("[UNIFIED] Exely queue_failed exception_class=%s", type(exc).__name__)
 
-                push_tasks.append(_push())
+        push_tasks.append(_push())
 
+    queued_operations = 0
     if push_tasks:
         results = await asyncio.gather(*push_tasks, return_exceptions=True)
         failures = sum(1 for result in results if isinstance(result, Exception) or result is None)
         if failures:
             logger.error("[UNIFIED] Exely queue_failed count=%d", failures)
         logger.info("[UNIFIED] Exely durable queue completed: %d tasks", len(results))
-        return sum(int(result.get("queued_operation_count", 0)) for result in results if isinstance(result, dict) and result.get("accepted") is True)
+        queued_operations = sum(int(result.get("queued_operation_count", 0)) for result in results if isinstance(result, dict) and result.get("accepted") is True)
 
-    return 0
+    task_count = confirmed_messages + queued_operations
+    provider_verified = confirmed_messages > 0 and queued_operations == 0 and not batch_failed
+    if provider_verified:
+        delivery_state = "CONFIRMED"
+    elif task_count > 0:
+        delivery_state = "PENDING"
+    else:
+        delivery_state = "NOT_SENT"
+    return {
+        "task_count": task_count,
+        "delivery_state": delivery_state,
+        "provider_verified": provider_verified,
+        "provider_write_count": confirmed_writes if provider_verified else None,
+    }
 
 
 async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request, update_fields, selected_days_set, now, user_id):

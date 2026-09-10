@@ -48,6 +48,7 @@ const UnifiedRateManager = ({
 
   // Provider detection
   const [provider, setProvider] = useState(null);
+  const [providerConfigurationError, setProviderConfigurationError] = useState(null);
   const [detecting, setDetecting] = useState(true);
 
   // Grid data
@@ -100,7 +101,7 @@ const UnifiedRateManager = ({
     d.setDate(d.getDate() + 13);
     return d.toISOString().slice(0, 10);
   });
-  const headers = {};
+  const headers = useMemo(() => ({}), []);
 
   // Fetch circuit breaker status (CM-Hardening Stop-Sale Circuit Breaker, May 2026)
   const fetchBreakers = useCallback(async () => {
@@ -115,7 +116,7 @@ const UnifiedRateManager = ({
       // silent — admin-level endpoint, not all roles can read
       console.warn('[UnifiedRateManager] fetchBreakers skipped (likely insufficient role):', e?.response?.status);
     }
-  }, []);
+  }, [headers]);
   useEffect(() => {
     fetchBreakers();
     const id = setInterval(fetchBreakers, 30000);
@@ -137,6 +138,7 @@ const UnifiedRateManager = ({
           headers
         });
         setProvider(data.provider || null);
+        setProviderConfigurationError(data.configuration_error || null);
       } catch {
         toast.error('Kanal saglayici tespit edilemedi');
       }
@@ -153,7 +155,7 @@ const UnifiedRateManager = ({
     try {
       const {
         data
-      } = await axios.get(`${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}&provider=${provider}`, {
+      } = await axios.get(`${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}`, {
         headers
       });
       setGrid(data.grid || []);
@@ -497,11 +499,16 @@ const UnifiedRateManager = ({
       toast.error('Lutfen tarih araligi seçin');
       return;
     }
+    if (!allDays && selectedDays.size === 0) {
+      toast.error('Lütfen en az bir gün seçin');
+      return;
+    }
     const selectedRoomCodes = Object.keys(selections);
+    const hasValue = value => value !== null && value !== undefined && value !== '';
     const hasAnyValue = selectedRoomCodes.some(rtCode => {
       const rv = roomValues[rtCode];
       if (!rv) return false;
-      return enabledFields.has('rate') && rv.rate || enabledFields.has('availability') && rv.availability || enabledFields.has('min_stay') && rv.min_stay || enabledFields.has('max_stay') && rv.max_stay || enabledFields.has('stop_sell') && rv.stop_sell || enabledFields.has('cta') && rv.cta || enabledFields.has('ctd') && rv.ctd;
+      return enabledFields.has('rate') && hasValue(rv.rate) || enabledFields.has('availability') && hasValue(rv.availability) || enabledFields.has('min_stay') && hasValue(rv.min_stay) || enabledFields.has('max_stay') && hasValue(rv.max_stay) || enabledFields.has('stop_sell') && typeof rv.stop_sell === 'boolean' || enabledFields.has('cta') && typeof rv.cta === 'boolean' || enabledFields.has('ctd') && typeof rv.ctd === 'boolean';
     });
     if (!hasAnyValue) {
       toast.error('Lutfen en az bir oda tipi için değer girin');
@@ -519,10 +526,10 @@ const UnifiedRateManager = ({
         return {
           room_type_code: rtCode,
           rate_plan_codes: Array.from(selections[rtCode]),
-          rate: enabledFields.has('rate') && rv.rate ? parseFloat(rv.rate) : null,
-          availability: enabledFields.has('availability') && rv.availability ? parseInt(rv.availability) : null,
-          min_stay: enabledFields.has('min_stay') && rv.min_stay ? parseInt(rv.min_stay) : null,
-          max_stay: enabledFields.has('max_stay') && rv.max_stay ? parseInt(rv.max_stay) : null,
+          rate: enabledFields.has('rate') && hasValue(rv.rate) ? parseFloat(rv.rate) : null,
+          availability: enabledFields.has('availability') && hasValue(rv.availability) ? parseInt(rv.availability) : null,
+          min_stay: enabledFields.has('min_stay') && hasValue(rv.min_stay) ? parseInt(rv.min_stay) : null,
+          max_stay: enabledFields.has('max_stay') && hasValue(rv.max_stay) ? parseInt(rv.max_stay) : null,
           stop_sell: enabledFields.has('stop_sell') ? rv.stop_sell : null,
           cta: enabledFields.has('cta') ? rv.cta : null,
           ctd: enabledFields.has('ctd') ? rv.ctd : null
@@ -532,7 +539,6 @@ const UnifiedRateManager = ({
       const {
         data
       } = await axios.post(`${UNIFIED_PREFIX}/bulk-grid-update`, {
-        provider,
         per_room_values: perRoomValues,
         start_date: dateFrom,
         end_date: dateTo,
@@ -655,12 +661,22 @@ const UnifiedRateManager = ({
       </MaybeLayout>;
   }
   if (!provider) {
+    const providerErrorCopy = providerConfigurationError === 'multiple_active_providers' ? {
+      title: 'Kanal yöneticisi seçimi gerekli',
+      description: 'Bu otelde birden fazla aktif entegrasyon var. Süperadmin ekranından otelin kullanacağı kanal yöneticisini seçin.'
+    } : providerConfigurationError === 'connection_missing' ? {
+      title: 'Seçilen kanal bağlantısı aktif değil',
+      description: 'Süperadmin tarafından seçilen entegrasyonun bağlantısını tamamlayın veya otel için doğru kanal yöneticisini seçin.'
+    } : {
+      title: t('cm.pages_UnifiedRateManager.aktif_kanal_saglayici_bulunamadi'),
+      description: t('cm.pages_UnifiedRateManager.fiyat_ve_musaitlik_yonetimi_icin_once_bi')
+    };
     return <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4" data-testid="unified-rate-no-provider">
           <Building2 className="w-16 h-16 text-zinc-300" />
-          <h2 className="text-xl font-semibold text-zinc-600">{t('cm.pages_UnifiedRateManager.aktif_kanal_saglayici_bulunamadi')}</h2>
+          <h2 className="text-xl font-semibold text-zinc-600">{providerErrorCopy.title}</h2>
           <p className="text-sm text-zinc-500 text-center max-w-md">
-            {t('cm.pages_UnifiedRateManager.fiyat_ve_musaitlik_yonetimi_icin_once_bi')}
+            {providerErrorCopy.description}
           </p>
         </div>
       </MaybeLayout>;

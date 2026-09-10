@@ -6,13 +6,13 @@ super_admin-selected per-hotel channel-manager provider behaviour.
 
 Scenarios:
 - null-single        : no configured provider, single active connection -> auto-detect
-- null-both          : no configured provider, both connections -> default order (HR > Exely)
+- null-both          : no configured provider, both connections -> fail closed
 - configured-present : configured provider present -> ONLY that provider (beats default)
 - configured-missing : configured provider's connection absent -> FAIL-CLOSED (no fallback)
 - configured-auth    : super_admin selection is AUTHORITATIVE; client prefer= cannot
                        override it (conflicting prefer -> FAIL-CLOSED), while a matching
                        prefer is honoured.
-- unconfigured-prefer: with no selection, explicit prefer= keeps legacy soft behaviour.
+- unconfigured-prefer: client input cannot choose between two active providers.
 
 The module-level Motor `db` is replaced with an in-memory async double so the
 function logic is exercised without a live MongoDB.
@@ -24,19 +24,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from domains.channel_manager import unified_rate_manager_router as urm
-
 TENANT = "t-test-1"
 
 
 def _fake_db(*, configured=None, hr=False, exely=False, pc=None):
     """Build an in-memory async db double for the collections the detector touches."""
     db = types.SimpleNamespace()
-    db.tenants = types.SimpleNamespace(
-        find_one=AsyncMock(
-            return_value=({"channel_manager_provider": configured} if configured is not None else {})
-        )
-    )
+    db.tenants = types.SimpleNamespace(find_one=AsyncMock(return_value=({"channel_manager_provider": configured} if configured is not None else {})))
     hr_doc = {"tenant_id": TENANT, "is_active": True, "cached_rooms": [1, 2]} if hr else None
     db.hotelrunner_connections = types.SimpleNamespace(find_one=AsyncMock(return_value=hr_doc))
     db.provider_connections = types.SimpleNamespace(find_one=AsyncMock(return_value=pc))
@@ -48,6 +42,7 @@ def _fake_db(*, configured=None, hr=False, exely=False, pc=None):
 def _detect(db, **kwargs):
     """Run the async detector against a fake db, restoring the global afterwards."""
     import services.cm_provider as cm_provider
+
     original = cm_provider.db
     cm_provider.db = db
     try:
@@ -63,11 +58,12 @@ def test_null_single_autodetect_exely():
     assert res["connection"] is not None
 
 
-def test_null_both_defaults_to_hotelrunner():
-    """No configured provider + both active -> default order favours HotelRunner."""
+def test_null_both_fails_closed_until_superadmin_selects_provider():
+    """No configured provider + both active -> client cannot choose the route."""
     res = _detect(_fake_db(configured=None, hr=True, exely=True))
-    assert res["provider"] == "hotelrunner"
-    assert res["connection"] is not None
+    assert res["provider"] is None
+    assert res["connection"] is None
+    assert res["configuration_error"] == "multiple_active_providers"
 
 
 def test_configured_exely_present_beats_default_priority():
@@ -111,11 +107,12 @@ def test_configured_provider_overrides_conflicting_prefer_fail_closed():
     assert res["configuration_error"] == "provider_not_selected"
 
 
-def test_unconfigured_prefer_keeps_legacy_soft_behaviour():
-    """No configured provider + explicit prefer=exely + both active -> exely (legacy soft prefer)."""
+def test_unconfigured_prefer_cannot_select_between_two_active_providers():
+    """No configured provider + both active remains fail-closed despite client input."""
     res = _detect(_fake_db(configured=None, hr=True, exely=True), prefer="exely")
-    assert res["provider"] == "exely"
-    assert res["connection"] is not None
+    assert res["provider"] is None
+    assert res["connection"] is None
+    assert res["configuration_error"] == "multiple_active_providers"
 
 
 def test_no_connections_returns_none():

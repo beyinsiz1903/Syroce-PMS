@@ -227,6 +227,53 @@ class TestExelyDurableDelivery:
         provider.push_ari_operation.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_batch_delivery_is_validated_persisted_and_written_once(self):
+        provider = AsyncMock()
+        provider.push_ari_operation.return_value = ProviderResult(
+            success=True,
+            metadata={"provider_status_class": "SUCCESS", "provider_write_count": 1},
+        )
+        messages = [
+            {
+                "room_type_code": "R1",
+                "rate_plan_code": "RP",
+                "start_date": "2030-01-01",
+                "end_date": "2030-01-05",
+                "availability": 0,
+            },
+            {
+                "room_type_code": "R2",
+                "rate_plan_code": "RP",
+                "start_date": "2030-01-01",
+                "end_date": "2030-01-05",
+                "availability": 8,
+            },
+        ]
+        with (
+            patch("domains.channel_manager.providers.exely.ari_delivery._prepare_delivery", new=AsyncMock(return_value=(True, None))),
+            patch("domains.channel_manager.providers.exely.ari_delivery._mark_sending", new=AsyncMock(return_value=True)),
+            patch("domains.channel_manager.providers.exely.ari_delivery._finish", new=AsyncMock(return_value=True)),
+        ):
+            result = await deliver_exely_ari(
+                "T",
+                "availability_batch",
+                {"property_id": "P", "value": messages, "operation_identity": "manual-save-1"},
+                provider=provider,
+                write_enabled=True,
+            )
+        assert result.success is True
+        assert result.provider_write_count == 1
+        provider.push_ari_operation.assert_awaited_once_with(
+            operation="availability_batch",
+            room_type_code="",
+            rate_plan_code="",
+            start_date="",
+            end_date="",
+            value=messages,
+            currency="TRY",
+        )
+
+    @pytest.mark.asyncio
     async def test_timeout_is_ambiguous_and_never_retried(self):
         provider = AsyncMock()
         provider.push_ari_operation.side_effect = TimeoutError("unknown")
@@ -331,6 +378,30 @@ class TestExelyCanonicalOutbox:
         assert result["provider_write_count"] == 0
         assert [event.payload["operation"] for event in captured] == ["availability", "stop_sell", "cta"]
         assert all(event.target_provider == "exely" for event in captured)
+
+    @pytest.mark.asyncio
+    async def test_explicit_resend_token_reaches_each_durable_event(self):
+        captured = []
+
+        async def fake_publish(event):
+            captured.append(event)
+            return {"durable": True}
+
+        with patch("domains.channel_manager.providers.exely.ari_publish.publish_ari_event", side_effect=fake_publish):
+            await enqueue_exely_ari_update(
+                "T",
+                "P",
+                "R",
+                "RP",
+                "2030-01-01",
+                "2030-01-02",
+                source_service="test",
+                rate_amount=100,
+                stop_sell=False,
+                force_resend_token="manual-save-1",
+            )
+        assert len(captured) == 2
+        assert all(event.payload["force_resend_token"] == "manual-save-1" for event in captured)
 
     def test_compiler_preserves_explicit_restriction_operation(self):
         delta = compile_delta_exely(
