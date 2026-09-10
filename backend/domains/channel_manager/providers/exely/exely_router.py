@@ -115,6 +115,7 @@ async def _get_client(tenant_id: str) -> tuple:
         "endpoint_url": creds["endpoint_url"],
         "tenant_id": tenant_id,
         "property_id": creds["hotel_code"],
+        "connection_mode": str(conn.get("mode") or ""),
         "connection_id": f"{tenant_id}:{creds['hotel_code']}",
     }
     try:

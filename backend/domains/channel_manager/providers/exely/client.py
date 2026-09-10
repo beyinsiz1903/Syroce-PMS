@@ -61,8 +61,11 @@ class ExelySoapTransport:
     Retry logic is handled externally by the provider layer.
     """
 
-    def __init__(self, endpoint_url: str = EXELY_DEFAULT_URL):
-        self._endpoint_url = validate_exely_endpoint(endpoint_url)
+    def __init__(self, endpoint_url: str = EXELY_DEFAULT_URL, *, connection_mode: str = ""):
+        self._endpoint_url = validate_exely_endpoint(
+            endpoint_url,
+            connection_mode=connection_mode,
+        )
 
     async def send_soap(
         self,

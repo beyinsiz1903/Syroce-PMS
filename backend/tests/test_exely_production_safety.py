@@ -115,6 +115,15 @@ def test_production_hosted_certification_allows_only_explicit_sandbox_connection
         == EXELY_TEST_ENDPOINT_URL
     )
 
+    provider = ExelyProvider(
+        username="sandbox-user",
+        password="sandbox-password",
+        hotel_code="501694",
+        endpoint_url=EXELY_TEST_ENDPOINT_URL,
+        connection_mode="sandbox",
+    )
+    assert provider._transport._endpoint_url == EXELY_TEST_ENDPOINT_URL
+
 
 @pytest.mark.asyncio
 async def test_production_ari_delivery_blocks_before_db_and_provider(monkeypatch):
