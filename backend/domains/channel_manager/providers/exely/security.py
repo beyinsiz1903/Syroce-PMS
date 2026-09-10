@@ -41,7 +41,7 @@ def exely_connection_projection() -> dict[str, int]:
     return {"_id": 0}
 
 
-def validate_exely_endpoint(endpoint_url: str) -> str:
+def validate_exely_endpoint(endpoint_url: str, *, connection_mode: str = "") -> str:
     """Validate an Exely endpoint without resolving or contacting the host."""
     try:
         parsed = urlsplit(str(endpoint_url or ""))
@@ -58,7 +58,14 @@ def validate_exely_endpoint(endpoint_url: str) -> str:
         raise ExelyValidationError("Exely endpoint port is not allowed", field="endpoint_url")
     if hostname not in EXELY_ALLOWED_HOSTS:
         raise ExelyValidationError("Exely endpoint host is not allowed", field="endpoint_url")
-    if is_exely_production() and hostname != EXELY_PRODUCTION_HOST:
+    # A production-hosted PMS may operate an explicitly sandbox-scoped Exely
+    # connection during provider certification. This exception only permits
+    # the allowlisted Exely test host; production still refuses arbitrary
+    # endpoints and plaintext credentials remain unavailable below.
+    sandbox_connection = str(connection_mode or "").strip().lower() == "sandbox"
+    if is_exely_production() and hostname != EXELY_PRODUCTION_HOST and not (
+        sandbox_connection and hostname == EXELY_TEST_HOST
+    ):
         raise ExelyValidationError("Production requires the Exely production endpoint", field="endpoint_url")
     if (parsed.path or "").rstrip("/").lower() != EXELY_ENDPOINT_PATH:
         raise ExelyValidationError("Exely endpoint path is not allowed", field="endpoint_url")
@@ -91,7 +98,7 @@ def _normalize_credentials(credentials: dict[str, Any], connection: dict[str, An
     endpoint_url = str(credentials.get("endpoint_url") or connection.get("endpoint_url") or EXELY_TEST_ENDPOINT_URL)
     if not username or not password or not hotel_code:
         return None
-    validate_exely_endpoint(endpoint_url)
+    validate_exely_endpoint(endpoint_url, connection_mode=str(connection.get("mode") or ""))
     return {
         "username": username,
         "password": password,
