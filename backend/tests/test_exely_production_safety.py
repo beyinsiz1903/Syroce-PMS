@@ -6,6 +6,7 @@ import pytest
 
 from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
 from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
+from domains.channel_manager.providers.exely.errors import ExelyValidationError
 from domains.channel_manager.providers.exely.exely_pull_worker import ExelyPullScheduler
 from domains.channel_manager.providers.exely.production_safety import (
     EXELY_ARI_WRITE_KILL_SWITCH_ACTIVE,
@@ -17,7 +18,11 @@ from domains.channel_manager.providers.exely.production_safety import (
     safe_runtime_state,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
-from domains.channel_manager.providers.exely.security import EXELY_PRODUCTION_HOST
+from domains.channel_manager.providers.exely.security import (
+    EXELY_PRODUCTION_HOST,
+    EXELY_TEST_ENDPOINT_URL,
+    validate_exely_endpoint,
+)
 
 pytestmark = pytest.mark.exely_failure_stress
 
@@ -97,6 +102,18 @@ def test_non_production_pilot_behavior_is_unchanged(monkeypatch):
     assert provider_io_block_reason() == ""
     assert reservation_sync_block_reason() == ""
     assert ari_write_block_reason() == ""
+
+
+def test_production_hosted_certification_allows_only_explicit_sandbox_connection(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+
+    with pytest.raises(ExelyValidationError, match="Production requires"):
+        validate_exely_endpoint(EXELY_TEST_ENDPOINT_URL)
+
+    assert (
+        validate_exely_endpoint(EXELY_TEST_ENDPOINT_URL, connection_mode="sandbox")
+        == EXELY_TEST_ENDPOINT_URL
+    )
 
 
 @pytest.mark.asyncio

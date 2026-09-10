@@ -100,7 +100,12 @@ async def _get_client(tenant_id: str) -> tuple:
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found. Please set up a connection first.")
 
-    creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_router")
+    try:
+        creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_router")
+    except ExelyError as exc:
+        raise HTTPException(status_code=502, detail=f"Exely credentials rejected ({type(exc).__name__})")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Exely credentials failed ({type(exc).__name__})")
     if not creds:
         raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
     kwargs = {
