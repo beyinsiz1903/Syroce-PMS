@@ -96,11 +96,13 @@ class OutboxWorker:
         batch_size: int = 10,
         processing_timeout: int = 120,
         drain_pause: float = 0.1,
+        tenant_id: str | None = None,
     ):
         self.poll_interval = poll_interval
         self.batch_size = batch_size
         self.processing_timeout = processing_timeout
         self.drain_pause = drain_pause
+        self.tenant_id = tenant_id
         self.worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
@@ -215,8 +217,10 @@ class OutboxWorker:
             "available_at": {"$lte": now},
             "max_attempts": {"$exists": True},
         }
+        if self.tenant_id:
+            query["tenant_id"] = self.tenant_id
         import sys
-        if "pytest" not in sys.modules:
+        if "pytest" not in sys.modules and not self.tenant_id:
             query["tenant_id"] = {"$not": {"$regex": "^test_outbox_"}}
 
         event = await sysdb.outbox_events.find_one_and_update(
