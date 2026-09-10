@@ -46,8 +46,12 @@ async def test_manual_booking_uses_canonical_room_night_inventory(monkeypatch):
             "rooms": _RoomsCollection(),
         },
     )()
-    hotelrunner_push = AsyncMock()
-    exely_push = AsyncMock()
+    hotelrunner_push = AsyncMock(
+        return_value={"configured": False, "queued_operations": 0, "errors": []}
+    )
+    exely_push = AsyncMock(
+        return_value={"configured": True, "queued_operations": 1, "errors": []}
+    )
     authoritative_inventory = AsyncMock(
         return_value={"2026-08-26": 0, "2026-08-27": 0}
     )
@@ -56,7 +60,7 @@ async def test_manual_booking_uses_canonical_room_night_inventory(monkeypatch):
     monkeypatch.setattr(availability_auto_sync, "_push_to_exely", exely_push)
     monkeypatch.setattr(availability_auto_sync, "_load_authoritative_availability", authoritative_inventory)
 
-    await availability_auto_sync._do_sync(
+    result = await availability_auto_sync._do_sync(
         "tenant-1",
         "r1",
         "2026-08-26T14:00:00+00:00",
@@ -69,6 +73,11 @@ async def test_manual_booking_uses_canonical_room_night_inventory(monkeypatch):
     expected = {"2026-08-26": 0, "2026-08-27": 0}
     hotelrunner_push.assert_awaited_once_with("tenant-1", "standard", expected)
     exely_push.assert_awaited_once_with("tenant-1", "standard", expected)
+    assert result == {
+        "configured_providers": 1,
+        "queued_operations": 1,
+        "errors": [],
+    }
 
 
 @pytest.mark.asyncio

@@ -117,6 +117,43 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
         jobs_created = result.get("sync_jobs_created", 0)
         jobs = result.get("jobs", [])
 
+        # Provider integrations created before cm_connectors live in the
+        # provider-specific connection collections. Booking events must still
+        # use the durable path for those tenants; otherwise they were silently
+        # acknowledged as "Dispatched: 0" without publishing inventory.
+        if jobs_created == 0 and cm_event_name in {
+            "booking_created",
+            "booking_modified",
+            "booking_cancelled",
+            "booking_no_show",
+        }:
+            from domains.channel_manager.availability_auto_sync import (
+                sync_availability_from_durable_event,
+            )
+
+            room_id = cm_payload.get("room_id", "")
+            check_in = cm_payload.get("check_in") or cm_payload.get("date_start", "")
+            check_out = cm_payload.get("check_out") or cm_payload.get("date_end", "")
+            if not room_id or not check_in or not check_out:
+                return False, "permanent: booking availability payload is incomplete"
+
+            legacy_result = await sync_availability_from_durable_event(
+                tenant_id=tenant_id,
+                room_id=room_id,
+                check_in=check_in,
+                check_out=check_out,
+            )
+            configured = int(legacy_result.get("configured_providers", 0))
+            queued = int(legacy_result.get("queued_operations", 0))
+            legacy_errors = legacy_result.get("errors", [])
+            if legacy_errors:
+                detail = "; ".join(str(item) for item in legacy_errors) or "no operations accepted"
+                return False, f"retryable: legacy channel availability sync failed: {detail[:400]}"
+            if configured and queued == 0:
+                return False, "retryable: legacy channel availability sync accepted no operations"
+            if configured:
+                return True, f"Dispatched: {queued} legacy availability operations queued"
+
         # Check if any jobs had errors
         errors = [j for j in jobs if "error" in j]
         if errors and not any("job_id" in j for j in jobs):

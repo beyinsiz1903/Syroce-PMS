@@ -183,7 +183,7 @@ export const NewBookingDialog = ({
                 className="w-full border rounded-md p-2"
                 value={newBooking.room_type || ''}
                 onChange={(e) => {
-                  setNewBooking({...newBooking, room_type: e.target.value, room_id: ''});
+                  setNewBooking((current) => ({...current, room_type: e.target.value, room_id: ''}));
                 }}
                 data-testid="new-booking-room-type"
               >
@@ -199,12 +199,12 @@ export const NewBookingDialog = ({
                 onChange={(e) => {
                   const room = (rooms || []).find(item => item.id === e.target.value);
                   const baseRate = Number(room?.base_price || 0);
-                  setNewBooking({
-                    ...newBooking,
+                  setNewBooking((current) => ({
+                    ...current,
                     room_id: e.target.value,
                     base_rate: baseRate,
-                    total_amount: baseRate * Math.max(1, nightsBetween(newBooking.check_in, newBooking.check_out)),
-                  });
+                    total_amount: baseRate * Math.max(1, nightsBetween(current.check_in, current.check_out)),
+                  }));
                 }}
                 data-testid="new-booking-room-select"
               >
@@ -353,13 +353,15 @@ export const NewBookingDialog = ({
               min={effectiveMinDate}
               onChange={(e) => {
                 const newCi = e.target.value;
-                let updates = {...newBooking, check_in: newCi};
-                if (newCi && (!newBooking.check_out || newBooking.check_out <= newCi)) {
-                  const nextDay = new Date(newCi + 'T00:00:00');
-                  nextDay.setDate(nextDay.getDate() + 1);
-                  updates.check_out = nextDay.toISOString().split('T')[0];
-                }
-                setNewBooking(recalculateNightlyTotal(updates));
+                setNewBooking((current) => {
+                  const updates = {...current, check_in: newCi};
+                  if (newCi && (!current.check_out || current.check_out <= newCi)) {
+                    const nextDay = new Date(newCi + 'T00:00:00');
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    updates.check_out = nextDay.toISOString().split('T')[0];
+                  }
+                  return recalculateNightlyTotal(updates);
+                });
               }}
               required
               data-testid="new-booking-checkin"
@@ -371,7 +373,7 @@ export const NewBookingDialog = ({
               type="date"
               value={newBooking.check_out}
               min={newBooking.check_in || effectiveMinDate}
-              onChange={(e) => setNewBooking(recalculateNightlyTotal({...newBooking, check_out: e.target.value}))}
+              onChange={(e) => setNewBooking((current) => recalculateNightlyTotal({...current, check_out: e.target.value}))}
               required
               data-testid="new-booking-checkout"
             />
@@ -600,7 +602,7 @@ export const NewBookingDialog = ({
           <select
             className="w-full border rounded-md p-2"
             value={newBooking.status}
-            onChange={(e) => setNewBooking({...newBooking, status: e.target.value})}
+            onChange={(e) => setNewBooking((current) => ({...current, status: e.target.value}))}
           >
             <option value="confirmed">{t('cm.pages_calendar_CalendarDialogs.onaylandi')}</option>
             <option value="guaranteed">Garantili</option>
