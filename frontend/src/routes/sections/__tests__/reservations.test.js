@@ -15,6 +15,16 @@ vi.mock('../lazyPages', () => ({
 import { reservationRoutes } from '../reservations';
 
 describe('reservationRoutes', () => {
+  it('redirects the legacy app calendar URL to the reservation calendar', () => {
+    const routes = reservationRoutes({ p: (component) => ({ component }) });
+
+    expect(routes).toContainEqual({
+      path: '/app/calendar',
+      type: 'redirect',
+      to: '/app/reservation-calendar',
+    });
+  });
+
   it('uses the canonical group booking screen for both supported URLs', () => {
     const routes = reservationRoutes({ p: (component) => ({ component }) });
     const primary = routes.find((route) => route.path === '/group-bookings-manage');
