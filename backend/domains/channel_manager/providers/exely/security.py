@@ -94,7 +94,12 @@ async def get_decrypted_credentials(
 def _normalize_credentials(credentials: dict[str, Any], connection: dict[str, Any]) -> dict[str, str] | None:
     username = str(credentials.get("username") or "")
     password = str(credentials.get("password") or "")
-    hotel_code = str(credentials.get("hotel_code") or connection.get("hotel_code") or "")
+    # The active connection selects the property. Vault payloads can outlive a
+    # property reassignment and may still contain the previous hotel code; if
+    # that stale value wins, reads and ARI writes silently target another
+    # Exely test property while the UI displays the new one. The vault remains
+    # authoritative for secrets, but never for routing scope.
+    hotel_code = str(connection.get("hotel_code") or credentials.get("hotel_code") or "")
     endpoint_url = str(credentials.get("endpoint_url") or connection.get("endpoint_url") or EXELY_TEST_ENDPOINT_URL)
     if not username or not password or not hotel_code:
         return None
