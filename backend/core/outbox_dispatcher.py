@@ -118,10 +118,14 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
         jobs = result.get("jobs", [])
 
         # Provider integrations created before cm_connectors live in the
-        # provider-specific connection collections. Booking events must still
-        # use the durable path for those tenants; otherwise they were silently
-        # acknowledged as "Dispatched: 0" without publishing inventory.
-        if jobs_created == 0 and cm_event_name in {
+        # provider-specific connection collections. A generic CM job is not a
+        # substitute for that provider-specific delivery: in particular the
+        # generic inventory engine currently has no Exely dispatcher.  Running
+        # only when ``jobs_created == 0`` silently acknowledged a booking when
+        # an unrelated/generic connector existed, while no Exely ARI event was
+        # ever published.  Keep both paths: the generic job serves its own
+        # connector and this durable path serves legacy provider connections.
+        if cm_event_name in {
             "booking_created",
             "booking_modified",
             "booking_cancelled",

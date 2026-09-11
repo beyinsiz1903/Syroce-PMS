@@ -58,6 +58,43 @@ async def test_booking_event_falls_back_to_legacy_provider_connections():
 
 
 @pytest.mark.asyncio
+async def test_booking_event_also_delivers_to_legacy_provider_when_generic_job_exists():
+    """A generic CM connector must not suppress the Exely/legacy ARI path."""
+    cm_result = {
+        "handled": True,
+        "sync_jobs_created": 1,
+        "jobs": [{"connector_id": "generic-connector", "job_id": "job-1", "status": "succeeded"}],
+    }
+    legacy_result = {
+        "configured_providers": 1,
+        "queued_operations": 1,
+        "errors": [],
+    }
+
+    with (
+        patch(
+            "channel_manager.application.event_sync_service.EventSyncService.handle_event",
+            new=AsyncMock(return_value=cm_result),
+        ),
+        patch(
+            "domains.channel_manager.availability_auto_sync.sync_availability_from_durable_event",
+            new=AsyncMock(return_value=legacy_result),
+        ) as legacy_sync,
+        patch("core.agency_fanout.fan_out_agency_events", new=AsyncMock()),
+    ):
+        success, message = await dispatch_outbox_event(_booking_event())
+
+    assert success is True
+    assert message == "Dispatched: 1 legacy availability operations queued"
+    legacy_sync.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        room_id="room-101",
+        check_in="2026-11-10",
+        check_out="2026-11-12",
+    )
+
+
+@pytest.mark.asyncio
 async def test_booking_event_retries_when_legacy_provider_accepts_no_work():
     cm_result = {
         "handled": True,
