@@ -148,6 +148,18 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
             legacy_errors = legacy_result.get("errors", [])
             if legacy_errors:
                 detail = "; ".join(str(item) for item in legacy_errors) or "no operations accepted"
+                # A legacy tenant can have both provider-specific connections.
+                # Do not replay an entire booking event (and duplicate a
+                # successful Exely push) merely because another provider was
+                # not configured to accept this room type.  A zero-queue
+                # result is still retried below.
+                if queued:
+                    logger.warning(
+                        "Legacy channel availability partially queued: queued=%d errors=%s",
+                        queued,
+                        detail,
+                    )
+                    return True, f"Dispatched: {queued} legacy availability operations queued; partial: {detail[:400]}"
                 return False, f"retryable: legacy channel availability sync failed: {detail[:400]}"
             if configured and queued == 0:
                 return False, "retryable: legacy channel availability sync accepted no operations"
