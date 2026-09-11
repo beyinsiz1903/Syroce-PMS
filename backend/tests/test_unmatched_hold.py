@@ -265,6 +265,25 @@ async def test_sentinel_locks_do_not_reduce_real_room_type_availability():
     assert deluxe_after["locked_booking"] == 0
     assert deluxe_after["locked_hold"] == 0
 
+
+async def test_legacy_room_without_is_active_is_sellable_inventory():
+    """Pre-is_active room records must not disappear from channel inventory."""
+    from core.room_type_inventory_service import compute_room_type_inventory
+
+    with tenant_context(TEST_TENANT):
+        await db.rooms.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": TEST_TENANT,
+            "room_type": "LEGACY_STANDARD",
+            # Intentionally no is_active field: this is the legacy shape.
+        })
+
+    inventory = await compute_room_type_inventory(TEST_TENANT, "2031-03-12")
+    legacy = next((row for row in inventory if row["room_type"] == "LEGACY_STANDARD"), None)
+    assert legacy is not None
+    assert legacy["physical_total"] == 1
+    assert legacy["sellable"] == 1
+
 @pytest.mark.asyncio
 async def test_check_booking_source_exists_tenant_isolation():
     """Ayni ext_id ile olusturulmus kayit diger tenant'tan bulunamamali."""

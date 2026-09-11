@@ -140,7 +140,10 @@ async def compute_room_type_inventory(
 
     # Step 1: Count active rooms per type for this tenant
     room_type_pipeline = [
-        {"$match": {"tenant_id": tenant_id, "is_active": True}},
+        # Older room documents predate the is_active field.  They are live
+        # inventory unless they were explicitly disabled; excluding them makes
+        # a reservation's room-night lock invisible to channel availability.
+        {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}}},
         {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
     ]
     if room_groups is None:
