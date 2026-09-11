@@ -3,6 +3,7 @@ PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
 
+import asyncio
 import logging
 
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
@@ -85,6 +86,69 @@ reservation_read_service = ReservationReadService()
 update_reservation_service = UpdateReservationService()
 
 REJECTED_STATUS = "rejected"
+
+
+async def _publish_multi_room_booking_created_events(
+    tenant_id: str,
+    property_id: str,
+    bookings: list[dict],
+) -> None:
+    """Give multi-room bookings the same durable inventory path as single bookings.
+
+    The UI uses the multi-room endpoint even when the reservation contains one
+    room. Skipping these events therefore leaves channel availability unchanged
+    for an ordinary reservation created from the main PMS screen.
+    """
+    from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
+    from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+
+    for booking in bookings:
+        try:
+            await enqueue_outbox_event(
+                db,
+                tenant_id=tenant_id,
+                event_type=BOOKING_CREATED,
+                entity_type="booking",
+                entity_id=booking["id"],
+                property_id=property_id,
+                correlation_id=str(uuid.uuid4()),
+                payload={
+                    "booking_id": booking["id"],
+                    "guest_id": booking["guest_id"],
+                    "room_id": booking["room_id"],
+                    "check_in": booking["check_in"],
+                    "check_out": booking["check_out"],
+                    "status": booking.get("status", "pending"),
+                    "property_id": property_id,
+                    "source_channel": booking.get("channel") or "direct",
+                    "origin": "ui",
+                },
+            )
+        except Exception as exc:
+            # The booking is already durable at this point. Do not report a
+            # failed creation and invite a duplicate retry; the immediate sync
+            # below remains a best-effort recovery path.
+            logger.error(
+                "Multi-room booking outbox enqueue failed booking=%s error=%s",
+                booking.get("id"),
+                type(exc).__name__,
+            )
+
+        try:
+            asyncio.create_task(
+                sync_availability_after_booking(
+                    tenant_id=tenant_id,
+                    room_id=booking["room_id"],
+                    check_in=booking["check_in"],
+                    check_out=booking["check_out"],
+                )
+            )
+        except Exception as exc:
+            logger.error(
+                "Multi-room booking immediate availability sync failed booking=%s error=%s",
+                booking.get("id"),
+                type(exc).__name__,
+            )
 
 # ── Local models ──
 
@@ -1089,5 +1153,12 @@ async def create_multi_room_booking(
             await _rollback_group(reason="iter_unexpected_error")
             logger.exception("Multi-room loop unexpected error: %s", e)
             raise HTTPException(status_code=500, detail="Multi-room booking failed; group rolled back")
+
+    property_id = str(getattr(current_user, "property_id", None) or current_user.tenant_id)
+    await _publish_multi_room_booking_created_events(
+        current_user.tenant_id,
+        property_id,
+        created_bookings,
+    )
 
     return created_bookings
