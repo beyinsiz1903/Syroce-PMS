@@ -6,6 +6,7 @@ API endpoints for Exely connection management, room discovery, mapping, ARI push
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,6 +27,8 @@ from domains.channel_manager.providers.exely.production_safety import (
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.security import (
+    EXELY_PRODUCTION_ENDPOINT_URL,
+    EXELY_TEST_ENDPOINT_URL,
     exely_connection_projection,
     is_exely_production,
     resolve_exely_credentials,
@@ -52,6 +55,7 @@ class ExelyConnectionSetup(BaseModel):
     currency: str = "TRY"
     auto_sync_reservations: bool = True
     sync_interval_minutes: int = 15
+    mode: Literal["sandbox", "production"] = "production"
 
 
 class ExelyRoomMapping(BaseModel):
@@ -86,6 +90,14 @@ class ExelyARIWriteActivation(BaseModel):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _connection_endpoint(mode: str, endpoint_url: str | None) -> str:
+    if endpoint_url:
+        return endpoint_url
+    if mode == "sandbox":
+        return EXELY_TEST_ENDPOINT_URL
+    return EXELY_PRODUCTION_ENDPOINT_URL
 
 
 async def _get_client(tenant_id: str) -> tuple:
@@ -140,6 +152,7 @@ async def setup_connection(
     if runtime_block:
         raise HTTPException(status_code=503, detail=runtime_block)
 
+    endpoint_url = _connection_endpoint(payload.mode, payload.endpoint_url)
     kwargs = {
         "username": payload.username,
         "password": payload.password,
@@ -147,9 +160,9 @@ async def setup_connection(
         "tenant_id": current_user.tenant_id,
         "property_id": payload.hotel_code,
         "connection_id": f"{current_user.tenant_id}:{payload.hotel_code}",
+        "connection_mode": payload.mode,
+        "endpoint_url": endpoint_url,
     }
-    if payload.endpoint_url:
-        kwargs["endpoint_url"] = payload.endpoint_url
 
     provider = ExelyProvider(**kwargs)
     provider_result = await provider.test_connection()
@@ -164,7 +177,7 @@ async def setup_connection(
         "username": payload.username,
         "password": payload.password,
         "hotel_code": payload.hotel_code,
-        "endpoint_url": payload.endpoint_url or "",
+        "endpoint_url": endpoint_url,
         "currency": payload.currency,
     }
     credentials_ref = await sm.store_provider_credentials(
@@ -180,12 +193,12 @@ async def setup_connection(
         "tenant_id": current_user.tenant_id,
         "hotel_code": payload.hotel_code,
         "credentials_ref": credentials_ref,
-        "endpoint_url": payload.endpoint_url or "",
+        "endpoint_url": endpoint_url,
         "property_name": payload.property_name or f"Exely Property ({payload.hotel_code})",
         "auto_sync_reservations": payload.auto_sync_reservations,
         "ari_write_enabled": False,
         "sync_interval_minutes": payload.sync_interval_minutes,
-        "mode": "production" if is_exely_production() else "sandbox",
+        "mode": payload.mode,
         "currency": payload.currency,
         "is_active": True,
         "room_types": test_data.get("room_types", []),

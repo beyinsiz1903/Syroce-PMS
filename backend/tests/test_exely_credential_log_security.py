@@ -151,6 +151,71 @@ async def test_secrets_manager_credentials_are_resolved_without_plaintext_fallba
     vault_lookup.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_active_connection_hotel_code_overrides_stale_vault_scope(monkeypatch):
+    class _StalePropertySecretsManager:
+        async def get_provider_credentials(self, *args, **kwargs):
+            return {
+                "username": "synthetic-vault-user",
+                "password": "synthetic-vault-password",
+                "hotel_code": "old-test-property",
+                "endpoint_url": EXELY_TEST_ENDPOINT_URL,
+            }
+
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_secrets_manager",
+        lambda: _StalePropertySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+    )
+
+    result = await resolve_exely_credentials(
+        "synthetic-tenant",
+        {"hotel_code": "501694", "mode": "sandbox"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["hotel_code"] == "501694"
+    assert result["_credential_source"] == "secrets_manager"
+
+
+@pytest.mark.asyncio
+async def test_active_connection_endpoint_overrides_stale_vault_endpoint(monkeypatch):
+    class _StaleEndpointSecretsManager:
+        async def get_provider_credentials(self, *args, **kwargs):
+            return {
+                "username": "synthetic-vault-user",
+                "password": "synthetic-vault-password",
+                "hotel_code": "501694",
+                "endpoint_url": "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc",
+            }
+
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_secrets_manager",
+        lambda: _StaleEndpointSecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+    )
+
+    result = await resolve_exely_credentials(
+        "synthetic-tenant",
+        {
+            "hotel_code": "501694",
+            "mode": "sandbox",
+            "endpoint_url": EXELY_TEST_ENDPOINT_URL,
+        },
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["endpoint_url"] == EXELY_TEST_ENDPOINT_URL
+
+
 def test_http_error_does_not_retain_provider_body():
     response = httpx.Response(400, text="guest@example.test Password=synthetic-provider-password")
 

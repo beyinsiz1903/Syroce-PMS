@@ -14,6 +14,7 @@ from .errors import ExelyValidationError
 
 PROVIDER = "exely"
 EXELY_TEST_ENDPOINT_URL = "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc"
+EXELY_PRODUCTION_ENDPOINT_URL = "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc"
 EXELY_TEST_HOST = "pmsconnect.test.hopenapi.com"
 EXELY_PRODUCTION_HOST = "pmsconnect.prod.hopenapi.com"
 EXELY_ALLOWED_HOSTS = frozenset({EXELY_TEST_HOST, EXELY_PRODUCTION_HOST})
@@ -94,11 +95,23 @@ async def get_decrypted_credentials(
 def _normalize_credentials(credentials: dict[str, Any], connection: dict[str, Any]) -> dict[str, str] | None:
     username = str(credentials.get("username") or "")
     password = str(credentials.get("password") or "")
-    hotel_code = str(credentials.get("hotel_code") or connection.get("hotel_code") or "")
-    endpoint_url = str(credentials.get("endpoint_url") or connection.get("endpoint_url") or EXELY_TEST_ENDPOINT_URL)
+    # The active connection selects the property. Vault payloads can outlive a
+    # property reassignment and may still contain the previous hotel code; if
+    # that stale value wins, reads and ARI writes silently target another
+    # Exely test property while the UI displays the new one. The vault remains
+    # authoritative for secrets, but never for routing scope.
+    hotel_code = str(connection.get("hotel_code") or credentials.get("hotel_code") or "")
+    connection_mode = str(connection.get("mode") or "").strip().lower()
+    default_endpoint = (
+        EXELY_TEST_ENDPOINT_URL if connection_mode == "sandbox" else EXELY_PRODUCTION_ENDPOINT_URL
+    )
+    # Endpoint and mode are connection routing state, just like hotel_code.
+    # Prefer the active connection so a stale vault record cannot redirect a
+    # certification connection to production (or the reverse).
+    endpoint_url = str(connection.get("endpoint_url") or credentials.get("endpoint_url") or default_endpoint)
     if not username or not password or not hotel_code:
         return None
-    validate_exely_endpoint(endpoint_url, connection_mode=str(connection.get("mode") or ""))
+    validate_exely_endpoint(endpoint_url, connection_mode=connection_mode)
     return {
         "username": username,
         "password": password,

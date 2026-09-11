@@ -1100,17 +1100,29 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
     pms_types = sorted(set(hr_to_pms.values()))
     pms_to_exely_codes: dict[str, list[str]] = {}
+    mapping_controls: dict[tuple[str, str], dict] = {}
     # 1) Birincil: exely_room_mappings (legacy/exely_router seması)
     exely_mappings = await db.exely_room_mappings.find(
-        {"tenant_id": tenant_id, "pms_room_type": {"$in": pms_types}},
-        {"_id": 0, "pms_room_type": 1, "exely_room_code": 1},
+        {"tenant_id": tenant_id},
+        {
+            "_id": 0,
+            "pms_room_type": 1,
+            "exely_room_code": 1,
+            "exely_rate_plan_code": 1,
+            "sync_availability": 1,
+            "sync_price": 1,
+            "sync_restrictions": 1,
+        },
     ).to_list(200)
     for m in exely_mappings:
         rc = m.get("exely_room_code", "")
+        rp = m.get("exely_rate_plan_code", "")
         pt = m.get("pms_room_type", "")
         if rc and pt:
             if rc not in pms_to_exely_codes.get(pt, []):
                 pms_to_exely_codes.setdefault(pt, []).append(rc)
+        if rc and rp:
+            mapping_controls[(str(rc), str(rp))] = m
     # 2) Birlesik room_mappings (provider=exely): provider_room_id -> Exely API kodu
     rm_exely = await db.room_mappings.find(
         {"tenant_id": tenant_id, "provider": "exely", "provider_room_code": {"$in": pms_types}, "is_active": True},
@@ -1189,6 +1201,11 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 if valid_plan_set and rp not in valid_plan_set:
                     continue
                 remote_key = (str(ex_code), rp)
+                # A provider room/rate pair must be explicitly mapped. Cached
+                # discovery data alone is not authorization to write ARI.
+                if remote_key not in mapping_controls:
+                    logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=room_rate_pair")
+                    continue
                 if remote_key in mapped_seen:
                     continue
                 mapped_seen.add(remote_key)
@@ -1211,6 +1228,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         "ctd": "ctd",
     }
     for rt_code, ex_code, rp in mapped_targets:
+        controls = mapping_controls[(ex_code, rp)]
         rv = per_room_map.get(rt_code)
         values = {
             "availability": rv.availability if rv else request.availability,
@@ -1229,12 +1247,12 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 "start_date": range_start,
                 "end_date": range_end,
             }
-            if "availability" in update_fields and values["availability"] is not None:
+            if controls.get("sync_availability", True) and "availability" in update_fields and values["availability"] is not None:
                 availability_messages.append({**base, "availability": values["availability"]})
-            if "rate" in update_fields and values["rate"] is not None:
+            if controls.get("sync_price", True) and "rate" in update_fields and values["rate"] is not None:
                 rate_messages.append({**base, "rate_amount": values["rate"], "currency": push_currency})
             for field, operation in restriction_fields.items():
-                if field in update_fields and values[field] is not None:
+                if controls.get("sync_restrictions", True) and field in update_fields and values[field] is not None:
                     restriction_messages.append({**base, "operation": operation, "value": values[field]})
 
     confirmed_messages = 0

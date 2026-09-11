@@ -38,11 +38,11 @@ def get_active_providers(tenant_id: str) -> list[str]:
     """Get active providers for a tenant.
 
     Sync API for callers that can't await. Returns the in-memory cache
-    if present, else conservative default. Prefer
+    if present, otherwise an empty list. Prefer
     `get_active_providers_async` which falls back to DB-registered
     connections (hotelrunner_connections / exely_connections).
     """
-    return _ACTIVE_PROVIDERS.get(tenant_id, ["hotelrunner"])
+    return _ACTIVE_PROVIDERS.get(tenant_id, [])
 
 
 async def get_active_providers_async(tenant_id: str) -> list[str]:
@@ -52,7 +52,7 @@ async def get_active_providers_async(tenant_id: str) -> list[str]:
       1. If `_ACTIVE_PROVIDERS[tenant_id]` is set explicitly → use it.
       2. Else inspect provider connection collections; every provider
          that has a connection doc for this tenant counts as active.
-      3. Else default to ['hotelrunner'].
+      3. Else return an empty list.
 
     This prevents the silent skip where a tenant has an Exely
     connection configured but ARI dispatch only fires HotelRunner
@@ -64,18 +64,22 @@ async def get_active_providers_async(tenant_id: str) -> list[str]:
         from core.database import db as _db
 
         active: list[str] = []
-        if await _db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 1}):
+        if await _db.hotelrunner_connections.find_one(
+            {"tenant_id": tenant_id, "is_active": True},
+            {"_id": 1},
+        ):
             active.append("hotelrunner")
-        if await _db.exely_connections.find_one({"tenant_id": tenant_id}, {"_id": 1}):
+        if await _db.exely_connections.find_one(
+            {"tenant_id": tenant_id, "is_active": True},
+            {"_id": 1},
+        ):
             active.append("exely")
         if active:
-            # Cache so subsequent flushes don't pay the DB hit
-            _ACTIVE_PROVIDERS[tenant_id] = active
             logger.info(f"[ARI] Auto-detected active providers for {tenant_id}: {active}")
             return active
     except Exception as exc:
         logger.warning(f"[ARI] active provider auto-detect failed: {exc}")
-    return ["hotelrunner"]
+    return []
 
 
 async def _on_buffer_flush(coalescing_key: str, events: list[ARIChangeEvent]):
