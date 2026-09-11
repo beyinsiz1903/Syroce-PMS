@@ -8,7 +8,7 @@ import logging
 
 from . import repositories as repo
 from .events import ProviderResult
-from .models import STATUS_ACKED, STATUS_FAILED_PERMANENT, STATUS_FAILED_RETRYABLE
+from .models import STATUS_ACKED, STATUS_FAILED_PERMANENT, STATUS_FAILED_RETRYABLE, STATUS_SKIPPED
 from .retry_policy import classify_error, should_retry
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,25 @@ async def process_ack(
         await repo.update_change_set_status(cs_id, STATUS_ACKED)
         logger.info(f"ARI push acked: {provider} cs={cs_id}")
         return STATUS_ACKED
+
+    # An identical Exely mutation can be observed by two workers while the
+    # first durable delivery owns its active payload fingerprint.  The second
+    # worker must not turn that safe single-write guard into a permanent error:
+    # the first delivery is already responsible for applying the exact same
+    # payload.  Replaying it would defeat the no-blind-retry contract.
+    if (
+        provider == "exely"
+        and result.delivery_state == "blocked"
+        and result.error == "EXELY_ARI_DELIVERY_IN_PROGRESS"
+    ):
+        await repo.update_change_set_status(
+            cs_id,
+            STATUS_SKIPPED,
+            error=result.error,
+            inc_attempt=False,
+        )
+        logger.info("ARI delivery coalesced: provider=exely state=in_progress")
+        return STATUS_SKIPPED
 
     # Exely mutations do not have a provider idempotency key or ARI read-back
     # endpoint. Any unconfirmed result requires operator/provider reconciliation;
