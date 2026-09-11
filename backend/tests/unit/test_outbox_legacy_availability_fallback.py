@@ -90,6 +90,26 @@ async def test_booking_event_retries_when_legacy_provider_accepts_no_work():
 
 
 @pytest.mark.asyncio
+async def test_booking_event_does_not_replay_successful_provider_for_other_provider_error():
+    cm_result = {"handled": True, "sync_jobs_created": 0, "reason": "No active connectors", "jobs": []}
+    legacy_result = {
+        "configured_providers": 2,
+        "queued_operations": 1,
+        "errors": ["hotelrunner_room_mapping_missing"],
+    }
+
+    with (
+        patch("channel_manager.application.event_sync_service.EventSyncService.handle_event", new=AsyncMock(return_value=cm_result)),
+        patch("domains.channel_manager.availability_auto_sync.sync_availability_from_durable_event", new=AsyncMock(return_value=legacy_result)),
+        patch("core.agency_fanout.fan_out_agency_events", new=AsyncMock()),
+    ):
+        success, message = await dispatch_outbox_event(_booking_event())
+
+    assert success is True
+    assert message.startswith("Dispatched: 1 legacy availability operations queued; partial:")
+
+
+@pytest.mark.asyncio
 async def test_booking_event_without_any_provider_remains_a_noop_success():
     cm_result = {
         "handled": True,

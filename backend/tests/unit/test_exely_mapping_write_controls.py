@@ -186,6 +186,48 @@ async def test_suite_mapping_can_disable_availability_without_disabling_rate(mon
 
 
 @pytest.mark.asyncio
+async def test_explicit_mapping_rate_plan_is_usable_when_discovery_cache_is_stale(monkeypatch):
+    """A saved Exely mapping must outrank an older room-discovery cache."""
+    mapping = {
+        "pms_room_type": "Standard",
+        "exely_room_code": "5003299",
+        "exely_rate_plan_code": "10009740",
+        "sync_availability": True,
+        "sync_price": True,
+        "sync_restrictions": True,
+    }
+    fake_db = SimpleNamespace(
+        hotelrunner_connections=_Collection(row=None),
+        room_mappings=_Collection(rows=[]),
+        exely_room_mappings=_Collection(rows=[mapping]),
+    )
+    monkeypatch.setattr(unified, "db", fake_db)
+    monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
+    request = SimpleNamespace(
+        start_date="2026-11-10", end_date="2026-11-11", availability=None,
+        rate=125.0, stop_sell=None, min_stay=None, min_los_arrival=None,
+        max_stay=None, cta=None, ctd=None,
+    )
+    connection = {
+        "hotel_code": "501694", "currency": "USD",
+        "room_types": [{"code": "5003299", "name": "Standard"}],
+        # This is deliberately an old discovery result.  It must not block the
+        # live mapping above.
+        "rate_plans": [{"code": "10003870", "name": "Old base rate"}],
+    }
+    with patch(
+        "domains.channel_manager.providers.exely.ari_delivery.deliver_exely_ari",
+        new=AsyncMock(return_value=SimpleNamespace(success=True, provider_write_count=1, error_code="", state="confirmed")),
+    ) as deliver:
+        result = await unified._push_to_exely(
+            "tenant-1", connection, request, [("5003299", "10009740")], {}, {"rate"}, None
+        )
+
+    assert result["provider_verified"] is True
+    assert deliver.await_args.args[2]["value"][0]["rate_plan_code"] == "10009740"
+
+
+@pytest.mark.asyncio
 async def test_discovered_but_unmapped_exely_pair_is_not_written(monkeypatch):
     fake_db = SimpleNamespace(
         hotelrunner_connections=_Collection(row=None),

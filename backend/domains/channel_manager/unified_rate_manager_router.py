@@ -432,10 +432,26 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
 
 async def _build_exely_grid(tenant_id, conn, start_date, end_date):
     """Exely grid olustur."""
-    room_types = conn.get("room_types", [])
-    rate_plans = conn.get("rate_plans", [])
+    room_types = list(conn.get("room_types", []))
+    rate_plans = list(conn.get("rate_plans", []))
 
     mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
+
+    # Discovery is a convenience cache, not the authority for a writeable
+    # room/rate pair.  A property can be remapped in Exely after the last
+    # discovery call; hiding the explicitly saved mapping then makes the rate
+    # manager offer stale plans and silently reject the valid selection.
+    known_room_codes = {str(row.get("code")) for row in room_types if row.get("code")}
+    known_rate_codes = {str(row.get("code")) for row in rate_plans if row.get("code")}
+    for mapping in mappings:
+        room_code = str(mapping.get("exely_room_code") or "")
+        rate_code = str(mapping.get("exely_rate_plan_code") or "")
+        if room_code and room_code not in known_room_codes:
+            room_types.append({"code": room_code, "name": mapping.get("exely_room_name") or room_code})
+            known_room_codes.add(room_code)
+        if rate_code and rate_code not in known_rate_codes:
+            rate_plans.append({"code": rate_code, "name": rate_code})
+            known_rate_codes.add(rate_code)
 
     calendar_data = await db.rate_calendar.find(
         {"tenant_id": tenant_id, "date": {"$gte": start_date, "$lte": end_date}},
@@ -1146,11 +1162,16 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
     # Frontend hangi rate plan'lari sectiyse onlari kullan (Exely sekmesinden geldigi icin
     # rate_plan_code zaten Exely plan ID'si). Liste bossa connection'daki tum planlara fallback.
-    selected_exely_plans = sorted({rp_code for _, rp_code in pairs if rp_code})
+    selected_exely_plans = sorted({str(rp_code) for _, rp_code in pairs if rp_code})
     conn_exely_plans = [rp.get("code") for rp in (conn.get("rate_plans") or []) if rp.get("code")]
-    valid_plan_set = {str(p) for p in conn_exely_plans}
+    # The persisted room/rate mapping is the authorization source for ARI.
+    # Discovery data may be stale, so it must never exclude an explicitly
+    # mapped Exely rate plan from a price or restriction update.
+    mapped_plan_set = {rate_code for _room_code, rate_code in mapping_controls}
+    valid_plan_set = {str(p) for p in conn_exely_plans} | mapped_plan_set
     if valid_plan_set and selected_exely_plans:
-        # Sadece Exely connection'da bilinen plan id'lerini kullan
+        # Only accept plans known either by current discovery or a persisted
+        # explicit mapping.  This still fails closed for an arbitrary plan.
         filtered = [p for p in selected_exely_plans if str(p) in valid_plan_set]
         if not filtered:
             logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=rate_plan")
