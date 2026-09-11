@@ -237,8 +237,18 @@ class ExelyPullScheduler:
         result = await provider.pull_reservations()
 
         if not result.success:
-            await log_sync(PROVIDER, tenant_id, "scheduled_pull", "failed", error=result.error_type)
-            return {"success": False, "error": result.error_type}
+            # Keep the provider's classified failure available to the manual
+            # endpoint.  Collapsing this to a generic 502 made an
+            # authentication, SOAP-contract, rate-limit, and provider-side
+            # failure indistinguishable to the operator.
+            error_code = str(result.error_type or "EXELY_PROVIDER_READ_FAILED")
+            await log_sync(PROVIDER, tenant_id, "scheduled_pull", "failed", error=error_code)
+            return {
+                "success": False,
+                "error": error_code,
+                "provider_read_count": 1,
+                "provider_write_count": 0,
+            }
 
         reservations = (result.data or {}).get("reservations", [])
         processed = 0
