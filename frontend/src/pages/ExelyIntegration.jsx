@@ -48,6 +48,29 @@ export const buildExelyAutoMapPayload = (suggestions, rateSelections, ratePlans)
 
 export const hasCompleteExelyRatePlanSelection = mappings => mappings.every(mapping => Boolean(mapping.provider_rate_plan_code));
 
+export const buildExelyManualMapPayload = (manualMap, providerRoomTypes = []) => {
+  const providerRoom = providerRoomTypes.find(room => room.code === manualMap.exely_room_code);
+  return {
+    pms_room_type: manualMap.pms_room_type.trim(),
+    exely_room_code: manualMap.exely_room_code.trim(),
+    exely_rate_plan_code: manualMap.exely_rate_plan_code.trim(),
+    exely_room_name: providerRoom?.name || manualMap.exely_room_name?.trim() || manualMap.exely_room_code.trim(),
+    sync_availability: Boolean(manualMap.sync_availability),
+    sync_price: Boolean(manualMap.sync_price),
+    sync_restrictions: Boolean(manualMap.sync_restrictions)
+  };
+};
+
+const emptyManualMap = () => ({
+  pms_room_type: '',
+  exely_room_code: '',
+  exely_rate_plan_code: '',
+  exely_room_name: '',
+  sync_availability: true,
+  sync_price: true,
+  sync_restrictions: true
+});
+
 const ExelyIntegration = ({
   user,
   tenant,
@@ -73,11 +96,7 @@ const ExelyIntegration = ({
   const [manualMapOpen, setManualMapOpen] = useState(false);
   const [manualMapSaving, setManualMapSaving] = useState(false);
   const [ariWriteLoading, setAriWriteLoading] = useState(false);
-  const [manualMap, setManualMap] = useState({
-    pms_room_type: '',
-    exely_room_code: '',
-    exely_rate_plan_code: ''
-  });
+  const [manualMap, setManualMap] = useState(emptyManualMap);
   const [connectForm, setConnectForm] = useState({
     username: '',
     password: '',
@@ -211,27 +230,21 @@ const ExelyIntegration = ({
     }
   };
   const handleCreateMapping = async () => {
-    const providerRoom = (mappingStatus?.provider_room_types || []).find(room => room.code === manualMap.exely_room_code);
-    if (!manualMap.pms_room_type || !manualMap.exely_room_code || !manualMap.exely_rate_plan_code) {
+    const payload = buildExelyManualMapPayload(manualMap, mappingStatus?.provider_room_types || []);
+    if (!payload.pms_room_type || !payload.exely_room_code || !payload.exely_rate_plan_code) {
       toast.error('PMS oda tipi, Exely oda tipi ve fiyat planı zorunludur');
+      return;
+    }
+    if (!payload.sync_availability && !payload.sync_price && !payload.sync_restrictions) {
+      toast.error('En az bir senkronizasyon türü seçilmelidir');
       return;
     }
     setManualMapSaving(true);
     try {
-      await axios.post(`/channel-manager/exely/room-mappings`, {
-        ...manualMap,
-        exely_room_name: providerRoom?.name || manualMap.exely_room_code,
-        sync_availability: true,
-        sync_price: true,
-        sync_restrictions: true
-      }, requestConfig);
+      await axios.post(`/channel-manager/exely/room-mappings`, payload, requestConfig);
       toast.success('Oda ve fiyat planı eşlemesi oluşturuldu');
       setManualMapOpen(false);
-      setManualMap({
-        pms_room_type: '',
-        exely_room_code: '',
-        exely_rate_plan_code: ''
-      });
+      setManualMap(emptyManualMap());
       await Promise.all([fetchAll(), fetchMappingStatus()]);
     } catch (error) {
       toast.error(getExelyErrorMessage(error, 'Eşleme oluşturulamadı'));
@@ -790,19 +803,31 @@ const ExelyIntegration = ({
                   </div>
                   <div>
                     <Label htmlFor="manual-exely-room">Exely oda tipi</Label>
-                    <select id="manual-exely-room" data-testid="manual-exely-room" value={manualMap.exely_room_code} onChange={event => setManualMap(previous => ({ ...previous, exely_room_code: event.target.value }))} className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm">
-                      <option value="">Exely oda tipi seçin</option>
-                      {(mappingStatus?.provider_room_types || []).map(room => <option key={room.code} value={room.code}>{room.name} ({room.code})</option>)}
-                    </select>
+                    <Input id="manual-exely-room" data-testid="manual-exely-room" list="exely-room-code-options" value={manualMap.exely_room_code} onChange={event => setManualMap(previous => ({ ...previous, exely_room_code: event.target.value }))} placeholder="Keşfedilen odayı seçin veya kodu yazın" className="mt-1" />
+                    <datalist id="exely-room-code-options">
+                      {(mappingStatus?.provider_room_types || []).map(room => <option key={room.code} value={room.code}>{room.name}</option>)}
+                    </datalist>
+                    <p className="mt-1 text-xs text-slate-500">Keşif sonucu güncel değilse Exely oda kodunu elle girebilirsiniz.</p>
                   </div>
                   <div>
                     <Label htmlFor="manual-exely-rate">Exely fiyat planı</Label>
-                    <select id="manual-exely-rate" data-testid="manual-exely-rate" value={manualMap.exely_rate_plan_code} onChange={event => setManualMap(previous => ({ ...previous, exely_rate_plan_code: event.target.value }))} className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm">
-                      <option value="">Fiyat planı seçin</option>
-                      {(mappingStatus?.provider_rate_plans || []).map(plan => <option key={plan.code} value={plan.code}>{plan.name || plan.code} ({plan.code})</option>)}
-                    </select>
+                    <Input id="manual-exely-rate" data-testid="manual-exely-rate" list="exely-rate-code-options" value={manualMap.exely_rate_plan_code} onChange={event => setManualMap(previous => ({ ...previous, exely_rate_plan_code: event.target.value }))} placeholder="Keşfedilen planı seçin veya kodu yazın" className="mt-1" />
+                    <datalist id="exely-rate-code-options">
+                      {(mappingStatus?.provider_rate_plans || []).map(plan => <option key={plan.code} value={plan.code}>{plan.name || plan.code}</option>)}
+                    </datalist>
                   </div>
-                  <p className="text-xs text-slate-500">Aynı oda tipini Base, Non-refundable ve diğer fiyat planlarıyla ayrı ayrı eşleyebilirsiniz.</p>
+                  <div className="rounded-md border p-3 space-y-3">
+                    <p className="text-sm font-medium">Senkronize edilecek bilgiler</p>
+                    {[
+                      ['sync_availability', 'Müsaitlik', 'A'],
+                      ['sync_price', 'Fiyat', 'R'],
+                      ['sync_restrictions', 'Kısıtlamalar', 'I']
+                    ].map(([field, label, code]) => <div key={field} className="flex items-center justify-between gap-3">
+                        <Label htmlFor={`manual-${field}`} className="font-normal">{label} ({code})</Label>
+                        <Switch id={`manual-${field}`} data-testid={`manual-${field}`} checked={manualMap[field]} onCheckedChange={checked => setManualMap(previous => ({ ...previous, [field]: checked }))} />
+                      </div>)}
+                  </div>
+                  <p className="text-xs text-slate-500">Aynı oda tipini Base, Non-refundable ve diğer fiyat planlarıyla ayrı ayrı eşleyebilirsiniz. Suite gibi henüz stok gönderilmeyecek odalarda “Müsaitlik” seçeneğini kapatın.</p>
                   <Button className="w-full" onClick={handleCreateMapping} disabled={manualMapSaving} data-testid="manual-map-save">
                     {manualMapSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />} Eşlemeyi Kaydet
                   </Button>
