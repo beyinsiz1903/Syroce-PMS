@@ -635,7 +635,11 @@ async def manual_pull(
             endpoint_url=creds["endpoint_url"],
         )
         if not result["success"]:
-            raise HTTPException(status_code=502, detail="Exely reservation pull failed")
+            error_code = str(result.get("error") or "EXELY_PROVIDER_READ_FAILED")
+            raise HTTPException(
+                status_code=502,
+                detail=f"EXELY_RESERVATION_PULL_FAILED:{error_code}",
+            )
 
         cancelled = result.get("cancelled", 0)
         updated = result.get("updated", 0)

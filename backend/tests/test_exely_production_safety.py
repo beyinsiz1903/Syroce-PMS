@@ -18,6 +18,7 @@ from domains.channel_manager.providers.exely.production_safety import (
     safe_runtime_state,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 from domains.channel_manager.providers.exely.security import (
     EXELY_PRODUCTION_HOST,
     EXELY_TEST_ENDPOINT_URL,
@@ -272,6 +273,45 @@ async def test_direct_tenant_pull_blocks_before_provider_construction(monkeypatc
         "provider_write_count": 0,
     }
     provider_class.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_direct_tenant_pull_preserves_classified_provider_read_failure(monkeypatch):
+    scheduler = ExelyPullScheduler()
+    provider = AsyncMock()
+    provider.discover_rooms = AsyncMock()
+    provider.pull_reservations = AsyncMock(
+        return_value=ProviderResult(
+            success=False,
+            error="Provider rejected reservation read",
+            error_type="REJECTED",
+        )
+    )
+
+    with (
+        patch(
+            "domains.channel_manager.providers.exely.exely_pull_worker.ExelyProvider",
+            return_value=provider,
+        ),
+        patch(
+            "domains.channel_manager.providers.exely.exely_pull_worker.log_sync",
+            new=AsyncMock(),
+        ) as log_sync,
+    ):
+        result = await scheduler.pull_for_tenant(
+            tenant_id="synthetic-tenant",
+            username="synthetic-user",
+            password="synthetic-password",
+            hotel_code="synthetic-property",
+        )
+
+    assert result == {
+        "success": False,
+        "error": "REJECTED",
+        "provider_read_count": 1,
+        "provider_write_count": 0,
+    }
+    log_sync.assert_awaited_once_with("exely", "synthetic-tenant", "scheduled_pull", "failed", error="REJECTED")
 
 
 def test_feature_flag_registry_contains_all_exely_production_gates():
