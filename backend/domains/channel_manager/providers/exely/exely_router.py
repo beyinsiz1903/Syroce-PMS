@@ -626,13 +626,20 @@ async def manual_pull(
     if not creds:
         raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
 
-    result = await exely_pull_scheduler.pull_for_tenant(
-        tenant_id=current_user.tenant_id,
-        username=creds["username"],
-        password=creds["password"],
-        hotel_code=creds["hotel_code"],
-        endpoint_url=creds["endpoint_url"],
-    )
+    try:
+        result = await exely_pull_scheduler.pull_for_tenant(
+            tenant_id=current_user.tenant_id,
+            username=creds["username"],
+            password=creds["password"],
+            hotel_code=creds["hotel_code"],
+            endpoint_url=creds["endpoint_url"],
+        )
+    except Exception as exc:
+        logger.exception("[EXELY] manual reservation pull failed")
+        raise HTTPException(
+            status_code=502,
+            detail=f"EXELY_RESERVATION_PULL_FAILED:{type(exc).__name__}",
+        ) from exc
 
     if not result["success"]:
         raise HTTPException(status_code=502, detail="Exely reservation pull failed")
@@ -760,8 +767,17 @@ async def import_reservation_to_pms(
 
     from domains.channel_manager.providers.exely.pms_lifecycle import process_single_and_ack
 
-    client, _conn = await _get_client(tenant_id)
-    result = await process_single_and_ack(tenant_id, res, provider=client)
+    try:
+        client, _conn = await _get_client(tenant_id)
+        result = await process_single_and_ack(tenant_id, res, provider=client)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("[EXELY] manual reservation import failed")
+        raise HTTPException(
+            status_code=502,
+            detail=f"EXELY_RESERVATION_IMPORT_FAILED:{type(exc).__name__}",
+        ) from exc
 
     if not result.get("success"):
         acknowledgement = result.get("acknowledgement") or {}
