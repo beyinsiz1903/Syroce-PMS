@@ -8,6 +8,10 @@ export function reservationRoutes({ p }) {
   return [
     { path: "/reservation-calendar", ...p(ReservationCalendar) },
     { path: "/app/reservation-calendar", ...p(ReservationCalendar) },
+    // Kept for bookmarks and older navigation links. The calendar page has
+    // always lived at /app/reservation-calendar; without this alias the
+    // catch-all route misleadingly renders the module setup screen.
+    { path: "/app/calendar", type: "redirect", to: "/app/reservation-calendar" },
     { path: "/reservation-lineage", ...p(ReservationLineage), wrapLayout: true, layoutModule: "channel-manager" },
     { path: "/group-bookings-manage", ...p(GroupBookingsPage), wrapLayout: true, layoutModule: "group-bookings" },
     { path: "/deposit-tracking", ...p(DepositTrackingPage), wrapLayout: true, layoutModule: "deposits" },
