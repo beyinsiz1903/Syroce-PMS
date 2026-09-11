@@ -11,6 +11,7 @@ from core.occupancy_pricing import (
     calculate_occupancy_quote,
     find_occupancy_rule,
 )
+from core.guest_name_utils import canonical_guest_name
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from models.enums import FolioType
 from models.schemas import BookingCreate, Folio, RateOverrideLog
@@ -73,6 +74,11 @@ class CreateReservationService:
             guest = await self.repository.get_guest_for_tenant(tenant_context.tenant_id, booking_data.guest_id)
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
+            # Keep the reservation's display/search snapshot aligned with the
+            # one guest-name field the receptionist actually enters.  KBS and
+            # other downstream integrations must not see an empty legacy
+            # ``bookings.guest_name`` for a newly created reservation.
+            guest_name = canonical_guest_name(guest)
 
             try:
                 check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
@@ -150,6 +156,7 @@ class CreateReservationService:
                 'id': booking_id,
                 'tenant_id': tenant_context.tenant_id,
                 'guest_id': booking_data.guest_id,
+                'guest_name': guest_name,
                 'room_id': booking_data.room_id,
                 'check_in': check_in_dt.isoformat(),
                 'check_out': check_out_dt.isoformat(),

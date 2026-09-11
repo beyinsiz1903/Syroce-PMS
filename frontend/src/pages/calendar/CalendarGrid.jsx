@@ -421,7 +421,7 @@ const CalendarGrid = ({
                                 tabIndex={0}
                                 role="button"
                                 aria-label={`${fullGuestName}, ${urgency.label}, atanmamış — odaya sürükleyin`}
-                                onDragStart={(e) => onDragStart(e, booking)}
+                                onDragStart={(e) => onDragStart(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
@@ -645,7 +645,7 @@ const CalendarGrid = ({
                                 tabIndex={0}
                                 role="button"
                                 aria-label={cardAria}
-                                onDragStart={(e) => onDragStart(e, booking)}
+                                onDragStart={(e) => onDragStart(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
                                 // Reservation cards sit above the date cells.  Without their
                                 // own drop handlers, dropping directly on an occupied card never

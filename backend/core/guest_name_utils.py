@@ -48,6 +48,26 @@ def is_placeholder_guest_name(name: str | None) -> bool:
     return False
 
 
+def canonical_guest_name(guest: dict | None) -> str:
+    """Return the human-readable name stored on a canonical guest profile.
+
+    Reservations retain ``guest_name`` as a denormalised display/search
+    snapshot.  New reservations must initialise that snapshot from the guest
+    profile, rather than leaving it empty and relying on each consumer to
+    rediscover the guest record.
+    """
+    guest = guest or {}
+    for field in ("name", "full_name"):
+        value = str(guest.get(field) or "").strip()
+        if value:
+            return value
+    return " ".join(
+        part.strip()
+        for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or ""))
+        if part.strip()
+    )
+
+
 def display_guest_name(raw_name: str | None, guest_id: str | None) -> str:
     """Gosterim icin kullanilacak ismi dondurur.
 

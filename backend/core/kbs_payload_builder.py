@@ -59,6 +59,10 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str) 
                     {
                         "_id": 0,
                         "id": 1,
+                        "name": 1,
+                        "full_name": 1,
+                        "first_name": 1,
+                        "last_name": 1,
                         "nationality": 1,
                         "id_number": 1,
                         "passport_number": 1,
@@ -75,8 +79,22 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str) 
             or {}
         )
 
+    # ``bookings.guest_name`` is a legacy display snapshot and can be empty
+    # even though the canonical guest profile has a name.  KBS must never
+    # reject an otherwise complete identity record merely because that stale
+    # booking field was not populated.
+    guest_name = str(booking.get("guest_name") or "").strip()
+    if not guest_name:
+        guest_name = str(guest.get("name") or guest.get("full_name") or "").strip()
+    if not guest_name:
+        guest_name = " ".join(
+            part.strip()
+            for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or ""))
+            if part.strip()
+        )
+
     snapshot = {
-        "guest_name": booking.get("guest_name", ""),
+        "guest_name": guest_name,
         "phone": booking.get("guest_phone", ""),
         "room_number": room_number,
         "check_in": booking.get("check_in", ""),

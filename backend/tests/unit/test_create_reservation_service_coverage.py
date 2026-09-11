@@ -200,6 +200,20 @@ async def test_create_uses_defaults_without_writing_rate_override(harness):
 
 
 @pytest.mark.asyncio
+async def test_create_copies_the_canonical_guest_name_to_the_booking_snapshot(harness):
+    harness.repository.get_guest_for_tenant.return_value = {
+        "id": "guest-1",
+        "first_name": "Enes",
+        "last_name": "Ayata",
+    }
+
+    result = await harness.service.create(harness.booking, harness.user, harness.request)
+
+    assert result["guest_name"] == "Enes Ayata"
+    assert harness.repository.insert_booking.await_args.args[1]["guest_name"] == "Enes Ayata"
+
+
+@pytest.mark.asyncio
 async def test_create_complimentary_retains_commercial_value_and_zeroes_posted_total(harness):
     booking = _booking(
         total_amount=4200,

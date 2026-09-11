@@ -500,6 +500,21 @@ async def create_booking_atomic(
     if payload_tenant_id != tenant_id:
         raise TenantViolationError("Booking tenant does not match operation tenant")
 
+    # ``guest_name`` is a denormalised booking snapshot used for calendar,
+    # search and regulatory integrations.  Preserve an explicitly supplied
+    # value (for imports), but never create a blank snapshot when the linked
+    # canonical guest already has a name.
+    if not str(booking_doc.get("guest_name") or "").strip() and booking_doc.get("guest_id"):
+        from core.guest_name_utils import canonical_guest_name
+
+        guest = await db.guests.find_one(
+            {"tenant_id": tenant_id, "id": booking_doc["guest_id"]},
+            {"_id": 0, "name": 1, "full_name": 1, "first_name": 1, "last_name": 1},
+        )
+        guest_name = canonical_guest_name(guest)
+        if guest_name:
+            booking_doc["guest_name"] = guest_name
+
     # Encrypt PII fields before persistence
     try:
         from security.encrypted_lookup import encrypt_booking_doc
