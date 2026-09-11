@@ -30,4 +30,17 @@ describe('ModuleScopeBoundary', () => {
 
     expect(screen.getByText('Satış modülü')).toBeInTheDocument();
   });
+
+  it('does not show the setup screen to a super-admin represented by roles', () => {
+    render(
+      <MemoryRouter>
+        <ModuleScopeBoundary user={{ role: 'operator', roles: ['super_admin'], module_scopes: [] }} scopes={['frontdesk']}>
+          <div>Rezervasyon takvimi</div>
+        </ModuleScopeBoundary>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Rezervasyon takvimi')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Kurulum gerekli' })).not.toBeInTheDocument();
+  });
 });

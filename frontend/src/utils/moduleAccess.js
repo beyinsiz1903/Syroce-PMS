@@ -252,6 +252,16 @@ function roleValue(user) {
   return typeof rawRole === 'string' ? rawRole.trim().toLowerCase() : '';
 }
 
+function hasSuperAdminRole(user) {
+  if (roleValue(user) === 'super_admin') return true;
+  if (!Array.isArray(user?.roles)) return false;
+
+  return user.roles.some((role) => {
+    const value = typeof role === 'string' ? role : role?.value;
+    return typeof value === 'string' && value.trim().toLowerCase() === 'super_admin';
+  });
+}
+
 export function hasExplicitModuleScopes(user) {
   return !!user && Object.prototype.hasOwnProperty.call(user, 'module_scopes');
 }
@@ -267,7 +277,7 @@ export function normalizeModuleScope(scope) {
 export function effectiveModuleScopes(user) {
   if (!user) return [];
   const role = roleValue(user);
-  if (role === 'super_admin') return ['*'];
+  if (hasSuperAdminRole(user)) return ['*'];
 
   if (hasExplicitModuleScopes(user)) {
     if (!Array.isArray(user.module_scopes)) return [];
@@ -288,7 +298,7 @@ export function hasModuleAccess(user, scope) {
 export function hasAnyModuleAccess(user, scopes) {
   if (!Array.isArray(scopes) || scopes.length === 0) return true;
   if (scopes.includes(LEGACY_UNSCOPED_SURFACE)) {
-    return roleValue(user) === 'super_admin' || !hasExplicitModuleScopes(user);
+    return hasSuperAdminRole(user) || !hasExplicitModuleScopes(user);
   }
   return scopes.some((scope) => hasModuleAccess(user, scope));
 }
