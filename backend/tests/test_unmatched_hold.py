@@ -284,6 +284,35 @@ async def test_legacy_room_without_is_active_is_sellable_inventory():
     assert legacy["physical_total"] == 1
     assert legacy["sellable"] == 1
 
+
+@pytest.mark.asyncio
+async def test_virtual_room_is_excluded_from_channel_inventory():
+    """A virtual routing room must not inflate a physical room-type total."""
+    from core.room_type_inventory_service import compute_room_type_inventory
+
+    with tenant_context(TEST_TENANT):
+        await db.rooms.insert_many([
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": TEST_TENANT,
+                "room_type": "VIRTUAL_TEST_STANDARD",
+                "is_active": True,
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": TEST_TENANT,
+                "room_type": "VIRTUAL_TEST_STANDARD",
+                "is_active": True,
+                "is_virtual": True,
+            },
+        ])
+
+    inventory = await compute_room_type_inventory(TEST_TENANT, "2031-03-13")
+    standard = next((row for row in inventory if row["room_type"] == "VIRTUAL_TEST_STANDARD"), None)
+    assert standard is not None
+    assert standard["physical_total"] == 1
+    assert standard["sellable"] == 1
+
 @pytest.mark.asyncio
 async def test_check_booking_source_exists_tenant_isolation():
     """Ayni ext_id ile olusturulmus kayit diger tenant'tan bulunamamali."""
