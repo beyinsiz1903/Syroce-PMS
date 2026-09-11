@@ -400,6 +400,66 @@ async def test_mark_full_comp_zeroes_open_extras_and_preserves_original_values(m
 
 
 @pytest.mark.asyncio
+async def test_comp_blocks_a_charge_linked_only_to_its_folio(monkeypatch):
+    """Legacy folio-only revenue must not be bypassed by the comp guard."""
+    charge_lookup = AsyncMock(return_value={"id": "charge-a"})
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "check_in": "2099-01-01",
+                    "check_out": "2099-01-02",
+                }
+            )
+        ),
+        folios=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncRows([{"id": "folio-a"}])),
+        folio_charges=SimpleNamespace(find_one=charge_lookup),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2099-01-01"}),
+    )
+
+    with pytest.raises(HTTPException, match="Tahakkuk edilmiş ücret"):
+        await reservation_detail.mark_reservation_complimentary(
+            "booking-a",
+            reservation_detail.ComplimentaryReservationRequest(
+                reason="Yönetim ağırlaması", scope="full"
+            ),
+            current_user=SimpleNamespace(
+                id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
+            ),
+            _perm=None,
+        )
+
+    query = charge_lookup.await_args.args[0]
+    assert query["$or"] == [
+        {"booking_id": "booking-a"},
+        {"folio_id": {"$in": ["folio-a"]}},
+    ]
+
+
+def test_booking_or_folio_scope_includes_legacy_folio_rows():
+    query = reservation_detail._booking_or_folio_scope_query(
+        "tenant-a", "booking-a", ["folio-a", None, ""]
+    )
+    assert query == {
+        "tenant_id": "tenant-a",
+        "$or": [
+            {"booking_id": "booking-a"},
+            {"folio_id": {"$in": ["folio-a"]}},
+        ],
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["checked_out", "cancelled", "no_show"])
 async def test_terminal_booking_cannot_receive_deposit(monkeypatch, status):
     database = SimpleNamespace(

@@ -445,6 +445,23 @@ def _build_financial_summary(
     }
 
 
+def _booking_or_folio_scope_query(
+    tenant_id: str,
+    booking_id: str,
+    folio_ids: list[str],
+) -> dict:
+    """Scope financial rows to a reservation, including legacy folio-only rows.
+
+    Older posting paths stored ``folio_id`` without also copying
+    ``booking_id``. A reservation detail must include both shapes.
+    """
+    selectors: list[dict] = [{"booking_id": booking_id}]
+    valid_folio_ids = [folio_id for folio_id in folio_ids if folio_id]
+    if valid_folio_ids:
+        selectors.append({"folio_id": {"$in": valid_folio_ids}})
+    return {"tenant_id": tenant_id, "$or": selectors}
+
+
 def _build_channel_pricing_issue(
     booking: dict,
     charges: list[dict],
@@ -504,14 +521,30 @@ async def _reservation_outstanding_balance(
     session=None,
 ) -> float:
     """Return the same booking-scoped balance shown by reservation detail."""
-    query = {"booking_id": booking["id"], "tenant_id": tenant_id}
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking["id"], "tenant_id": tenant_id},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    financial_query = _booking_or_folio_scope_query(
+        tenant_id,
+        booking["id"],
+        [folio.get("id") for folio in folios],
+    )
+    booking_query = {"booking_id": booking["id"], "tenant_id": tenant_id}
 
     async def collect(collection) -> list[dict]:
         kwargs = {"session": session} if session is not None else {}
-        return [document async for document in collection.find(query, {"_id": 0}, **kwargs)]
+        return [document async for document in collection.find(booking_query, {"_id": 0}, **kwargs)]
 
-    charges = await collect(db.folio_charges)
-    payments = await collect(db.payments)
+    async def collect_financial(collection) -> list[dict]:
+        kwargs = {"session": session} if session is not None else {}
+        return [document async for document in collection.find(financial_query, {"_id": 0}, **kwargs)]
+
+    charges = await collect_financial(db.folio_charges)
+    payments = await collect_financial(db.payments)
     extra_charges = await collect(db.extra_charges)
     deposits = await collect(db.deposits)
     summary = _build_financial_summary(
@@ -953,14 +986,20 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
             folios.append(f)
 
+        financial_query = _booking_or_folio_scope_query(
+            tid,
+            booking_id,
+            [folio.get("id") for folio in folios],
+        )
+
         # Charges per folio
         charges = []
-        async for c in db.folio_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        async for c in db.folio_charges.find(financial_query, {"_id": 0}):
             charges.append(c)
 
         # Payments per folio
         payments = []
-        async for p in db.payments.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        async for p in db.payments.find(financial_query, {"_id": 0}):
             payments.append(p)
 
         # Extra charges
@@ -2966,9 +3005,16 @@ async def mark_reservation_complimentary(
             detail="Night Audit ile kapanmış geceleri olan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir",
         )
 
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    folio_ids = [folio["id"] for folio in folios if folio.get("id")]
     active_charge_query = {
-        "booking_id": booking_id,
-        "tenant_id": tid,
+        **_booking_or_folio_scope_query(tid, booking_id, folio_ids),
         "voided": {"$ne": True},
     }
     if data.scope == "accommodation_only":
@@ -2987,22 +3033,11 @@ async def mark_reservation_complimentary(
             ),
         )
 
-    folios = [
-        folio
-        async for folio in db.folios.find(
-            {"booking_id": booking_id, "tenant_id": tid},
-            {"_id": 0, "id": 1},
-        )
-    ]
-    folio_ids = [folio["id"] for folio in folios if folio.get("id")]
     payment_query = {
-        "tenant_id": tid,
+        **_booking_or_folio_scope_query(tid, booking_id, folio_ids),
         "voided": {"$ne": True},
         "amount": {"$gt": 0},
-        "$or": [{"booking_id": booking_id}],
     }
-    if folio_ids:
-        payment_query["$or"].append({"folio_id": {"$in": folio_ids}})
     active_payment = await db.payments.find_one(payment_query, {"_id": 0, "id": 1})
     if active_payment:
         raise HTTPException(
