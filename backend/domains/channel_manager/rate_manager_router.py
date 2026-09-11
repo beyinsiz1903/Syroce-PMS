@@ -51,6 +51,22 @@ class BulkRateUpdateRequest(BaseModel):
     updates: list[RateUpdateRequest]
 
 
+def _mapping_values(mapping: dict | None, update: RateUpdateRequest) -> dict:
+    """Mask provider writes by the exact room/rate mapping controls."""
+    if not mapping:
+        return {}
+    restrictions_enabled = mapping.get("sync_restrictions", True)
+    return {
+        "availability": update.availability if mapping.get("sync_availability", True) else None,
+        "rate": update.rate if mapping.get("sync_price", True) else None,
+        "min_stay": update.min_stay if restrictions_enabled else None,
+        "max_stay": update.max_stay if restrictions_enabled else None,
+        "stop_sell": update.stop_sell if restrictions_enabled else None,
+        "cta": update.cta if restrictions_enabled else None,
+        "ctd": update.ctd if restrictions_enabled else None,
+    }
+
+
 @router.get("/grid")
 async def get_rate_grid(
     start_date: str | None = None,
@@ -224,6 +240,15 @@ async def update_rates(
     if not hotel_code:
         raise HTTPException(status_code=422, detail="Exely property mapping is missing")
 
+    mapping_rows = await db.exely_room_mappings.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0},
+    ).to_list(200)
+    mapping_controls = {
+        (str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row
+        for row in mapping_rows
+    }
+
     bulk_ops = []
     push_tasks = []
 
@@ -266,7 +291,22 @@ async def update_rates(
             saved += 1
             d += timedelta(days=1)
 
-        async def _queue(u=upd):
+        mapped_values = _mapping_values(
+            mapping_controls.get((str(upd.room_type_code), str(upd.rate_plan_code))),
+            upd,
+        )
+        if not mapped_values or all(value is None for value in mapped_values.values()):
+            push_results.append(
+                {
+                    "accepted": False,
+                    "delivery_state": "blocked",
+                    "provider_write_count": 0,
+                    "error_code": "EXELY_ROOM_RATE_MAPPING_OR_SYNC_REQUIRED",
+                }
+            )
+            continue
+
+        async def _queue(u=upd, values=mapped_values):
             try:
                 return await enqueue_exely_ari_update(
                     tenant_id,
@@ -276,14 +316,14 @@ async def update_rates(
                     start_date=u.start_date,
                     end_date=u.end_date,
                     source_service="rate_manager",
-                    availability=u.availability,
-                    rate_amount=u.rate,
+                    availability=values["availability"],
+                    rate_amount=values["rate"],
                     currency=conn.get("currency", "TRY"),
-                    stop_sell=u.stop_sell,
-                    min_los=u.min_stay,
-                    max_los=u.max_stay,
-                    cta=u.cta,
-                    ctd=u.ctd,
+                    stop_sell=values["stop_sell"],
+                    min_los=values["min_stay"],
+                    max_los=values["max_stay"],
+                    cta=values["cta"],
+                    ctd=values["ctd"],
                     actor_id=current_user.id,
                 )
             except Exception as exc:
@@ -357,6 +397,15 @@ async def bulk_grid_update(
     hotel_code = conn.get("hotel_code", "")
     if not hotel_code:
         raise HTTPException(status_code=422, detail="Exely property mapping is missing")
+
+    mapping_rows = await db.exely_room_mappings.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0},
+    ).to_list(200)
+    mapping_controls = {
+        (str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row
+        for row in mapping_rows
+    }
 
     selected_days_set = set(request.selected_days) if request.selected_days else None
     update_fields = set(request.update_fields)
@@ -449,13 +498,17 @@ async def bulk_grid_update(
             saved += 1
             d += timedelta(days=1)
 
-        push_rate = v_rate if "rate" in update_fields else None
-        push_avail = v_avail if "availability" in update_fields else None
-        push_stop = v_stop if "stop_sell" in update_fields else None
-        push_min = v_min if "min_stay" in update_fields else None
-        push_max = v_max if "max_stay" in update_fields else None
-        push_cta = v_cta if "cta" in update_fields else None
-        push_ctd = v_ctd if "ctd" in update_fields else None
+        controls = mapping_controls.get((str(rt_code), str(rp_code)))
+        availability_enabled = bool(controls and controls.get("sync_availability", True))
+        rate_enabled = bool(controls and controls.get("sync_price", True))
+        restrictions_enabled = bool(controls and controls.get("sync_restrictions", True))
+        push_rate = v_rate if rate_enabled and "rate" in update_fields else None
+        push_avail = v_avail if availability_enabled and "availability" in update_fields else None
+        push_stop = v_stop if restrictions_enabled and "stop_sell" in update_fields else None
+        push_min = v_min if restrictions_enabled and "min_stay" in update_fields else None
+        push_max = v_max if restrictions_enabled and "max_stay" in update_fields else None
+        push_cta = v_cta if restrictions_enabled and "cta" in update_fields else None
+        push_ctd = v_ctd if restrictions_enabled and "ctd" in update_fields else None
         _cur_code, _ = await get_tenant_currency(tenant_id)
         push_currency = conn.get("currency") or _cur_code
 
@@ -494,7 +547,8 @@ async def bulk_grid_update(
                 logger.error("[BULK-UPDATE] Exely queue failed: %s", type(exc).__name__)
                 return {"accepted": False, "delivery_state": "blocked", "provider_write_count": 0}
 
-        push_tasks.append(_queue())
+        if any(value is not None for value in (push_rate, push_avail, push_stop, push_min, push_max, push_cta, push_ctd)):
+            push_tasks.append(_queue())
 
     # Execute DB bulk write in one batch
     if bulk_ops:

@@ -104,6 +104,7 @@ const ExelyIntegration = ({
     endpoint_url: '',
     property_name: '',
     currency: 'TRY',
+    mode: 'sandbox',
     auto_sync_reservations: true,
     sync_interval_minutes: 15
   });
@@ -168,10 +169,9 @@ const ExelyIntegration = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     if (connection?.connected) fetchMappingStatus();
-  }, [connection?.connected]);
+  }, [connection?.connected, fetchMappingStatus]);
   const handleAutoMapSuggest = async () => {
     setAutoMapLoading(true);
     try {
@@ -453,6 +453,16 @@ const ExelyIntegration = ({
                     ...p,
                     endpoint_url: e.target.value
                   }))} />
+                    </div>
+                    <div>
+                      <Label htmlFor="exely-mode">Bağlantı Ortamı</Label>
+                      <select id="exely-mode" data-testid="exely-mode-select" value={connectForm.mode} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    mode: e.target.value
+                  }))} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                        <option value="sandbox">Sertifikasyon / Test</option>
+                        <option value="production">Canlı</option>
+                      </select>
                     </div>
                     <div>
                       <Label htmlFor="exely-currency">Para Birimi</Label>
