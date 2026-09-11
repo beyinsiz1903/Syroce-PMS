@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.audit import log_audit_event
 from core.database import db
+from core.tenant_db import tenant_context
 from core.security import (
     get_current_user,
     security,
@@ -649,8 +650,15 @@ async def get_internal_messages_inbox(department: str | None = None, unread_only
     if department:
         match_criteria["from_department"] = department
 
+    # Bind the collection while the authenticated user's scope is explicit.
+    # This keeps the inbox safe when a background operation left a different
+    # context in the current async task, and prevents a valid request from
+    # becoming a cross-tenant 500.
+    with tenant_context(current_user.tenant_id):
+        internal_messages = db.internal_messages
+
     messages = []
-    async for msg in db.internal_messages.find(match_criteria).sort("created_at", -1).limit(limit):
+    async for msg in internal_messages.find(match_criteria).sort("created_at", -1).limit(limit):
         read_by = msg.get("read_by") or []
         # Per-user read flag (works for DM, department, and broadcast messages alike)
         is_read = current_user.id in read_by
@@ -686,7 +694,7 @@ async def get_internal_messages_inbox(department: str | None = None, unread_only
             }
         )
 
-    unread_count = await db.internal_messages.count_documents(
+    unread_count = await internal_messages.count_documents(
         {
             **match_criteria,
             "read_by": {"$ne": current_user.id},
