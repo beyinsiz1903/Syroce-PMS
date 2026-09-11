@@ -611,22 +611,22 @@ async def manual_pull(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually trigger a reservation pull from Exely."""
-    runtime_block = reservation_sync_block_reason()
-    if runtime_block:
-        raise HTTPException(status_code=503, detail=runtime_block)
-
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": current_user.tenant_id, "is_active": True},
-        exely_connection_projection(),
-    )
-    if not conn:
-        raise HTTPException(status_code=404, detail="Exely connection not found")
-
-    creds = await resolve_exely_credentials(current_user.tenant_id, conn, actor="exely_manual_pull")
-    if not creds:
-        raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
-
     try:
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            raise HTTPException(status_code=503, detail=runtime_block)
+
+        conn = await db.exely_connections.find_one(
+            {"tenant_id": current_user.tenant_id, "is_active": True},
+            exely_connection_projection(),
+        )
+        if not conn:
+            raise HTTPException(status_code=404, detail="Exely connection not found")
+
+        creds = await resolve_exely_credentials(current_user.tenant_id, conn, actor="exely_manual_pull")
+        if not creds:
+            raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
+
         result = await exely_pull_scheduler.pull_for_tenant(
             tenant_id=current_user.tenant_id,
             username=creds["username"],
@@ -634,33 +634,34 @@ async def manual_pull(
             hotel_code=creds["hotel_code"],
             endpoint_url=creds["endpoint_url"],
         )
+        if not result["success"]:
+            raise HTTPException(status_code=502, detail="Exely reservation pull failed")
+
+        cancelled = result.get("cancelled", 0)
+        updated = result.get("updated", 0)
+        imported = result.get("imported", 0)
+        msg_parts = [f"{result['processed']} rezervasyon cekildi"]
+        if imported:
+            msg_parts.append(f"{imported} PMS'e aktarildi")
+        if updated:
+            msg_parts.append(f"{updated} guncellendi")
+        if cancelled:
+            msg_parts.append(f"{cancelled} iptal edildi")
+        return {
+            "message": ", ".join(msg_parts),
+            **result,
+            "auto_imported": imported,
+            "updated": updated,
+            "cancelled": cancelled,
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("[EXELY] manual reservation pull failed")
         raise HTTPException(
             status_code=502,
             detail=f"EXELY_RESERVATION_PULL_FAILED:{type(exc).__name__}",
         ) from exc
-
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail="Exely reservation pull failed")
-
-    cancelled = result.get("cancelled", 0)
-    updated = result.get("updated", 0)
-    imported = result.get("imported", 0)
-    msg_parts = [f"{result['processed']} rezervasyon cekildi"]
-    if imported:
-        msg_parts.append(f"{imported} PMS'e aktarildi")
-    if updated:
-        msg_parts.append(f"{updated} guncellendi")
-    if cancelled:
-        msg_parts.append(f"{cancelled} iptal edildi")
-    return {
-        "message": ", ".join(msg_parts),
-        **result,
-        "auto_imported": imported,
-        "updated": updated,
-        "cancelled": cancelled,
-    }
 
 
 @router.get("/reservations/local")
@@ -746,28 +747,26 @@ async def import_reservation_to_pms(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually import a channel reservation into PMS as a booking."""
-    runtime_block = reservation_sync_block_reason()
-    if runtime_block:
-        raise HTTPException(status_code=503, detail=runtime_block)
+    try:
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            raise HTTPException(status_code=503, detail=runtime_block)
 
-    tenant_id = current_user.tenant_id
-
-    # Find channel reservation
-    res = await db.exely_reservations.find_one(
-        {"tenant_id": tenant_id, "id": reservation_id},
-        {"_id": 0},
-    )
-    if not res:
+        tenant_id = current_user.tenant_id
         res = await db.exely_reservations.find_one(
-            {"tenant_id": tenant_id, "external_id": reservation_id},
+            {"tenant_id": tenant_id, "id": reservation_id},
             {"_id": 0},
         )
-    if not res:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+        if not res:
+            res = await db.exely_reservations.find_one(
+                {"tenant_id": tenant_id, "external_id": reservation_id},
+                {"_id": 0},
+            )
+        if not res:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    from domains.channel_manager.providers.exely.pms_lifecycle import process_single_and_ack
+        from domains.channel_manager.providers.exely.pms_lifecycle import process_single_and_ack
 
-    try:
         client, _conn = await _get_client(tenant_id)
         result = await process_single_and_ack(tenant_id, res, provider=client)
     except HTTPException:
