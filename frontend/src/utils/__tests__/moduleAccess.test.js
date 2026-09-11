@@ -32,6 +32,13 @@ describe('moduleAccess', () => {
     expect(hasAnyModuleAccess(user, moduleScopesForPath('/app/ai'))).toBe(true);
   });
 
+  it('recognizes super-admin roles supplied in the roles list', () => {
+    const user = { role: 'operator', roles: ['super_admin'], module_scopes: [] };
+
+    expect(hasModuleAccess(user, 'frontdesk')).toBe(true);
+    expect(hasAnyModuleAccess(user, moduleScopesForPath('/app/reservation-calendar'))).toBe(true);
+  });
+
   it('lets legacy finance users reach read-only HR payroll', () => {
     const finance = { role: 'finance' };
     expect(hasModuleAccess(finance, 'hr')).toBe(true);
