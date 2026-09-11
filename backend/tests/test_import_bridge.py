@@ -53,6 +53,7 @@ async def _cleanup(db):
         COLL_AUDIT,
         "outbox_events",
         "reservation_notes",
+        "rooms",
     ]:
         await db[coll].delete_many({"tenant_id": TEST_TENANT})
 
@@ -235,6 +236,15 @@ async def test_auto_import_creates_booking():
     try:
         await _cleanup(db)
         await _setup_mappings(db)
+        await db.rooms.insert_one({
+            "id": "room-import-101",
+            "tenant_id": TEST_TENANT,
+            "property_id": TEST_PROPERTY,
+            "room_number": "101",
+            "room_type": "room-type-std",
+            "status": "available",
+            "is_active": True,
+        })
 
         await db[COLL_IMPORTED].create_index(
             [("tenant_id", 1), ("connector_id", 1), ("external_reservation_id", 1)],
@@ -265,6 +275,43 @@ async def test_auto_import_creates_booking():
         assert booking["source"]["provider"] == TEST_PROVIDER
         assert booking["source"]["external_reservation_id"] == lineage["external_reservation_id"]
         assert booking["status"] == "confirmed"
+
+        outbox_event = await db.outbox_events.find_one(
+            {"tenant_id": TEST_TENANT, "entity_id": imp["booking_id"]},
+            {"_id": 0},
+        )
+        assert outbox_event is not None
+        assert outbox_event["payload"]["room_id"] == "room-import-101"
+        assert outbox_event["payload"]["check_in"] == lineage["arrival_date"]
+        assert outbox_event["payload"]["check_out"] == lineage["departure_date"]
+    finally:
+        await _cleanup(db)
+        client.close()
+
+
+@pytest.mark.asyncio
+async def test_auto_import_pending_assignment_defers_availability_outbox():
+    """A reservation without a physical room must not dead-letter an ARI event."""
+    client, db = await _get_db()
+    try:
+        await _cleanup(db)
+        await _setup_mappings(db)
+        await db[COLL_IMPORTED].create_index(
+            [("tenant_id", 1), ("connector_id", 1), ("external_reservation_id", 1)],
+            name="idx_import_unique_ext_res", unique=True,
+        )
+
+        lineage = _make_lineage()
+        with patch("core.import_bridge_service.db", db), \
+             patch("core.import_decision.db", db), \
+             patch("core.atomic_booking.db", db):
+            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+
+            record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
+            success, _ = await auto_import_reservation_to_pms(record["id"])
+
+        assert success is True
+        assert await db.outbox_events.count_documents({"tenant_id": TEST_TENANT}) == 0
     finally:
         await _cleanup(db)
         client.close()

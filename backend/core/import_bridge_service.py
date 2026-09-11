@@ -712,7 +712,7 @@ async def auto_import_reservation_to_pms(
         # physical room for the whole stay, then let create_booking_atomic make
         # the race-safe night claim. If all rooms are occupied/blocked, retain
         # the reservation as pending_assignment for a manual calendar move.
-        _, assigned_room = await create_booking_with_auto_assignment(
+        created_booking, assigned_room = await create_booking_with_auto_assignment(
             database=db,
             tenant_id=tenant_id,
             booking_doc=booking_doc,
@@ -867,40 +867,64 @@ async def auto_import_reservation_to_pms(
         )
 
         # ── 10. Enqueue outbox event for confirmation ────────────
-        try:
-            from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
+        # The automatic allocator returns the persisted booking, including the
+        # physical room chosen for it.  ``booking_doc`` above deliberately has
+        # no ``room_id`` until that allocation succeeds, so using it here made
+        # every imported, allocated reservation fail the durable availability
+        # path with "booking availability payload is incomplete".
+        assigned_room_id = str(created_booking.get("room_id") or "").strip()
+        if assigned_room_id:
+            try:
+                from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
 
-            await enqueue_outbox_event(
-                db,
-                tenant_id=tenant_id,
-                event_type=BOOKING_CREATED,
-                entity_type="booking",
-                entity_id=booking_id,
-                payload={
-                    "booking_id": booking_id,
-                    "source": "ota_import",
-                    "provider": provider,
-                    "external_reservation_id": ext_res_id,
-                },
-                provider=provider,
-                connector_id=record.get("connector_id"),
-                property_id=property_id,
-                correlation_id=record.get("correlation_id"),
+                await enqueue_outbox_event(
+                    db,
+                    tenant_id=tenant_id,
+                    event_type=BOOKING_CREATED,
+                    entity_type="booking",
+                    entity_id=booking_id,
+                    payload={
+                        "booking_id": booking_id,
+                        "guest_id": created_booking.get("guest_id"),
+                        "room_id": assigned_room_id,
+                        "check_in": created_booking.get("check_in", ""),
+                        "check_out": created_booking.get("check_out", ""),
+                        "status": created_booking.get("status", "confirmed"),
+                        "property_id": property_id,
+                        "source_channel": created_booking.get("channel") or provider,
+                        "origin": "ota_import",
+                        "provider": provider,
+                        "external_reservation_id": ext_res_id,
+                    },
+                    provider=provider,
+                    connector_id=record.get("connector_id"),
+                    property_id=property_id,
+                    correlation_id=record.get("correlation_id"),
+                )
+                # Timeline: queued for outbox delivery
+                await _timeline_append(
+                    tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    entity_type="reservation",
+                    entity_id=booking_id,
+                    external_id=ext_res_id,
+                    stage="queued",
+                    source="outbox_service",
+                    provider=provider,
+                    metadata={"booking_id": booking_id},
+                )
+            except Exception as e:
+                logger.warning("Outbox enqueue for import failed (non-critical): %s", e)
+        else:
+            # A pending-assignment booking has no room-night lock yet.  There
+            # is therefore no physical-room inventory change to publish.  Its
+            # later room assignment goes through the normal booking-update
+            # flow, which creates the complete availability event.
+            logger.info(
+                "OTA import availability deferred until room assignment: booking=%s provider=%s",
+                booking_id,
+                provider,
             )
-            # Timeline: queued for outbox delivery
-            await _timeline_append(
-                tenant_id=tenant_id,
-                correlation_id=correlation_id,
-                entity_type="reservation",
-                entity_id=booking_id,
-                external_id=ext_res_id,
-                stage="queued",
-                source="outbox_service",
-                provider=provider,
-                metadata={"booking_id": booking_id},
-            )
-        except Exception as e:
-            logger.warning("Outbox enqueue for import failed (non-critical): %s", e)
 
         logger.info(
             "OTA reservation imported: import=%s booking=%s ext=%s provider=%s",
