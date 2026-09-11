@@ -93,7 +93,13 @@ async def ensure_performance_indexes():
         ("gl_nilvera_queue", [("tenant_id", 1), ("status", 1), ("created_at", -1)], "idx_gl_nilvera_queue_status", {}),
         ("gl_vouchers", [("tenant_id", 1), ("id", 1)], "ux_gl_vouchers_tenant_id", {"unique": True}),
         ("gl_vouchers", [("tenant_id", 1), ("voucher_no", 1)], "ux_gl_vouchers_tenant_no", {"unique": True}),
-        ("gl_vouchers", [("tenant_id", 1), ("setup_idempotency_key", 1)], "ux_gl_vouchers_setup_idem", {"unique": True, "sparse": True}),
+        # A sparse unique index still indexes explicit ``null`` values.  Old
+        # voucher rows carry that value, so they can make startup index builds
+        # fail even though only a real setup idempotency key must be unique.
+        ("gl_vouchers", [("tenant_id", 1), ("setup_idempotency_key", 1)], "ux_gl_vouchers_setup_idem", {
+            "unique": True,
+            "partialFilterExpression": {"setup_idempotency_key": {"$type": "string"}},
+        }),
         ("gl_vouchers", [("tenant_id", 1), ("status", 1), ("updated_at", -1)], "idx_gl_vouchers_work_queue", {}),
         ("gl_journal_entries", [("tenant_id", 1), ("entry_no", 1)], "ux_gl_journal_entry_no", {"unique": True}),
         ("gl_journal_entries", [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)], "ux_gl_journal_sequence", {

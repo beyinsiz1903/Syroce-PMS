@@ -554,6 +554,33 @@ class TestExelyCanonicalOutbox:
         assert status == "manual_review"
         assert update.await_args.args[1] == "manual_review"
 
+    @pytest.mark.asyncio
+    async def test_exely_identical_delivery_in_progress_is_safely_skipped(self):
+        change_set = {
+            "id": "CS",
+            "tenant_id": "T",
+            "property_id": "P",
+            "provider": "exely",
+            "change_scope": "availability",
+            "outbound_attempt_count": 1,
+            "compacted_payload": {"availability": 7},
+        }
+        result = ARIProviderResult(
+            success=False,
+            provider="exely",
+            error="EXELY_ARI_DELIVERY_IN_PROGRESS",
+            delivery_state="blocked",
+            provider_write_count=0,
+        )
+        with (
+            patch("domains.channel_manager.ari.ack_service.repo.insert_outbound_log", new=AsyncMock()),
+            patch("domains.channel_manager.ari.ack_service.repo.update_change_set_status", new=AsyncMock()) as update,
+        ):
+            status = await process_ack(change_set, result, "OUT")
+        assert status == "skipped"
+        assert update.await_args.args[1] == "skipped"
+        assert update.await_args.kwargs["inc_attempt"] is False
+
     def test_active_exely_mutation_paths_use_canonical_delivery(self):
         from pathlib import Path
 
