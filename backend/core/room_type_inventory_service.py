@@ -143,7 +143,9 @@ async def compute_room_type_inventory(
         # Older room documents predate the is_active field.  They are live
         # inventory unless they were explicitly disabled; excluding them makes
         # a reservation's room-night lock invisible to channel availability.
-        {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}}},
+        # Virtual rooms are routing placeholders, not physical sellable
+        # inventory.  They must never be published to a channel manager.
+        {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}},
         {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
     ]
     if room_groups is None:
@@ -241,7 +243,7 @@ async def reconcile_date_range(
     # Night locks are still read fresh for each day; booking guards are unchanged.
     with tenant_context(tenant_id):
         room_groups = await db.rooms.aggregate([
-            {"$match": {"tenant_id": tenant_id, "is_active": True}},
+            {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}},
             {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
         ]).to_list(200)
 
