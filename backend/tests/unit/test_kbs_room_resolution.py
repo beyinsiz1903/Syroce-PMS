@@ -76,6 +76,28 @@ async def test_snapshot_keeps_booking_room_number_when_room_id_is_absent(monkeyp
     assert snapshot["room_number"] == "105"
 
 
+@pytest.mark.asyncio
+async def test_snapshot_uses_canonical_guest_name_when_booking_snapshot_is_blank(monkeypatch):
+    fake_db = _Db(
+        [_booking(guest_id="guest-1", guest_name="")],
+        [{"tenant_id": "tenant-1", "id": "room-109", "room_number": "109"}],
+    )
+    fake_db.guests = _Collection([
+        {
+            "tenant_id": "tenant-1",
+            "id": "guest-1",
+            "name": "Enes Ayata",
+            "nationality": "TR",
+            "id_number": "12345678901",
+        }
+    ])
+    monkeypatch.setattr(kbs, "db", fake_db)
+
+    _booking_doc, _guest, snapshot = await kbs._build_payload_snapshot("tenant-1", "booking-1")
+
+    assert snapshot["guest_name"] == "Enes Ayata"
+
+
 @pytest.mark.parametrize(
     "error",
     [
