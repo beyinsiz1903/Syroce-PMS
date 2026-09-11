@@ -15,11 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.audit import log_audit_event
 from core.database import db
-from core.tenant_db import tenant_context
 from core.security import (
     get_current_user,
     security,
 )
+from core.tenant_db import tenant_context
 from models.schemas import SendEmailRequest, SendSMSRequest, SendWhatsAppRequest, User
 from modules.pms_core.role_permission_service import require_op  # v100 DW
 
