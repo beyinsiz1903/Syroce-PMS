@@ -789,9 +789,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   // ─── Drag & Drop ───────────────────────────────────────────
-  const handleDragStart = (e, booking) => {
+  const handleDragStart = (e, booking, dragAnchorDate = booking.check_in) => {
     setResizingBooking(null);
-    setDraggingBooking(booking);
+    // A reservation card spans every occupied night. Keep the night the user
+    // grabbed as an offset so dropping its third cell moves the *whole* stay,
+    // rather than incorrectly treating that cell as the new arrival date.
+    const checkInMs = new Date(`${toDateStringUTC(booking.check_in)}T00:00:00Z`).getTime();
+    const anchorMs = new Date(`${toDateStringUTC(dragAnchorDate)}T00:00:00Z`).getTime();
+    const dragOffsetDays = Math.max(0, Math.round((anchorMs - checkInMs) / 86400000));
+    setDraggingBooking({ ...booking, _dragOffsetDays: dragOffsetDays });
     e.dataTransfer.effectAllowed = 'move';
   };
   const handleResizeStart = (e, booking) => {
@@ -848,11 +854,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const currentNights = Math.max(1, Math.round(
       (new Date(`${currentCheckOut}T00:00:00Z`) - new Date(`${currentCheckIn}T00:00:00Z`)) / 86400000,
     ));
+    const isComplimentary = Boolean(booking.is_complimentary);
     const currentTotal = Number(booking.total_amount || 0);
     const roomForPreview = rooms.find(r => r.id === booking.room_id) || {};
     const roomTypeForPreview = booking.room_type || roomForPreview.room_type || roomForPreview.type;
     let previewTotal = currentTotal;
-    if (result.extending) {
+    if (isComplimentary) {
+      previewTotal = 0;
+    } else if (result.extending) {
       let cursor = new Date(`${currentCheckOut}T00:00:00Z`);
       const newCheckOut = new Date(`${result.newCheckOut}T00:00:00Z`);
       while (cursor < newCheckOut) {
@@ -917,7 +926,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         let cur = new Date(oldCheckOutDate);
         while (cur < newCheckOutDate) {
           const dStr = toDateStringUTC(cur);
-          const rate = calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate;
+          const rate = isComplimentary
+            ? 0
+            : (calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate);
           nextDailyRates.push({ date: dStr, rate: Number(rate) });
           cur.setUTCDate(cur.getUTCDate() + 1);
         }
@@ -926,9 +937,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         nextDailyRates.splice(0, nextDailyRates.length, ...nextDailyRates.filter(rate => rate.date < newCheckoutDate));
       }
 
-      const newTotalAmount = Math.round(
-        nextDailyRates.reduce((sum, rate) => sum + rate.rate, 0) * 100,
-      ) / 100;
+    const newTotalAmount = isComplimentary
+      ? 0
+      : Math.round(nextDailyRates.reduce((sum, rate) => sum + rate.rate, 0) * 100) / 100;
 
       const currency = booking.currency || 'TL';
 
@@ -1058,7 +1069,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
     const oldRoomId = draggingBooking.room_id;
     const oldDateStr = toDateStringUTC(draggingBooking.check_in);
-    const targetDateStr = toDateStringUTC(newDate);
+    const droppedDateStr = toDateStringUTC(newDate);
+    const newCheckIn = new Date(`${droppedDateStr}T00:00:00Z`);
+    newCheckIn.setUTCDate(newCheckIn.getUTCDate() - Number(draggingBooking._dragOffsetDays || 0));
+    const targetDateStr = toDateStringUTC(newCheckIn);
     if (oldRoomId === newRoomId && oldDateStr === targetDateStr) {
       setDraggingBooking(null);
       return;
@@ -1083,9 +1097,21 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
 
     const daysDiff = Math.ceil((new Date(draggingBooking.check_out) - new Date(draggingBooking.check_in)) / (1000 * 60 * 60 * 24));
-    const newCheckIn = new Date(newDate);
     const newCheckOut = new Date(newDate);
-    newCheckOut.setDate(newCheckOut.getDate() + daysDiff);
+    newCheckOut.setTime(newCheckIn.getTime());
+    newCheckOut.setUTCDate(newCheckOut.getUTCDate() + daysDiff);
+
+    // A drop is valid only when the whole stay fits. Checking merely the
+    // cell under the pointer let a multi-night reservation start in a valid
+    // cell and silently overlap a block on a following night.
+    for (let cursor = new Date(newCheckIn); cursor < newCheckOut; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      const blocked = getRoomBlockForDate(newRoomId, cursor, roomBlocks);
+      if (blocked && !blocked.allow_sell) {
+        toast.error(`Rezervasyon taşınamadı: ${toDateStringUTC(cursor)} tarihinde oda ${blocked.reason || 'bloklu'}`);
+        setDraggingBooking(null);
+        return;
+      }
+    }
 
     const oldRoom = rooms.find(r => r.id === oldRoomId);
     const newRoom = rooms.find(r => r.id === newRoomId);

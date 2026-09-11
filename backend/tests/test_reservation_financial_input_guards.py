@@ -270,15 +270,49 @@ async def test_cari_account_name_fallback_refuses_ambiguous_rows(monkeypatch):
             pms_reservations.ExtraChargeCreate,
             {"charge_name": "Zero charge", "charge_amount": 0},
         ),
-        (
-            reservation_detail.DailyRateEntry,
-            {"date": "2026-08-17", "rate": 0},
-        ),
     ],
 )
 def test_zero_financial_values_are_rejected_by_contract(model, payload):
     with pytest.raises(ValidationError):
         model(**payload)
+
+
+def test_daily_rate_contract_allows_zero_for_complimentary_stays():
+    # Whether it is authorised is checked after the booking has been loaded.
+    # This allows a complete zero-valued comp stay to reach that business rule.
+    assert reservation_detail.DailyRateEntry(date="2026-08-17", rate=0).rate == 0
+
+
+@pytest.mark.asyncio
+async def test_daily_rate_zero_is_rejected_for_a_non_complimentary_booking(monkeypatch):
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "status": "confirmed",
+                    "is_complimentary": False,
+                }
+            )
+        )
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+
+    with pytest.raises(HTTPException, match="yalnızca comp") as exc:
+        await reservation_detail.update_daily_rates(
+            "booking-a",
+            reservation_detail.DailyRateUpdate(
+                rates=[reservation_detail.DailyRateEntry(date="2026-08-17", rate=0)]
+            ),
+            current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 422
 
 
 def test_zero_reservation_detail_extra_charge_is_a_valid_comp_item():

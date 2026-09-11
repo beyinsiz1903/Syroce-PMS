@@ -104,6 +104,21 @@ describe('CalendarGrid stay resize handle', () => {
     expect(handlers.onDrop.mock.calls[0][2].toISOString()).toBe('2026-09-10T00:00:00.000Z');
   });
 
+  it('provides the reservation start cell as the drag anchor for whole-stay moves', () => {
+    const handlers = renderGrid();
+    const card = screen.getByTestId('booking-bar-booking-1');
+    const dataTransfer = { effectAllowed: '', setData: vi.fn() };
+
+    fireEvent.dragStart(card, { dataTransfer });
+
+    expect(handlers.onDragStart).toHaveBeenCalledWith(
+      expect.anything(),
+      booking,
+      expect.objectContaining({ toISOString: expect.any(Function) }),
+    );
+    expect(handlers.onDragStart.mock.calls[0][2].toISOString()).toBe('2026-09-10T00:00:00.000Z');
+  });
+
   it('supports direct pointer resizing in addition to browser drag events', () => {
     const handlers = renderGrid();
     const handle = screen.getByTestId('booking-resize-handle-booking-1');

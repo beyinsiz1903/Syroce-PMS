@@ -774,9 +774,13 @@ class DepositRecord(BaseModel):
 
 
 class DailyRateEntry(BaseModel):
-    # Bug CP Round-3 — typed entries prevent untyped/negative rates bypassing override gate
+    # Zero is a valid daily value only for an already-authorised complimentary
+    # stay. The route below enforces that business rule after it loads the
+    # booking; keeping the schema at ``ge=0`` lets all nights in a comp stay
+    # be validated together instead of Pydantic returning one opaque error per
+    # night before the route can inspect the booking.
     date: str = Field(..., min_length=8, max_length=32)
-    rate: float = Field(..., gt=0, le=1e9)
+    rate: float = Field(..., ge=0, le=1e9)
 
 
 class DailyRateUpdate(BaseModel):
@@ -3226,6 +3230,12 @@ async def update_daily_rates(
             raise HTTPException(status_code=400, detail="Rezervasyon bulunamadı.")
 
         await ensure_reservation_mutable(db, tid, booking)
+
+        if not booking.get("is_complimentary") and any(rate.rate <= 0 for rate in data.rates):
+            raise HTTPException(
+                status_code=422,
+                detail="Günlük fiyat yalnızca comp rezervasyonlarda sıfır olabilir",
+            )
 
         business_state = await ensure_business_date_initialized(db, tid)
         current_business_date = str(business_state["business_date"])[:10]
