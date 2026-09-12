@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock, Gift, X } from 'lucide-react';
-import { API, fmtDate, fmtTL, fmtTs, FormField, SelectField } from './helpers';
+import { API, fmtDate, fmtTL, fmtCurrency, fmtTs, FormField, SelectField } from './helpers';
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
 
@@ -92,7 +92,7 @@ export function DailyRatesTab({
       {isComplimentary && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="complimentary-summary">
           <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Full Comp' : 'Sadece Konaklama Comp'}</div>
           {booking?.complimentary_reason && <p className="mt-0.5 text-xs text-emerald-800">Gerekçe: {booking.complimentary_reason}</p>}
-          {booking?.complimentary_original_total > 0 && <p className="mt-0.5 text-xs text-emerald-800">Raporlanan konaklama değeri: {fmtTL(booking.complimentary_original_total)} TL</p>}
+          {booking?.complimentary_original_total > 0 && <p className="mt-0.5 text-xs text-emerald-800">Raporlanan konaklama değeri: {fmtCurrency(booking.complimentary_original_total, currency)}</p>}
         </div>}
       {showCompForm && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2" data-testid="complimentary-form">
           <div className="flex items-start justify-between gap-3">
@@ -137,7 +137,7 @@ export function DailyRatesTab({
                   rate: e.target.value
                 };
                 setRates(u);
-              }} className="h-7 text-sm text-right w-24 ml-auto" /> : <span className="inline-flex items-center justify-end gap-1.5 font-medium text-gray-800">{editMode && isClosedRate(r) && <><Lock className="h-3 w-3 text-slate-400" /><span className="sr-only">Gün sonu kapalı</span></>}{fmtTL(r.rate)} TL</span>}
+              }} className="h-7 text-sm text-right w-24 ml-auto" /> : <span className="inline-flex items-center justify-end gap-1.5 font-medium text-gray-800">{editMode && isClosedRate(r) && <><Lock className="h-3 w-3 text-slate-400" /><span className="sr-only">Gün sonu kapalı</span></>}{fmtCurrency(r.rate, currency)}</span>}
                 </td>
               </tr>)}
           </tbody>
@@ -288,9 +288,9 @@ export function ExtraChargesTab({
                 <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center"><Receipt className="w-4 h-4 text-amber-600" /></div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
-                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtTL(c.complimentary_original_amount)} TL</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
+                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtCurrency(c.complimentary_original_amount, currency)}</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
-                <div className="text-sm font-bold text-amber-700">{fmtTL(c.total ?? c.charge_amount ?? c.amount)} TL</div>
+                <div className="text-sm font-bold text-amber-700">{fmtCurrency(c.total ?? c.charge_amount ?? c.amount, currency)}</div>
                 {!c.is_complimentary && <Button
                   size="sm"
                   variant="ghost"

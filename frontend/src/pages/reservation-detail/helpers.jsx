@@ -17,6 +17,11 @@ export const fmtDateTime = (d) => {
 };
 export const fmtTs = (d) => (d || '').toString().slice(0, 16).replace('T', ' ');
 export const fmtTL = (v) => (v || 0).toLocaleString('tr-TR');
+export const fmtCurrency = (v, currency) => {
+  const code = (currency || 'TL').toUpperCase();
+  const c = code === 'TRY' ? 'TL' : code;
+  return `${(v || 0).toLocaleString('tr-TR')} ${c}`;
+};
 
 // Rezervasyon geceleri saat farkından değil takvim günlerinden hesaplanır.
 // Böylece 14:00 giriş / 12:00 çıkış gibi normal otel saatleri bir geceyi
@@ -139,7 +144,7 @@ export function SummaryCard({ label, value, color }) {
   return (
     <div className={`bg-${color}-50 border border-${color}-200 rounded-lg p-3 text-center`}>
       <div className={`text-xs text-${color}-600 font-medium`}>{label}</div>
-      <div className={`text-lg font-bold text-${color}-800`}>{fmtTL(value)} TL</div>
+      <div className={`text-lg font-bold text-${color}-800`}>{fmtCurrency(value, currency)}</div>
     </div>
   );
 }

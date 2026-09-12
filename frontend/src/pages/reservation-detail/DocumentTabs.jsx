@@ -4,10 +4,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Plus, Banknote, RefreshCw, Shield, FileText } from 'lucide-react';
-import { API, fmtTL, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
+import { API, fmtTL, fmtCurrency, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
 import { useTranslation } from 'react-i18next';
 
 export function DepositsTab({ deposits, booking, onRefresh }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [showDeposit, setShowDeposit] = useState(false);
   const [showRefund, setShowRefund] = useState(null);
@@ -83,7 +84,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                   <div className="text-sm font-medium">Depozito - {d.method === 'cash' ? 'Nakit' : d.method === 'card' ? 'Kart' : 'Havale'}</div>
                   <div className="text-xs text-gray-400">{fmtTs(d.created_at)} | {d.recorded_by} {d.reference && `| Ref: ${d.reference}`}</div>
                 </div>
-                <div className={`text-sm font-bold ${d.status === 'refunded' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>{fmtTL(d.amount)} TL</div>
+                <div className={`text-sm font-bold ${d.status === 'refunded' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>{fmtCurrency(d.amount, currency)}</div>
                 <Badge className={`text-xs ${d.status === 'refunded' ? 'bg-gray-100 text-gray-500' : d.status === 'partially_refunded' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {d.status === 'refunded' ? 'Iade Edildi' : d.status === 'partially_refunded' ? 'Kismi Iade' : 'Aktif'}
                 </Badge>
@@ -121,6 +122,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
 }
 
 export function VoucherTab({ booking, bookingId }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [voucherHtml, setVoucherHtml] = useState('');
   const [loading, setLoading] = useState(false);
@@ -171,6 +173,7 @@ export function VoucherTab({ booking, bookingId }) {
 }
 
 export function InvoiceTab({ booking, bookingId }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [charges, setCharges] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -256,7 +259,7 @@ export function InvoiceTab({ booking, bookingId }) {
 
           <div className="text-sm font-semibold text-gray-700 flex items-center justify-between">
             <span>Faturaya Eklenecek Kalemler</span>
-            <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} {t('cm.pages_reservationdetail_DocumentTabs.secili_toplam')} {fmtTL(selectedTotal)} TL</span>
+            <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} {t('cm.pages_reservationdetail_DocumentTabs.secili_toplam')} {fmtCurrency(selectedTotal, currency)}</span>
           </div>
           {loadingCharges ? (
             <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> {t('cm.pages_reservationdetail_DocumentTabs.yukleniyor')}</div>
@@ -269,14 +272,14 @@ export function InvoiceTab({ booking, bookingId }) {
                     <div className="text-sm font-medium">{c.description}</div>
                     <div className="text-xs text-gray-400">{catLabels[c.category] || c.category} | {c.date}</div>
                   </div>
-                  <div className="text-sm font-bold text-gray-700">{fmtTL(c.amount)} TL</div>
+                  <div className="text-sm font-bold text-gray-700">{fmtCurrency(c.amount, currency)}</div>
                 </label>
               ))}
             </div>
           )}
 
           <Button onClick={generateInvoice} disabled={loading || selectedIds.size === 0} className="w-full h-9 text-sm bg-blue-600 hover:bg-blue-700 text-white" data-testid="generate-invoice-btn">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <FileText className="w-4 h-4 mr-1" />} Fatura Olustur ({fmtTL(selectedTotal)} TL)
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <FileText className="w-4 h-4 mr-1" />} Fatura Olustur ({fmtCurrency(selectedTotal, currency)})
           </Button>
         </>
       ) : (
