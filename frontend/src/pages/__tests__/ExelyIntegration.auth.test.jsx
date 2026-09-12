@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExelyRequestConfig,
   getExelyErrorMessage,
+  getExelyPullFailureMessage,
   parseExelyConnectionTestResult,
 } from '@/pages/ExelyIntegration';
 
@@ -37,5 +38,17 @@ describe('ExelyIntegration request authentication', () => {
     expect(getExelyErrorMessage({
       response: { data: { detail: { payload: 'must-not-be-rendered' } } },
     }, 'fallback')).toBe('fallback');
+  });
+
+  it('keeps a safe provider pull failure visible when the API returns an operational result', () => {
+    expect(getExelyPullFailureMessage({
+      success: false,
+      error: 'REJECTED',
+      message: 'EXELY_RESERVATION_PULL_FAILED:REJECTED',
+    })).toBe('EXELY_RESERVATION_PULL_FAILED:REJECTED');
+
+    expect(getExelyPullFailureMessage({ success: false, error: 'RATE_LIMITED' }))
+      .toBe('EXELY_RESERVATION_PULL_FAILED:RATE_LIMITED');
+    expect(getExelyPullFailureMessage({ success: true })).toBeNull();
   });
 });

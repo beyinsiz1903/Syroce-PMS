@@ -34,6 +34,11 @@ export const getExelyErrorMessage = (error, fallback) => {
   return fallback;
 };
 
+export const getExelyPullFailureMessage = data => {
+  if (data?.success !== false) return null;
+  return data.message || `EXELY_RESERVATION_PULL_FAILED:${data.error || 'EXELY_PROVIDER_READ_FAILED'}`;
+};
+
 export const buildExelyAutoMapPayload = (suggestions, rateSelections, ratePlans) => suggestions.map(suggestion => {
   const selectedCode = suggestion.provider_rate_plan_code || rateSelections[suggestion.provider_room_code];
   const selectedPlan = ratePlans.find(plan => plan.code === selectedCode);
@@ -346,6 +351,11 @@ const ExelyIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/exely/sync/reservations/pull`, {}, requestConfig);
+      const pullFailure = getExelyPullFailureMessage(data);
+      if (pullFailure) {
+        toast.error(pullFailure);
+        return;
+      }
       toast.success(data.message);
       fetchAll();
     } catch (e) {
