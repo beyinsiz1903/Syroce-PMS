@@ -817,7 +817,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleDragOver = (e, roomId, date) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setDragOverCell({ roomId, date: date.toISOString() });
+    // Pass the dragging booking's night count and drag offset so CalendarGrid
+    // can highlight the full stay span (not just the cell under the cursor).
+    const nights = draggingBooking
+      ? Math.max(1, Math.round(
+          (new Date(`${toDateStringUTC(draggingBooking.check_out)}T00:00:00Z`) -
+           new Date(`${toDateStringUTC(draggingBooking.check_in)}T00:00:00Z`)) / 86400000,
+        ))
+      : 1;
+    const offsetDays = Number(draggingBooking?._dragOffsetDays || 0);
+    setDragOverCell({ roomId, date: date.toISOString(), nights, offsetDays });
   };
   const handleDragLeave = () => { setDragOverCell(null); };
   const handleDragEnd = () => { setDraggingBooking(null); setResizingBooking(null); setDragOverCell(null); };
@@ -1125,10 +1134,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       newRoomId
     };
 
-    // Dolu bir hedef oda, sıradan "oda taşıma" ile reddedilmelidir. Ancak
-    // kullanıcı rezervasyonu kendi giriş gecesindeki dolu odaya bırakırsa bu
-    // açıkça iki rezervasyonun oda takası niyetidir. Tarihleri değiştirmeden,
-    // sunucuda tek transaction içinde takas ederiz.
+    // ── Oda Takası Algılama ──────────────────────────────────────────────────
+    // Kullanıcı rezervasyonu dolu bir odanın herhangi bir gecesine bırakırsa
+    // bu bir oda takası niyetidir. Tarihlerin aynı olması şartı kaldırıldı:
+    // 1-gecelik → 3-gecelik takası da aynı diyalogla onaylanır.
+    // Hedef hücreyi kaplayan aktif rezervasyon bul (sürüklenen dahil değil).
     const targetBooking = targetBookingId
       ? bookings.find(candidate => candidate.id === targetBookingId)
       : null;
@@ -1138,7 +1148,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         .filter(candidate => candidate.id !== draggingBooking.id);
     setDraggingBooking(null);
 
-    if (targetDateStr === oldDateStr && targetBookings.length === 1) {
+    if (targetBookings.length === 1) {
+      // Takas: iki rezervasyon birbirinin odasına geçer, tarihleri korunur.
       setSwapData({
         source: draggingBooking,
         target: targetBookings[0],
@@ -1148,7 +1159,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setSwapReason('Oda takası');
       return;
     }
-    if (targetDateStr === oldDateStr && targetBookings.length > 1) {
+    if (targetBookings.length > 1) {
       toast.error('Hedef odada birden fazla çakışan rezervasyon var; takas için rezervasyonu ayrıntıdan seçin.');
       return;
     }
@@ -1562,13 +1573,28 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   <div className="text-xs font-semibold text-blue-700">{swapData.sourceRoom?.room_number} → {swapData.targetRoom?.room_number}</div>
                   <div className="mt-1 font-medium text-slate-900">{formatGuestName(swapData.source.guest_name) || 'Misafir'}</div>
                   <div className="text-xs text-slate-600">{swapData.source.check_in} → {swapData.source.check_out}</div>
+                  <div className="text-xs text-blue-600 font-medium mt-0.5">
+                    {Math.max(1, Math.round((new Date(swapData.source.check_out) - new Date(swapData.source.check_in)) / 86400000))} gece
+                  </div>
                 </div>
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                   <div className="text-xs font-semibold text-emerald-700">{swapData.targetRoom?.room_number} → {swapData.sourceRoom?.room_number}</div>
                   <div className="mt-1 font-medium text-slate-900">{formatGuestName(swapData.target.guest_name) || 'Misafir'}</div>
                   <div className="text-xs text-slate-600">{swapData.target.check_in} → {swapData.target.check_out}</div>
+                  <div className="text-xs text-emerald-600 font-medium mt-0.5">
+                    {Math.max(1, Math.round((new Date(swapData.target.check_out) - new Date(swapData.target.check_in)) / 86400000))} gece
+                  </div>
                 </div>
               </div>
+              {(() => {
+                const srcNights = Math.round((new Date(swapData.source.check_out) - new Date(swapData.source.check_in)) / 86400000);
+                const tgtNights = Math.round((new Date(swapData.target.check_out) - new Date(swapData.target.check_in)) / 86400000);
+                return srcNights !== tgtNights ? (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    ⚠ Farklı gece sayısı: Her rezervasyon kendi tarihleriyle diğerinin odasına taşınır. Fiyatlar ve tarihler değişmez.
+                  </p>
+                ) : null;
+              })()}
               <div>
                 <Label htmlFor="room-swap-reason">Takas nedeni</Label>
                 <input
