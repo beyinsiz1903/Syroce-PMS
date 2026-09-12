@@ -1128,6 +1128,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             "pms_room_type": 1,
             "exely_room_code": 1,
             "exely_rate_plan_code": 1,
+            "pms_api_room_code": 1,
+            "pms_api_rate_plan_code": 1,
             "sync_availability": 1,
             "sync_price": 1,
             "sync_restrictions": 1,
@@ -1251,8 +1253,20 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         "cta": "cta",
         "ctd": "ctd",
     }
+    invalid_mapping_targets = 0
     for rt_code, ex_code, rp in mapped_targets:
         controls = mapping_controls[(ex_code, rp)]
+        api_room_code = str(controls.get("pms_api_room_code") or "").strip()
+        api_rate_code = str(controls.get("pms_api_rate_plan_code") or "").strip()
+        # The grid uses Exely's displayed ARI IDs to identify an authorized
+        # mapping, while PMSConnect writes use that mapping's PMS API pair.
+        # Never combine one API alias with one displayed identifier.
+        if bool(api_room_code) != bool(api_rate_code):
+            logger.warning("[UNIFIED] Exely mapping_state=invalid mapping_type=partial_api_pair")
+            invalid_mapping_targets += 1
+            continue
+        wire_room_code = api_room_code or ex_code
+        wire_rate_code = api_rate_code or rp
         rv = per_room_map.get(rt_code)
         values = {
             "availability": rv.availability if rv else request.availability,
@@ -1266,8 +1280,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         }
         for range_start, range_end in date_ranges:
             base = {
-                "room_type_code": ex_code,
-                "rate_plan_code": rp,
+                "room_type_code": wire_room_code,
+                "rate_plan_code": wire_rate_code,
                 "start_date": range_start,
                 "end_date": range_end,
             }
@@ -1281,7 +1295,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
     confirmed_messages = 0
     confirmed_writes = 0
-    failures = []
+    failures = ["EXELY_PARTIAL_API_PAIR"] if invalid_mapping_targets else []
     batches = (
         ("availability_batch", availability_messages),
         ("rate_batch", rate_messages),
