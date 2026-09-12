@@ -250,6 +250,11 @@ async def apply_auto_mappings(
         raise HTTPException(status_code=400, detail="Gecersiz provider.")
 
     _require_explicit_rate_plans(provider, payload.mappings)
+    if provider == "exely" and payload.mappings:
+        # OTA_HotelAvailRQ discovery returns PMS API codes. Exely's outbound
+        # ARI room/plan IDs can be different; auto-applying these as writable
+        # mappings silently targets the wrong inventory.
+        raise HTTPException(status_code=409, detail="EXELY_ARI_IDS_REQUIRE_MANUAL_VERIFICATION")
 
     created = 0
     errors = []

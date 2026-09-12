@@ -138,6 +138,27 @@ async def test_exely_booking_sync_uses_only_explicit_mapping_rate_plan(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_exely_booking_sync_refuses_multiple_availability_rate_plans(monkeypatch):
+    mappings = [
+        {"exely_room_code": "5003299", "exely_rate_plan_code": "10009740"},
+        {"exely_room_code": "5003299", "exely_rate_plan_code": "10009741"},
+    ]
+    database = type("FakeDb", (), {
+        "exely_connections": type("Connections", (), {"find_one": AsyncMock(return_value={"hotel_code": "501694"})})(),
+        "exely_room_mappings": type("Mappings", (), {"find": lambda self, *_args, **_kwargs: _Cursor(mappings)})(),
+    })()
+    enqueue = AsyncMock()
+    monkeypatch.setattr(availability_auto_sync, "db", database)
+    monkeypatch.setattr("domains.channel_manager.providers.exely.ari_publish.enqueue_exely_ari_update", enqueue)
+
+    result = await availability_auto_sync._push_to_exely("tenant-1", "Standard", {"2026-11-10": 7})
+
+    assert result["queued_operations"] == 0
+    assert result["errors"] == ["exely_multiple_availability_mappings"]
+    enqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_durable_booking_event_routes_to_hotelrunner_inventory_job():
     """The durable booking.created outbox path creates an inventory sync job."""
     repo = AsyncMock()

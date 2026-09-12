@@ -432,25 +432,26 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
 
 async def _build_exely_grid(tenant_id, conn, start_date, end_date):
     """Exely grid olustur."""
-    room_types = list(conn.get("room_types", []))
-    rate_plans = list(conn.get("rate_plans", []))
-
     mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
-
-    # Discovery is a convenience cache, not the authority for a writeable
-    # room/rate pair.  A property can be remapped in Exely after the last
-    # discovery call; hiding the explicitly saved mapping then makes the rate
-    # manager offer stale plans and silently reject the valid selection.
-    known_room_codes = {str(row.get("code")) for row in room_types if row.get("code")}
-    known_rate_codes = {str(row.get("code")) for row in rate_plans if row.get("code")}
+    # Discovery exposes PMS API aliases, which can differ from the ARI IDs.
+    # Only explicit writable mappings belong in this ARI grid.
+    discovered_room_names = {str(row.get("code")): row.get("name") for row in conn.get("room_types", [])}
+    discovered_rate_names = {str(row.get("code")): row.get("name") for row in conn.get("rate_plans", [])}
+    room_types = []
+    rate_plans = []
+    mapped_pairs = set()
+    known_room_codes = set()
+    known_rate_codes = set()
     for mapping in mappings:
         room_code = str(mapping.get("exely_room_code") or "")
         rate_code = str(mapping.get("exely_rate_plan_code") or "")
+        if room_code and rate_code:
+            mapped_pairs.add((room_code, rate_code))
         if room_code and room_code not in known_room_codes:
-            room_types.append({"code": room_code, "name": mapping.get("exely_room_name") or room_code})
+            room_types.append({"code": room_code, "name": mapping.get("exely_room_name") or discovered_room_names.get(mapping.get("pms_api_room_code")) or room_code})
             known_room_codes.add(room_code)
         if rate_code and rate_code not in known_rate_codes:
-            rate_plans.append({"code": rate_code, "name": rate_code})
+            rate_plans.append({"code": rate_code, "name": discovered_rate_names.get(mapping.get("pms_api_rate_plan_code")) or rate_code})
             known_rate_codes.add(rate_code)
 
     calendar_data = await db.rate_calendar.find(
@@ -477,6 +478,8 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
         counts = room_counts.get(pms_type or rt["name"], {"total": 0, "available": 0})
 
         for rp in rate_plans:
+            if (str(rt["code"]), str(rp["code"])) not in mapped_pairs:
+                continue
             dates_data = _build_dates(
                 start_date,
                 end_date,

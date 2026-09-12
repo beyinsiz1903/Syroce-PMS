@@ -63,6 +63,8 @@ class ExelyRoomMapping(BaseModel):
     exely_room_code: str
     exely_rate_plan_code: str
     exely_room_name: str
+    pms_api_room_code: str = ""
+    pms_api_rate_plan_code: str = ""
     sync_availability: bool = True
     sync_price: bool = True
     sync_restrictions: bool = True
@@ -446,6 +448,14 @@ async def create_room_mapping(
     )
     if duplicate:
         raise HTTPException(status_code=409, detail="Bu oda ve fiyat plani eslemesi zaten mevcut")
+    if payload.sync_availability:
+        other_inventory_mapping = await db.exely_room_mappings.find_one(
+            {"tenant_id": current_user.tenant_id, "pms_room_type": payload.pms_room_type,
+             "sync_availability": True},
+            {"_id": 1},
+        )
+        if other_inventory_mapping:
+            raise HTTPException(status_code=409, detail="Bu PMS oda tipinde başka bir müsaitlik eşlemesi açık")
     mapping = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -453,6 +463,8 @@ async def create_room_mapping(
         "exely_room_code": payload.exely_room_code,
         "exely_rate_plan_code": payload.exely_rate_plan_code,
         "exely_room_name": payload.exely_room_name,
+        "pms_api_room_code": payload.pms_api_room_code.strip(),
+        "pms_api_rate_plan_code": payload.pms_api_rate_plan_code.strip(),
         "sync_availability": payload.sync_availability,
         "sync_price": payload.sync_price,
         "sync_restrictions": payload.sync_restrictions,
@@ -462,6 +474,60 @@ async def create_room_mapping(
     await db.exely_room_mappings.insert_one(mapping)
     mapping.pop("_id", None)
     return {"message": "Oda eslesmesi olusturuldu", "mapping": mapping}
+
+
+@router.patch("/room-mappings/{mapping_id}")
+async def update_room_mapping(
+    mapping_id: str,
+    payload: ExelyRoomMapping,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    """Edit one mapping without deleting its reservation aliases or audit identity."""
+    selector = {"id": mapping_id, "tenant_id": current_user.tenant_id}
+    existing = await db.exely_room_mappings.find_one(selector, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Esleme bulunamadi")
+    room_code = payload.exely_room_code.strip()
+    rate_code = payload.exely_rate_plan_code.strip()
+    pms_type = payload.pms_room_type.strip()
+    if not all((room_code, rate_code, pms_type)):
+        raise HTTPException(status_code=422, detail="Oda tipi ve fiyat planı kodları zorunludur")
+    duplicate = await db.exely_room_mappings.find_one(
+        {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id},
+         "pms_room_type": pms_type, "exely_room_code": room_code,
+         "exely_rate_plan_code": rate_code},
+        {"_id": 1},
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Bu oda ve fiyat planı eşlemesi zaten mevcut")
+    if payload.sync_availability:
+        other_inventory_mapping = await db.exely_room_mappings.find_one(
+            {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id},
+             "pms_room_type": pms_type, "sync_availability": True},
+            {"_id": 1},
+        )
+        if other_inventory_mapping:
+            raise HTTPException(status_code=409, detail="Bu PMS oda tipinde başka bir müsaitlik eşlemesi açık")
+    fields = {
+        "pms_room_type": pms_type,
+        "exely_room_code": room_code,
+        "exely_rate_plan_code": rate_code,
+        "exely_room_name": payload.exely_room_name.strip(),
+        "pms_api_room_code": payload.pms_api_room_code.strip() or existing.get("pms_api_room_code") or (
+            existing.get("exely_room_code", "") if existing.get("exely_room_code") != room_code else ""
+        ),
+        "pms_api_rate_plan_code": payload.pms_api_rate_plan_code.strip() or existing.get("pms_api_rate_plan_code") or (
+            existing.get("exely_rate_plan_code", "") if existing.get("exely_rate_plan_code") != rate_code else ""
+        ),
+        "sync_availability": payload.sync_availability,
+        "sync_price": payload.sync_price,
+        "sync_restrictions": payload.sync_restrictions,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "updated_by": current_user.name,
+    }
+    await db.exely_room_mappings.update_one(selector, {"$set": fields})
+    return {"message": "Eşleme güncellendi", "mapping": {**existing, **fields}}
 
 
 @router.get("/room-mappings")

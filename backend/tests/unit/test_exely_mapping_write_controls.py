@@ -7,7 +7,9 @@ from domains.channel_manager import unified_rate_manager_router as unified
 from domains.channel_manager.ari import outbound_service
 from domains.channel_manager.providers.exely.exely_router import (
     ExelyConnectionSetup,
+    ExelyRoomMapping,
     _connection_endpoint,
+    update_room_mapping,
 )
 from domains.channel_manager.providers.exely.security import (
     EXELY_PRODUCTION_ENDPOINT_URL,
@@ -42,6 +44,58 @@ def test_exely_connection_environment_is_explicit_and_preserves_production_api_d
 
     assert ExelyConnectionSetup(**base).mode == "production"
     assert ExelyConnectionSetup(**base, mode="sandbox").mode == "sandbox"
+
+
+@pytest.mark.asyncio
+async def test_mapping_edit_preserves_identity_and_separates_inbound_api_codes(monkeypatch):
+    existing = {"id": "mapping-1", "tenant_id": "tenant-1", "pms_room_type": "Standard",
+                "exely_room_code": "5001574", "exely_rate_plan_code": "10003870"}
+    collection = SimpleNamespace(
+        find_one=AsyncMock(side_effect=[existing, None, None]),
+        update_one=AsyncMock(),
+    )
+    monkeypatch.setattr("domains.channel_manager.providers.exely.exely_router.db",
+                        SimpleNamespace(exely_room_mappings=collection))
+    payload = ExelyRoomMapping(
+        pms_room_type="Standard", exely_room_code="5003299", exely_rate_plan_code="10009740",
+        exely_room_name="Standart", pms_api_room_code="5001574", pms_api_rate_plan_code="10003870",
+        sync_availability=True, sync_price=True, sync_restrictions=True,
+    )
+
+    result = await update_room_mapping("mapping-1", payload,
+                                       current_user=SimpleNamespace(tenant_id="tenant-1", name="Operator"), _perm=True)
+
+    assert result["mapping"]["id"] == "mapping-1"
+    fields = collection.update_one.await_args.args[1]["$set"]
+    assert fields["exely_room_code"] == "5003299"
+    assert fields["pms_api_room_code"] == "5001574"
+    assert fields["exely_rate_plan_code"] == "10009740"
+    assert fields["pms_api_rate_plan_code"] == "10003870"
+
+
+@pytest.mark.asyncio
+async def test_exely_rate_grid_uses_verified_ari_ids_not_discovered_api_aliases(monkeypatch):
+    mapping = {
+        "pms_room_type": "Standard", "exely_room_code": "5003299",
+        "exely_rate_plan_code": "10009740", "exely_room_name": "Standart",
+        "pms_api_room_code": "5001574", "pms_api_rate_plan_code": "10003870",
+    }
+    monkeypatch.setattr(unified, "db", SimpleNamespace(
+        exely_room_mappings=_Collection(rows=[mapping]),
+        rate_calendar=_Collection(rows=[]),
+        pricing_settings=_Collection(rows=[]),
+    ))
+    monkeypatch.setattr(unified, "_get_room_counts", AsyncMock(return_value=({"Standard": {"total": 8, "available": 8}}, {"Standard": []})))
+    monkeypatch.setattr(unified, "_get_active_bookings", AsyncMock(return_value=[]))
+    connection = {
+        "currency": "USD",
+        "room_types": [{"code": "5001574", "name": "Standart"}],
+        "rate_plans": [{"code": "10003870", "name": "Base rate USD"}],
+    }
+    result = await unified._build_exely_grid("tenant-1", connection, "2026-11-10", "2026-11-11")
+    assert [row["room_type_code"] for row in result["grid"]] == ["5003299"]
+    assert [row["rate_plan_code"] for row in result["grid"]] == ["10009740"]
+    assert result["grid"][0]["rate_plan_name"] == "Base rate USD"
 
 
 def test_exely_connection_environment_selects_a_safe_default_endpoint():

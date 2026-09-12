@@ -64,6 +64,8 @@ export const buildExelyManualMapPayload = (manualMap, providerRoomTypes = []) =>
     pms_room_type: manualMap.pms_room_type.trim(),
     exely_room_code: manualMap.exely_room_code.trim(),
     exely_rate_plan_code: manualMap.exely_rate_plan_code.trim(),
+    pms_api_room_code: (manualMap.pms_api_room_code || '').trim(),
+    pms_api_rate_plan_code: (manualMap.pms_api_rate_plan_code || '').trim(),
     exely_room_name: providerRoom?.name || manualMap.exely_room_name?.trim() || manualMap.exely_room_code.trim(),
     sync_availability: Boolean(manualMap.sync_availability),
     sync_price: Boolean(manualMap.sync_price),
@@ -75,6 +77,8 @@ const emptyManualMap = () => ({
   pms_room_type: '',
   exely_room_code: '',
   exely_rate_plan_code: '',
+  pms_api_room_code: '',
+  pms_api_rate_plan_code: '',
   exely_room_name: '',
   sync_availability: true,
   sync_price: true,
@@ -101,9 +105,9 @@ const ExelyIntegration = ({
   const [autoMapOpen, setAutoMapOpen] = useState(false);
   const [autoMapSuggestions, setAutoMapSuggestions] = useState(null);
   const [autoMapLoading, setAutoMapLoading] = useState(false);
-  const [autoMapRateSelections, setAutoMapRateSelections] = useState({});
   const [mappingStatus, setMappingStatus] = useState(null);
   const [manualMapOpen, setManualMapOpen] = useState(false);
+  const [editingMappingId, setEditingMappingId] = useState(null);
   const [manualMapSaving, setManualMapSaving] = useState(false);
   const [ariWriteLoading, setAriWriteLoading] = useState(false);
   const [manualMap, setManualMap] = useState(emptyManualMap);
@@ -191,36 +195,9 @@ const ExelyIntegration = ({
         provider: 'exely'
       }, requestConfig);
       setAutoMapSuggestions(data);
-      setAutoMapRateSelections(Object.fromEntries((data.suggestions || []).filter(s => s.provider_rate_plan_code).map(s => [s.provider_room_code, s.provider_rate_plan_code])));
       setAutoMapOpen(true);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Otomatik esleme onerisi alinamadi');
-    } finally {
-      setAutoMapLoading(false);
-    }
-  };
-  const handleAutoMapApply = async selectedSuggestions => {
-    if (!selectedSuggestions?.length) return;
-    const mappings = buildExelyAutoMapPayload(selectedSuggestions, autoMapRateSelections, autoMapSuggestions?.provider_rate_plans || []);
-    if (!hasCompleteExelyRatePlanSelection(mappings)) {
-      toast.error('Her Exely oda eslemesi icin fiyat plani secilmelidir');
-      return;
-    }
-    setAutoMapLoading(true);
-    try {
-      const payload = {
-        provider: 'exely',
-        mappings
-      };
-      const {
-        data
-      } = await axios.post(`/channel-manager/auto-map/apply`, payload, requestConfig);
-      toast.success(data.message);
-      setAutoMapOpen(false);
-      fetchAll();
-      fetchMappingStatus();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Esleme uygulanamadi');
     } finally {
       setAutoMapLoading(false);
     }
@@ -251,9 +228,14 @@ const ExelyIntegration = ({
     }
     setManualMapSaving(true);
     try {
-      await axios.post(`/channel-manager/exely/room-mappings`, payload, requestConfig);
-      toast.success('Oda ve fiyat planı eşlemesi oluşturuldu');
+      if (editingMappingId) {
+        await axios.patch(`/channel-manager/exely/room-mappings/${editingMappingId}`, payload, requestConfig);
+      } else {
+        await axios.post(`/channel-manager/exely/room-mappings`, payload, requestConfig);
+      }
+      toast.success(editingMappingId ? 'Eşleme güncellendi' : 'Oda ve fiyat planı eşlemesi oluşturuldu');
       setManualMapOpen(false);
+      setEditingMappingId(null);
       setManualMap(emptyManualMap());
       await Promise.all([fetchAll(), fetchMappingStatus()]);
     } catch (error) {
@@ -754,7 +736,7 @@ const ExelyIntegration = ({
                   <CardDescription>PMS oda tipleri ile Exely oda/fiyat planlarini esleyin</CardDescription>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="default" size="sm" onClick={() => setManualMapOpen(true)} data-testid="exely-add-rate-mapping-btn">
+                  <Button variant="default" size="sm" onClick={() => { setEditingMappingId(null); setManualMap(emptyManualMap()); setManualMapOpen(true); }} data-testid="exely-add-rate-mapping-btn">
                     <Plus className="w-4 h-4 mr-1" /> Oda / Fiyat Planı Eşle
                   </Button>
                   {!mappingStatus && <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn-alt">
@@ -775,6 +757,7 @@ const ExelyIntegration = ({
                           <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.pms_oda_tipi')}</th>
                           <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.exely_oda_kodu')}</th>
                           <th className="pb-2 pr-4">Exely Rate Plan</th>
+                          <th className="pb-2 pr-4">PMS API kodları</th>
                           <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.exely_oda_adi')}</th>
                           <th className="pb-2 pr-4">Sync</th>
                           <th className="pb-2 text-right">{t('cm.pages_ExelyIntegration.islem_792e7')}</th>
@@ -785,6 +768,7 @@ const ExelyIntegration = ({
                             <td className="py-2 pr-4 font-medium">{m.pms_room_type}</td>
                             <td className="py-2 pr-4 font-mono text-xs">{m.exely_room_code}</td>
                             <td className="py-2 pr-4 font-mono text-xs">{m.exely_rate_plan_code}</td>
+                            <td className="py-2 pr-4 font-mono text-xs">{m.pms_api_room_code || '—'} / {m.pms_api_rate_plan_code || '—'}</td>
                             <td className="py-2 pr-4">{m.exely_room_name}</td>
                             <td className="py-2 pr-4">
                               <div className="flex gap-1">
@@ -794,6 +778,9 @@ const ExelyIntegration = ({
                               </div>
                             </td>
                             <td className="py-2 text-right">
+                              <Button variant="ghost" size="sm" onClick={() => { setEditingMappingId(m.id); setManualMap({ ...emptyManualMap(), ...m, pms_api_room_code: m.pms_api_room_code || m.exely_room_code, pms_api_rate_plan_code: m.pms_api_rate_plan_code || m.exely_rate_plan_code }); setManualMapOpen(true); }} data-testid={`exely-edit-mapping-${i}`} aria-label={`${m.pms_room_type} eşlemesini düzenle`}>
+                                Düzenle
+                              </Button>
                               <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 h-7 w-7 p-0" onClick={() => handleDeleteMapping(m.id)} data-testid={`exely-delete-mapping-${i}`}>
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
@@ -818,10 +805,10 @@ const ExelyIntegration = ({
               </CardContent>
             </Card>
 
-            <Dialog open={manualMapOpen} onOpenChange={setManualMapOpen}>
-              <DialogContent className="max-w-lg">
+            <Dialog open={manualMapOpen} onOpenChange={open => { setManualMapOpen(open); if (!open) setEditingMappingId(null); }}>
+              <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Oda ve Fiyat Planı Eşle</DialogTitle>
+                  <DialogTitle>{editingMappingId ? 'Oda ve Fiyat Planı Eşlemesini Düzenle' : 'Oda ve Fiyat Planı Eşle'}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-2">
                   <div>
@@ -832,20 +819,31 @@ const ExelyIntegration = ({
                     </select>
                   </div>
                   <div>
-                    <Label htmlFor="manual-exely-room">Exely oda tipi</Label>
+                    <Label htmlFor="manual-exely-room">Exely ARI oda tipi ID</Label>
                     <Input id="manual-exely-room" data-testid="manual-exely-room" list="exely-room-code-options" value={manualMap.exely_room_code} onChange={event => setManualMap(previous => ({ ...previous, exely_room_code: event.target.value }))} placeholder="Keşfedilen odayı seçin veya kodu yazın" className="mt-1" />
                     <datalist id="exely-room-code-options">
                       {(mappingStatus?.provider_room_types || []).map(room => <option key={room.code} value={room.code}>{room.name}</option>)}
                     </datalist>
-                    <p className="mt-1 text-xs text-slate-500">Keşif sonucu güncel değilse Exely oda kodunu elle girebilirsiniz.</p>
+                    <p className="mt-1 text-xs text-slate-500">Exely oda tipi sayfasındaki ID; PMS için Exely API kodundan farklı olabilir.</p>
                   </div>
                   <div>
-                    <Label htmlFor="manual-exely-rate">Exely fiyat planı</Label>
+                    <Label htmlFor="manual-exely-rate">Exely ARI fiyat planı ID</Label>
                     <Input id="manual-exely-rate" data-testid="manual-exely-rate" list="exely-rate-code-options" value={manualMap.exely_rate_plan_code} onChange={event => setManualMap(previous => ({ ...previous, exely_rate_plan_code: event.target.value }))} placeholder="Keşfedilen planı seçin veya kodu yazın" className="mt-1" />
                     <datalist id="exely-rate-code-options">
                       {(mappingStatus?.provider_rate_plans || []).map(plan => <option key={plan.code} value={plan.code}>{plan.name || plan.code}</option>)}
                     </datalist>
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="manual-pms-api-room">PMS API oda kodu (varsa)</Label>
+                      <Input id="manual-pms-api-room" data-testid="manual-pms-api-room" value={manualMap.pms_api_room_code || ''} onChange={event => setManualMap(previous => ({ ...previous, pms_api_room_code: event.target.value }))} className="mt-1" />
+                    </div>
+                    <div>
+                      <Label htmlFor="manual-pms-api-rate">PMS API fiyat kodu (varsa)</Label>
+                      <Input id="manual-pms-api-rate" data-testid="manual-pms-api-rate" value={manualMap.pms_api_rate_plan_code || ''} onChange={event => setManualMap(previous => ({ ...previous, pms_api_rate_plan_code: event.target.value }))} className="mt-1" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">ARI ID’leri dışarı stok/fiyat gönderiminde, PMS API kodları Exely rezervasyonlarını içeri eşleştirmede kullanılır.</p>
                   <div className="rounded-md border p-3 space-y-3">
                     <p className="text-sm font-medium">Senkronize edilecek bilgiler</p>
                     {[
@@ -857,9 +855,9 @@ const ExelyIntegration = ({
                         <Switch id={`manual-${field}`} data-testid={`manual-${field}`} checked={manualMap[field]} onCheckedChange={checked => setManualMap(previous => ({ ...previous, [field]: checked }))} />
                       </div>)}
                   </div>
-                  <p className="text-xs text-slate-500">Aynı oda tipini Base, Non-refundable ve diğer fiyat planlarıyla ayrı ayrı eşleyebilirsiniz. Suite gibi henüz stok gönderilmeyecek odalarda “Müsaitlik” seçeneğini kapatın.</p>
+                  <p className="text-xs text-slate-500">Her PMS oda tipi için yalnızca bir fiyat planında Müsaitlik (A) açık olmalıdır. Diğer planlarda sadece Fiyat/Kısıtlama seçin. Suite gibi henüz stok gönderilmeyecek odalarda Müsaitlik kapalı kalmalıdır.</p>
                   <Button className="w-full" onClick={handleCreateMapping} disabled={manualMapSaving} data-testid="manual-map-save">
-                    {manualMapSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />} Eşlemeyi Kaydet
+                    {manualMapSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />} {editingMappingId ? 'Değişiklikleri Kaydet' : 'Eşlemeyi Kaydet'}
                   </Button>
                 </div>
               </DialogContent>
@@ -885,13 +883,7 @@ const ExelyIntegration = ({
                                 <div>
                                   <p className="font-medium text-sm">{s.provider_room_name}</p>
                                   <p className="text-xs text-slate-500">Exely ({s.provider_room_code})</p>
-                                  <select className="mt-2 h-8 rounded border border-slate-300 bg-white px-2 text-xs" aria-label={`${s.pms_room_name} fiyat plani`} value={s.provider_rate_plan_code || autoMapRateSelections[s.provider_room_code] || ''} onChange={event => setAutoMapRateSelections(previous => ({
-                              ...previous,
-                              [s.provider_room_code]: event.target.value
-                            }))}>
-                                    <option value="">Fiyat plani secin</option>
-                                    {(autoMapSuggestions.provider_rate_plans || []).map(plan => <option key={plan.code} value={plan.code}>{plan.name}</option>)}
-                                  </select>
+                                  <p className="mt-1 text-xs text-slate-500">PMS API oda kodu: {s.provider_room_code}</p>
                                 </div>
                               </div>
                               <Badge className={s.confidence === 'high' ? 'bg-emerald-100 text-emerald-800' : s.confidence === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}>
@@ -899,10 +891,7 @@ const ExelyIntegration = ({
                               </Badge>
                             </div>)}
                         </div>
-                        <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading || !hasCompleteExelyRatePlanSelection(buildExelyAutoMapPayload(autoMapSuggestions.suggestions, autoMapRateSelections, autoMapSuggestions.provider_rate_plans || []))} data-testid="auto-map-apply-btn">
-                          {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
-                          {t('cm.pages_ExelyIntegration.tum_onerileri_uygula')}{autoMapSuggestions.suggestions.length})
-                        </Button>
+                        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Bu öneriler PMS API kodlarına dayanır. Exely ARI oda ve fiyat planı ID’leri farklı olabileceğinden otomatik uygulanmaz. Exely panelindeki ID’leri doğrulayıp “Oda / Fiyat Planı Eşle” bölümünden kaydedin.</p>
                       </> : <div className="text-center py-4">
                         <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
                         <p className="text-sm text-slate-600">{t('cm.pages_ExelyIntegration.otomatik_eslestirilecek_yeni_oda_tipi_bu')}</p>
