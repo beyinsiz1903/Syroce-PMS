@@ -10,6 +10,8 @@ from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
+from infra.redis_capacity import classify_redis_failure
+
 # ``redis.exceptions.TimeoutError`` does NOT inherit from the built-in
 # ``TimeoutError`` (its MRO is ``[TimeoutError(redis), RedisError, Exception]``
 # where the leftmost ``TimeoutError`` is redis's own class, not Python's).
@@ -178,10 +180,11 @@ class WebSocketRedisAdapter:
                 try:
                     await self._pubsub.unsubscribe(channel)
                 except Exception as e:
-                    if type(e).__name__ in ("ConnectionError", "AuthenticationError", "TimeoutError", "ConnectionClosedError"):
-                        logger.warning("WS unsubscribe non-critical error type=%s", type(e).__name__)
+                    failure_class = classify_redis_failure(e)
+                    if failure_class in ("REDIS_CONNECTION", "REDIS_TIMEOUT"):
+                        logger.warning("WS unsubscribe non-critical error class=%s", failure_class)
                     else:
-                        logger.error("WS unsubscribe error type=%s", type(e).__name__)
+                        logger.error("WS unsubscribe error class=%s", failure_class)
 
     async def publish(self, room: str, event: str, data: dict[str, Any]):
         """Publish event to all instances via Redis.

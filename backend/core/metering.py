@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import db
+from core.tenant_db import get_db_for_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,14 @@ async def flush_buffer():
     _last_flush = now
 
     for tenant_id, events in snapshot.items():
+        # The buffer is process-wide: the request that triggers this flush can
+        # belong to a different tenant than the buffered usage event.  Bind
+        # each write to its event tenant instead of the current request's db
+        # proxy, which correctly rejects cross-tenant writes.
         for event_type, count in events.items():
             try:
-                await db.usage_daily.update_one(
+                tenant_db = get_db_for_tenant(tenant_id)
+                await tenant_db.usage_daily.update_one(
                     {"tenant_id": tenant_id, "date": date_key, "event_type": event_type},
                     {
                         "$inc": {"count": count},
