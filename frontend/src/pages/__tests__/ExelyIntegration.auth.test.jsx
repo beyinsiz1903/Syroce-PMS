@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExelyRequestConfig,
   getExelyErrorMessage,
+  getExelyImportFailureMessage,
   getExelyPullFailureMessage,
   parseExelyConnectionTestResult,
 } from '@/pages/ExelyIntegration';
@@ -50,5 +51,11 @@ describe('ExelyIntegration request authentication', () => {
     expect(getExelyPullFailureMessage({ success: false, error: 'RATE_LIMITED' }))
       .toBe('EXELY_RESERVATION_PULL_FAILED:RATE_LIMITED');
     expect(getExelyPullFailureMessage({ success: true })).toBeNull();
+  });
+
+  it('keeps a safe PMS import failure visible when the API returns an operational result', () => {
+    expect(getExelyImportFailureMessage({ success: false, error: 'ROOM_RATE_MAPPING_MISSING' }))
+      .toBe('EXELY_RESERVATION_IMPORT_FAILED:ROOM_RATE_MAPPING_MISSING');
+    expect(getExelyImportFailureMessage({ success: true })).toBeNull();
   });
 });

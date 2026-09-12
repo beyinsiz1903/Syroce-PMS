@@ -784,15 +784,25 @@ async def import_reservation_to_pms(
         raise
     except Exception as exc:
         logger.exception("[EXELY] manual reservation import failed")
-        raise HTTPException(
-            status_code=502,
-            detail=f"EXELY_RESERVATION_IMPORT_FAILED:{type(exc).__name__}",
-        ) from exc
+        # Import failures are operational outcomes. Keep a safe class visible
+        # to the UI instead of letting a reverse proxy replace the response
+        # with a generic error page.
+        return {
+            "success": False,
+            "error": type(exc).__name__,
+            "message": f"EXELY_RESERVATION_IMPORT_FAILED:{type(exc).__name__}",
+            "provider_write_count": 0,
+        }
 
     if not result.get("success"):
         acknowledgement = result.get("acknowledgement") or {}
-        status_code = 502 if acknowledgement.get("provider_write_count") else 409
-        raise HTTPException(status_code=status_code, detail=f"Import tamamlanamadi ({result.get('reason')})")
+        reason = str(result.get("reason") or "PMS_IMPORT_FAILED")
+        return {
+            "success": False,
+            "error": reason,
+            "message": f"EXELY_RESERVATION_IMPORT_FAILED:{reason}",
+            "provider_write_count": int(acknowledgement.get("provider_write_count") or 0),
+        }
 
     return {
         "message": "Rezervasyon PMS'e basariyla aktarildi",
