@@ -10,6 +10,7 @@ import { lazyWithPreload as lazy } from "../lazyWithPreload";
 export const AuthPage = lazy(() => import("@/pages/AuthPage"));
 export const Dashboard = lazy(() => import("@/pages/Dashboard"));
 export const LandingPage = lazy(() => import("@/pages/LandingPage"));
+export const HotelPmsLandingPage = lazy(() => import("@/pages/HotelPmsLandingPage"));
 export const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 export const GuestPortal = lazy(() => import("@/pages/GuestPortal"));
 

@@ -57,6 +57,7 @@ class PmsLiteLeadMetadata(BaseModel):
     utm_source: str | None = None
     utm_medium: str | None = None
     utm_campaign: str | None = None
+    landing_path: str | None = Field(default=None, max_length=200)
     user_agent: str | None = None
     ip: str | None = None
 

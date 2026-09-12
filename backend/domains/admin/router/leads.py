@@ -331,6 +331,10 @@ async def admin_list_pms_lite_leads(
                 "last_contact_at": lead.get("last_contact_at"),
                 "status_changed_at": lead.get("status_changed_at"),
                 "source": lead.get("source"),
+                "utm_source": lead.get("metadata", {}).get("utm_source"),
+                "utm_medium": lead.get("metadata", {}).get("utm_medium"),
+                "utm_campaign": lead.get("metadata", {}).get("utm_campaign"),
+                "landing_path": lead.get("metadata", {}).get("landing_path"),
                 "needs_follow_up": _needs_follow_up(lead),
             }
         )
@@ -437,6 +441,10 @@ async def admin_export_pms_lite_leads_csv(
         "last_contact_at",
         "status_changed_at",
         "source",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "landing_path",
     ]
     safe_writerow(writer, headers)
 
@@ -457,6 +465,10 @@ async def admin_export_pms_lite_leads_csv(
             lead.get("last_contact_at") or "",
             lead.get("status_changed_at") or "",
             lead.get("source") or "",
+            lead.get("metadata", {}).get("utm_source") or "",
+            lead.get("metadata", {}).get("utm_medium") or "",
+            lead.get("metadata", {}).get("utm_campaign") or "",
+            lead.get("metadata", {}).get("landing_path") or "",
         ]
         safe_writerow(writer, row)
 
@@ -467,7 +479,7 @@ async def admin_export_pms_lite_leads_csv(
         content=csv_content,
         media_type="text/csv; charset=utf-8",
         headers={
-            "Content-Disposition": 'attachment; filename="pms-lite-leads.csv"',
+            "Content-Disposition": 'attachment; filename="syroce-marketing-leads.csv"',
         },
     )
 

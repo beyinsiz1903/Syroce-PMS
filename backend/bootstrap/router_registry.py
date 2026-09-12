@@ -75,8 +75,12 @@ def _safe_import(module_path: str, attr: str):
         return None
 
 
-def _router_dependencies(module_path: str, declared: list | None) -> list:
+def _router_dependencies(module_path: str, declared: list | None, attr: str = "router") -> list:
     dependencies = list(declared or [])
+    # Marketing forms must accept anonymous visitors. Only this explicitly
+    # public sub-router is exempt; the CRM router keeps its module guard.
+    if module_path == "domains.sales.crm_router" and attr == "public_leads_router":
+        return dependencies
     scope = ROUTER_MODULE_SCOPES.get(module_path)
     if scope:
         dependencies.append(
@@ -201,6 +205,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.reservation_waitlist", "router", ["PMS / Reservation Waitlist"], None, None),
     ("domains.channel_manager.operations_router", "router", ["Channel Manager / Operations"], None, None),
     ("domains.sales.crm_router", "router", ["Sales / CRM"], None, None),
+    ("domains.sales.crm_router", "public_leads_router", ["Public Leads"], None, None),
     ("domains.pms.calendar_router", "router", ["PMS / Calendar"], None, None),
     ("domains.pms.approvals_router", "router", ["PMS / Approvals"], None, None),
     ("domains.pms.misc_router", "router", ["PMS / Operations"], None, None),
@@ -361,7 +366,7 @@ def _iter_register(app: FastAPI, api_router, require_super_admin_dep: Callable =
                 kwargs = {"tags": tags}
                 if prefix_override:
                     kwargs["prefix"] = prefix_override
-                dependencies = _router_dependencies(mod_path, deps)
+                dependencies = _router_dependencies(mod_path, deps, attr)
                 if dependencies:
                     kwargs["dependencies"] = dependencies
                 app.include_router(router, **kwargs)
