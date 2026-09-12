@@ -47,9 +47,9 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
   return (
     <div data-testid="deposits-tab" className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
-        <SummaryCard label={t('cm.pages_reservationdetail_DocumentTabs.toplam_depozito')} value={totalDeposits} color="blue" />
-        <SummaryCard label="Iade Edilen" value={totalRefunded} color="amber" />
-        <SummaryCard label={t('cm.pages_reservationdetail_DocumentTabs.aktif')} value={totalDeposits - totalRefunded} color="emerald" />
+        <SummaryCard currency={currency} label={t('cm.pages_reservationdetail_DocumentTabs.toplam_depozito')} value={totalDeposits} color="blue" />
+        <SummaryCard currency={currency} label="Iade Edilen" value={totalRefunded} color="amber" />
+        <SummaryCard currency={currency} label={t('cm.pages_reservationdetail_DocumentTabs.aktif')} value={totalDeposits - totalRefunded} color="emerald" />
       </div>
 
       <div className="flex items-center justify-between">

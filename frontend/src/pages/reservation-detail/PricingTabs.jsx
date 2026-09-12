@@ -21,6 +21,7 @@ export function DailyRatesTab({
   readOnly = false,
   businessDate,
 }) {
+  const currency = booking?.currency || "TL";
   const {
     t
   } = useTranslation();
@@ -153,6 +154,7 @@ export function ExtraChargesTab({
   onRefresh,
   allBookings
 }) {
+  const currency = booking?.currency || "TL";
   const {
     t
   } = useTranslation();

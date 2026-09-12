@@ -140,7 +140,7 @@ export function EmptyState({ icon: Icon, text }) {
   return <div className="text-center py-8 text-gray-400"><Icon className="w-8 h-8 mx-auto mb-2 opacity-50" /><p className="text-sm">{text}</p></div>;
 }
 
-export function SummaryCard({ label, value, color }) {
+export function SummaryCard({ label, value, color, currency }) {
   return (
     <div className={`bg-${color}-50 border border-${color}-200 rounded-lg p-3 text-center`}>
       <div className={`text-xs text-${color}-600 font-medium`}>{label}</div>

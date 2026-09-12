@@ -98,6 +98,7 @@ export function GeneralInfoTab({
   canEditStay = false,
   readOnly = false,
 }) {
+  const currency = booking?.currency || "TL";
   const {
     t
   } = useTranslation();

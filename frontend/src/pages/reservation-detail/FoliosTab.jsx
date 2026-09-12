@@ -133,10 +133,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   return (
     <div data-testid="folios-tab" className="space-y-4">
       <div className="grid grid-cols-4 gap-3">
-        <SummaryCard label="Toplam" value={summary?.total_amount} color="blue" />
-        <SummaryCard label="Borçlar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
-        <SummaryCard label="Ödemeler" value={summary?.total_payments} color="emerald" />
-        <SummaryCard label="Bakiye" value={displayedFolioBalance} color={displayedFolioBalance > 0 ? 'red' : 'green'} />
+        <SummaryCard currency={currency} label="Toplam" value={summary?.total_amount} color="blue" />
+        <SummaryCard currency={currency} label="Borçlar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
+        <SummaryCard currency={currency} label="Ödemeler" value={summary?.total_payments} color="emerald" />
+        <SummaryCard currency={currency} label="Bakiye" value={displayedFolioBalance} color={displayedFolioBalance > 0 ? 'red' : 'green'} />
       </div>
       {hasAllocatedPrepayment && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="allocated-prepayment-note">
