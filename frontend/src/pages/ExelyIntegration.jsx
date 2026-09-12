@@ -723,7 +723,7 @@ const ExelyIntegration = ({
                     </div>
                     <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn">
                       {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
-                      Otomatik Esle
+                      PMS API Kodlarını Gör
                     </Button>
                   </div>
                 </CardContent>
@@ -741,7 +741,7 @@ const ExelyIntegration = ({
                   </Button>
                   {!mappingStatus && <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn-alt">
                       {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
-                      Otomatik Esle
+                      PMS API Kodlarını Gör
                     </Button>}
                 </div>
               </CardHeader>
@@ -867,7 +867,7 @@ const ExelyIntegration = ({
             <Dialog open={autoMapOpen} onOpenChange={setAutoMapOpen}>
               <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2"><Wand2 className="w-5 h-5" /> Otomatik Esleme Onerileri</DialogTitle>
+                  <DialogTitle className="flex items-center gap-2"><Wand2 className="w-5 h-5" /> PMS API Kod Önerileri</DialogTitle>
                 </DialogHeader>
                 {autoMapSuggestions && <div className="space-y-4 mt-2">
                     {autoMapSuggestions.suggestions.length > 0 ? <>
