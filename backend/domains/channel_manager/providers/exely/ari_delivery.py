@@ -201,9 +201,9 @@ async def deliver_exely_ari(
     else:
         state = STATE_REJECTED
         result_class = "RATE_LIMITED" if "RATELIMIT" in error_type else "DEFINITIVE_REJECTION"
-    error_code = f"EXELY_ARI_{error_type}"
-    await _finish(identity, owner_token, state, error_code, result_class)
-    return _result(False, state, error_code, result_class, provider_write_count, identity)
+    error_code = "EXELY_ARI_UNCONFIRMED_WARNING_783" if "783" in warning_codes else f"EXELY_ARI_{error_type}"
+    await _finish(identity, owner_token, state, error_code, result_class, warning_codes=warning_codes)
+    return _result(False, state, error_code, result_class, provider_write_count, identity, warning_codes)
 
 
 async def reconcile_pending_exely_ari(tenant_id: str, *, limit: int = 50) -> dict[str, Any]:

@@ -210,15 +210,30 @@ async def _push_to_exely(
         sorted_dates = sorted(date_availability.keys())
         date_groups = _group_consecutive_dates_with_same_avail(sorted_dates, date_availability)
 
+        # PMSConnect's wire identifiers can differ from the Exely room/rate
+        # identifiers shown on the rate-plan pages.  The certification tenant
+        # explicitly confirmed 5001574/10003870 for Standard but returned
+        # warning 783 for 5003299/10009740.  Keep the configured ARI pair, and
+        # use its explicit PMS API pair for the SOAP availability mutation.
+        # Never combine one API alias with one non-API identifier.
+        def wire_pair(mapping):
+            api_room = str(mapping.get("pms_api_room_code") or "").strip()
+            api_rate = str(mapping.get("pms_api_rate_plan_code") or "").strip()
+            if api_room and api_rate:
+                return api_room, api_rate
+            return (
+                str(mapping.get("exely_room_code") or "").strip(),
+                str(mapping.get("exely_rate_plan_code") or "").strip(),
+            )
+
         # Inventory is room-type-wide. Sending the same inventory via multiple
         # rate plans can duplicate a booking decrement (and violates Exely's
         # certification request for one availability mapping per room type).
         seen_pairs = set()
         unique_mappings = []
         for mapping in mappings:
-            rc = mapping.get("exely_room_code", "")
-            rp_code = mapping.get("exely_rate_plan_code", "")
-            pair = (rc, rp_code)
+            pair = wire_pair(mapping)
+            rc, rp_code = pair
             if rc and rp_code and pair not in seen_pairs:
                 seen_pairs.add(pair)
                 unique_mappings.append(mapping)
@@ -230,8 +245,7 @@ async def _push_to_exely(
         push_count = 0
         errors = []
         for mapping in unique_mappings:
-            exely_room_code = mapping.get("exely_room_code", "")
-            rp_code = mapping.get("exely_rate_plan_code", "")
+            exely_room_code, rp_code = wire_pair(mapping)
             if not exely_room_code or not rp_code:
                 continue
 

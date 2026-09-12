@@ -425,6 +425,16 @@ def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
     outcome = _explicit_success(body, error="ARI response did not contain explicit Success")
     if not outcome["success"]:
         return outcome
+    # Exely returned warning 783 with HTTP 200 and <Success/> in the pilot
+    # while leaving availability unchanged.  Treat it as an unconfirmed write,
+    # regardless of the provider-specific meaning of this warning code.
+    if "783" in outcome.get("warning_codes", []):
+        return {
+            **outcome,
+            "success": False,
+            "result_class": REJECTED,
+            "error": "Provider warning 783: availability update not confirmed",
+        }
     return {**outcome, "message": "ARI update explicitly confirmed"}
 
 

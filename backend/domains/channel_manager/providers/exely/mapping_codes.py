@@ -1,4 +1,4 @@
-"""Separate Exely ARI identifiers from the optional PMS API reservation aliases."""
+"""Resolve Exely room/rate identifiers and their optional PMSConnect API keys."""
 
 from typing import Any
 

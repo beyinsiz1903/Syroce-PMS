@@ -39,6 +39,8 @@ SOAP_WARNING = b"""<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope
 <Success/><Warnings><Warning Code="438">limited</Warning></Warnings>
 </OTA_HotelAvailNotifRS></s:Body></s:Envelope>"""
 
+SOAP_UNMAPPED_WARNING = SOAP_WARNING.replace(b'Code="438"', b'Code="783"')
+
 SOAP_REJECTED = b"""<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
 <s:Body><OTA_HotelAvailNotifRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.17">
 <Errors><Error Code="15">invalid</Error></Errors>
@@ -140,6 +142,12 @@ class TestExelyARIResponseContract:
         assert result["success"] is True
         assert result["result_class"] == "WARNING_SUCCESS"
         assert result["warning_codes"] == ["438"]
+
+    def test_unmapped_room_or_rate_warning_is_not_acknowledged(self):
+        result = parse_ari_update_rs(SOAP_UNMAPPED_WARNING)
+        assert result["success"] is False
+        assert result["result_class"] == "REJECTED"
+        assert result["warning_codes"] == ["783"]
 
     def test_errors_are_rejected(self):
         result = parse_ari_update_rs(SOAP_REJECTED)
