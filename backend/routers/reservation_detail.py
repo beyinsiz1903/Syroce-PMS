@@ -3188,6 +3188,18 @@ async def mark_reservation_complimentary(
             "affected_extra_charges": len(full_comp_extras),
         },
     )
+
+    # Comp işlemi tamamlandıktan sonra folyo bakiyesini sıfırla.
+    # daily_rates ve extra_charges 0'landı; folio.balance önbelleği de
+    # güncellenmezse "Kalan tahsilat" eski değeri göstermeye devam eder.
+    for folio in folios:
+        folio_id = folio.get("id")
+        if folio_id:
+            try:
+                await _refresh_cached_folio_balance(tid, folio_id)
+            except Exception:
+                pass  # Bakiye yenileme başarısız olursa comp işlemi geri alınmaz
+
     return {
         "success": True,
         "booking_id": booking_id,
