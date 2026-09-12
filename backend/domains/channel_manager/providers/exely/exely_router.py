@@ -636,10 +636,17 @@ async def manual_pull(
         )
         if not result["success"]:
             error_code = str(result.get("error") or "EXELY_PROVIDER_READ_FAILED")
-            raise HTTPException(
-                status_code=502,
-                detail=f"EXELY_RESERVATION_PULL_FAILED:{error_code}",
-            )
+            # A provider-side read rejection is an expected operational result,
+            # not an application crash. Returning it as a structured 200 keeps
+            # reverse proxies from replacing the response body with a generic
+            # 502 page, so the operator can see the exact safe error class.
+            return {
+                "success": False,
+                "error": error_code,
+                "message": f"EXELY_RESERVATION_PULL_FAILED:{error_code}",
+                "provider_read_count": result.get("provider_read_count", 0),
+                "provider_write_count": result.get("provider_write_count", 0),
+            }
 
         cancelled = result.get("cancelled", 0)
         updated = result.get("updated", 0)
