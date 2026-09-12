@@ -12,11 +12,12 @@ import {
 import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
 import { compactGuestName, formatGuestName } from './roomTypeMatching';
+import { CALENDAR_DAY_WIDTH } from './bookingDragPlacement';
 
 // A full guest name must remain legible even for a one-night stay.  A slightly
 // wider day column with a two-line title is a better trade-off than anonymous
 // looking cards; narrower screens keep the existing horizontal scroll.
-const CELL_W = 104;
+const CELL_W = CALENDAR_DAY_WIDTH;
 const CELL_CLS = 'w-[104px]';
 const LABEL_CLS = 'w-52';
 const CELL_H = 60;
@@ -39,7 +40,6 @@ const CalendarGrid = ({
   conflicts,
   draggingBooking,
   resizingBooking,
-  dragOverCell,
   showDeluxePanel,
   groupColorMap,
   setGroupColorMap,
@@ -477,7 +477,7 @@ const CalendarGrid = ({
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
                     const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
-                      <div key={room.id} className="flex border-b border-slate-200 hover:bg-slate-50/70 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                      <div key={room.id} className={`flex border-b border-slate-200 ${draggingBooking ? '' : 'hover:bg-slate-50/70 transition-colors'}`} data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
                         <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-4 py-1 border-r border-slate-200 bg-white flex items-center`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-2">
                             <div
@@ -498,24 +498,7 @@ const CalendarGrid = ({
                             const covered = roomBookings.some(b => isActiveOn(b, dStr) && b.status !== 'checked_out');
                             const roomBlock = getRoomBlockForDate(room.id, date, roomBlocks);
                             const bBlockIsStart = roomBlock && isBlockStart(roomBlock, date);
-                            // When a multi-night booking is being dragged, highlight the
-                            // whole projected span (check-in → check-out of the *would-be*
-                            // placement) rather than only the single cell under the cursor.
-                            // dragOverCell carries { roomId, date, nights, offsetDays } so we
-                            // can reconstruct the full destination window here.
-                            const isDragOver = (() => {
-                              if (!dragOverCell || dragOverCell.roomId !== room.id) return false;
-                              const hoveredMs = new Date(dragOverCell.date).getTime();
-                              const offsetMs = (dragOverCell.offsetDays || 0) * 86400000;
-                              const spanNights = dragOverCell.nights || 1;
-                              const newCheckInMs = hoveredMs - offsetMs;
-                              const newCheckOutMs = newCheckInMs + spanNights * 86400000;
-                              const cellMs = date.getTime();
-                              return cellMs >= newCheckInMs && cellMs < newCheckOutMs;
-                            })();
                             const past = isPastDate(date);
-                            const blockedForSell = !!roomBlock && roomBlock.allow_sell === false;
-                            const invalidDrop = isDragOver && blockedForSell;
                             const canCreate = !covered && !roomBlock && !past;
                             // Dolu/blok/boş hücre tinti — roomOccupancyStatus ile aynı
                             // öncelik (OOO/OOS önde, sonra occupied > blocked > free).
@@ -543,7 +526,7 @@ const CalendarGrid = ({
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-slate-200 relative transition-colors group/cell select-none ${
                                   canCreate ? 'cursor-pointer' : 'cursor-default'
                                 } ${
-                                  past ? 'bg-slate-50' : isToday(date) ? 'bg-blue-50/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-slate-50 dark:bg-slate-900/40' : 'bg-white hover:bg-slate-50/70'
+                                  past ? 'bg-slate-50' : isToday(date) ? 'bg-blue-50/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-slate-50 dark:bg-slate-900/40' : draggingBooking ? 'bg-white' : 'bg-white hover:bg-slate-50/70'
                                 } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''} ${
                                   inDragSel ? 'bg-indigo-100/70 ring-2 ring-inset ring-indigo-400 z-10' : ''
                                 }`}
@@ -588,21 +571,8 @@ const CalendarGrid = ({
                                   </div>
                                 )}
 
-                                {/* Drop target preview (visual only) — valid=emerald, invalid=soft red */}
-                                {isDragOver && (
-                                  <div
-                                    data-testid="calendar-drop-target"
-                                    aria-hidden="true"
-                                    className={`absolute inset-0 z-10 pointer-events-none rounded-sm ${
-                                      invalidDrop
-                                        ? 'bg-red-100/50 ring-2 ring-inset ring-red-400'
-                                        : 'bg-emerald-100/50 ring-2 ring-inset ring-emerald-400'
-                                    }`}
-                                  />
-                                )}
-
                                 {/* Empty cell hover affordance — only on valid, non-past cells */}
-                                {canCreate && (
+                                {canCreate && !draggingBooking && (
                                   <div
                                     className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity pointer-events-none"
                                     data-testid="calendar-empty-cell"
@@ -684,7 +654,7 @@ const CalendarGrid = ({
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging || isResizing
-                                    ? 'opacity-90 ring-2 ring-blue-300 shadow-xl scale-[1.02] z-30'
+                                    ? 'opacity-35 shadow-sm z-30'
                                     : 'shadow-[0_1px_3px_rgba(15,23,42,0.22)] hover:z-30'
                                 } ${isResizing ? 'pointer-events-none' : ''} ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{

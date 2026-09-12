@@ -990,56 +990,63 @@ export const BookingDetailsDialog = ({
   );
 };
 
-// Room Move Reason Dialog
+// Confirm the exact dates and room before committing a drag operation.
+const MOVE_REASON_CODES = ['', 'Guest Request', 'Room Maintenance', 'Upgrade', 'Downgrade', 'Overbooking', 'VIP Guest', 'Room Issue', 'Operational', 'Other'];
 export const MoveReasonDialog = ({
   open, onOpenChange, moveData, moveReason, setMoveReason, onConfirmMove,
 }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Room Move - Reason Required</DialogTitle>
+        <DialogTitle>Rezervasyon taşımayı onayla</DialogTitle>
       </DialogHeader>
       {moveData && (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="text-sm text-blue-900">
-              <div className="font-semibold mb-2">Moving Booking:</div>
-              <div>Guest: <strong>{moveData.booking.guest_name}</strong></div>
-              <div>From: <strong>Room {moveData.oldRoom}</strong> -&gt; <strong>Room {moveData.newRoom}</strong></div>
-              <div>Dates: <strong>{moveData.newCheckIn}</strong> to <strong>{moveData.newCheckOut}</strong></div>
+            <div className="text-sm text-blue-900 space-y-2">
+              <div className="font-semibold">{moveData.booking.guest_name}</div>
+              <div className="grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-2" data-testid="booking-move-summary">
+                <span>Oda</span><span>Önce: <strong>{moveData.oldRoom}</strong></span><span>Sonra: <strong>{moveData.newRoom}</strong></span>
+                <span>Giriş</span><span>Önce: <strong>{String(moveData.oldCheckIn).slice(0, 10)}</strong></span><span>Sonra: <strong>{moveData.newCheckIn}</strong></span>
+                <span>Çıkış</span><span>Önce: <strong>{String(moveData.oldCheckOut).slice(0, 10)}</strong></span><span>Sonra: <strong>{moveData.newCheckOut}</strong></span>
+              </div>
             </div>
           </div>
-          <div>
-            <Label>Reason for Move *</Label>
+          {moveData.requiresReason && <div>
+            <Label>Oda değişikliği nedeni *</Label>
             <select
+              aria-label="Oda değişikliği nedeni"
               className="w-full border rounded-md p-2 mb-2"
-              value={moveReason}
+              value={MOVE_REASON_CODES.includes(moveReason) ? moveReason : 'Other'}
               onChange={(e) => setMoveReason(e.target.value)}
             >
-              <option value="">Select reason...</option>
-              <option value="Guest Request">Guest Request</option>
-              <option value="Room Maintenance">Room Maintenance</option>
-              <option value="Upgrade">Room Upgrade</option>
-              <option value="Downgrade">Room Downgrade</option>
-              <option value="Overbooking">Overbooking Resolution</option>
-              <option value="VIP Guest">VIP Guest Priority</option>
-              <option value="Room Issue">Room Issue / Complaint</option>
-              <option value="Operational">Operational Reasons</option>
-              <option value="Other">Other</option>
+              <option value="">Neden seçin...</option>
+              <option value="Guest Request">Misafir talebi</option>
+              <option value="Room Maintenance">Oda bakımı</option>
+              <option value="Upgrade">Üst kategoriye geçiş</option>
+              <option value="Downgrade">Alt kategoriye geçiş</option>
+              <option value="Overbooking">Fazla rezervasyon</option>
+              <option value="VIP Guest">VIP misafir</option>
+              <option value="Room Issue">Oda sorunu / şikâyet</option>
+              <option value="Operational">Operasyonel neden</option>
+              <option value="Other">Diğer</option>
             </select>
-            {moveReason === 'Other' && (
-              <Input placeholder="Please specify..." onChange={(e) => setMoveReason(e.target.value)} />
+            {(moveReason === 'Other' || (moveReason && !MOVE_REASON_CODES.includes(moveReason))) && (
+              <Input
+                aria-label="Diğer oda değişikliği nedeni"
+                placeholder="Nedeni belirtin..."
+                value={moveReason === 'Other' ? '' : moveReason}
+                onChange={(e) => setMoveReason(e.target.value || 'Other')}
+              />
             )}
-          </div>
-          <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
-            <strong>Note:</strong> This move will be recorded in the room move history.
-          </div>
+          </div>}
+          <p className="text-xs text-gray-600">Onayladığınız değişiklik rezervasyon geçmişine kaydedilir.</p>
           <div className="flex space-x-2">
-            <Button onClick={onConfirmMove} className="flex-1">Confirm Move</Button>
+            <Button onClick={onConfirmMove} className="flex-1">Taşımayı Onayla</Button>
             <Button variant="outline" onClick={() => {
               onOpenChange(false);
               setMoveReason('');
-            }}>Cancel</Button>
+            }}>Vazgeç</Button>
           </div>
         </div>
       )}
