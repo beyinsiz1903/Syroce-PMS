@@ -52,6 +52,7 @@ class OutboxLifecycleWorker:
         lease_duration_seconds: int = 15,
         processing_timeout_seconds: int = 60,
         drain_pause_seconds: float = 0.1,
+        event_types: list[str] | None = None,
     ) -> None:
         self.poll_interval_seconds = poll_interval_seconds
         self.batch_size = batch_size
@@ -60,6 +61,7 @@ class OutboxLifecycleWorker:
         self.lease_duration_seconds = lease_duration_seconds
         self.processing_timeout_seconds = processing_timeout_seconds
         self.drain_pause_seconds = drain_pause_seconds
+        self.event_types = event_types or MIGRATION_EVENT_TYPES
         self.owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
@@ -183,7 +185,7 @@ class OutboxLifecycleWorker:
             await get_system_db()
             .outbox_events.find(
                 {
-                    "event_type": {"$in": MIGRATION_EVENT_TYPES},
+                    "event_type": {"$in": self.event_types},
                     "status": "processing",
                     "processing_started_at": {"$lte": cutoff},
                 },
@@ -221,7 +223,7 @@ class OutboxLifecycleWorker:
         now_iso = iso_now()
         event = await get_system_db().outbox_events.find_one_and_update(
             {
-                "event_type": {"$in": MIGRATION_EVENT_TYPES},
+                "event_type": {"$in": self.event_types},
                 "$or": [
                     {"status": "pending"},
                     {

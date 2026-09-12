@@ -51,10 +51,10 @@ def _build_event(*, tenant_id: str, event_type: str, status: str = "pending", pa
 def test_outbox_worker_processes_pending_event_to_processed():
     async def _run():
         tenant_id = f"tenant-{uuid.uuid4()}"
-        event = _build_event(tenant_id=tenant_id, event_type="reservation.created.v1")
+        event = _build_event(tenant_id=tenant_id, event_type="test.success.v1")
         await get_system_db().outbox_events.insert_one(event)
 
-        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0.01, drain_pause_seconds=0)
+        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0.01, drain_pause_seconds=0, event_types=["test.success.v1"])
         try:
             await worker.process_batch(limit=1)
             stored = await get_system_db().outbox_events.find_one({"event_id": event["event_id"]}, {"_id": 0})
@@ -73,12 +73,12 @@ def test_outbox_worker_retries_then_parks_forced_failure():
         tenant_id = f"tenant-{uuid.uuid4()}"
         event = _build_event(
             tenant_id=tenant_id,
-            event_type="folio.opened.v1",
+            event_type="test.forced_failure.v1",
             payload={"force_fail": True, "force_fail_message": "boom"},
         )
         await get_system_db().outbox_events.insert_one(event)
 
-        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0, drain_pause_seconds=0, max_retries=3)
+        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0, drain_pause_seconds=0, max_retries=3, event_types=["test.forced_failure.v1"])
         try:
             await worker.process_batch(limit=1)
             await worker.process_batch(limit=1)
