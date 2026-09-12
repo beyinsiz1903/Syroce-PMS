@@ -109,12 +109,15 @@ async def check_mapping_gate(
     )
     legacy_exely_mapping = None
     if room_mapping is None and provider == "exely":
+        native_pair = {"exely_room_code": room_type_code}
+        api_pair = {"pms_api_room_code": room_type_code}
+        if rate_plan_code:
+            native_pair["exely_rate_plan_code"] = rate_plan_code
+            api_pair["pms_api_rate_plan_code"] = rate_plan_code
         legacy_query = {
             "tenant_id": tenant_id,
-            "exely_room_code": room_type_code,
+            "$or": [native_pair, api_pair],
         }
-        if rate_plan_code:
-            legacy_query["exely_rate_plan_code"] = rate_plan_code
         legacy_exely_mapping = await db["exely_room_mappings"].find_one(
             legacy_query,
             _NO_ID,
@@ -150,7 +153,11 @@ async def check_mapping_gate(
             rate_mapping = {
                 "is_active": legacy_exely_mapping.get("is_active", True),
                 "validation_status": legacy_exely_mapping.get("validation_status", "valid"),
-                "pms_rate_plan_id": legacy_exely_mapping.get("exely_rate_plan_code"),
+                "pms_rate_plan_id": (
+                    legacy_exely_mapping.get("pms_api_rate_plan_code")
+                    if legacy_exely_mapping.get("pms_api_rate_plan_code") == rate_plan_code
+                    else legacy_exely_mapping.get("exely_rate_plan_code")
+                ),
             }
         rate_error = validate_rate_plan_mapping(rate_mapping, rate_plan_code)
         if rate_error:

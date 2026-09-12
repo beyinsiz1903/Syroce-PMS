@@ -138,6 +138,38 @@ async def test_exely_booking_sync_uses_only_explicit_mapping_rate_plan(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_exely_booking_sync_uses_complete_pms_api_pair_when_configured(monkeypatch):
+    mapping = {
+        "exely_room_code": "5003299",
+        "exely_rate_plan_code": "10009740",
+        "pms_api_room_code": "5001574",
+        "pms_api_rate_plan_code": "10003870",
+        "sync_availability": True,
+    }
+    database = type("FakeDb", (), {
+        "exely_connections": type("Connections", (), {"find_one": AsyncMock(return_value={"hotel_code": "501694"})})(),
+        "exely_room_mappings": type("Mappings", (), {"find": lambda self, *_args, **_kwargs: _Cursor([mapping])})(),
+    })()
+    enqueue = AsyncMock(return_value={"accepted": True})
+    monkeypatch.setattr(availability_auto_sync, "db", database)
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.ari_publish.enqueue_exely_ari_update", enqueue,
+    )
+
+    result = await availability_auto_sync._push_to_exely(
+        "tenant-1", "standard", {"2026-11-10": 7, "2026-11-11": 7},
+    )
+
+    assert result == {"configured": True, "queued_operations": 1, "errors": []}
+    enqueue.assert_awaited_once_with(
+        "tenant-1", "501694", room_type_code="5001574",
+        rate_plan_code="10003870", start_date="2026-11-10",
+        end_date="2026-11-11", source_service="availability_auto_sync",
+        availability=7,
+    )
+
+
+@pytest.mark.asyncio
 async def test_exely_booking_sync_refuses_multiple_availability_rate_plans(monkeypatch):
     mappings = [
         {"exely_room_code": "5003299", "exely_rate_plan_code": "10009740"},
