@@ -43,6 +43,7 @@ import { roomLabel } from '@/utils/displayIdentifiers';
 
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
+import { bookingDragGrip, bookingDropCheckIn } from './calendar/bookingDragPlacement';
 import {
   applyCalendarViewPreference,
   CALENDAR_VIEW_PREFERENCES_KEY,
@@ -271,7 +272,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // Drag & Drop
   const [draggingBooking, setDraggingBooking] = useState(null);
   const [resizingBooking, setResizingBooking] = useState(null);
-  const [dragOverCell, setDragOverCell] = useState(null);
   const [moveData, setMoveData] = useState(null);
   const [moveReason, setMoveReason] = useState('');
 
@@ -791,14 +791,19 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Drag & Drop ───────────────────────────────────────────
   const handleDragStart = (e, booking, dragAnchorDate = booking.check_in) => {
     setResizingBooking(null);
-    // A reservation card spans every occupied night. Keep the night the user
-    // grabbed as an offset so dropping its third cell moves the *whole* stay,
-    // rather than incorrectly treating that cell as the new arrival date.
-    const checkInMs = new Date(`${toDateStringUTC(booking.check_in)}T00:00:00Z`).getTime();
-    const anchorMs = new Date(`${toDateStringUTC(dragAnchorDate)}T00:00:00Z`).getTime();
-    const dragOffsetDays = Math.max(0, Math.round((anchorMs - checkInMs) / 86400000));
-    setDraggingBooking({ ...booking, _dragOffsetDays: dragOffsetDays });
+    const sourceLeft = e.currentTarget.getBoundingClientRect().left;
+    const grip = bookingDragGrip({
+      bookingCheckIn: booking.check_in,
+      visibleStart: dragAnchorDate,
+      sourceLeft,
+      clientX: e.clientX,
+    });
+    setDraggingBooking({ ...booking, _dragGrip: grip });
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(booking.id));
+    // Preserve the full booking bar and the precise point the user grabbed.
+    // The browser moves this image without re-rendering the whole calendar.
+    e.dataTransfer.setDragImage?.(e.currentTarget, grip.gripPx, e.clientY - e.currentTarget.getBoundingClientRect().top);
   };
   const handleResizeStart = (e, booking) => {
     setDraggingBooking(null);
@@ -814,22 +819,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setResizingBooking(null);
     await handleStayResize(booking, targetDate);
   };
-  const handleDragOver = (e, roomId, date) => {
+  const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    // Pass the dragging booking's night count and drag offset so CalendarGrid
-    // can highlight the full stay span (not just the cell under the cursor).
-    const nights = draggingBooking
-      ? Math.max(1, Math.round(
-          (new Date(`${toDateStringUTC(draggingBooking.check_out)}T00:00:00Z`) -
-           new Date(`${toDateStringUTC(draggingBooking.check_in)}T00:00:00Z`)) / 86400000,
-        ))
-      : 1;
-    const offsetDays = Number(draggingBooking?._dragOffsetDays || 0);
-    setDragOverCell({ roomId, date: date.toISOString(), nights, offsetDays });
   };
-  const handleDragLeave = () => { setDragOverCell(null); };
-  const handleDragEnd = () => { setDraggingBooking(null); setResizingBooking(null); setDragOverCell(null); };
+  const handleDragLeave = () => {};
+  const handleDragEnd = () => { setDraggingBooking(null); setResizingBooking(null); };
 
   const handleStayResize = async (booking, targetDate) => {
     const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -994,6 +989,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const executeRoomMove = async (data, reason) => {
     if (!data?.booking) return false;
 
+    // Give immediate feedback after confirmation. The server remains the source
+    // of truth; restore the original card if validation or persistence fails.
+    setBookings(current => current.map(item => item.id === data.booking.id
+      ? { ...item, room_id: data.newRoomId, check_in: data.newCheckIn, check_out: data.newCheckOut }
+      : item));
+    setShowMoveReasonDialog(false);
+    setMoveReason('');
+    setMoveData(null);
     try {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-move-${Date.now()}-${Math.random()}`;
       await axios.put(`/pms/bookings/${data.booking.id}`, {
@@ -1002,21 +1005,21 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         check_out: data.newCheckOut
       }, { headers: { 'Idempotency-Key': idempotencyKey } });
 
-      await axios.post('/pms/room-move-history', {
+      void axios.post('/pms/room-move-history', {
         booking_id: data.booking.id,
         old_room: data.oldRoom, new_room: data.newRoom,
         old_check_in: data.oldCheckIn, new_check_in: data.newCheckIn,
         reason, moved_by: user?.name || user?.email || 'System',
         timestamp: new Date().toISOString()
-      }).catch(() => { /* history logging best-effort, silent on failure */ });
+      }).catch((historyError) => {
+        console.error('Room move history error:', historyError);
+      });
 
-      toast.success(`Rezervasyon ${data.newRoom} numarali odaya tasindi!`);
-      setShowMoveReasonDialog(false);
-      setMoveReason('');
-      setMoveData(null);
+      toast.success(`Rezervasyon ${data.newRoom} numaralı odaya taşındı (${data.newCheckIn} – ${data.newCheckOut}).`);
       loadCalendarData();
       return true;
     } catch (error) {
+      setBookings(current => current.map(item => item.id === data.booking.id ? data.booking : item));
       const detail = error.response?.data?.detail;
       toast.error(
         typeof detail === 'string'
@@ -1054,7 +1057,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   const handleDrop = async (e, newRoomId, newDate, targetBookingId = null) => {
     e.preventDefault();
-    setDragOverCell(null);
     if (resizingBooking) {
       const booking = resizingBooking;
       setResizingBooking(null);
@@ -1063,14 +1065,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
     if (!draggingBooking) return;
 
-    const roomBlock = getRoomBlockForDate(newRoomId, newDate, roomBlocks);
-    if (roomBlock && !roomBlock.allow_sell) {
-      toast.error(`Cannot move booking: Room is ${roomBlock.type.replace('_', ' ')} (${roomBlock.reason})`);
-      setDraggingBooking(null);
-      return;
-    }
-
     if (!draggingBooking.room_id) {
+      const blocked = getRoomBlockForDate(newRoomId, newDate, roomBlocks);
+      if (blocked && !blocked.allow_sell) {
+        toast.error(`Oda atanamadı: ${toDateStringUTC(newDate)} tarihinde oda ${blocked.reason || 'bloklu'}`);
+        setDraggingBooking(null);
+        return;
+      }
       setDraggingBooking(null);
       await handleAssignRoom(draggingBooking, newRoomId);
       return;
@@ -1078,9 +1079,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
     const oldRoomId = draggingBooking.room_id;
     const oldDateStr = toDateStringUTC(draggingBooking.check_in);
-    const droppedDateStr = toDateStringUTC(newDate);
-    const newCheckIn = new Date(`${droppedDateStr}T00:00:00Z`);
-    newCheckIn.setUTCDate(newCheckIn.getUTCDate() - Number(draggingBooking._dragOffsetDays || 0));
+    const newCheckIn = bookingDropCheckIn({
+      targetStart: newDate,
+      targetLeft: e.currentTarget.getBoundingClientRect().left,
+      clientX: e.clientX,
+      gripPx: draggingBooking._dragGrip.gripPx,
+      visibleOffsetDays: draggingBooking._dragGrip.visibleOffsetDays,
+    });
     const targetDateStr = toDateStringUTC(newCheckIn);
     if (oldRoomId === newRoomId && oldDateStr === targetDateStr) {
       setDraggingBooking(null);
@@ -1089,7 +1094,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
     const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const minDate = hotelBusinessDate && hotelBusinessDate < localToday ? hotelBusinessDate : localToday;
-    if (targetDateStr < minDate) {
+    // A checked-in guest may change rooms without changing the original
+    // (necessarily past) arrival date. Only newly selected dates need the
+    // no-past-date guard.
+    if (targetDateStr !== oldDateStr && targetDateStr < minDate) {
       toast.error(`Geçmiş tarihe rezervasyon taşınamaz (minimum: ${minDate})`);
       setDraggingBooking(null);
       return;
@@ -1106,8 +1114,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
 
     const daysDiff = Math.ceil((new Date(draggingBooking.check_out) - new Date(draggingBooking.check_in)) / (1000 * 60 * 60 * 24));
-    const newCheckOut = new Date(newDate);
-    newCheckOut.setTime(newCheckIn.getTime());
+    const newCheckOut = new Date(newCheckIn);
     newCheckOut.setUTCDate(newCheckOut.getUTCDate() + daysDiff);
 
     // A drop is valid only when the whole stay fits. Checking merely the
@@ -1129,9 +1136,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       booking: draggingBooking,
       oldRoom: oldRoom?.room_number, newRoom: newRoom?.room_number,
       oldCheckIn: draggingBooking.check_in,
+      oldCheckOut: draggingBooking.check_out,
       newCheckIn: newCheckIn.toISOString().split('T')[0],
       newCheckOut: newCheckOut.toISOString().split('T')[0],
-      newRoomId
+      newRoomId,
+      requiresReason: roomMoveRequiresReason(oldRoom, newRoom),
     };
 
     // ── Oda Takası Algılama ──────────────────────────────────────────────────
@@ -1139,7 +1148,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     // bu bir oda takası niyetidir. Tarihlerin aynı olması şartı kaldırıldı:
     // 1-gecelik → 3-gecelik takası da aynı diyalogla onaylanır.
     // Hedef hücreyi kaplayan aktif rezervasyon bul (sürüklenen dahil değil).
-    const targetBooking = targetBookingId
+    const targetBooking = targetBookingId && targetBookingId !== draggingBooking.id
       ? bookings.find(candidate => candidate.id === targetBookingId)
       : null;
     const targetBookings = targetBooking
@@ -1164,8 +1173,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       return;
     }
 
-    if (!roomMoveRequiresReason(oldRoom, newRoom)) {
-      await executeRoomMove(nextMoveData, 'Aynı oda tipi içinde taşıma');
+    if (!roomIsFreeForBooking(newRoom, {
+      ...draggingBooking,
+      check_in: nextMoveData.newCheckIn,
+      check_out: nextMoveData.newCheckOut,
+    }, bookings)) {
+      toast.error('Hedef odada yeni konaklama tarihleriyle çakışan başka bir rezervasyon var.');
       return;
     }
 
@@ -1174,8 +1187,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   const handleConfirmMove = async () => {
-    if (!moveReason.trim()) { toast.error('Please provide a reason for the room move'); return; }
-    await executeRoomMove(moveData, moveReason.trim());
+    if (moveData?.requiresReason && (!moveReason.trim() || moveReason === 'Other')) { toast.error('Oda değişikliği için neden belirtin'); return; }
+    await executeRoomMove(moveData, moveReason.trim() || 'Takvim üzerinden oda/tarih taşıma');
   };
 
   // ─── Find Room ─────────────────────────────────────────────
@@ -1410,7 +1423,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           conflicts={conflicts}
           draggingBooking={draggingBooking}
           resizingBooking={resizingBooking}
-          dragOverCell={dragOverCell}
           showDeluxePanel={showDeluxePanel}
           groupColorMap={groupColorMap}
           setGroupColorMap={setGroupColorMap}
