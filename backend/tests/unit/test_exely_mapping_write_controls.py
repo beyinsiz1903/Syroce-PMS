@@ -326,3 +326,78 @@ async def test_discovered_but_unmapped_exely_pair_is_not_written(monkeypatch):
     assert result["delivery_state"] == "NOT_SENT"
     assert result["provider_verified"] is False
     deliver.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unified_exely_writes_use_complete_pms_api_pairs_and_preserve_suite_controls(monkeypatch):
+    mappings = [
+        {"pms_room_type": "Standard", "exely_room_code": "5003299", "exely_rate_plan_code": "10009740",
+         "pms_api_room_code": "5001574", "pms_api_rate_plan_code": "10003870",
+         "sync_availability": True, "sync_price": True, "sync_restrictions": True},
+        {"pms_room_type": "Deluxe", "exely_room_code": "5003300", "exely_rate_plan_code": "10009739",
+         "pms_api_room_code": "5001575", "pms_api_rate_plan_code": "10003869",
+         "sync_availability": True, "sync_price": True, "sync_restrictions": True},
+        {"pms_room_type": "Suite", "exely_room_code": "5003301", "exely_rate_plan_code": "10009740",
+         "pms_api_room_code": "5001576", "pms_api_rate_plan_code": "10003870",
+         "sync_availability": False, "sync_price": True, "sync_restrictions": True},
+    ]
+    monkeypatch.setattr(unified, "db", SimpleNamespace(
+        hotelrunner_connections=_Collection(row=None),
+        room_mappings=_Collection(rows=[]),
+        exely_room_mappings=_Collection(rows=mappings),
+    ))
+    monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
+    request = SimpleNamespace(
+        start_date="2026-11-10", end_date="2026-11-11", availability=6, rate=125.0,
+        stop_sell=None, min_stay=None, min_los_arrival=None, max_stay=None, cta=None, ctd=None,
+    )
+    connection = {
+        "hotel_code": "501694", "currency": "USD",
+        "room_types": [{"code": "5001574"}, {"code": "5001575"}, {"code": "5001576"}],
+        "rate_plans": [{"code": "10003870"}, {"code": "10003869"}],
+    }
+    pairs = [(m["exely_room_code"], m["exely_rate_plan_code"]) for m in mappings]
+    with patch(
+        "domains.channel_manager.providers.exely.ari_delivery.deliver_exely_ari",
+        new=AsyncMock(return_value=SimpleNamespace(success=True, provider_write_count=1, error_code="", state="confirmed")),
+    ) as deliver:
+        result = await unified._push_to_exely(
+            "tenant-1", connection, request, pairs, {}, {"availability", "rate"}, None,
+        )
+
+    assert result["provider_verified"] is True
+    assert deliver.await_count == 2
+    calls = {call.args[1]: call.args[2]["value"] for call in deliver.await_args_list}
+    assert [(row["room_type_code"], row["rate_plan_code"]) for row in calls["availability_batch"]] == [
+        ("5001574", "10003870"), ("5001575", "10003869"),
+    ]
+    assert [(row["room_type_code"], row["rate_plan_code"]) for row in calls["rate_batch"]] == [
+        ("5001574", "10003870"), ("5001575", "10003869"), ("5001576", "10003870"),
+    ]
+    assert all(row["currency"] == "USD" for row in calls["rate_batch"])
+
+
+@pytest.mark.asyncio
+async def test_unified_exely_rejects_partial_api_alias_instead_of_mixing_codes(monkeypatch):
+    mapping = {
+        "pms_room_type": "Standard", "exely_room_code": "5003299", "exely_rate_plan_code": "10009740",
+        "pms_api_room_code": "5001574", "pms_api_rate_plan_code": "", "sync_availability": True,
+    }
+    monkeypatch.setattr(unified, "db", SimpleNamespace(
+        hotelrunner_connections=_Collection(row=None), room_mappings=_Collection(rows=[]),
+        exely_room_mappings=_Collection(rows=[mapping]),
+    ))
+    monkeypatch.setattr(unified, "get_tenant_currency", AsyncMock(return_value=("USD", None)))
+    request = SimpleNamespace(
+        start_date="2026-11-10", end_date="2026-11-10", availability=6, rate=None,
+        stop_sell=None, min_stay=None, min_los_arrival=None, max_stay=None, cta=None, ctd=None,
+    )
+    connection = {"hotel_code": "501694", "currency": "USD", "room_types": [], "rate_plans": []}
+    with patch("domains.channel_manager.providers.exely.ari_delivery.deliver_exely_ari", new=AsyncMock()) as deliver:
+        result = await unified._push_to_exely(
+            "tenant-1", connection, request, [("5003299", "10009740")], {}, {"availability"}, None,
+        )
+
+    assert result["provider_verified"] is False
+    assert result["error_codes"] == ["EXELY_PARTIAL_API_PAIR"]
+    deliver.assert_not_awaited()
