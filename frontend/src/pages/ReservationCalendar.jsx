@@ -1148,7 +1148,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     // bu bir oda takası niyetidir. Tarihlerin aynı olması şartı kaldırıldı:
     // 1-gecelik → 3-gecelik takası da aynı diyalogla onaylanır.
     // Hedef hücreyi kaplayan aktif rezervasyon bul (sürüklenen dahil değil).
-    const targetBooking = targetBookingId
+    const targetBooking = targetBookingId && targetBookingId !== draggingBooking.id
       ? bookings.find(candidate => candidate.id === targetBookingId)
       : null;
     const targetBookings = targetBooking
