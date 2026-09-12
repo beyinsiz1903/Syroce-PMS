@@ -218,6 +218,19 @@ async def _add_mapping(database, room="STD", rate="BAR", pms="Standard"):
     )
 
 
+@pytest.mark.asyncio
+async def test_reservation_pull_accepts_distinct_pms_api_codes_without_changing_ari_ids(fake_db):
+    await fake_db.exely_room_mappings.insert_one({
+        "id": "standard-base", "tenant_id": "tenant", "pms_room_type": "Standard",
+        "exely_room_code": "5003299", "exely_rate_plan_code": "10009740",
+        "pms_api_room_code": "5001574", "pms_api_rate_plan_code": "10003870",
+    })
+    mapped, reason = await lifecycle._mapping_status("tenant", [_room(room="5001574", rate="10003870")])
+    assert (mapped, reason) == (True, "MAPPED")
+    assert (await pms_lifecycle._load_mapping("tenant", _room(room="5001574", rate="10003870")))["pms_room_type"] == "Standard"
+    assert (await pms_lifecycle._load_mapping("tenant", _room(room="5003299", rate="10009740")))["pms_room_type"] == "Standard"
+
+
 async def _persist(database, canonical, payload_hash="hash", event_type="reservation"):
     result = await lifecycle.persist_exely_event("tenant", canonical, event_type, "event", payload_hash)
     current = await database.exely_reservations.find_one(

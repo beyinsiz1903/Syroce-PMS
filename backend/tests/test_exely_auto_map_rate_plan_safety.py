@@ -1,7 +1,15 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 
-from domains.channel_manager.auto_map_router import AutoMapApplyItem, _require_explicit_rate_plans, _unambiguous_rate_plan
+from domains.channel_manager.auto_map_router import (
+    AutoMapApplyItem,
+    AutoMapApplyRequest,
+    _require_explicit_rate_plans,
+    _unambiguous_rate_plan,
+    apply_auto_mappings,
+)
 
 
 def test_single_rate_plan_can_be_selected_without_ambiguity():
@@ -40,3 +48,15 @@ def test_hotelrunner_mapping_does_not_require_an_exely_rate_plan():
     )
 
     _require_explicit_rate_plans("hotelrunner", [mapping])
+
+
+@pytest.mark.asyncio
+async def test_exely_discovery_aliases_cannot_be_auto_applied_as_ari_ids():
+    payload = AutoMapApplyRequest(provider="exely", mappings=[AutoMapApplyItem(
+        pms_room_type="Standard", provider_room_code="5001574",
+        provider_room_name="Standart", provider_rate_plan_code="10003870",
+    )])
+    with pytest.raises(HTTPException) as exc_info:
+        await apply_auto_mappings(payload, current_user=SimpleNamespace(tenant_id="tenant"), _perm=True)
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "EXELY_ARI_IDS_REQUIRE_MANUAL_VERIFICATION"

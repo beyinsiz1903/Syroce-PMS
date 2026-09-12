@@ -239,12 +239,10 @@ async def _load_mapping(tenant_id: str, room: dict[str, Any]) -> dict[str, Any] 
     rate_code = str(room.get("rate_plan_code") or "")
     if not room_code or not rate_code:
         return None
+    from .mapping_codes import inbound_mapping_query
+
     mapping = await db.exely_room_mappings.find_one(
-        {
-            "tenant_id": tenant_id,
-            "exely_room_code": room_code,
-            "exely_rate_plan_code": rate_code,
-        },
+        inbound_mapping_query(tenant_id, room_code, rate_code),
         {"_id": 0, "pms_room_type": 1},
     )
     if not mapping or not mapping.get("pms_room_type"):

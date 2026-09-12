@@ -279,8 +279,11 @@ async def check_room_mapping(provider: str, tenant_id: str, rooms: list) -> bool
         code = room.get("room_type_code", "")
         if not code:
             continue
-        field = "hr_inv_code" if provider == "hotelrunner" else "exely_room_code"
-        mapping = await _col(provider, "room_mappings").find_one({"tenant_id": tenant_id, field: code})
+        if provider == "exely":
+            query = {"tenant_id": tenant_id, "$or": [{"exely_room_code": code}, {"pms_api_room_code": code}]}
+        else:
+            query = {"tenant_id": tenant_id, "hr_inv_code": code}
+        mapping = await _col(provider, "room_mappings").find_one(query)
         if not mapping:
             return False
     return True

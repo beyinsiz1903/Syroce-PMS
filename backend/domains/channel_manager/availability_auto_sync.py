@@ -210,9 +210,9 @@ async def _push_to_exely(
         sorted_dates = sorted(date_availability.keys())
         date_groups = _group_consecutive_dates_with_same_avail(sorted_dates, date_availability)
 
-        # Every PMS mapping already identifies the exact Exely room/rate pair.
-        # Using every discovered connection rate plan here multiplies a single
-        # booking change into unrelated provider messages.
+        # Inventory is room-type-wide. Sending the same inventory via multiple
+        # rate plans can duplicate a booking decrement (and violates Exely's
+        # certification request for one availability mapping per room type).
         seen_pairs = set()
         unique_mappings = []
         for mapping in mappings:
@@ -222,6 +222,9 @@ async def _push_to_exely(
             if rc and rp_code and pair not in seen_pairs:
                 seen_pairs.add(pair)
                 unique_mappings.append(mapping)
+        if len(unique_mappings) > 1:
+            logger.error("[AVAIL-AUTO-SYNC] Exely multiple availability mappings for room_type=%s", pms_room_type)
+            return {"configured": True, "queued_operations": 0, "errors": ["exely_multiple_availability_mappings"]}
 
         # Her mapping ve rate plan için push et
         push_count = 0
