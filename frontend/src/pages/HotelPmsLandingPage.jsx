@@ -55,7 +55,7 @@ export default function HotelPmsLandingPage() {
             <div className="mt-8 flex flex-wrap gap-3"><a href="#demo" className="inline-flex min-h-12 items-center gap-2 rounded-full bg-cyan-400 px-6 py-3 font-semibold text-[#07111e] hover:bg-cyan-300">Demo Talep Et <ArrowRight className="h-4 w-4" /></a><a href="#neler-goreceksiniz" className="inline-flex min-h-12 items-center rounded-full border border-white/20 px-6 py-3 font-medium hover:bg-white/5">Neler göreceksiniz?</a></div>
             <p className="mt-5 text-sm text-slate-400">Fiyat, kurulum süresi ve entegrasyon kapsamı tesisinize göre görüşmede netleştirilir.</p>
           </div>
-          <div aria-label="Rezervasyon takvimi iş akışının temsili gösterimi" className="rounded-3xl border border-cyan-300/20 bg-[#0c2033] p-4 shadow-[0_25px_90px_-35px_rgba(34,211,238,0.45)] sm:p-6">
+          <div aria-label="Rezervasyon takvimi iş akışının temsili gösterimi" className="rounded-3xl border border-white/10 bg-[#0c2033] p-4 shadow-[0_25px_90px_-35px_rgba(34,211,238,0.45)] sm:p-6">
             <div className="flex items-center justify-between border-b border-white/10 pb-4"><div className="flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-5 w-5 text-cyan-300" /> Rezervasyon Takvimi</div><span className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-300">Temsili akış</span></div>
             <div className="mt-5 grid grid-cols-[5rem_repeat(3,minmax(0,1fr))] gap-2 text-center text-xs sm:grid-cols-[7rem_repeat(3,minmax(0,1fr))]">
               <span className="text-left text-slate-400">Oda</span>{['Pzt', 'Sal', 'Çar'].map(day => <span key={day} className="text-slate-400">{day}</span>)}
