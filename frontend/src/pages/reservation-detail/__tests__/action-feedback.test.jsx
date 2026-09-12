@@ -214,6 +214,25 @@ describe('reservation detail action feedback', () => {
     ));
   });
 
+  it('offers a guarded repair when a comp stay has a positive reservation total', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, repaired: true } });
+    const onRefresh = vi.fn();
+    render(
+      <DailyRatesTab
+        dailyRates={[{ date: '2026-08-18', rate: 0 }]}
+        booking={{ id: 'booking-a', is_complimentary: true, total_amount: 2000 }}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp konaklama tutarını düzelt' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/reconcile-complimentary-total',
+    ));
+    expect(onRefresh).toHaveBeenCalled();
+  });
+
   it('locks daily rates before the current PMS business date', () => {
     render(
       <DailyRatesTab

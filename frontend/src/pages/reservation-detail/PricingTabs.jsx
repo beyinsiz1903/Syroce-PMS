@@ -39,6 +39,19 @@ export function DailyRatesTab({
   const anyEditable = rates.some(rate => !isClosedRate(rate));
   const hasClosedRates = rates.some(isClosedRate);
   const isComplimentary = Boolean(booking?.is_complimentary);
+  const hasComplimentaryTotalDrift = isComplimentary && Number(booking?.total_amount || 0) > 0;
+  const handleReconcileComplimentaryTotal = async () => {
+    setSaving(true);
+    try {
+      await axios.post(`/pms/reservations/${booking.id}/reconcile-complimentary-total`);
+      toast.success('Comp konaklama tutarı düzeltildi');
+      onRefresh?.();
+    } catch (e) {
+      toast.error('Düzeltme yapılamadı: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setSaving(false);
+    }
+  };
   const handleSave = async () => {
     if (rates.some(rate => !Number.isFinite(parseDecimalInput(rate.rate)) || parseDecimalInput(rate.rate) <= 0)) {
       toast.error('Günlük fiyat sıfırdan büyük olmalıdır');
@@ -94,6 +107,10 @@ export function DailyRatesTab({
           <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Full Comp' : 'Sadece Konaklama Comp'}</div>
           {booking?.complimentary_reason && <p className="mt-0.5 text-xs text-emerald-800">Gerekçe: {booking.complimentary_reason}</p>}
           {booking?.complimentary_original_total > 0 && <p className="mt-0.5 text-xs text-emerald-800">Raporlanan konaklama değeri: {fmtCurrency(booking.complimentary_original_total, currency)}</p>}
+        </div>}
+      {hasComplimentaryTotalDrift && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="complimentary-total-drift">
+          <p>Comp konaklamada {fmtCurrency(booking.total_amount, currency)} tutar hatalı görünüyor. Tahakkuk, ödeme veya fatura yoksa güvenli düzeltme yapılabilir.</p>
+          <Button type="button" size="sm" variant="outline" onClick={handleReconcileComplimentaryTotal} disabled={saving || readOnly} className="mt-2 border-amber-400 text-amber-950">Comp konaklama tutarını düzelt</Button>
         </div>}
       {showCompForm && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2" data-testid="complimentary-form">
           <div className="flex items-start justify-between gap-3">

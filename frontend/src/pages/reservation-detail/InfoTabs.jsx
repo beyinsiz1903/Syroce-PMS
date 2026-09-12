@@ -59,6 +59,7 @@ const ACTIVITY_LABELS = {
   group_checkin: 'Grup giriş',
   group_checkout: 'Grup çıkış',
   stay_dates_updated: 'Konaklama tarihleri güncellendi',
+  complimentary_total_reconciled: 'Comp konaklama tutarı düzeltildi',
   reservation_modified: 'Rezervasyon güncellendi',
   checked_in: 'Giriş yapıldı',
   checked_out: 'Çıkış yapıldı',

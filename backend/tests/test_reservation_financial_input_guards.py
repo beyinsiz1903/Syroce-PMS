@@ -315,6 +315,105 @@ async def test_daily_rate_zero_is_rejected_for_a_non_complimentary_booking(monke
     assert exc.value.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_positive_daily_rate_is_rejected_for_a_complimentary_booking(monkeypatch):
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value={
+            "id": "booking-a", "tenant_id": "tenant-a", "status": "checked_in", "is_complimentary": True,
+        }))
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+
+    with pytest.raises(HTTPException) as exc:
+        await reservation_detail.update_daily_rates(
+            "booking-a",
+            reservation_detail.DailyRateUpdate(rates=[reservation_detail.DailyRateEntry(date="2026-08-17", rate=2000)]),
+            current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 422
+    assert "Comp rezervasyonun" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_reconcile_comp_total_fills_missing_zero_night_and_clears_stale_total(monkeypatch):
+    booking = {
+        "id": "booking-a", "tenant_id": "tenant-a", "status": "checked_in",
+        "is_complimentary": True, "total_amount": 2000,
+        "check_in": "2026-08-17", "check_out": "2026-08-19",
+    }
+    booking_update = AsyncMock(return_value=SimpleNamespace(modified_count=1))
+    rate_update = AsyncMock()
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value=booking), update_one=booking_update),
+        daily_rates=SimpleNamespace(
+            find=lambda *_args, **_kwargs: AsyncRows([{"date": "2026-08-17", "rate": 0}]),
+            update_one=rate_update,
+        ),
+        folios=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncRows([{"id": "folio-a"}])),
+        folio_charges=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        payments=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        client=SimpleNamespace(start_session=AsyncMock(return_value=FakeSession())),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+    refresh = AsyncMock()
+    monkeypatch.setattr(reservation_detail, "_refresh_cached_folio_balance", refresh)
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "audit_log", AsyncMock())
+
+    result = await reservation_detail.reconcile_complimentary_total(
+        "booking-a",
+        current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"),
+        _perm=None,
+    )
+
+    assert result == {"success": True, "new_total": 0.0, "repaired": True}
+    assert rate_update.await_args.args[0]["date"] == "2026-08-18"
+    assert rate_update.await_args.args[1]["$set"]["rate"] == 0
+    assert booking_update.await_args.args[1] == {"$set": {"total_amount": 0.0}}
+    refresh.assert_awaited_once_with("tenant-a", "folio-a")
+
+
+@pytest.mark.asyncio
+async def test_reconcile_comp_total_refuses_posted_accommodation(monkeypatch):
+    booking = {
+        "id": "booking-a", "tenant_id": "tenant-a", "status": "checked_in",
+        "is_complimentary": True, "total_amount": 2000,
+        "check_in": "2026-08-17", "check_out": "2026-08-18",
+    }
+    booking_update = AsyncMock()
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value=booking), update_one=booking_update),
+        daily_rates=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncRows([{"date": "2026-08-17", "rate": 0}])),
+        folios=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncRows([{"id": "folio-a"}])),
+        folio_charges=SimpleNamespace(find_one=AsyncMock(return_value={"id": "charge-a"})),
+        payments=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+
+    with pytest.raises(HTTPException) as exc:
+        await reservation_detail.reconcile_complimentary_total(
+            "booking-a",
+            current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    booking_update.assert_not_awaited()
+
+
 def test_zero_reservation_detail_extra_charge_is_a_valid_comp_item():
     payload = reservation_detail.ExtraChargeAdd(description="Kola ikram", amount=0, quantity=1)
     assert payload.amount == 0

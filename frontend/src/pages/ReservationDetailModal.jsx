@@ -336,15 +336,18 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       // Retain the agreed rate for nights already on the reservation.  Only
       // newly added nights are read from the same published rate grid shown
       // on the room board, so an extension never silently uses a stale total.
+      const isComplimentary = Boolean(booking?.is_complimentary);
       let publishedRates = {};
-      try {
-        const rateGrid = await axios.get(
-          `/channel-manager/unified-rate-manager/grid?start_date=${checkIn}&end_date=${checkOut}`,
-        );
-        publishedRates = buildCalendarRateLookup(rateGrid.data?.grid || []);
-      } catch {
-        // The booking may still be changed safely with its agreed/base rate
-        // when the display-only rate grid is temporarily unavailable.
+      if (!isComplimentary) {
+        try {
+          const rateGrid = await axios.get(
+            `/channel-manager/unified-rate-manager/grid?start_date=${checkIn}&end_date=${checkOut}`,
+          );
+          publishedRates = buildCalendarRateLookup(rateGrid.data?.grid || []);
+        } catch {
+          // The booking may still be changed safely with its agreed/base rate
+          // when the display-only rate grid is temporarily unavailable.
+        }
       }
 
       const roomForPricing = {
@@ -358,14 +361,16 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         const fallback = Number(roomForPricing.base_price || impliedNightlyRate || 0);
         return {
           date,
-          rate: Number.isFinite(persistedRate) && persistedRate > 0
-            ? persistedRate
-            : Number.isFinite(configuredRate) && configuredRate > 0
-              ? configuredRate
-              : fallback,
+          rate: isComplimentary
+            ? 0
+            : Number.isFinite(persistedRate) && persistedRate > 0
+              ? persistedRate
+              : Number.isFinite(configuredRate) && configuredRate > 0
+                ? configuredRate
+                : fallback,
         };
       });
-      if (rates.some((rate) => !Number.isFinite(rate.rate) || rate.rate <= 0)) {
+      if (!isComplimentary && rates.some((rate) => !Number.isFinite(rate.rate) || rate.rate <= 0)) {
         toast.error('Her gece için geçerli bir fiyat bulunamadı; tarih değişikliği kaydedilmedi');
         return;
       }

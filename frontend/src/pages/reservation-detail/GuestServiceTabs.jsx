@@ -163,6 +163,7 @@ export function HistoryTab({ history, roomMoves }) {
     extra_charge_added: 'Ekstra ücret', daily_rates_updated: 'Fiyat güncelleme', guest_updated: 'Misafir güncelleme',
     communication_logged: 'İletişim', group_checkin: 'Grup giriş', group_checkout: 'Grup çıkış',
     stay_dates_updated: 'Konaklama tarihleri güncellendi', reservation_modified: 'Rezervasyon güncellendi',
+    complimentary_total_reconciled: 'Comp konaklama tutarı düzeltildi',
   };
   const colors = {
     payment_recorded: 'bg-emerald-100 text-emerald-700', transferred_to_cari: 'bg-amber-100 text-amber-700',

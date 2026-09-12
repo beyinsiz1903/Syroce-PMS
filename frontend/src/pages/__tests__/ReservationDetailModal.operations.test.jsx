@@ -180,6 +180,39 @@ describe('ReservationDetailModal operation URLs', () => {
     ));
   });
 
+  it('keeps a complimentary stay free when its checkout date changes', async () => {
+    get.mockImplementation((url) => {
+      if (url.includes('/unified-rate-manager/grid')) {
+        return Promise.resolve({ data: { grid: [{ pms_room_type: 'Standard', dates: [{ date: '2026-08-14', rate: 2000 }] }] } });
+      }
+      return Promise.resolve({
+        data: {
+          ...detail,
+          booking: { ...detail.booking, total_amount: 2000, is_complimentary: true, status: 'checked_in' },
+          daily_rates: [{ date: '2026-08-13', rate: 0 }],
+        },
+      });
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    fireEvent.click(await screen.findByTestId('edit-stay-dates'));
+    fireEvent.change(screen.getByLabelText('Çıkış tarihi'), { target: { value: '2026-08-15' } });
+    fireEvent.click(screen.getByTestId('save-stay-dates'));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenNthCalledWith(
+      1,
+      '/pms/bookings/booking-test',
+      { check_in: '2026-08-13', check_out: '2026-08-15', total_amount: 0 },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    ));
+    expect(axiosMock.put).toHaveBeenNthCalledWith(
+      2,
+      '/pms/reservations/booking-test/daily-rates',
+      { rates: [{ date: '2026-08-13', rate: 0 }, { date: '2026-08-14', rate: 0 }] },
+    );
+    expect(get).not.toHaveBeenCalledWith(expect.stringContaining('/unified-rate-manager/grid'));
+  });
+
   it('shows late checkout but hides arrival and cancellation actions after check-in', async () => {
     get.mockResolvedValueOnce({
       data: { ...detail, booking: { ...detail.booking, status: 'checked_in' } },

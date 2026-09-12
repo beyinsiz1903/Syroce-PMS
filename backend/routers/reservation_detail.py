@@ -37,6 +37,7 @@ from modules.reservations.services.create_reservation_service import (
 )
 from routers.finance.konaklama_vergisi_core import get_accommodation_tax_rate
 from security.field_encryption import get_field_encryption_service
+from shared_kernel.audit_helper import audit_log
 from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 
 # Bug CP fix — shared role-permission enforcement for financial endpoints
@@ -3211,6 +3212,159 @@ async def mark_reservation_complimentary(
     }
 
 
+@router.post("/reservations/{booking_id}/reconcile-complimentary-total")
+async def reconcile_complimentary_total(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Repair a legacy comp stay whose booking total drifted above zero.
+
+    This does not alter posted financial history. If accommodation has been
+    posted, paid, or invoiced, the operator must use a financial adjustment.
+    """
+    _enforce_perm(current_user.role, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+    if not booking.get("is_complimentary"):
+        raise HTTPException(status_code=409, detail="Bu rezervasyon comp değil")
+    old_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    if old_total <= 0:
+        return {"success": True, "new_total": 0.0, "repaired": False}
+
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli konaklama tarihleri yok")
+    stay_dates = {(check_in + timedelta(days=day)).isoformat() for day in range((check_out - check_in).days)}
+    rate_rows = [
+        row async for row in db.daily_rates.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "date": 1, "rate": 1},
+        )
+    ]
+    if not rate_rows:
+        raise HTTPException(status_code=409, detail="Günlük fiyat kaydı yok; finans mutabakatı gerekir")
+    recorded_dates = set()
+    for row in rate_rows:
+        rate_date = _reservation_calendar_date(row.get("date"))
+        if rate_date is None or rate_date.isoformat() not in stay_dates or rate_date.isoformat() in recorded_dates or _money_cents(row.get("rate")) != 0:
+            raise HTTPException(status_code=409, detail="Günlük fiyatlar comp konaklamayla uyuşmuyor; finans mutabakatı gerekir")
+        recorded_dates.add(rate_date.isoformat())
+
+    folios = [
+        row async for row in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1},
+        )
+    ]
+    folio_ids = [row["id"] for row in folios if row.get("id")]
+    financial_scope = _booking_or_folio_scope_query(tid, booking_id, folio_ids)
+    active_accommodation_charge = await db.folio_charges.find_one(
+        {
+            "$and": [
+                financial_scope,
+                {"voided": {"$ne": True}},
+                {"$or": [
+                    {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                    {"charge_type": {"$in": ["room_charge", "tax"]}},
+                    {"konaklama_vergisi": True},
+                ]},
+            ]
+        },
+        {"_id": 0, "id": 1},
+    )
+    active_payment = await db.payments.find_one(
+        {"$and": [financial_scope, {"voided": {"$ne": True}}, {"amount": {"$gt": 0}}]},
+        {"_id": 0, "id": 1},
+    )
+    issued_invoice = await db.invoices.find_one(
+        {
+            "tenant_id": tid,
+            "status": {"$nin": ["draft", "cancelled", "voided"]},
+            "$or": [{"booking_id": booking_id}, {"folio_id": {"$in": folio_ids}}],
+        },
+        {"_id": 0, "id": 1},
+    )
+    if active_accommodation_charge or active_payment or issued_invoice:
+        raise HTTPException(status_code=409, detail="Tahakkuk, ödeme veya fatura var; finansal düzeltme fişi gerekir")
+
+    now = datetime.now(UTC).isoformat()
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            # Recheck inside the write snapshot so a financial posting made
+            # after the initial validation cannot be overlooked by this repair.
+            if await db.folio_charges.find_one(
+                {
+                    "$and": [
+                        financial_scope,
+                        {"voided": {"$ne": True}},
+                        {"$or": [
+                            {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                            {"charge_type": {"$in": ["room_charge", "tax"]}},
+                            {"konaklama_vergisi": True},
+                        ]},
+                    ]
+                },
+                {"_id": 0, "id": 1},
+                session=session,
+            ) or await db.payments.find_one(
+                {"$and": [financial_scope, {"voided": {"$ne": True}}, {"amount": {"$gt": 0}}]},
+                {"_id": 0, "id": 1},
+                session=session,
+            ) or await db.invoices.find_one(
+                {
+                    "tenant_id": tid,
+                    "status": {"$nin": ["draft", "cancelled", "voided"]},
+                    "$or": [{"booking_id": booking_id}, {"folio_id": {"$in": folio_ids}}],
+                },
+                {"_id": 0, "id": 1},
+                session=session,
+            ):
+                raise HTTPException(status_code=409, detail="Finans kaydı değişti; finansal düzeltme fişi gerekir")
+            for rate_date in sorted(stay_dates - recorded_dates):
+                await db.daily_rates.update_one(
+                    {"booking_id": booking_id, "tenant_id": tid, "date": rate_date},
+                    {"$set": {
+                        "date": rate_date,
+                        "rate": 0.0,
+                        "daily_rate_key": f"{booking_id}:{rate_date}",
+                        "is_complimentary": True,
+                        "updated_by": current_user.name,
+                        "updated_at": now,
+                    }},
+                    upsert=True,
+                    session=session,
+                )
+            result = await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid, "is_complimentary": True, "total_amount": booking.get("total_amount")},
+                {"$set": {"total_amount": 0.0}},
+                session=session,
+            )
+            if result.modified_count != 1:
+                raise HTTPException(status_code=409, detail="Rezervasyon değişti; yenileyip tekrar deneyin")
+
+    for folio_id in folio_ids:
+        await _refresh_cached_folio_balance(tid, folio_id)
+    await _log_activity(
+        tid, booking_id, "complimentary_total_reconciled", current_user.name,
+        {"old_total": old_total, "new_total": 0.0, "missing_zero_rate_dates": sorted(stay_dates - recorded_dates)},
+    )
+    await audit_log(
+        actor_id=current_user.id,
+        tenant_id=tid,
+        property_id=tid,
+        entity_type="reservation",
+        entity_id=booking_id,
+        action="complimentary_total_reconciled",
+        metadata={"old_total": old_total, "new_total": 0.0, "actor_name": current_user.name},
+    )
+    return {"success": True, "new_total": 0.0, "repaired": True}
+
+
 @router.put("/reservations/{booking_id}/daily-rates")
 async def update_daily_rates(
     booking_id: str,
@@ -3243,6 +3397,11 @@ async def update_daily_rates(
 
         await ensure_reservation_mutable(db, tid, booking)
 
+        if booking.get("is_complimentary") and any(rate.rate != 0 for rate in data.rates):
+            raise HTTPException(
+                status_code=422,
+                detail="Comp rezervasyonun günlük konaklama fiyatları sıfır olmalıdır",
+            )
         if not booking.get("is_complimentary") and any(rate.rate <= 0 for rate in data.rates):
             raise HTTPException(
                 status_code=422,
