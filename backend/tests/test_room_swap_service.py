@@ -7,7 +7,6 @@ import pytest
 
 from modules.reservations.services import room_swap_service as room_swap_module
 
-
 TENANT = "tenant-room-swap"
 
 
@@ -50,6 +49,7 @@ async def test_swap_replaces_both_room_assignments_and_locks_together(monkeypatc
 
     bookings = SimpleNamespace(
         find_one=AsyncMock(side_effect=find_booking),
+        find=lambda *args, **kwargs: _Cursor([]),
         update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
     )
     rooms = SimpleNamespace(
@@ -124,6 +124,7 @@ async def test_swap_allows_two_checked_in_guests_and_exchanges_room_occupancy(mo
     fake_db = SimpleNamespace(
         bookings=SimpleNamespace(
             find_one=AsyncMock(side_effect=find_booking),
+            find=lambda *args, **kwargs: _Cursor([]),
             update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
         ),
         rooms=rooms,
@@ -166,6 +167,7 @@ async def test_swap_allows_checked_in_guest_to_exchange_with_not_checked_in_rese
     fake_db = SimpleNamespace(
         bookings=SimpleNamespace(
             find_one=AsyncMock(side_effect=find_booking),
+            find=lambda *args, **kwargs: _Cursor([]),
             update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
         ),
         rooms=SimpleNamespace(
@@ -221,6 +223,7 @@ async def test_swap_allows_not_checked_in_reservation_to_exchange_with_checked_i
     fake_db = SimpleNamespace(
         bookings=SimpleNamespace(
             find_one=AsyncMock(side_effect=find_booking),
+            find=lambda *args, **kwargs: _Cursor([]),
             update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
         ),
         rooms=rooms,
@@ -261,7 +264,11 @@ async def test_swap_rejects_a_third_party_target_lock(monkeypatch):
         return None
 
     fake_db = SimpleNamespace(
-        bookings=SimpleNamespace(find_one=AsyncMock(side_effect=find_booking), update_one=AsyncMock()),
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(side_effect=find_booking),
+            find=lambda *args, **kwargs: _Cursor([]),
+            update_one=AsyncMock(),
+        ),
         rooms=SimpleNamespace(find=lambda *args, **kwargs: _Cursor([
             {"id": "room-101", "room_number": "101"},
             {"id": "room-102", "room_number": "102"},
@@ -289,3 +296,83 @@ async def test_swap_rejects_a_third_party_target_lock(monkeypatch):
 
     assert exc.value.code == "TARGET_LOCK_CONFLICT"
     fake_db.room_night_locks.delete_many.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("previous_checkout", "expected_conflict"),
+    [
+        ("2026-09-11T12:00:00+03:00", False),
+        ("2026-09-12T12:00:00+03:00", True),
+    ],
+)
+async def test_swap_uses_room_nights_not_checkout_clock_for_third_party_conflicts(
+    monkeypatch, previous_checkout, expected_conflict
+):
+    source = _booking("booking-yunus", "room-206", "Yunus") | {
+        "check_in": "2026-09-12T00:00:00+00:00",
+        "check_out": "2026-09-13T00:00:00+00:00",
+    }
+    target = _booking("booking-mert", "room-202", "Mert") | {
+        "check_in": "2026-09-11T00:00:00+00:00",
+        "check_out": "2026-09-13T00:00:00+00:00",
+    }
+    previous = _booking("booking-murat", "room-206", "Murat") | {
+        "check_in": "2026-09-09T14:00:00+03:00",
+        "check_out": previous_checkout,
+        "status": "checked_in",  # Checkout action has not been recorded yet.
+    }
+
+    async def find_booking(query, *args, **kwargs):
+        if query.get("id") == source["id"]:
+            return source
+        if query.get("id") == target["id"]:
+            return target
+        return None
+
+    def find_bookings(query, *args, **kwargs):
+        return _Cursor([previous] if query["room_id"] == "room-206" else [])
+
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(side_effect=find_booking),
+        find=find_bookings,
+        update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
+    )
+    locks = SimpleNamespace(
+        find=lambda *args, **kwargs: _Cursor([]),
+        delete_many=AsyncMock(),
+        insert_many=AsyncMock(),
+    )
+    fake_db = SimpleNamespace(
+        bookings=bookings,
+        rooms=SimpleNamespace(find=lambda *args, **kwargs: _Cursor([
+            {"id": "room-206", "room_number": "206"},
+            {"id": "room-202", "room_number": "202"},
+        ])),
+        room_night_locks=locks,
+        room_move_history=SimpleNamespace(insert_many=AsyncMock()),
+    )
+    monkeypatch.setattr(room_swap_module, "db", fake_db)
+    monkeypatch.setenv("MONGO_DISABLE_TRANSACTIONS", "1")
+
+    if expected_conflict:
+        with pytest.raises(room_swap_module.RoomSwapError) as exc:
+            await room_swap_module.room_swap_service.swap(
+                tenant_id=TENANT,
+                booking_id=source["id"],
+                target_booking_id=target["id"],
+                reason="Oda takası",
+                moved_by="Operatör",
+            )
+        assert exc.value.code == "TARGET_ROOM_CONFLICT"
+        locks.delete_many.assert_not_awaited()
+    else:
+        result = await room_swap_module.room_swap_service.swap(
+            tenant_id=TENANT,
+            booking_id=source["id"],
+            target_booking_id=target["id"],
+            reason="Oda takası",
+            moved_by="Operatör",
+        )
+        assert result["source_room"] == "202"
+        assert result["target_room"] == "206"
