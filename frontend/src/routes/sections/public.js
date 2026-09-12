@@ -1,5 +1,5 @@
 import {
-  LandingPage, RoomRequestPage, PublicReviewPage, PrivacyPolicy,
+  LandingPage, HotelPmsLandingPage, RoomRequestPage, PublicReviewPage, PrivacyPolicy,
   PmsLiteLanding, AgencyPortalDashboard, B2BApiDocs, SimpleAdminPanel,
   ResetPasswordPage, PreCheckinPage, CertificateVerifyPage, WebBookingEngine,
 } from "./lazyPages";
@@ -7,6 +7,7 @@ import {
 export function publicRoutes({ pa }) {
   return [
     { path: "/landing", type: "public", component: LandingPage },
+    { path: "/otel-programi", type: "public", component: HotelPmsLandingPage },
     { path: "/g/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
     { path: "/g/:hotelSlug/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
     { path: "/review/:token", type: "public", component: PublicReviewPage },

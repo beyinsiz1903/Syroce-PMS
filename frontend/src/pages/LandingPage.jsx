@@ -2,100 +2,13 @@ import { t } from "i18next";
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
-import { ArrowRight, Check, Calendar, Users, Handshake, BarChart3, LayoutGrid, Headphones, ShieldCheck, Plane, Sparkles, ChevronDown, Phone, Mail, MapPin, Hotel, Building2, Coffee, Truck, Compass, Send, LogIn, Boxes, Layers, Zap, Globe, Lock, RefreshCw, Star, Quote, ArrowUpRight } from 'lucide-react';
-import axios from 'axios';
+import { ArrowRight, Check, Calendar, Users, Handshake, BarChart3, LayoutGrid, Headphones, ShieldCheck, Plane, Sparkles, ChevronDown, Phone, Mail, MapPin, Hotel, Building2, Coffee, Truck, Compass, Send, LogIn, Boxes, Layers, Zap, Globe, Lock, RefreshCw, ArrowUpRight, Star } from 'lucide-react';
 import { mergeLandingContent } from '@/config/landingContentDefaults';
+import MarketingContactForm from '@/components/marketing/MarketingContactForm';
+import MarketingConsent from '@/components/marketing/MarketingConsent';
 const HERO_IMG = '/landing/hero-hotel.png';
 
-// Public iletisim formu -> POST /api/leads/contact (axios baseURL '/api').
-// Lead, super_admin AdminLeads gelen kutusuna dusurulur (kaynak: marketing_contact).
-function LandingContactForm() {
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState(null);
-  const onSubmit = async e => {
-    e.preventDefault();
-    const formEl = e.currentTarget;
-    const fd = new FormData(formEl);
-    const payload = {
-      full_name: String(fd.get('fullName') || '').trim(),
-      company: String(fd.get('company') || '').trim(),
-      phone: String(fd.get('phone') || '').trim(),
-      email: String(fd.get('email') || '').trim(),
-      business_type: String(fd.get('businessType') || '').trim() || undefined,
-      message: String(fd.get('message') || '').trim() || undefined
-    };
-    setSubmitting(true);
-    setResult(null);
-    try {
-      await axios.post('/leads/contact', payload);
-      setResult({
-        ok: true,
-        msg: 'Mesajınız alındı. Ekibimiz en kısa sürede sizinle iletişime geçecek.'
-      });
-      formEl.reset();
-    } catch (err) {
-      const status = err?.response?.status;
-      setResult({
-        ok: false,
-        msg: status === 422 ? 'Lütfen ad soyad, işletme, telefon ve geçerli bir e-posta girin.' : 'Mesaj gönderilemedi. Lütfen daha sonra tekrar deneyin.'
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-  return <form className="grid grid-cols-1 gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
-      {[{
-      name: 'fullName',
-      label: 'Ad Soyad',
-      type: 'text',
-      required: true,
-      half: true
-    }, {
-      name: 'company',
-      label: 'İşletme Adı',
-      type: 'text',
-      required: true,
-      half: true
-    }, {
-      name: 'phone',
-      label: 'Telefon',
-      type: 'tel',
-      required: true,
-      half: true
-    }, {
-      name: 'email',
-      label: 'E-posta',
-      type: 'email',
-      required: true,
-      half: true
-    }, {
-      name: 'businessType',
-      label: 'İşletme Türü',
-      type: 'text',
-      required: false,
-      half: false
-    }].map(f => <label key={f.name} className={'block ' + (f.half ? '' : 'sm:col-span-2')}>
-          <span className="mb-1.5 block text-xs font-medium text-slate-400">{f.label}{f.required && <span className="text-cyan-300"> *</span>}</span>
-          <input name={f.name} type={f.type} required={f.required} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400/40 focus:bg-white/[0.06] focus:ring-2 focus:ring-cyan-400/20" placeholder={f.label} />
-        </label>)}
-      <label className="block sm:col-span-2">
-        <span className="mb-1.5 block text-xs font-medium text-slate-400">{t("cm.pages_LandingPage.mesaj\u0131n\u0131z")}</span>
-        <textarea name="message" rows={4} className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400/40 focus:bg-white/[0.06] focus:ring-2 focus:ring-cyan-400/20" placeholder={t("cm.pages_LandingPage.bize_k\u0131saca_beklentinizi_yaz\u0131n")} />
-      </label>
-
-      {result && <div className={'sm:col-span-2 rounded-xl px-4 py-3 text-sm ' + (result.ok ? 'border border-emerald-400/30 bg-emerald-400/10 text-emerald-100' : 'border border-rose-400/30 bg-rose-400/10 text-rose-100')}>
-          {result.msg}
-        </div>}
-
-      <div className="sm:col-span-2 flex items-center justify-between gap-4">
-        <p className="text-xs text-slate-500">{t("cm.pages_LandingPage.bilgileriniz_yaln\u0131zca_size_d\xF6n")}</p>
-        <button type="submit" disabled={submitting} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-6 py-3 text-sm font-semibold text-[#05070f] shadow-[0_10px_30px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-60">
-          {submitting ? 'Gönderiliyor...' : 'Mesaj Gönder'}
-          <Send className="h-4 w-4" />
-        </button>
-      </div>
-    </form>;
-}
+// Marketing lead form is shared with the hotel-focused ads landing page.
 const navLinks = [{
   label: 'Ana Sayfa',
   href: '#top'
@@ -112,7 +25,7 @@ const navLinks = [{
   label: 'Tedarikçi Ağı',
   href: '#tedarikci'
 }, {
-  label: 'Hakkımızda',
+  label: 'Canlı Demoda',
   href: '#hakkimizda'
 }, {
   label: 'İletişim',
@@ -122,8 +35,8 @@ const heroBadges = [{
   icon: Check,
   label: 'Kolay Kullanım'
 }, {
-  icon: Headphones,
-  label: '7/24 Destek'
+  icon: Calendar,
+  label: 'Rezervasyon Takvimi'
 }, {
   icon: ShieldCheck,
   label: 'Güvenli Altyapı'
@@ -133,24 +46,24 @@ const heroBadges = [{
 }];
 const kpis = [{
   icon: Calendar,
-  value: '1.250+',
-  label: 'Aktif Otel'
-}, {
-  icon: Handshake,
-  value: '3.500+',
-  label: 'Tedarikçi'
-}, {
-  icon: BarChart3,
-  value: '%25',
-  label: 'Ortalama Gelir Artışı'
+  value: 'Takvim',
+  label: 'Rezervasyon ve oda görünümü'
 }, {
   icon: Users,
-  value: '250.000+',
-  label: 'Mutlu Misafir'
+  value: 'Ön Büro',
+  label: 'Giriş ve çıkış işlemleri'
 }, {
-  icon: Headphones,
-  value: '7/24',
-  label: 'Canlı Destek'
+  icon: BarChart3,
+  value: 'Folyo',
+  label: 'Tahsilat ve bakiye takibi'
+}, {
+  icon: Hotel,
+  value: 'Odalar',
+  label: 'Oda operasyonu'
+}, {
+  icon: BarChart3,
+  value: 'Raporlar',
+  label: 'İşletme görünümü'
 }];
 const modules = [{
   n: '01',
@@ -175,8 +88,8 @@ const modules = [{
 }, {
   n: '05',
   icon: Headphones,
-  title: 'Canlı Destek ve Hızlı İşlemler',
-  desc: '7/24 destek ekibimizle her zaman yanınızdayız.'
+  title: 'Destek ve Hızlı İşlemler',
+  desc: 'Destek taleplerinizi uygulama içinden iletin ve takip edin.'
 }];
 
 // Çözüm kartı ikonları — içerik super_admin panelinden düzenlenebildiği için
@@ -185,7 +98,7 @@ const solutionIcons = [Hotel, Sparkles, Boxes, BarChart3, Zap, Layers];
 const steps = [{
   n: '01',
   title: 'Kayıt olun veya giriş yapın',
-  desc: 'Birkaç dakika içinde hesabınızı açın, hemen başlayın.'
+  desc: 'Tesisinize uygun kurulum ve tanıtım adımlarını ekibimizle planlayın.'
 }, {
   n: '02',
   title: 'İşletmenizi sisteme ekleyin',
@@ -202,7 +115,7 @@ const steps = [{
 const reasons = [{
   icon: LayoutGrid,
   title: 'Kolay arayüz',
-  desc: 'İlk gün herkes kullanabilir.'
+  desc: 'Ön büro akışları için tasarlandı.'
 }, {
   icon: Globe,
   title: 'Tek merkez kontrol',
@@ -214,7 +127,7 @@ const reasons = [{
 }, {
   icon: RefreshCw,
   title: 'Düzenli operasyon',
-  desc: 'Standart akış, sıfır karmaşa.'
+  desc: 'Standart akışları tek yerden izleyin.'
 }, {
   icon: Sparkles,
   title: 'Mutlu misafir',
@@ -258,19 +171,11 @@ const sectors = [{
   title: 'Zincir İşletmeler'
 }];
 const supplierBenefits = ['Yeni işletmelere kolayca ulaşın', 'Tek panelden sipariş takibi yapın', 'Teklif sürecini hızla yönetin', 'Hızlı iletişim ve net süreçler', 'Daha görünür, daha tercih edilir olun'];
-const testimonials = [{
-  name: 'Operasyon Müdürü',
-  role: 'Sahil Otel, Antalya',
-  text: 'Sabah panele bakıyorum, otelin tamamını tek ekranda görüyorum. Toplantılar daha kısa, kararlar daha net.'
-}, {
-  name: 'Genel Müdür',
-  role: 'Butik Otel, Bodrum',
-  text: 'Misafir talepleri artık hiçbir yerde kaybolmuyor. Memnuniyet skorumuz ilk ay belirgin şekilde yükseldi.'
-}, {
-  name: 'Satın Alma Şefi',
-  role: 'Tatil Tesisi, Muğla',
-  text: 'Tedarikçilerle yazışma, teklif ve sipariş süreci tek yerde. Hata payımız neredeyse sıfırlandı.'
-}];
+const demoWorkflows = [
+  { icon: Calendar, title: 'Rezervasyon takvimi', text: 'Oda ve tarih görünümünü, oda değiştirme akışını birlikte inceleyelim.' },
+  { icon: Users, title: 'Ön büro', text: 'Giriş, çıkış ve misafir işlemlerinin ekibinize nasıl uyacağını gösterelim.' },
+  { icon: BarChart3, title: 'Folyo ve raporlar', text: 'Günlük fiyat, tahsilat ve bakiye takibini örnek senaryoda görelim.' },
+];
 const dashboardTabs = [{
   key: 'rez',
   label: 'Rezervasyon',
@@ -360,7 +265,9 @@ const LandingPage = () => {
   }, []);
   const goLogin = () => navigate('/auth');
   const goSupplier = () => navigate('/tedarikci/giris');
+  const demoHref = `/otel-programi${window.location.search}#demo`;
   return <div id="top" className="relative min-h-screen overflow-x-hidden bg-[#05070f] text-slate-100 antialiased">
+      <MarketingConsent />
       {/* Global ambient background */}
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(34,211,238,0.10),_transparent_60%),radial-gradient(ellipse_at_bottom,_rgba(99,102,241,0.10),_transparent_60%)]" />
@@ -388,6 +295,7 @@ const LandingPage = () => {
           </nav>
 
           <div className="hidden items-center gap-2.5 md:flex">
+            <a href={demoHref} className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-3.5 py-1.5 text-[13px] font-semibold text-[#05070f] hover:bg-cyan-300">Demo Talep Et <ArrowRight className="h-3.5 w-3.5" /></a>
             <button onClick={goLogin} className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.03] px-3.5 py-1.5 text-[13px] font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white">
               <LogIn className="h-3.5 w-3.5" />{t("cm.pages_LandingPage.giri\u015F_yap")}</button>
             <button onClick={goSupplier} className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-cyan-300/40 bg-gradient-to-r from-cyan-400/15 via-teal-300/10 to-indigo-400/15 px-3.5 py-1.5 text-[13px] font-semibold text-cyan-100 shadow-[0_0_22px_-6px_rgba(34,211,238,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-cyan-200/70 hover:text-white hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.85),inset_0_1px_0_rgba(255,255,255,0.12)]">
@@ -410,8 +318,9 @@ const LandingPage = () => {
                   {l.label}
                 </a>)}
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <a href={demoHref} onClick={() => setMobileOpen(false)} className="flex-1 rounded-full bg-cyan-400 px-4 py-2 text-center text-sm font-semibold text-[#05070f]">Demo Talep Et</a>
                 <button onClick={goLogin} className="flex-1 rounded-full border border-white/15 px-4 py-2 text-sm text-white">{t("cm.pages_LandingPage.giri\u015F_yap")}</button>
-                <button onClick={goSupplier} className="flex-1 rounded-full bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#05070f]">{t("cm.pages_LandingPage.tedarik\xE7i_giri\u015Fi")}</button>
+                <button onClick={goSupplier} className="flex-1 rounded-full border border-white/15 px-4 py-2 text-sm text-white">{t("cm.pages_LandingPage.tedarik\xE7i_giri\u015Fi")}</button>
               </div>
             </div>
           </div>}
@@ -478,12 +387,9 @@ const LandingPage = () => {
             </p>
 
             <div className="mt-5 grid grid-cols-2 gap-2.5 sm:mt-7 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
-              <button onClick={goLogin} className="group col-span-2 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-5 py-3 text-[13px] font-semibold text-[#05070f] shadow-[0_12px_40px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] hover:shadow-[0_16px_50px_-8px_rgba(34,211,238,0.9)] sm:col-span-1 sm:px-6 sm:text-sm">{t("cm.pages_LandingPage.giri\u015F_yap")}<ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-              </button>
-              <button onClick={goSupplier} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-3 text-[13px] font-semibold text-white transition hover:bg-white/[0.08] sm:px-6 sm:text-sm">
-                <Users className="h-4 w-4" />{t("cm.pages_LandingPage.tedarik\xE7i_giri\u015Fi")}</button>
-              <a href="#iletisim" className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-4 py-3 text-[13px] font-semibold text-cyan-200 transition hover:bg-cyan-400/15 sm:px-6 sm:text-sm">
-                <Sparkles className="h-4 w-4" />{t("cm.pages_LandingPage.demo_talep_et")}</a>
+              <a href={demoHref} className="group col-span-2 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-5 py-3 text-[13px] font-semibold text-[#05070f] shadow-[0_12px_40px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] sm:col-span-1 sm:px-6 sm:text-sm">Demo Talep Et<ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" /></a>
+              <button onClick={goLogin} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-3 text-[13px] font-semibold text-white transition hover:bg-white/[0.08] sm:px-6 sm:text-sm"><LogIn className="h-4 w-4" />{t("cm.pages_LandingPage.giri\u015F_yap")}</button>
+              <button onClick={goSupplier} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-3 text-[13px] font-semibold text-white transition hover:bg-white/[0.08] sm:px-6 sm:text-sm"><Users className="h-4 w-4" />{t("cm.pages_LandingPage.tedarik\xE7i_giri\u015Fi")}</button>
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-2.5 sm:mt-7 sm:flex sm:flex-wrap sm:gap-5">
@@ -609,7 +515,6 @@ const LandingPage = () => {
               icon: Calendar,
               title: 'Rezervasyonlar',
               desc: 'Tüm kanalları tek yerden yönetin',
-              pct: '18%',
               side: 'L',
               i: 0
             }, {
@@ -620,7 +525,6 @@ const LandingPage = () => {
               icon: Users,
               title: 'Misafir Deneyimi',
               desc: 'Daha mutlu misafirler, daha güçlü sadakat',
-              pct: '24%',
               side: 'L',
               i: 1
             }, {
@@ -631,7 +535,6 @@ const LandingPage = () => {
               icon: Handshake,
               title: 'Tedarikçi Ağı',
               desc: 'Güvenilir tedarikçilerle hızlı iş birliği',
-              pct: '22%',
               side: 'L',
               i: 2
             }, {
@@ -642,7 +545,6 @@ const LandingPage = () => {
               icon: BarChart3,
               title: 'Gelir ve Raporlama',
               desc: 'Performansınızı anlık görün',
-              pct: '23%',
               side: 'R',
               i: 0
             }, {
@@ -653,7 +555,6 @@ const LandingPage = () => {
               icon: Boxes,
               title: 'Tek Platform',
               desc: 'Tüm modüller tek ekranda',
-              pct: '15%',
               side: 'R',
               i: 1
             }, {
@@ -662,9 +563,8 @@ const LandingPage = () => {
                 right: '6%'
               },
               icon: Headphones,
-              title: 'Canlı Destek',
-              desc: '7/24 yanınızdayız',
-              online: true,
+              title: 'Destek Talepleri',
+              desc: 'Taleplerinizi uygulamadan takip edin',
               side: 'R',
               i: 2
             }].map(c => <motion.div key={`${c.side}${c.i}`} animate={reduce ? {} : {
@@ -682,11 +582,8 @@ const LandingPage = () => {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="text-[13px] font-semibold leading-tight text-white">{c.title}</div>
-                          {c.pct && <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">↑ {c.pct}</span>}
                         </div>
                         <p className="mt-1 text-[11px] leading-snug text-slate-300/85">{c.desc}</p>
-                        {c.online && <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-300">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />{t("cm.pages_LandingPage.\xE7evrimi\xE7i")}</div>}
                       </div>
                     </div>
                   </div>
@@ -721,8 +618,8 @@ const LandingPage = () => {
               desc: 'Modüller tek ekranda'
             }, {
               icon: Headphones,
-              title: 'Canlı Destek',
-              desc: '7/24 yanınızda'
+              title: 'Destek Talepleri',
+              desc: 'Talepleri takip edin'
             }].map(c => <div key={c.title} className="flex h-full flex-col rounded-2xl border border-[rgba(75,235,230,0.22)] bg-[rgba(8,26,42,0.55)] p-3 backdrop-blur-lg shadow-[0_8px_24px_-12px_rgba(34,211,238,0.35)]">
                   <div className="flex items-center gap-2">
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
@@ -755,12 +652,8 @@ const LandingPage = () => {
               hospitality OS hissi verir. */}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 rounded-2xl border border-white/10 bg-white/[0.025] px-5 py-4 text-[12px] text-slate-300 backdrop-blur-xl sm:gap-x-8 sm:text-[13px]">
             <div className="inline-flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.85)]" />
-              </span>
-              <span className="font-semibold text-emerald-300">{t("cm.pages_LandingPage._99_9_uptime")}</span>
-              <span className="text-slate-400">{t("cm.pages_LandingPage.sla")}</span>
+              <Calendar className="h-4 w-4 text-cyan-300" />
+              <span>Rezervasyon takvimi</span>
             </div>
             <div className="hidden h-4 w-px bg-white/10 sm:block" />
             <div className="inline-flex items-center gap-2">
@@ -780,7 +673,7 @@ const LandingPage = () => {
             <div className="hidden h-4 w-px bg-white/10 sm:block" />
             <div className="inline-flex items-center gap-2">
               <Lock className="h-4 w-4 text-cyan-300" />
-              <span>{t("cm.pages_LandingPage.kvkk_gdpr_ready")}</span>
+              <span>Gizlilik politikası</span>
             </div>
             <div className="hidden h-4 w-px bg-white/10 sm:block" />
             <div className="inline-flex items-center gap-2">
@@ -915,7 +808,7 @@ const LandingPage = () => {
       {/* ---------- NASIL ÇALIŞIR ---------- */}
       <section id="nasil" className="relative py-24 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-10">
-          <SectionTitle eyebrow="NASIL ÇALIŞIR" title={t("cm.pages_LandingPage.birka\xE7_ad\u0131mda_syroce_ile_ba\u015Fla")} sub="Kurulum dakikalar sürer; ekibiniz aynı gün kullanmaya başlar." />
+          <SectionTitle eyebrow="NASIL ÇALIŞIR" title={t("cm.pages_LandingPage.birka\xE7_ad\u0131mda_syroce_ile_ba\u015Fla")} sub="Kurulum kapsamını tesisinizin ihtiyaçlarına göre birlikte planlarız." />
           <div className="relative mt-14">
             <div aria-hidden className="absolute left-0 right-0 top-9 hidden h-px bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent lg:block" />
             <div className="grid gap-5 lg:grid-cols-4">
@@ -999,7 +892,7 @@ const LandingPage = () => {
       <section id="deneyim" className="relative py-24 sm:py-28">
         <NeonBlob className="left-[5%] top-[20%] h-[360px] w-[360px] bg-indigo-500/25" />
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-10">
-          <SectionTitle eyebrow="MİSAFİR DENEYİMİ & PANEL" title={t("cm.pages_LandingPage.t\xFCm_operasyon_tek_bir_ak\u0131ll\u0131_e")} sub="Aşağıdaki sekmelerle panelin farklı bölümlerine göz atın." />
+          <SectionTitle eyebrow="MİSAFİR DENEYİMİ & PANEL" title={t("cm.pages_LandingPage.t\xFCm_operasyon_tek_bir_ak\u0131ll\u0131_e")} sub="Aşağıdaki temsili arayüz, gerçek tesis verisi veya performans sonucu göstermez. Ürünü canlı demoda inceleyebilirsiniz." />
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-2">
             {dashboardTabs.map(t => <button key={t.key} onClick={() => setActiveTab(t.key)} className={'rounded-full px-4 py-2 text-sm transition ' + (activeTab === t.key ? 'bg-gradient-to-r from-cyan-400 to-teal-300 text-[#05070f] shadow-[0_8px_30px_-10px_rgba(34,211,238,0.7)]' : 'border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]')}>
@@ -1032,10 +925,7 @@ const LandingPage = () => {
                     <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-cyan-400 to-teal-300 text-[11px] font-bold text-[#05070f]">S</span>
                     <span className="text-sm font-semibold text-white">{content.brandName} · {dashboardTabs.find(t => t.key === activeTab)?.label}</span>
                   </div>
-                  <div className="hidden items-center gap-2 sm:flex">
-                    <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-300">{t("cm.pages_LandingPage.canl\u0131")}</span>
-                    <span className="grid h-7 w-7 place-items-center rounded-full bg-white/[0.06] text-slate-300"><Users className="h-3.5 w-3.5" /></span>
-                  </div>
+                  <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-300">Temsili ekran</span>
                 </div>
 
                 {/* Mock KPI row — sekme bazlı */}
@@ -1045,106 +935,106 @@ const LandingPage = () => {
                     rez: [{
                       label: 'Bugün Giriş',
                       value: '24',
-                      trend: '+12%',
+                      trend: '',
                       icon: Calendar
                     }, {
                       label: 'Bugün Çıkış',
                       value: '18',
-                      trend: '+8%',
+                      trend: '',
                       icon: ArrowUpRight
                     }, {
                       label: 'Açık Rezervasyon',
                       value: '142',
-                      trend: '+5%',
+                      trend: '',
                       icon: Layers
                     }, {
                       label: 'Doluluk',
                       value: '%83',
-                      trend: '+3%',
+                      trend: '',
                       icon: BarChart3
                     }],
                     occ: [{
                       label: 'Doluluk',
                       value: '%83',
-                      trend: '+3%',
+                      trend: '',
                       icon: BarChart3
                     }, {
                       label: 'Müsait Oda',
                       value: '17',
-                      trend: '-2',
+                      trend: '',
                       icon: LayoutGrid
                     }, {
                       label: 'Geç Çıkış',
                       value: '4',
-                      trend: '0',
+                      trend: '',
                       icon: RefreshCw
                     }, {
                       label: 'No-Show Risk',
                       value: '%6',
-                      trend: '-1%',
+                      trend: '',
                       icon: ShieldCheck
                     }],
                     req: [{
                       label: 'Açık Talep',
                       value: '11',
-                      trend: '+2',
+                      trend: '',
                       icon: Headphones
                     }, {
-                      label: 'SLA İçinde',
-                      value: '%94',
-                      trend: '+2%',
+                      label: 'Takip Edilen',
+                      value: 'Talep',
+                      trend: '',
                       icon: ShieldCheck
                     }, {
                       label: 'Ortalama Süre',
                       value: '12 dk',
-                      trend: '-3 dk',
+                      trend: '',
                       icon: Zap
                     }, {
                       label: 'VIP',
                       value: '3',
-                      trend: '+1',
+                      trend: '',
                       icon: Star
                     }],
                     rev: [{
                       label: 'Günlük Gelir',
                       value: '₺184k',
-                      trend: '+9%',
+                      trend: '',
                       icon: BarChart3
                     }, {
                       label: 'ADR',
                       value: '₺3.2k',
-                      trend: '+5%',
+                      trend: '',
                       icon: ArrowUpRight
                     }, {
                       label: 'RevPAR',
                       value: '₺2.6k',
-                      trend: '+7%',
+                      trend: '',
                       icon: Sparkles
                     }, {
                       label: 'Upsell',
                       value: '%18',
-                      trend: '+4%',
+                      trend: '',
                       icon: Layers
                     }],
                     sup: [{
                       label: 'Açık Sipariş',
                       value: '37',
-                      trend: '+5',
+                      trend: '',
                       icon: Boxes
                     }, {
                       label: 'Bekleyen Teklif',
                       value: '12',
-                      trend: '+2',
+                      trend: '',
                       icon: Handshake
                     }, {
                       label: 'Tedarikçi',
                       value: '128',
-                      trend: '+3',
+                      trend: '',
                       icon: Truck
                     }, {
                       label: 'Bu Ay Tasarruf',
                       value: '%11',
-                      trend: '+2%',
+                      trend: '',
                       icon: BarChart3
                     }]
                   };
@@ -1154,7 +1044,7 @@ const LandingPage = () => {
                           <span className="grid h-7 w-7 place-items-center rounded-md bg-cyan-400/15 text-cyan-300">
                             <kpi.icon className="h-3.5 w-3.5" />
                           </span>
-                          <span className="rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">{kpi.trend}</span>
+                          <span className="text-[9px] text-slate-500">Örnek</span>
                         </div>
                         <div className="mt-2 text-lg font-semibold text-white">{kpi.value}</div>
                         <div className="text-[10px] text-slate-400">{kpi.label}</div>
@@ -1242,20 +1132,20 @@ const LandingPage = () => {
                 <GlassCard className="relative grid grid-cols-2 gap-3 p-5">
                   {[{
                   icon: Send,
-                  label: 'Yeni Siparişler',
-                  value: '128'
+                  label: 'Sipariş takibi',
+                  value: 'Tek panel'
                 }, {
                   icon: Handshake,
-                  label: 'Açık Teklifler',
-                  value: '42'
+                  label: 'Teklif yönetimi',
+                  value: 'Tek panel'
                 }, {
                   icon: Hotel,
-                  label: 'Bağlı Otel',
-                  value: '76'
+                  label: 'İşletme ağı',
+                  value: 'B2B'
                 }, {
                   icon: BarChart3,
-                  label: 'Aylık Hacim',
-                  value: '₺ 1.2M'
+                  label: 'Raporlama',
+                  value: 'Görünüm'
                 }].map(c => <div key={c.label} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                       <span className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-400/15 text-indigo-300 ring-1 ring-indigo-400/20">
                         <c.icon className="h-4 w-4" />
@@ -1267,7 +1157,7 @@ const LandingPage = () => {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-xs text-slate-400">{t("cm.pages_LandingPage.bu_hafta")}</div>
-                        <div className="text-base font-semibold text-white">{t("cm.pages_LandingPage.sipari\u015F_hacmi_18_artt\u0131")}</div>
+                        <div className="text-base font-semibold text-white">Tedarik akışını tek yerden takip edin</div>
                       </div>
                       <span className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-400/15 text-emerald-300">
                         <BarChart3 className="h-5 w-5" />
@@ -1281,44 +1171,18 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ---------- SOSYAL KANIT ---------- */}
+      {/* ---------- DEMODA GÖRÜLECEK AKIŞLAR ---------- */}
       <section id="hakkimizda" className="relative py-24 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-10">
-          <SectionTitle eyebrow="GÜVEN VE DENEYİM" title={t("cm.pages_LandingPage.i_\u015Fletmeler_i\xE7in_tasarland\u0131_ek")} sub="Kullanıcılarımızın deneyimi, yolumuzu çizen en güçlü rehber." />
+          <SectionTitle eyebrow="CANLI DEMODA" title="Kendi otelinizin akışını birlikte değerlendirelim" sub="Aşağıdaki senaryoları gerçek ürün üzerinde gösterebiliriz. Bu alanlar müşteri yorumu veya sonuç garantisi değildir." />
           <div className="mt-12 grid gap-5 lg:grid-cols-3">
-            {testimonials.map((t, i) => <motion.div key={t.name} initial={{
-            opacity: 0,
-            y: reduce ? 0 : 14
-          }} whileInView={{
-            opacity: 1,
-            y: 0
-          }} viewport={{
-            once: true,
-            amount: 0.3
-          }} transition={{
-            duration: 0.5,
-            delay: i * 0.06
-          }}>
-                <GlassCard className="h-full p-6">
-                  <Quote className="h-7 w-7 text-cyan-300/80" />
-                  <p className="mt-4 text-sm leading-relaxed text-slate-200">{t.text}</p>
-                  <div className="mt-6 flex items-center gap-3">
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-cyan-400 to-indigo-500 text-sm font-bold text-[#05070f]">
-                      {t.name.split(' ').map(p => p[0]).join('').slice(0, 2)}
-                    </span>
-                    <div>
-                      <div className="text-sm font-semibold text-white">{t.name}</div>
-                      <div className="text-xs text-slate-400">{t.role}</div>
-                    </div>
-                    <div className="ml-auto flex items-center gap-0.5 text-amber-300">
-                      {Array.from({
-                    length: 5
-                  }).map((_, k) => <Star key={k} className="h-3.5 w-3.5 fill-current" />)}
-                    </div>
-                  </div>
-                </GlassCard>
-              </motion.div>)}
+            {demoWorkflows.map(item => <GlassCard key={item.title} className="h-full p-6">
+              <item.icon className="h-7 w-7 text-cyan-300" />
+              <h3 className="mt-4 text-lg font-semibold text-white">{item.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{item.text}</p>
+            </GlassCard>)}
           </div>
+          <div className="mt-8 text-center"><a href={demoHref} className="inline-flex rounded-full bg-cyan-400 px-6 py-3 text-sm font-semibold text-[#05070f]">Demo Talep Et</a></div>
         </div>
       </section>
 
@@ -1358,7 +1222,7 @@ const LandingPage = () => {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-10">
           <div className="grid gap-10 lg:grid-cols-12">
             <div className="lg:col-span-5">
-              <SectionTitle eyebrow="İLETİŞİM" title={t("cm.pages_LandingPage.i_\u015Fletmenizi_daha_kolay_y\xF6netm")} sub="Dakikalar içinde başlayın, operasyonunuzu sadeleştirin. Ekibimiz size özel bir tanıtım planlasın." center={false} />
+              <SectionTitle eyebrow="İLETİŞİM" title={t("cm.pages_LandingPage.i_\u015Fletmenizi_daha_kolay_y\xF6netm")} sub="Tesisinizin ihtiyaçlarını konuşmak için demo talebi bırakın. Kurulum ve entegrasyon kapsamını birlikte değerlendirelim." center={false} />
               <div className="mt-8 space-y-3">
                 <div className="flex items-center gap-3 text-slate-300">
                   <span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20">
@@ -1389,7 +1253,7 @@ const LandingPage = () => {
 
             <div className="lg:col-span-7">
               <GlassCard className="p-6 sm:p-8">
-                <LandingContactForm />
+                <MarketingContactForm />
               </GlassCard>
             </div>
           </div>
@@ -1409,16 +1273,9 @@ const LandingPage = () => {
                 </div>
               </a>
               <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-400">{t("cm.pages_LandingPage.otelinizi_operasyonlar\u0131n\u0131z\u0131_ve")}</p>
-              {/* Status / uptime live badge */}
-              <a href="#iletisim" className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:border-emerald-300/50 hover:bg-emerald-400/15">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                </span>{t("cm.pages_LandingPage.t\xFCm_sistemler_aktif_99_9_uptim")}</a>
               <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
-                <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" />{t("cm.pages_LandingPage.kvkk_gdpr")}</span>
-                <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" />{t("cm.pages_LandingPage.2fa_audit_log")}</span>
-                <span className="inline-flex items-center gap-1.5"><Globe className="h-3.5 w-3.5" />{t("cm.pages_LandingPage.tr_en_de_ru")}</span>
+                <a href="/privacy-policy" className="inline-flex items-center gap-1.5 hover:text-slate-300"><Lock className="h-3.5 w-3.5" />Gizlilik politikası</a>
+                <a href={demoHref} className="inline-flex items-center gap-1.5 hover:text-slate-300"><Calendar className="h-3.5 w-3.5" />Ürün demosu</a>
               </div>
             </div>
 
@@ -1437,9 +1294,6 @@ const LandingPage = () => {
           }, {
             label: 'Çoklu Tesis',
             href: '#cozumler'
-          }, {
-            label: 'Yol Haritası',
-            href: '#iletisim'
           }]} />
             <FooterCol title={t("cm.pages_LandingPage.geli\u015Ftiriciler")} items={[{
             label: 'API & Webhook',
@@ -1453,28 +1307,13 @@ const LandingPage = () => {
           }, {
             label: 'OTA Bağlantıları',
             href: '#cozumler'
-          }, {
-            label: 'Dokümantasyon',
-            href: '#iletisim'
           }]} />
             <FooterCol title={t("cm.pages_LandingPage.g\xFCven")} items={[{
-            label: 'Güvenlik',
-            href: '/privacy-policy'
-          }, {
-            label: 'KVKK / GDPR',
-            href: '/privacy-policy'
-          }, {
-            label: 'Uptime Status',
-            href: '#iletisim'
-          }, {
-            label: 'Gizlilik',
-            href: '/privacy-policy'
-          }, {
-            label: 'Kullanım Şartları',
+            label: 'Gizlilik Politikası',
             href: '/privacy-policy'
           }]} />
             <FooterCol title={t("cm.pages_LandingPage.\u015Firket")} items={[{
-            label: 'Hakkımızda',
+            label: 'Canlı Demoda',
             href: '#hakkimizda'
           }, {
             label: 'İletişim',
@@ -1484,7 +1323,7 @@ const LandingPage = () => {
             href: '#sss'
           }, {
             label: 'Demo Talep',
-            href: '#iletisim'
+            href: demoHref
           }, {
             label: 'Müşteri Girişi',
             href: '/auth'
@@ -1498,7 +1337,7 @@ const LandingPage = () => {
             <div>© {new Date().getFullYear()} {content.brandName}{t("cm.pages_LandingPage._t\xFCm_haklar\u0131_sakl\u0131d\u0131r")}</div>
             <div className="flex items-center gap-4">
               <a href="/privacy-policy" className="hover:text-slate-300">{t("cm.pages_LandingPage.gizlilik")}</a>
-              <a href="/privacy-policy" className="hover:text-slate-300">{t("cm.pages_LandingPage.\u015Fartlar")}</a>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('syroce:marketing-preferences'))} className="hover:text-slate-300">Analitik Tercihi</button>
               <a href="#iletisim" className="hover:text-slate-300">{t("cm.pages_LandingPage.i_leti\u015Fim")}</a>
             </div>
           </div>
