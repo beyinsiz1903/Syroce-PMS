@@ -104,24 +104,40 @@ class RoomSwapService:
             target_room = rooms_by_id[target_room_id]
 
             active_statuses = ["confirmed", "guaranteed", "checked_in", "in_house", "pending"]
-            for booking, destination_room_id in ((source, target_room_id), (target, source_room_id)):
-                conflict = await db.bookings.find_one(
+            for booking, destination_room_id, nights in (
+                (source, target_room_id, source_nights),
+                (target, source_room_id, target_nights),
+            ):
+                # The room-night lock model treats checkout as exclusive.  A
+                # booking that checks out on the incoming guest's first day
+                # does not occupy that night, even if its stored checkout time
+                # is later than the incoming booking's midnight timestamp.
+                candidates = await db.bookings.find(
                     {
                         "tenant_id": tenant_id,
                         "id": {"$nin": [booking_id, target_booking_id]},
                         "room_id": destination_room_id,
                         "status": {"$in": active_statuses},
-                        "check_in": {"$lt": booking["check_out"]},
-                        "check_out": {"$gt": booking["check_in"]},
+                        "check_in": {"$lt": booking["check_out"][:10]},
+                        "check_out": {"$gte": nights[0]},
                     },
-                    {"_id": 0, "id": 1, "guest_name": 1},
+                    {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1},
                     session=session,
-                )
-                if conflict:
-                    raise RoomSwapError(
-                        f"Hedef oda başka bir rezervasyonla çakışıyor: {conflict.get('guest_name') or conflict['id']}.",
-                        "TARGET_ROOM_CONFLICT",
-                    )
+                ).to_list(None)
+                desired_nights = set(nights)
+                for conflict in candidates:
+                    try:
+                        conflict_nights = _night_dates(conflict["check_in"], conflict["check_out"])
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise RoomSwapError(
+                            "Hedef odadaki rezervasyonun tarihleri geçersiz; oda takası güvenle yapılamadı.",
+                            "INVALID_CONFLICT_DATES",
+                        ) from exc
+                    if desired_nights.intersection(conflict_nights):
+                        raise RoomSwapError(
+                            f"Hedef oda başka bir rezervasyonla çakışıyor: {conflict.get('guest_name') or conflict['id']}.",
+                            "TARGET_ROOM_CONFLICT",
+                        )
 
             desired_locks = [
                 (target_room_id, night, booking_id) for night in source_nights
