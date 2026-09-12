@@ -498,8 +498,21 @@ const CalendarGrid = ({
                             const covered = roomBookings.some(b => isActiveOn(b, dStr) && b.status !== 'checked_out');
                             const roomBlock = getRoomBlockForDate(room.id, date, roomBlocks);
                             const bBlockIsStart = roomBlock && isBlockStart(roomBlock, date);
-                            const isDragOver = dragOverCell?.roomId === room.id &&
-                              new Date(dragOverCell.date).toDateString() === date.toDateString();
+                            // When a multi-night booking is being dragged, highlight the
+                            // whole projected span (check-in → check-out of the *would-be*
+                            // placement) rather than only the single cell under the cursor.
+                            // dragOverCell carries { roomId, date, nights, offsetDays } so we
+                            // can reconstruct the full destination window here.
+                            const isDragOver = (() => {
+                              if (!dragOverCell || dragOverCell.roomId !== room.id) return false;
+                              const hoveredMs = new Date(dragOverCell.date).getTime();
+                              const offsetMs = (dragOverCell.offsetDays || 0) * 86400000;
+                              const spanNights = dragOverCell.nights || 1;
+                              const newCheckInMs = hoveredMs - offsetMs;
+                              const newCheckOutMs = newCheckInMs + spanNights * 86400000;
+                              const cellMs = date.getTime();
+                              return cellMs >= newCheckInMs && cellMs < newCheckOutMs;
+                            })();
                             const past = isPastDate(date);
                             const blockedForSell = !!roomBlock && roomBlock.allow_sell === false;
                             const invalidDrop = isDragOver && blockedForSell;

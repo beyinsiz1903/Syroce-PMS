@@ -817,7 +817,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleDragOver = (e, roomId, date) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setDragOverCell({ roomId, date: date.toISOString() });
+    // Pass the dragging booking's night count and drag offset so CalendarGrid
+    // can highlight the full stay span (not just the cell under the cursor).
+    const nights = draggingBooking
+      ? Math.max(1, Math.round(
+          (new Date(`${toDateStringUTC(draggingBooking.check_out)}T00:00:00Z`) -
+           new Date(`${toDateStringUTC(draggingBooking.check_in)}T00:00:00Z`)) / 86400000,
+        ))
+      : 1;
+    const offsetDays = Number(draggingBooking?._dragOffsetDays || 0);
+    setDragOverCell({ roomId, date: date.toISOString(), nights, offsetDays });
   };
   const handleDragLeave = () => { setDragOverCell(null); };
   const handleDragEnd = () => { setDraggingBooking(null); setResizingBooking(null); setDragOverCell(null); };
