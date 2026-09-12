@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Home, Repeat2, AlertTriangle } from 'lucide-react';
-import { API, fmtTL, fmtTs, reservationNights } from './helpers';
+import { API, fmtTL, fmtCurrency, fmtTs, reservationNights } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [roomTypes, setRoomTypes] = useState([]);
   const [selectedType, setSelectedType] = useState('');
@@ -61,7 +62,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
           <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">{booking?.room_number || '-'}</div>
           <div>
             <div className="text-sm font-semibold">{room?.room_type || 'Oda'} - {booking?.room_number || '-'}</div>
-            <div className="text-xs text-gray-500">Kat: {room?.floor || '-'} | Fiyat: {fmtTL(room?.base_price)} TL/gece</div>
+            <div className="text-xs text-gray-500">Kat: {room?.floor || '-'} | Fiyat: {fmtCurrency(room?.base_price, currency)}/gece</div>
           </div>
         </div>
       </div>
@@ -79,7 +80,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                   <option value="">{t('cm.pages_reservationdetail_OperationTabs.oda_tipi_seciniz')}</option>
                   {roomTypes.map(rt => (
                     <option key={rt.type} value={rt.type}>
-                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} {t('cm.pages_reservationdetail_OperationTabs.musait')} {fmtTL(rt.base_price)} TL
+                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} {t('cm.pages_reservationdetail_OperationTabs.musait')} {fmtCurrency(rt.base_price, currency)}
                     </option>
                   ))}
                 </select>
@@ -100,7 +101,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 
             {isUpgrade && selectedType && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                <div className="text-xs font-semibold text-amber-800">{t('cm.pages_reservationdetail_OperationTabs.ust_kategori_oda_fiyat_farki')} {fmtTL(priceDiff)} TL/gece</div>
+                <div className="text-xs font-semibold text-amber-800">{t('cm.pages_reservationdetail_OperationTabs.ust_kategori_oda_fiyat_farki')} {fmtCurrency(priceDiff, currency)}/gece</div>
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="current" checked={pricingOption === 'current'} onChange={e => setPricingOption(e.target.value)} />
@@ -108,7 +109,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="upgrade" checked={pricingOption === 'upgrade'} onChange={e => setPricingOption(e.target.value)} />
-                    {t('cm.pages_reservationdetail_OperationTabs.guncel_fiyat_farki')}{fmtTL(priceDiff)} TL)
+                    {t('cm.pages_reservationdetail_OperationTabs.guncel_fiyat_farki')}{fmtCurrency(priceDiff, currency)})
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="custom" checked={pricingOption === 'custom'} onChange={e => setPricingOption(e.target.value)} />
@@ -159,6 +160,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 }
 
 export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [reason, setReason] = useState('');
   const [cancelType, setCancelType] = useState('guest_request');
@@ -241,7 +243,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="full_stay" checked={noshowChargeType === 'full_stay'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  {t('cm.pages_reservationdetail_OperationTabs.tum_konaklama')}{fmtTL(booking?.total_amount)} TL)
+                  {t('cm.pages_reservationdetail_OperationTabs.tum_konaklama')}{fmtCurrency(booking?.total_amount, currency)})
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="custom" checked={noshowChargeType === 'custom'} onChange={e => setNoshowChargeType(e.target.value)} />

@@ -15,7 +15,7 @@ import {
   ChevronDown, DoorOpen, Globe, Clock, Layers, Eye, BedDouble,
 } from 'lucide-react';
 
-import { API, fmtTL, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
+import { API, fmtTL, fmtCurrency, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
@@ -161,8 +161,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     const confirmed = await confirmDialog({
       title: isDuplicateAutomaticTax ? 'Mükerrer konaklama vergisini düzelt' : 'Rezervasyon fiyatını düzelt',
       message: isDuplicateAutomaticTax
-        ? `Vergi dahil ${fmtTL(issue.expected_total)} TL rezervasyona ${fmtTL(issue.overcharge)} TL otomatik konaklama vergisi ikinci kez eklenmiş. Bu sistem satırı terslenecek; rezervasyon ve ödeme kaydı korunacak. Devam edilsin mi?`
-        : `${fmtTL(issue.observed_total)} TL olan hatalı folyo bakiyesi, girilen veya kanaldan teyit edilen ${fmtTL(issue.expected_total)} TL nihai rezervasyon toplamıyla eşitlenecek. Rezervasyon kaydı korunacak. Devam edilsin mi?`,
+        ? `Vergi dahil ${fmtCurrency(issue.expected_total, currency)} rezervasyona ${fmtCurrency(issue.overcharge, currency)} otomatik konaklama vergisi ikinci kez eklenmiş. Bu sistem satırı terslenecek; rezervasyon ve ödeme kaydı korunacak. Devam edilsin mi?`
+        : `${fmtCurrency(issue.observed_total, currency)} olan hatalı folyo bakiyesi, girilen veya kanaldan teyit edilen ${fmtCurrency(issue.expected_total, currency)} nihai rezervasyon toplamıyla eşitlenecek. Rezervasyon kaydı korunacak. Devam edilsin mi?`,
       confirmText: isDuplicateAutomaticTax ? 'Mükerrer vergiyi düzelt' : 'Güvenli şekilde düzelt',
     });
     if (!confirmed) return;
@@ -181,7 +181,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       toast.success(
         response.data?.already_repaired
           ? 'Rezervasyon fiyatı zaten doğru'
-          : `${isDuplicateAutomaticTax ? 'Mükerrer konaklama vergisi kaldırıldı' : 'Folyo düzeltildi'}${typeof reduction === 'number' ? `: ${fmtTL(reduction)} TL` : ''}`,
+          : `${isDuplicateAutomaticTax ? 'Mükerrer konaklama vergisi kaldırıldı' : 'Folyo düzeltildi'}${typeof reduction === 'number' ? `: ${fmtCurrency(reduction, currency)}` : ''}`,
       );
       await loadData();
     } catch (error) {
@@ -279,6 +279,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   );
 
   const { booking, guest, room, company, folios, charges, payments, extra_charges, notes, history, room_moves, daily_rates, guests, summary, communication_logs, deposits } = data;
+  const currency = booking?.currency || "TL";
 
   // rawBalance: bakiye guard'ına HAM geçilir (undefined/null kalmalı → util
   // bilinmeyeni "açık" sayıp çevrimdışı kuyruğa ALMASIN). balance yalnız görüntü.
@@ -446,7 +447,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               </Badge>
             ) : hasReservationAmountDue && (
               <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
-                <AlertTriangle className="w-3 h-3 mr-1" /> Kalan tahsilat: {fmtTL(reservationTotalDue)} TL
+                <AlertTriangle className="w-3 h-3 mr-1" /> Kalan tahsilat: {fmtCurrency(reservationTotalDue, currency)}
               </Badge>
             )}
             {readOnly && (
@@ -486,32 +487,32 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               }`} data-testid="financial-summary-card">
                 <div>
                   <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{pricingReconciliationRequired ? 'Fiyat / tahakkuk farkı' : 'Kalan tahsilat'}</p>
-                  <div className={`text-2xl font-bold leading-tight ${pricingReconciliationRequired ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(pricingReconciliationRequired ? pricingReconciliationDifference : reservationTotalDue)} TL</div>
+                  <div className={`text-2xl font-bold leading-tight ${pricingReconciliationRequired ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtCurrency(pricingReconciliationRequired ? pricingReconciliationDifference : reservationTotalDue, currency)}</div>
                   <p className="text-[11px] text-slate-500">{pricingReconciliationRequired ? 'Tahsilat alınmamalı; fiyat ve tahakkuk düzeltilmeli' : hasReservationAmountDue ? 'Rezervasyon toplamından kalan' : 'Tahsilat tamamlandı'}</p>
                 </div>
                 <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
-                    <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
+                    <span className="font-semibold text-slate-800">{fmtCurrency(summary?.total_amount, currency)}</span>
                   </div>
                   {pricingReconciliationRequired && (
                     <div className="rounded-md bg-amber-100/70 px-2 py-1.5 text-[11px] leading-4 text-amber-900" data-testid="pricing-reconciliation-alert">
-                      Aktif oda tahakkukları, onaylı rezervasyon toplamını {fmtTL(pricingReconciliationDifference)} TL aşıyor. Ödeme yerine finansal mutabakat yapın.
+                      Aktif oda tahakkukları, onaylı rezervasyon toplamını {fmtCurrency(pricingReconciliationDifference, currency)} aşıyor. Ödeme yerine finansal mutabakat yapın.
                     </div>
                   )}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
-                    <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
+                    <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.total_payments, currency)}</span>
                   </div>
                   {unpostedRoomAmount > 0.01 && (
                     <>
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Folio bakiyesi</span>
-                        <span className="font-semibold text-amber-700">{fmtTL(displayedFolioBalance)} TL</span>
+                        <span className="font-semibold text-amber-700">{fmtCurrency(displayedFolioBalance, currency)}</span>
                       </div>
                       <div className="flex justify-between text-xs" data-testid="unposted-room-amount">
                         <span className="text-slate-500">Tahakkuk bekleyen konaklama</span>
-                        <span className="font-semibold text-slate-700">{fmtTL(unpostedRoomAmount)} TL</span>
+                        <span className="font-semibold text-slate-700">{fmtCurrency(unpostedRoomAmount, currency)}</span>
                       </div>
                       {hasAllocatedPrepayment && (
                         <div className="text-[11px] leading-4 text-emerald-700">
@@ -523,7 +524,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   {(summary?.total_deposits || 0) > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Depozito</span>
-                      <span className="font-semibold text-sky-600">{fmtTL(summary?.total_deposits)} TL</span>
+                      <span className="font-semibold text-sky-600">{fmtCurrency(summary?.total_deposits, currency)}</span>
                     </div>
                   )}
                 </div>
@@ -538,7 +539,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                             : 'Nihai rezervasyon tutarına vergi tekrar eklenmiş'}
                         </p>
                         <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
-                          Doğru toplam {fmtTL(channelPricingIssue.expected_total)} TL. Mükerrer tutar {fmtTL(channelPricingIssue.overcharge)} TL.
+                          Doğru toplam {fmtCurrency(channelPricingIssue.expected_total, currency)}. Mükerrer tutar {fmtCurrency(channelPricingIssue.overcharge, currency)}.
                         </p>
                       </div>
                     </div>
@@ -693,7 +694,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {hasOpenBalance ? (
                   <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
                     <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0" />
-                    <span className="text-[11px] text-rose-700 font-medium">{t('cm.pages_ReservationDetailModal.odeme_bekleniyor')} {fmtTL(balance)} TL</span>
+                    <span className="text-[11px] text-rose-700 font-medium">{t('cm.pages_ReservationDetailModal.odeme_bekleniyor')} {fmtCurrency(balance, currency)}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">

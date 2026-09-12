@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity , UserPlus} from 'lucide-react';
-import { fmtDate, fmtDateTime, fmtTL, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine, reservationNights } from './helpers';
+import { fmtDate, fmtDateTime, fmtTL, fmtCurrency, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine, reservationNights } from './helpers';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import api from '@/api/axios';
 const ALERT_LEVEL_BG = {
@@ -98,6 +98,7 @@ export function GeneralInfoTab({
   canEditStay = false,
   readOnly = false,
 }) {
+  const currency = booking?.currency || "TL";
   const {
     t
   } = useTranslation();
@@ -245,12 +246,12 @@ export function GeneralInfoTab({
             <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm grid grid-cols-1 sm:grid-cols-2 sm:gap-x-6">
               <InfoLine label="Ödeme Durumu" value={<span className={hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}>{hasOpenBalance ? 'Ödeme bekleniyor' : 'Ödeme tamamlandı'}</span>} />
               <InfoLine label="Para Birimi" value="TL" />
-              <InfoLine label="Toplam Tutar" value={`${fmtTL(summary.total_amount)} TL`} />
-              <InfoLine label="Ödenen" value={`${fmtTL(summary.total_payments)} TL`} />
-              <InfoLine label="Kalan Bakiye" value={<span className={`font-semibold ${hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</span>} />
+              <InfoLine label="Toplam Tutar" value={`${fmtCurrency(summary.total_amount, currency)}`} />
+              <InfoLine label="Ödenen" value={`${fmtCurrency(summary.total_payments, currency)}`} />
+              <InfoLine label="Kalan Bakiye" value={<span className={`font-semibold ${hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtCurrency(balance, currency)}</span>} />
               {lastPayment?.method && <InfoLine label="Ödeme Yöntemi" value={PAYMENT_METHOD_LABELS[String(lastPayment.method).toLowerCase()] || lastPayment.method} />}
               {hasDeposit && <InfoLine label="Depozito Durumu" value={depositAmt > 0 ? 'Depozito alındı' : 'Depozito alınmadı'} />}
-              {depositAmt > 0 && <InfoLine label="Depozito Tutarı" value={`${fmtTL(depositAmt)} TL`} />}
+              {depositAmt > 0 && <InfoLine label="Depozito Tutarı" value={`${fmtCurrency(depositAmt, currency)}`} />}
             </div>
           </section>}
       </div>

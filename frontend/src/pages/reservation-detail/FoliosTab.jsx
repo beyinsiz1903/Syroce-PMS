@@ -8,7 +8,7 @@ import {
   CreditCard, ArrowRightLeft, Building2, DollarSign, ArrowDownUp,
   Plus, Receipt, FileText, Loader2, Split
 } from 'lucide-react';
-import { API, fmtTL, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
+import { API, fmtTL, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import {
   classifyGuestPayment,
@@ -16,6 +16,7 @@ import {
 } from '@/utils/paymentClassification';
 
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [showPayment, setShowPayment] = useState(false);
@@ -132,19 +133,19 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   return (
     <div data-testid="folios-tab" className="space-y-4">
       <div className="grid grid-cols-4 gap-3">
-        <SummaryCard label="Toplam" value={summary?.total_amount} color="blue" />
-        <SummaryCard label="Borçlar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
-        <SummaryCard label="Ödemeler" value={summary?.total_payments} color="emerald" />
-        <SummaryCard label="Bakiye" value={displayedFolioBalance} color={displayedFolioBalance > 0 ? 'red' : 'green'} />
+        <SummaryCard currency={currency} label="Toplam" value={summary?.total_amount} color="blue" />
+        <SummaryCard currency={currency} label="Borçlar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
+        <SummaryCard currency={currency} label="Ödemeler" value={summary?.total_payments} color="emerald" />
+        <SummaryCard currency={currency} label="Bakiye" value={displayedFolioBalance} color={displayedFolioBalance > 0 ? 'red' : 'green'} />
       </div>
       {hasAllocatedPrepayment && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="allocated-prepayment-note">
-          {fmtTL(Math.abs(rawFolioBalance))} TL peşin tahsilat, {fmtTL(pendingRoomAmount)} TL bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
+          {fmtTL(Math.abs(rawFolioBalance))} TL peşin tahsilat, {fmtCurrency(pendingRoomAmount, currency)} bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
         </div>
       )}
       {pricingReconciliationRequired && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="folio-pricing-reconciliation-alert">
-          Oda tahakkukları, onaylı rezervasyon toplamından {fmtTL(pricingReconciliationDifference)} TL fazla. Bu fark tahsil edilmez; ödeme almadan önce fiyat/tahakkuk mutabakatını tamamlayın.
+          Oda tahakkukları, onaylı rezervasyon toplamından {fmtCurrency(pricingReconciliationDifference, currency)} fazla. Bu fark tahsil edilmez; ödeme almadan önce fiyat/tahakkuk mutabakatını tamamlayın.
         </div>
       )}
       <div className="flex flex-wrap gap-2">
@@ -162,7 +163,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         {hasHistoricalRoomCredit && (
           <Button size="sm" variant="outline" onClick={completePendingRoomCharge} disabled={reconcilingRoomCharge} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-complete-pending-room-charge">
             {reconcilingRoomCharge ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Receipt className="w-3 h-3 mr-1" />}
-            Eksik Konaklamayı Tahakkuk Ettir ({fmtTL(pendingRoomAmount)} TL)
+            Eksik Konaklamayı Tahakkuk Ettir ({fmtCurrency(pendingRoomAmount, currency)})
           </Button>
         )}
       </div>
@@ -174,7 +175,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               label="Kaynak Folyo"
               value={splitSourceId || defaultSourceId}
               onChange={setSplitSourceId}
-              options={folioList.map(f => [f.id, `${f.folio_number} (${f.folio_type || ''}) — Bakiye ${fmtTL(f.balance)} TL`])}
+              options={folioList.map(f => [f.id, `${f.folio_number} (${f.folio_type || ''}) — Bakiye ${fmtCurrency(f.balance, currency)}`])}
             />
           )}
           {splitFolio && (
@@ -343,7 +344,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                 <div className="text-xs text-gray-400">{fmtTs(item.created_at || item.processed_at)}{item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}</div>
               </div>
               <div className={`text-sm font-bold ${item._type === 'payment' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                {item._type === 'payment' ? '-' : '+'}{fmtTL(item.total ?? item.charge_amount ?? item.amount)} TL
+                {item._type === 'payment' ? '-' : '+'}{fmtCurrency(item.total ?? item.charge_amount ?? item.amount, currency)}
               </div>
             </div>
           ))
