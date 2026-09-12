@@ -31,6 +31,23 @@ def _service(settings=None):
 
 
 @pytest.mark.asyncio
+async def test_complimentary_booking_rejects_positive_total_on_stay_edit():
+    service, _ = _service()
+    booking = {**_booking("checked_in"), "is_complimentary": True, "total_amount": 0}
+
+    with pytest.raises(HTTPException) as exc:
+        await service._build_update_data(
+            tenant_id=TENANT,
+            booking_id=booking["id"],
+            existing_booking=booking,
+            booking_data={"check_out": "2026-08-31T12:00:00+03:00", "total_amount": 2000},
+        )
+
+    assert exc.value.status_code == 422
+    assert "Comp rezervasyona" in exc.value.detail
+
+
+@pytest.mark.asyncio
 async def test_checked_in_arrival_date_cannot_be_backdated():
     service, _ = _service()
 

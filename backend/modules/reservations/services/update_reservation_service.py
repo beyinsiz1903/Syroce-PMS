@@ -514,6 +514,17 @@ class UpdateReservationService:
     ) -> dict[str, Any]:
         update_data: dict[str, Any] = {}
 
+        if existing_booking.get("is_complimentary") and "total_amount" in booking_data:
+            try:
+                requested_total = float(booking_data["total_amount"])
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail="Geçersiz rezervasyon tutarı") from exc
+            if requested_total != 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Comp rezervasyona konaklama ücreti yazılamaz; önce comp durumunu kaldırın",
+                )
+
         if "guest_id" in booking_data and booking_data["guest_id"] != existing_booking.get("guest_id"):
             guest = await self.repository.get_guest_for_tenant(tenant_id, booking_data["guest_id"])
             if not guest:
