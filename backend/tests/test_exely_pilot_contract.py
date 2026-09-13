@@ -47,6 +47,7 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_DATE_TO": date_to.isoformat(),
         "EXELY_PILOT_DELUXE_ROOM_TYPE_CODE": "synthetic-deluxe-room",
         "EXELY_PILOT_ENDPOINT_URL": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc",
+        "EXELY_PILOT_EXPECTED_HOTEL_CODE": "synthetic-property",
         "EXELY_PILOT_HMAC_KEY": "synthetic-hmac-key-with-at-least-32-chars",
         "EXELY_PILOT_HOTEL_CODE": "synthetic-property",
         "EXELY_PILOT_MIN_LOS": "2",
@@ -292,6 +293,14 @@ def test_discovery_uses_explicit_api_codes_without_mapping_secrets(monkeypatch):
     assert settings.room_type_codes == ("synthetic-standard-room", "synthetic-deluxe-room")
     assert settings.rate_plan_code == "synthetic-base-rate"
     assert settings.test_date is not None
+
+
+def test_pilot_rejects_wrong_hotel_code_without_disclosing_it(monkeypatch):
+    _base_env(monkeypatch, operation="discovery")
+    monkeypatch.setenv("EXELY_PILOT_EXPECTED_HOTEL_CODE", "another-test-property")
+
+    with pytest.raises(pilot.PilotSafetyError, match="^BLOCKED_PILOT_HOTEL_CODE_MISMATCH$"):
+        pilot._load_settings()
 
 
 def test_ari_write_still_requires_mapping_secrets(monkeypatch):

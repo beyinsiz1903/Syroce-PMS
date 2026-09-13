@@ -328,6 +328,9 @@ def _load_settings() -> PilotSettings:
         room_type_code = ""
         rate_plan_code = ""
     hotel_code = _required_env("EXELY_PILOT_HOTEL_CODE")
+    expected_hotel_code = _required_env("EXELY_PILOT_EXPECTED_HOTEL_CODE")
+    if not hmac.compare_digest(hotel_code, expected_hotel_code):
+        raise PilotSafetyError("BLOCKED_PILOT_HOTEL_CODE_MISMATCH")
     tenant_id = (
         "exely-pilot-"
         + hmac.new(
