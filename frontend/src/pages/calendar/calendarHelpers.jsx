@@ -430,6 +430,11 @@ export const getSourceColor = (booking) => {
   if (channel.includes('hotels')) return { bg: '#BE123C', border: '#9F1239', label: 'Hotels.com' };
   if (channel.includes('online')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Online' };
   if (channel.includes('setur')) return { bg: '#0D9488', border: '#0F766E', label: 'Setur' };
+  if (channel.includes('etstur') || channel === 'ets') return { bg: '#0891B2', border: '#0E7490', label: 'Etstur' };
+  if (channel.includes('odamax')) return { bg: '#F59E0B', border: '#D97706', label: 'Odamax' };
+  if (channel.includes('tatilsepeti')) return { bg: '#EF4444', border: '#DC2626', label: 'Tatilsepeti' };
+  if (channel.includes('jolly')) return { bg: '#8B5CF6', border: '#7C3AED', label: 'Jolly' };
+  if (channel.includes('hotelrunner')) return { bg: '#3B82F6', border: '#2563EB', label: 'HotelRunner' };
   if (channel === 'direct' || channel === 'phone' || channel === 'walk_in' || channel === 'walk-in') return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
   return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
 };
