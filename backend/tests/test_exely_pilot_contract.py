@@ -807,11 +807,31 @@ async def test_exact_read_probe_uses_wsdl_unique_id_without_writing():
     assert root.find(".//ota:HotelReadRequest", ns) is None
     unique_id = root.find(".//ota:ReadRequest/ota:UniqueID", ns)
     assert unique_id is not None and unique_id.get("ID") == "20261020-501694-123456"
+    assert unique_id.get("Type") == "14"
     assert args[1] == get_soap_action_uri("OTA_ReadRQ")
     assert kwargs == {"operation": "reservation_read"}
     assert metadata["match_count_class"] == "ZERO"
     assert "20261020-501694-123456" not in repr(metadata)
     assert "synthetic-password" not in repr(metadata)
+
+
+@pytest.mark.asyncio
+async def test_exact_read_probe_reports_only_numeric_provider_rejection_code(monkeypatch):
+    provider = SimpleNamespace(_send_read=AsyncMock(return_value=b"synthetic"))
+    settings = SimpleNamespace(
+        username="synthetic-user",
+        password="synthetic-password",
+        hotel_code="501694",
+        reservation_id="20261020-501694-123456",
+    )
+    monkeypatch.setattr(
+        pilot,
+        "parse_read_rs",
+        lambda _raw: {"success": False, "provider_codes": ["private-booking-id", "783"]},
+    )
+
+    with pytest.raises(pilot.PilotSafetyError, match="^BLOCKED_EXACT_PROBE_READ_FAILED:783$"):
+        await pilot._read_reservations_exact_probe(provider, settings)
 
 
 @pytest.mark.asyncio

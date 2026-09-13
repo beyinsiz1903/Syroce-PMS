@@ -618,7 +618,7 @@ async def _read_reservations_exact_probe(provider: ExelyProvider, settings: Pilo
         raise PilotSafetyError("BLOCKED_EXACT_PROBE_REQUEST_SHAPE_INVALID")
     read_requests.remove(hotel_read)
     read_request = etree.SubElement(read_requests, f"{{{_OTA_NS}}}ReadRequest")
-    etree.SubElement(read_request, f"{{{_OTA_NS}}}UniqueID", attrib={"ID": settings.reservation_id})
+    etree.SubElement(read_request, f"{{{_OTA_NS}}}UniqueID", attrib={"Type": "14", "ID": settings.reservation_id})
 
     raw = await provider._send_read(
         etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode(),
@@ -627,7 +627,12 @@ async def _read_reservations_exact_probe(provider: ExelyProvider, settings: Pilo
     )
     result = parse_read_rs(raw)
     if not result.get("success"):
-        raise PilotSafetyError("BLOCKED_EXACT_PROBE_READ_FAILED")
+        numeric_codes = [
+            code for code in result.get("provider_codes", [])
+            if isinstance(code, str) and re.fullmatch(r"-?[0-9]{1,5}", code)
+        ]
+        code_class = numeric_codes[0] if numeric_codes else "NO_NUMERIC_CODE"
+        raise PilotSafetyError(f"BLOCKED_EXACT_PROBE_READ_FAILED:{code_class}")
     reservations = result.get("reservations")
     if not isinstance(reservations, list):
         raise PilotSafetyError("BLOCKED_EXACT_PROBE_RESPONSE_INVALID")
