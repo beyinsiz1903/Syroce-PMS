@@ -259,7 +259,7 @@ def _load_settings() -> PilotSettings:
     ).hexdigest()[:12]
 
     values: dict[str, Any] = {}
-    if operation in {*_SINGLE_ARI_OPERATIONS, "inventory_read"}:
+    if operation in {*_SINGLE_ARI_OPERATIONS, "inventory_read", "discovery"}:
         raw_date = _required_env("EXELY_PILOT_TEST_DATE")
         try:
             test_date = date.fromisoformat(raw_date)
@@ -312,7 +312,7 @@ def _load_settings() -> PilotSettings:
             raise PilotSafetyError("BLOCKED_DURABLE_PMS_RESULT_NOT_ATTESTED")
 
     room_type_codes: tuple[str, ...] = ()
-    if operation in _BATCH_ARI_OPERATIONS:
+    if operation in {*_BATCH_ARI_OPERATIONS, "discovery"}:
         room_type_codes = (
             _required_env("EXELY_PILOT_STANDARD_ROOM_TYPE_CODE"),
             _required_env("EXELY_PILOT_DELUXE_ROOM_TYPE_CODE"),
@@ -324,9 +324,6 @@ def _load_settings() -> PilotSettings:
     elif operation in {*_ARI_OPERATIONS, "inventory_read", "reservation_import", "reservation_replay", "reservation_ack"}:
         room_type_code = _required_env("EXELY_PILOT_ROOM_TYPE_CODE")
         rate_plan_code = _required_env("EXELY_PILOT_RATE_PLAN_CODE")
-    elif operation == "discovery":
-        room_type_code = os.environ.get("EXELY_PILOT_ROOM_TYPE_CODE", "").strip()
-        rate_plan_code = os.environ.get("EXELY_PILOT_RATE_PLAN_CODE", "").strip()
     else:
         room_type_code = ""
         rate_plan_code = ""
@@ -440,7 +437,13 @@ async def _discover_mapping(
         "capability_match": False,
         "provider_write_count": 0,
     }
-    result = await provider.discover_rooms()
+    if settings.test_date is not None:
+        result = await provider.discover_rooms(
+            checkin=settings.test_date.isoformat(),
+            checkout=(settings.test_date + timedelta(days=1)).isoformat(),
+        )
+    else:
+        result = await provider.discover_rooms()
     if not result.success or not isinstance(result.data, dict):
         metadata["provider_status_class"] = result.error_type or "MALFORMED"
         _fail_safe(record_property, "BLOCKED_READONLY_DISCOVERY_FAILED", metadata)

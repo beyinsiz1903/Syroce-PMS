@@ -281,7 +281,7 @@ def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     assert pilot._load_settings().operation == operation
 
 
-def test_discovery_allows_mapping_secrets_to_be_absent(monkeypatch):
+def test_discovery_uses_explicit_api_codes_without_mapping_secrets(monkeypatch):
     _base_env(monkeypatch, operation="discovery")
     monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
     monkeypatch.delenv("EXELY_PILOT_RATE_PLAN_CODE")
@@ -289,7 +289,9 @@ def test_discovery_allows_mapping_secrets_to_be_absent(monkeypatch):
     settings = pilot._load_settings()
 
     assert settings.room_type_code == ""
-    assert settings.rate_plan_code == ""
+    assert settings.room_type_codes == ("synthetic-standard-room", "synthetic-deluxe-room")
+    assert settings.rate_plan_code == "synthetic-base-rate"
+    assert settings.test_date is not None
 
 
 def test_ari_write_still_requires_mapping_secrets(monkeypatch):
@@ -357,7 +359,7 @@ def test_inventory_read_requires_mapping_secrets(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_discovery_without_target_mapping_reports_safe_capability_metadata(monkeypatch):
+async def test_discovery_uses_future_date_and_requires_both_api_room_codes(monkeypatch):
     _base_env(monkeypatch, operation="discovery")
     monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
     monkeypatch.delenv("EXELY_PILOT_RATE_PLAN_CODE")
@@ -367,8 +369,11 @@ async def test_discovery_without_target_mapping_reports_safe_capability_metadata
             return_value=SimpleNamespace(
                 success=True,
                 data={
-                    "room_types": [{"code": "synthetic-room-a"}, {"code": "synthetic-room-b"}],
-                    "rate_plans": [{"code": "synthetic-rate"}],
+                    "room_types": [
+                        {"code": "synthetic-standard-room"},
+                        {"code": "synthetic-deluxe-room"},
+                    ],
+                    "rate_plans": [{"code": "synthetic-base-rate"}],
                 },
                 metadata={"provider_status_class": "SUCCESS"},
             )
@@ -381,7 +386,12 @@ async def test_discovery_without_target_mapping_reports_safe_capability_metadata
     assert metadata["capability_match"] is True
     assert metadata["room_match"] is True
     assert metadata["rate_plan_match"] is True
-    assert metadata["match_count_class"] == "MULTIPLE"
+    assert metadata["match_count_class"] == "ONE"
+    assert settings.test_date is not None
+    provider.discover_rooms.assert_awaited_once_with(
+        checkin=settings.test_date.isoformat(),
+        checkout=(settings.test_date + timedelta(days=1)).isoformat(),
+    )
     assert "synthetic-room" not in str(metadata)
     assert "synthetic-rate" not in str(metadata)
     assert recorded == []
