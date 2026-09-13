@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
+from defusedxml import ElementTree as safe_ET
 
 from core.database import db
 from core.tenant_db import tenant_context
@@ -61,6 +62,41 @@ _ARI_OPERATIONS = frozenset({*_SINGLE_ARI_OPERATIONS, *_BATCH_ARI_OPERATIONS})
 _WRITE_OPERATIONS = frozenset({*_ARI_OPERATIONS, "reservation_ack"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+_OTA_NS = "http://www.opentravel.org/OTA/2003/05"
+
+
+def _read_response_structure(xml_bytes: bytes) -> dict[str, Any]:
+    """Classify reservation XML structure without retaining payload or identifiers."""
+    try:
+        root = safe_ET.fromstring(xml_bytes)
+    except Exception:
+        return {"read_response_shape": "MALFORMED"}
+
+    body = root.find("{http://schemas.xmlsoap.org/soap/envelope/}Body")
+    if body is None:
+        return {"read_response_shape": "NO_SOAP_BODY"}
+    children = list(body)
+    if not children:
+        return {"read_response_shape": "EMPTY_SOAP_BODY"}
+
+    response = children[0]
+    response_name = response.tag.rsplit("}", 1)[-1]
+    shape = response_name if response_name in {"OTA_ReadRS", "OTA_ResRetrieveRS"} else "OTHER"
+    all_reservations = sum(
+        element.tag.rsplit("}", 1)[-1] == "HotelReservation" for element in response.iter()
+    )
+    canonical_reservations = sum(
+        element.tag == f"{{{_OTA_NS}}}HotelReservation" for element in response.iter()
+    )
+
+    def count_class(count: int) -> str:
+        return "ZERO" if count == 0 else "ONE" if count == 1 else "MULTIPLE"
+
+    return {
+        "read_response_shape": shape,
+        "raw_reservation_count_class": count_class(all_reservations),
+        "canonical_reservation_count_class": count_class(canonical_reservations),
+    }
 
 
 class PilotSafetyError(RuntimeError):
@@ -111,6 +147,7 @@ class PilotTransportGuard:
         self.read_count = 0
         self.write_count = 0
         self.last_exception_class = ""
+        self.read_structure: dict[str, Any] = {}
         self._transport.send_soap = self._guarded_send
 
     @staticmethod
@@ -142,11 +179,14 @@ class PilotTransportGuard:
             raise PilotSafetyError("BLOCKED_UNEXPECTED_SOAP_ACTION")
 
         try:
-            return await self._original_send(
+            response = await self._original_send(
                 xml_body,
                 soap_action,
                 correlation_id=correlation_id,
             )
+            if soap_action == get_soap_action_uri("OTA_ReadRQ"):
+                self.read_structure = _read_response_structure(response)
+            return response
         except Exception as exc:
             self.last_exception_class = type(exc).__name__
             raise
@@ -391,6 +431,9 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "provider_read_count",
         "provider_write_count",
         "read_count",
+        "read_response_shape",
+        "raw_reservation_count_class",
+        "canonical_reservation_count_class",
         "result",
         "room_match",
         "rate_plan_match",
@@ -638,6 +681,8 @@ async def test_exely_pilot_readonly(record_property):
                 require_exactly_one=False,
             )
         metadata.update({"read_count": guard.read_count, "provider_write_count": guard.write_count})
+        if settings.operation == "reservation_read":
+            metadata.update(guard.read_structure)
         if guard.write_count != 0:
             _fail_safe(record_property, "FAIL_READONLY_PROVIDER_WRITE_DETECTED", metadata)
         if guard.read_count != 1:

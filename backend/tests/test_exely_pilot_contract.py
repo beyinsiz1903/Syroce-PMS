@@ -694,6 +694,45 @@ def test_safe_metadata_drops_payload_and_identifier_fields(caplog):
     assert sensitive not in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("reservation_namespace", "expected_canonical"),
+    [
+        ("http://www.opentravel.org/OTA/2003/05", "ONE"),
+        ("urn:alternate-test-namespace", "ZERO"),
+    ],
+)
+def test_read_response_structure_records_only_safe_counts(reservation_namespace, expected_canonical):
+    xml = f'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ReadRS xmlns="http://www.opentravel.org/OTA/2003/05">
+        <Success/><HotelReservations><HotelReservation xmlns="{reservation_namespace}"
+          ResID_Value="sensitive-booking-id"><ResGuests><ResGuest>private guest</ResGuest></ResGuests>
+        </HotelReservation></HotelReservations>
+      </OTA_ReadRS></s:Body>
+    </s:Envelope>'''.encode()
+
+    structure = pilot._read_response_structure(xml)
+
+    assert structure == {
+        "read_response_shape": "OTA_ReadRS",
+        "raw_reservation_count_class": "ONE",
+        "canonical_reservation_count_class": expected_canonical,
+    }
+    assert "sensitive-booking-id" not in repr(structure)
+    assert "private guest" not in repr(structure)
+
+
+def test_read_response_structure_handles_empty_and_invalid_xml_without_payload():
+    empty = b'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ReadRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/></OTA_ReadRS></s:Body>
+    </s:Envelope>'''
+    assert pilot._read_response_structure(empty) == {
+        "read_response_shape": "OTA_ReadRS",
+        "raw_reservation_count_class": "ZERO",
+        "canonical_reservation_count_class": "ZERO",
+    }
+    assert pilot._read_response_structure(b"private malformed payload") == {"read_response_shape": "MALFORMED"}
+
+
 @pytest.mark.asyncio
 async def test_ack_lifecycle_runs_in_tenant_context_and_resets(monkeypatch):
     async def acknowledge(_provider, _current):
