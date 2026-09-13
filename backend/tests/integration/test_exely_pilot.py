@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 import pytest
 from defusedxml import ElementTree as safe_ET
+from lxml import etree
 
 from core.database import db
 from core.tenant_db import tenant_context
@@ -39,12 +40,13 @@ from domains.channel_manager.providers.exely.pilot_import import (
     replay_failed_reservation_durably,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.response_parser import parse_read_rs
 from domains.channel_manager.providers.exely.security import (
     EXELY_TEST_ENDPOINT_URL,
     validate_exely_endpoint,
 )
 from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
-from domains.channel_manager.providers.exely.soap_builder import get_soap_action_uri
+from domains.channel_manager.providers.exely.soap_builder import build_read_rq, get_soap_action_uri
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -54,7 +56,7 @@ pytestmark = [
 
 logger = logging.getLogger("exely.pilot")
 
-_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read"})
+_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe"})
 _READ_OPERATIONS = frozenset({*_PROVIDER_READ_OPERATIONS, "reservation_import", "reservation_replay"})
 _SINGLE_ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
 _BATCH_ARI_OPERATIONS = frozenset({"availability_batch", "forced_availability_batch"})
@@ -137,7 +139,7 @@ class PilotTransportGuard:
         self._transport = provider._transport
         self._original_send = self._transport.send_soap
         self._write_approved = settings.operation in _WRITE_OPERATIONS
-        if settings.operation in {"reservation_read", "reservation_import"}:
+        if settings.operation in {"reservation_read", "reservation_read_legacy_probe", "reservation_import"}:
             self._allowed_read_action = get_soap_action_uri("OTA_ReadRQ")
         elif settings.operation in {*_PROVIDER_READ_OPERATIONS, *_ARI_OPERATIONS}:
             self._allowed_read_action = get_soap_action_uri("OTA_HotelAvailRQ")
@@ -299,7 +301,7 @@ def _load_settings() -> PilotSettings:
     ).hexdigest()[:12]
 
     values: dict[str, Any] = {}
-    if operation in {*_SINGLE_ARI_OPERATIONS, "inventory_read", "discovery"}:
+    if operation in {*_SINGLE_ARI_OPERATIONS, "inventory_read", "discovery", "reservation_read_legacy_probe"}:
         raw_date = _required_env("EXELY_PILOT_TEST_DATE")
         try:
             test_date = date.fromisoformat(raw_date)
@@ -563,6 +565,41 @@ async def _read_reservations(
     return metadata, valid[0] if len(valid) == 1 else None
 
 
+async def _read_reservations_legacy_probe(provider: ExelyProvider, settings: PilotSettings) -> dict[str, Any]:
+    """Probe the pre-August version/date shape, covering booking and stay dates."""
+    if settings.test_date is None:
+        raise PilotSafetyError("BLOCKED_LEGACY_PROBE_DATE_MISSING")
+    envelope = etree.fromstring(build_read_rq(settings.username, settings.password, settings.hotel_code).encode())
+    request = envelope.find(f".//{{{_OTA_NS}}}OTA_ReadRQ")
+    selection = envelope.find(f".//{{{_OTA_NS}}}SelectionCriteria")
+    if request is None or selection is None:
+        raise PilotSafetyError("BLOCKED_LEGACY_PROBE_REQUEST_SHAPE_INVALID")
+    request.set("Version", "1.0")
+    today = datetime.now(UTC).date()
+    selection.set("Start", (today - timedelta(days=7)).isoformat())
+    selection.set("End", settings.test_date.isoformat())
+
+    raw = await provider._send_read(
+        etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode(),
+        get_soap_action_uri("OTA_ReadRQ"),
+        operation="reservation_read",
+    )
+    result = parse_read_rs(raw)
+    if not result.get("success"):
+        raise PilotSafetyError("BLOCKED_LEGACY_PROBE_READ_FAILED")
+    count = result.get("count", 0)
+    return {
+        "correlation_label": settings.correlation_label,
+        "operation": settings.operation,
+        "exact_head_match": True,
+        "pilot_account_attested": True,
+        "account_match": True,
+        "provider_status_class": result.get("result_class", "MALFORMED"),
+        "match_count_class": "ZERO" if count == 0 else "ONE" if count == 1 else "MULTIPLE",
+        "version_match": True,
+    }
+
+
 async def _read_inventory(
     provider: ExelyProvider,
     settings: PilotSettings,
@@ -673,6 +710,8 @@ async def test_exely_pilot_readonly(record_property):
             metadata = await _discover_mapping(provider, settings, record_property)
         elif settings.operation == "inventory_read":
             metadata = await _read_inventory(provider, settings, record_property)
+        elif settings.operation == "reservation_read_legacy_probe":
+            metadata = await _read_reservations_legacy_probe(provider, settings)
         else:
             metadata, _ = await _read_reservations(
                 provider,
@@ -681,7 +720,7 @@ async def test_exely_pilot_readonly(record_property):
                 require_exactly_one=False,
             )
         metadata.update({"read_count": guard.read_count, "provider_write_count": guard.write_count})
-        if settings.operation == "reservation_read":
+        if settings.operation in {"reservation_read", "reservation_read_legacy_probe"}:
             metadata.update(guard.read_structure)
         if guard.write_count != 0:
             _fail_safe(record_property, "FAIL_READONLY_PROVIDER_WRITE_DETECTED", metadata)

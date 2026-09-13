@@ -90,6 +90,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "discovery",
         "inventory_read",
         "reservation_read",
+        "reservation_read_legacy_probe",
         "reservation_import",
         "reservation_replay",
         "availability",
@@ -273,7 +274,7 @@ def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
 
 @pytest.mark.parametrize(
     "operation",
-    ["discovery", "inventory_read", "reservation_read", "reservation_import", "reservation_replay"],
+    ["discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe", "reservation_import", "reservation_replay"],
 )
 def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation)
@@ -731,6 +732,35 @@ def test_read_response_structure_handles_empty_and_invalid_xml_without_payload()
         "canonical_reservation_count_class": "ZERO",
     }
     assert pilot._read_response_structure(b"private malformed payload") == {"read_response_shape": "MALFORMED"}
+
+
+@pytest.mark.asyncio
+async def test_legacy_read_probe_uses_previous_request_shape_without_writing():
+    response = b'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ResRetrieveRS xmlns="http://www.opentravel.org/OTA/2003/05">
+        <Success/><HotelReservations/>
+      </OTA_ResRetrieveRS></s:Body>
+    </s:Envelope>'''
+    provider = SimpleNamespace(_send_read=AsyncMock(return_value=response))
+    settings = SimpleNamespace(
+        username="synthetic-user",
+        password="synthetic-password",
+        hotel_code="synthetic-property",
+        correlation_label="abcdef123456",
+        operation="reservation_read_legacy_probe",
+        test_date=(datetime.now(UTC).date() + timedelta(days=60)),
+    )
+
+    metadata = await pilot._read_reservations_legacy_probe(provider, settings)
+
+    provider._send_read.assert_awaited_once()
+    args, kwargs = provider._send_read.await_args
+    assert 'Version="1.0"' in args[0]
+    assert 'SelectionType="Undelivered"' in args[0]
+    assert 'Start="' in args[0] and 'End="' in args[0]
+    assert kwargs == {"operation": "reservation_read"}
+    assert metadata["match_count_class"] == "ZERO"
+    assert "synthetic-password" not in repr(metadata)
 
 
 @pytest.mark.asyncio
