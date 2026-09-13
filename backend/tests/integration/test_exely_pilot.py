@@ -56,13 +56,14 @@ pytestmark = [
 
 logger = logging.getLogger("exely.pilot")
 
-_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe"})
+_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe"})
 _READ_OPERATIONS = frozenset({*_PROVIDER_READ_OPERATIONS, "reservation_import", "reservation_replay"})
 _SINGLE_ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
 _BATCH_ARI_OPERATIONS = frozenset({"availability_batch", "forced_availability_batch"})
 _ARI_OPERATIONS = frozenset({*_SINGLE_ARI_OPERATIONS, *_BATCH_ARI_OPERATIONS})
 _WRITE_OPERATIONS = frozenset({*_ARI_OPERATIONS, "reservation_ack"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_BOOKING_NUMBER_PATTERN = re.compile(r"^[0-9]{8}-[0-9]+-[0-9]+$")
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
 _OTA_NS = "http://www.opentravel.org/OTA/2003/05"
 
@@ -130,6 +131,7 @@ class PilotSettings:
     rate_plan_code: str = field(default="", repr=False)
     pms_room_type: str = field(default="", repr=False)
     hmac_key: str = field(default="", repr=False)
+    reservation_id: str = field(default="", repr=False)
 
 
 class PilotTransportGuard:
@@ -139,7 +141,7 @@ class PilotTransportGuard:
         self._transport = provider._transport
         self._original_send = self._transport.send_soap
         self._write_approved = settings.operation in _WRITE_OPERATIONS
-        if settings.operation in {"reservation_read", "reservation_read_legacy_probe", "reservation_import"}:
+        if settings.operation in {"reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe", "reservation_import"}:
             self._allowed_read_action = get_soap_action_uri("OTA_ReadRQ")
         elif settings.operation in {*_PROVIDER_READ_OPERATIONS, *_ARI_OPERATIONS}:
             self._allowed_read_action = get_soap_action_uri("OTA_HotelAvailRQ")
@@ -373,6 +375,13 @@ def _load_settings() -> PilotSettings:
     expected_hotel_code = _required_env("EXELY_PILOT_EXPECTED_HOTEL_CODE")
     if not hmac.compare_digest(hotel_code, expected_hotel_code):
         raise PilotSafetyError("BLOCKED_PILOT_HOTEL_CODE_MISMATCH")
+    if operation == "reservation_read_exact_probe":
+        reservation_id = _required_env("EXELY_PILOT_RESERVATION_ID")
+        if not _BOOKING_NUMBER_PATTERN.fullmatch(reservation_id):
+            raise PilotSafetyError("BLOCKED_INVALID_PILOT_RESERVATION_ID")
+        if not hmac.compare_digest(reservation_id.split("-")[1], hotel_code):
+            raise PilotSafetyError("BLOCKED_PILOT_RESERVATION_HOTEL_MISMATCH")
+        values["reservation_id"] = reservation_id
     tenant_id = (
         "exely-pilot-"
         + hmac.new(
@@ -600,6 +609,44 @@ async def _read_reservations_legacy_probe(provider: ExelyProvider, settings: Pil
     }
 
 
+async def _read_reservations_exact_probe(provider: ExelyProvider, settings: PilotSettings) -> dict[str, Any]:
+    """Read one WSDL-addressed booking by UniqueID without import or ACK."""
+    envelope = etree.fromstring(build_read_rq(settings.username, settings.password, settings.hotel_code).encode())
+    read_requests = envelope.find(f".//{{{_OTA_NS}}}ReadRequests")
+    hotel_read = envelope.find(f".//{{{_OTA_NS}}}HotelReadRequest")
+    if read_requests is None or hotel_read is None or not settings.reservation_id:
+        raise PilotSafetyError("BLOCKED_EXACT_PROBE_REQUEST_SHAPE_INVALID")
+    read_requests.remove(hotel_read)
+    read_request = etree.SubElement(read_requests, f"{{{_OTA_NS}}}ReadRequest")
+    etree.SubElement(read_request, f"{{{_OTA_NS}}}UniqueID", attrib={"ID": settings.reservation_id})
+
+    raw = await provider._send_read(
+        etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode(),
+        get_soap_action_uri("OTA_ReadRQ"),
+        operation="reservation_read",
+    )
+    result = parse_read_rs(raw)
+    if not result.get("success"):
+        raise PilotSafetyError("BLOCKED_EXACT_PROBE_READ_FAILED")
+    reservations = result.get("reservations")
+    if not isinstance(reservations, list):
+        raise PilotSafetyError("BLOCKED_EXACT_PROBE_RESPONSE_INVALID")
+    match_count = sum(
+        isinstance(item, dict) and hmac.compare_digest(str(item.get("reservation_id") or ""), settings.reservation_id)
+        for item in reservations
+    )
+    return {
+        "correlation_label": settings.correlation_label,
+        "operation": settings.operation,
+        "exact_head_match": True,
+        "pilot_account_attested": True,
+        "account_match": True,
+        "provider_status_class": result.get("result_class", "MALFORMED"),
+        "match_count_class": "ZERO" if match_count == 0 else "ONE" if match_count == 1 else "MULTIPLE",
+        "version_match": True,
+    }
+
+
 async def _read_inventory(
     provider: ExelyProvider,
     settings: PilotSettings,
@@ -712,6 +759,8 @@ async def test_exely_pilot_readonly(record_property):
             metadata = await _read_inventory(provider, settings, record_property)
         elif settings.operation == "reservation_read_legacy_probe":
             metadata = await _read_reservations_legacy_probe(provider, settings)
+        elif settings.operation == "reservation_read_exact_probe":
+            metadata = await _read_reservations_exact_probe(provider, settings)
         else:
             metadata, _ = await _read_reservations(
                 provider,
@@ -720,7 +769,7 @@ async def test_exely_pilot_readonly(record_property):
                 require_exactly_one=False,
             )
         metadata.update({"read_count": guard.read_count, "provider_write_count": guard.write_count})
-        if settings.operation in {"reservation_read", "reservation_read_legacy_probe"}:
+        if settings.operation in {"reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe"}:
             metadata.update(guard.read_structure)
         if guard.write_count != 0:
             _fail_safe(record_property, "FAIL_READONLY_PROVIDER_WRITE_DETECTED", metadata)
