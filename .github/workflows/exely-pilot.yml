@@ -13,6 +13,7 @@ on:
           - inventory_read
           - reservation_read
           - reservation_read_legacy_probe
+          - reservation_read_exact_probe
           - reservation_import
           - reservation_replay
           - availability
@@ -31,6 +32,10 @@ on:
       approved_head_sha:
         description: Exact 40-character commit SHA approved for this run
         required: true
+        type: string
+      reservation_id:
+        description: Test booking number for exact read-only probe only
+        required: false
         type: string
 
 permissions:
@@ -92,7 +97,7 @@ jobs:
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery|inventory_read|reservation_read|reservation_read_legacy_probe|reservation_import|reservation_replay)
+            discovery|inventory_read|reservation_read|reservation_read_legacy_probe|reservation_read_exact_probe|reservation_import|reservation_replay)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
                 echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
                 exit 1
@@ -204,6 +209,7 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           EXELY_PILOT_ENDPOINT_URL: https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc
           EXELY_PILOT_OPERATION: ${{ inputs.operation }}
+          EXELY_PILOT_RESERVATION_ID: ${{ inputs.reservation_id }}
           EXELY_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
           EXELY_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
           EXELY_PILOT_RUN_ID: ${{ github.run_id }}
@@ -232,7 +238,7 @@ jobs:
         run: |
           cd backend
           case "${EXELY_PILOT_OPERATION}" in
-            discovery|inventory_read|reservation_read|reservation_read_legacy_probe)
+            discovery|inventory_read|reservation_read|reservation_read_legacy_probe|reservation_read_exact_probe)
               target="tests/integration/test_exely_pilot.py::test_exely_pilot_readonly"
               ;;
             *)

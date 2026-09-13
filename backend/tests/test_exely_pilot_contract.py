@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 import yaml
+from lxml import etree
 
 from core.tenant_db import get_current_tenant_id
 from domains.channel_manager.ari.provider_snapshot_contract import ProviderSnapshotEmpty
@@ -68,6 +69,14 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_WRITE_APPROVED": "true" if write else "false",
         "EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED": "true",
     }
+    if operation == "reservation_read_exact_probe":
+        values.update(
+            {
+                "EXELY_PILOT_HOTEL_CODE": "501694",
+                "EXELY_PILOT_EXPECTED_HOTEL_CODE": "501694",
+                "EXELY_PILOT_RESERVATION_ID": "20261020-501694-123456",
+            }
+        )
     if operation in {"reservation_import", "reservation_replay", "reservation_ack"}:
         values.update(
             {
@@ -91,6 +100,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "inventory_read",
         "reservation_read",
         "reservation_read_legacy_probe",
+        "reservation_read_exact_probe",
         "reservation_import",
         "reservation_replay",
         "availability",
@@ -274,7 +284,7 @@ def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
 
 @pytest.mark.parametrize(
     "operation",
-    ["discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe", "reservation_import", "reservation_replay"],
+    ["discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe", "reservation_import", "reservation_replay"],
 )
 def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation)
@@ -760,6 +770,47 @@ async def test_legacy_read_probe_uses_previous_request_shape_without_writing():
     assert 'Start="' in args[0] and 'End="' in args[0]
     assert kwargs == {"operation": "reservation_read"}
     assert metadata["match_count_class"] == "ZERO"
+    assert "synthetic-password" not in repr(metadata)
+
+
+def test_exact_read_probe_rejects_booking_for_another_hotel(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_read_exact_probe")
+    monkeypatch.setenv("EXELY_PILOT_RESERVATION_ID", "20261020-999999-123456")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_PILOT_RESERVATION_HOTEL_MISMATCH"):
+        pilot._load_settings()
+
+
+@pytest.mark.asyncio
+async def test_exact_read_probe_uses_wsdl_unique_id_without_writing():
+    response = b'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ResRetrieveRS xmlns="http://www.opentravel.org/OTA/2003/05">
+        <Success/><HotelReservations/>
+      </OTA_ResRetrieveRS></s:Body>
+    </s:Envelope>'''
+    provider = SimpleNamespace(_send_read=AsyncMock(return_value=response))
+    settings = SimpleNamespace(
+        username="synthetic-user",
+        password="synthetic-password",
+        hotel_code="501694",
+        reservation_id="20261020-501694-123456",
+        correlation_label="abcdef123456",
+        operation="reservation_read_exact_probe",
+    )
+
+    metadata = await pilot._read_reservations_exact_probe(provider, settings)
+
+    provider._send_read.assert_awaited_once()
+    args, kwargs = provider._send_read.await_args
+    root = etree.fromstring(args[0].encode())
+    ns = {"ota": "http://www.opentravel.org/OTA/2003/05"}
+    assert root.find(".//ota:HotelReadRequest", ns) is None
+    unique_id = root.find(".//ota:ReadRequest/ota:UniqueID", ns)
+    assert unique_id is not None and unique_id.get("ID") == "20261020-501694-123456"
+    assert args[1] == get_soap_action_uri("OTA_ReadRQ")
+    assert kwargs == {"operation": "reservation_read"}
+    assert metadata["match_count_class"] == "ZERO"
+    assert "20261020-501694-123456" not in repr(metadata)
     assert "synthetic-password" not in repr(metadata)
 
 
