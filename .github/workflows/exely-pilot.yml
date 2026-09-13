@@ -12,6 +12,7 @@ on:
           - discovery
           - inventory_read
           - reservation_read
+          - reservation_read_legacy_probe
           - reservation_import
           - reservation_replay
           - availability
@@ -91,7 +92,7 @@ jobs:
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery|inventory_read|reservation_read|reservation_import|reservation_replay)
+            discovery|inventory_read|reservation_read|reservation_read_legacy_probe|reservation_import|reservation_replay)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
                 echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
                 exit 1
@@ -231,7 +232,7 @@ jobs:
         run: |
           cd backend
           case "${EXELY_PILOT_OPERATION}" in
-            discovery|inventory_read|reservation_read)
+            discovery|inventory_read|reservation_read|reservation_read_legacy_probe)
               target="tests/integration/test_exely_pilot.py::test_exely_pilot_readonly"
               ;;
             *)
