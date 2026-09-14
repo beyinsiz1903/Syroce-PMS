@@ -263,7 +263,9 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         children = 0
         for gc in room_stay.iter(_ns("GuestCount")):
             age_code = _attr(gc, "AgeQualifyingCode")
-            count = int(_attr(gc, "Count", "0"))
+            raw_count = _attr(gc, "Count", "0")
+            count = int(raw_count) if raw_count.strip() and raw_count.strip().isdigit() else 0
+
             if age_code == "10":
                 adults = count
             elif age_code == "8":

@@ -736,12 +736,12 @@ async def manual_pull(
     except Exception as exc:
         logger.exception("[EXELY] manual reservation pull failed")
         raise HTTPException(
-            status_code=502,
-            detail=f"EXELY_RESERVATION_PULL_FAILED:{type(exc).__name__}",
-        ) from exc
+        return {
+            "success": False,
+            "error": type(exc).__name__,
+            "message": f"EXELY_RESERVATION_PULL_FAILED:{type(exc).__name__} - {str(exc)}",
+        }
 
-
-@router.get("/reservations/local")
 async def get_local_reservations(
     pms_status: str | None = None,
     current_user: User = Depends(get_current_user),
