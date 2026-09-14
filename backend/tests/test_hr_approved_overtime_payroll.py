@@ -20,6 +20,7 @@ def payroll_data(monkeypatch):
     monkeypatch.setattr(hr, "_payroll_collect_overtime", overtime)
     monkeypatch.setattr(hr, "_verify_staff_in_tenant", staff)
     monkeypatch.setattr(hr, "_payroll_collect_leaves", AsyncMock(return_value={}))
+    monkeypatch.setattr(hr, "_payroll_collect_advances", AsyncMock(return_value={}))
     monkeypatch.setattr(hr, "_get_payroll_tax_rates", AsyncMock(return_value=hr.TR_PAYROLL_TAX_RATES_DEFAULT))
     # Salary-agreement discovery is read-only; any persistence write must fail.
     async def no_agreements():
