@@ -10,13 +10,14 @@ import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } fro
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import InvoiceTemplate from '@/components/invoice/InvoiceTemplate';
 import InvoiceFormDialog from '@/components/invoice/InvoiceFormDialog';
+import IncomingInvoicesTab from '@/components/invoice/IncomingInvoicesTab';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   FileText, Plus, Building2, Info,
-  Wallet, Package, AlertCircle, Receipt, BarChart3,
+  Wallet, Package, AlertCircle, Receipt, BarChart3, Inbox,
 } from 'lucide-react';
 
 const InvoiceModule = ({ user, tenant, onLogout }) => {
@@ -26,7 +27,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const [activeSection, setActiveSection] = useState(
-    ['invoices', 'expenses', 'suppliers', 'banks', 'inventory', 'reports'].includes(requestedTab)
+    ['invoices', 'incoming', 'expenses', 'suppliers', 'banks', 'inventory', 'reports'].includes(requestedTab)
       ? requestedTab
       : 'invoices',
   );
@@ -333,8 +334,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         )}
 
         <Tabs value={activeSection} onValueChange={handleSectionChange}>
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="w-4 h-4 mr-2" />{t('invoice.tabs.invoices')}</TabsTrigger>
+            <TabsTrigger value="incoming" data-testid="tab-incoming"><Inbox className="w-4 h-4 mr-2" />{t('invoice.tabs.incoming') || 'Gelen e-Faturalar'}</TabsTrigger>
             <TabsTrigger value="expenses" data-testid="tab-expenses"><Receipt className="w-4 h-4 mr-2" />{t('invoice.tabs.expenses')}</TabsTrigger>
             <TabsTrigger value="suppliers" data-testid="tab-suppliers"><Building2 className="w-4 h-4 mr-2" />{t('invoice.tabs.suppliers')}</TabsTrigger>
             <TabsTrigger value="banks" data-testid="tab-banks"><Wallet className="w-4 h-4 mr-2" />{t('invoice.tabs.banks')}</TabsTrigger>
@@ -431,6 +433,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                 </Card>
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="incoming" className="space-y-4">
+            <IncomingInvoicesTab />
           </TabsContent>
 
           <TabsContent value="expenses" className="space-y-4">
