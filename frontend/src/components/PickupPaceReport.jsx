@@ -18,7 +18,7 @@ const PickupPaceReport = () => {
     } catch (e) {
       console.warn('Unable to read pickup_target_date from localStorage', e);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
     return new Date().toISOString().slice(0, 10);
   });
@@ -33,7 +33,7 @@ const PickupPaceReport = () => {
     } catch (e) {
       console.warn('Unable to read pickup_group_only from localStorage', e);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
     return false;
   });
@@ -122,7 +122,7 @@ const PickupPaceReport = () => {
                   } catch (err) {
                     console.warn('Unable to persist pickup_group_only', err);
                   
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
                 }}
               />

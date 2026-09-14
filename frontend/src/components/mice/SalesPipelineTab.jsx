@@ -79,14 +79,14 @@ export default function SalesPipelineTab({ accounts = [] }) {
       });
       setTransitionFor(null); setReason('');
       await load();
-    } catch (e) { await alertDialog({ message: 'Hata: ' + (e.response?.data?.detail || e.message) }); }
+    } catch (e) { await alertDialog({ message: 'İşlem Hatası: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const submitActivity = async () => {
     try {
       await axios.post(`/mice/sales/opportunities/${activityFor.id}/activities`, activity);
       setActivityFor(null); setActivity({ type: 'call', subject: '', body: '', outcome: 'positive' });
-    } catch (e) { await alertDialog({ message: 'Hata: ' + (e.response?.data?.detail || e.message) }); }
+    } catch (e) { await alertDialog({ message: 'İşlem Hatası: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const remove = async (id) => {

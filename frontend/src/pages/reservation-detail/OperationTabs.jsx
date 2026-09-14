@@ -50,7 +50,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       });
       toast.success('Oda değiştirildi');
       setSelectedRoomId(''); setSelectedType(''); setReason(''); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -206,7 +206,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
       }
       toast.success(applyNoshow ? 'No-show olarak işaretlendi' : 'Rezervasyon iptal edildi');
       onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 

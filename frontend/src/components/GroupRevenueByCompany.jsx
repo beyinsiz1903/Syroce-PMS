@@ -181,7 +181,7 @@ const GroupRevenueByCompany = () => {
                   } catch (e) {
                     console.warn('Unable to persist pickup drilldown context', e);
                   
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
                   window.open('/pms?tab=reports', '_blank');
                 }}

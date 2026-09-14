@@ -265,7 +265,7 @@ export default function EodReportPage({
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      toast.error('Hata: ' + e.message);
+      toast.error('İşlem Hatası: ' + e.message);
     } finally {
       setDownloadingPdf(false);
     }
@@ -297,7 +297,7 @@ export default function EodReportPage({
       setLastResult(res);
       toast.success(`${res.sent}/${res.total} alıcıya gönderildi`);
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setSending(false);
     }

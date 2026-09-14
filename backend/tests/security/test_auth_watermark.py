@@ -34,7 +34,7 @@ async def test_inactive_user_access_token_is_rejected():
             await get_current_user(credentials=credentials)
 
     assert exc.value.status_code == 401
-    assert exc.value.detail == "Hesap devre dışı"
+    assert exc.value.detail == "Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin."
 
 
 @pytest.mark.asyncio

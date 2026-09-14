@@ -191,7 +191,7 @@ async def make_me_super_admin(setup_password: str, current_user: User = Depends(
     invalidate_user_doc_cache(current_user.id)
 
     if result.modified_count == 0:
-        raise HTTPException(status_code=400, detail="Role güncellenemedi veya zaten super_admin")
+        raise HTTPException(status_code=400, detail="Kullanıcı yetkisi güncellenemedi (Hedef kullanıcı zaten en üst düzey yetkiye sahip olabilir).")
 
     return {"success": True, "message": "Artık super_admin'siniz! Lütfen logout yapıp tekrar giriş yapın.", "email": current_user.email, "user_id": current_user.id}
 
@@ -345,7 +345,7 @@ async def register_tenant(data: TenantRegister, request: Request, response: Resp
         # throttle above (1 req / 10 min) which stops bulk inventory scans
         # regardless of response shape. The 400 status is preserved for
         # frontend backward compatibility.
-        raise HTTPException(status_code=400, detail="Bu bilgilerle kayıt yapılamadı")
+        raise HTTPException(status_code=400, detail="Kayıt işlemi başarısız. Lütfen bilgilerinizi kontrol edip tekrar deneyin.")
 
     # Decide username (explicit > derived from email)
     username = (data.username or _derive_username(data.email)).strip().lower()
@@ -400,7 +400,7 @@ async def register_guest(data: GuestRegister, request: Request, response: Respon
 
     existing = await db.users.find_one(build_user_email_query(data.email))
     if existing:
-        raise HTTPException(status_code=400, detail="Bu bilgilerle kayıt yapılamadı")
+        raise HTTPException(status_code=400, detail="Kayıt işlemi başarısız. Lütfen bilgilerinizi kontrol edip tekrar deneyin.")
 
     user = User(tenant_id=None, email=data.email, name=data.name, role=UserRole.GUEST, phone=data.phone)
     user_dict = user.model_dump()
@@ -481,7 +481,7 @@ async def login(data: UserLogin, request: Request, response: Response):
         cache_seed = f"em:{data.email}|p:{data.password}"
         identity_label = data.email
     else:
-        raise HTTPException(status_code=400, detail="Otel ID + kullanıcı adı veya e-posta gereklidir")
+        raise HTTPException(status_code=400, detail="Lütfen Otel ID, kullanıcı adı veya e-posta alanlarını eksiksiz doldurun.")
 
     cache_key = f"login:{_hl.sha256(cache_seed.encode()).hexdigest()[:24]}"
     cached = _login_cache.get(cache_key)
@@ -638,7 +638,7 @@ async def login(data: UserLogin, request: Request, response: Response):
                 "timestamp": datetime.now(UTC).isoformat(),
             }
         )
-        await _record_failure_and_raise(401, "Hesap devre dışı")
+        await _record_failure_and_raise(401, "Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
 
     user_data = {k: v for k, v in user_doc.items() if k not in ["password", "hashed_password", "password_hash"]}
     user = User(**user_data)
@@ -791,14 +791,14 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
     try:
         decoded = _jwt.decode(payload.challenge_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except _jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Doğrulama süresi doldu, tekrar giriş yapın")
+        raise HTTPException(status_code=401, detail="Oturum süreniz doldu. Lütfen yeniden giriş yapın.")
     except _jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
+        raise HTTPException(status_code=401, detail="Güvenlik oturumu (Token) geçersiz veya süresi dolmuş.")
     if decoded.get("purpose") != "2fa_challenge":
-        raise HTTPException(status_code=401, detail="Yanlış belirteç türü")
+        raise HTTPException(status_code=401, detail="Geçersiz oturum anahtarı türü tespit edildi.")
     jti = decoded.get("jti")
     if not jti:
-        raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
+        raise HTTPException(status_code=401, detail="Güvenlik oturumu (Token) geçersiz veya süresi dolmuş.")
 
     _user_id_for_throttle = decoded.get("user_id")
     _user_throttle_key = f"user:{_user_id_for_throttle}" if _user_id_for_throttle else None
@@ -833,7 +833,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
             }
         )
     except DuplicateKeyError:
-        raise HTTPException(status_code=401, detail="Doğrulama belirteci zaten kullanıldı")
+        raise HTTPException(status_code=401, detail="Bu güvenlik oturumu (Token) daha önce kullanılmış.")
 
     user_id = decoded.get("user_id")
 
@@ -876,7 +876,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
             )
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
 
     user_doc = decrypt_user_doc(user_doc)
@@ -1204,7 +1204,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
     # `is_active=False` → fully locked out. Treat as if the user does not
     # exist for token-issuance purposes.
     if user_doc.get("is_active") is False:
-        raise HTTPException(status_code=401, detail="Hesap devre dışı")
+        raise HTTPException(status_code=401, detail="Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
 
     # Mass-revocation watermark. Tokens minted before the watermark
     # (including refresh tokens issued from the *previous* password) must
@@ -1216,7 +1216,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
         if not iat:
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
         try:
             import math
@@ -1227,12 +1227,12 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
         except (TypeError, ValueError):
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
         if f_iat < f_ib:
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
 
     # Defence-in-depth: token's tenant_id must match the user record. A
@@ -1247,7 +1247,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
             jwt_tenant,
             doc_tenant,
         )
-        raise HTTPException(status_code=401, detail="Token-tenant uyuşmuyor")
+        raise HTTPException(status_code=401, detail="Oturum bilgileri ile seçili tesis bilgileri uyuşmuyor.")
 
 
 @router.post("/auth/refresh-token")
@@ -2064,7 +2064,7 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
     )
 
     if not reset:
-        raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
+        raise HTTPException(status_code=400, detail="Şifre sıfırlama bağlantısı geçersiz veya daha önce kullanılmış.")
 
     # Kod süresi dolmuş mu kontrol et
     expires_at = reset["expires_at"]
@@ -2091,7 +2091,7 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
             await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$set": {"used": True, "used_at": datetime.now(UTC), "failed_attempts": new_count}})
             raise HTTPException(status_code=400, detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin.")
         await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$inc": {"failed_attempts": 1}})
-        raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
+        raise HTTPException(status_code=400, detail="Şifre sıfırlama bağlantısı geçersiz veya daha önce kullanılmış.")
 
     # Kullanıcıyı bul
     user = await db.users.find_one(build_user_email_query(data.email))

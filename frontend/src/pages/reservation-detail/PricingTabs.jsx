@@ -67,7 +67,7 @@ export function DailyRatesTab({
       setEditMode(false);
       onRefresh?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
     setSaving(false);
   };
@@ -85,7 +85,7 @@ export function DailyRatesTab({
       setCompReason('');
       onRefresh?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
     setSaving(false);
   };
@@ -233,7 +233,7 @@ export function ExtraChargesTab({
       });
       onRefresh?.();
     } catch (e) {
-      const message = 'Hata: ' + (e.response?.data?.detail || e.message);
+      const message = 'İşlem Hatası: ' + (e.response?.data?.detail || e.message);
       setFormError(message);
       toast.error(message);
     }
@@ -261,7 +261,7 @@ export function ExtraChargesTab({
       });
       onRefresh?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
     setLoading(false);
   };

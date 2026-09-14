@@ -48,7 +48,7 @@ const RegistrationCard = ({
     } catch (error) {
       console.error('Error fetching registration data:', error);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     } finally {
       setLoading(false);
     }

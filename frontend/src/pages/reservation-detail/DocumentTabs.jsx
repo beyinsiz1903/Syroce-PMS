@@ -24,7 +24,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/record-deposit`, { ...depForm, amount: parseFloat(depForm.amount) });
       toast.success('Depozito kaydedildi'); setShowDeposit(false); setDepForm({ amount: '', method: 'cash', reference: '' }); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -34,7 +34,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/refund-deposit`, { deposit_id: depositId, ...refundForm, refund_amount: parseFloat(refundForm.refund_amount) });
       toast.success('Depozito iade edildi'); setShowRefund(null); setRefundForm({ refund_amount: '', refund_method: 'cash', reason: '' }); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 

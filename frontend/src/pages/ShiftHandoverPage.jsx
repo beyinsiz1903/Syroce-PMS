@@ -68,7 +68,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
       toast.success('Devir notu eklendi');
       setForm(p => ({ ...p, note: '', related_room: '', related_booking_id: '' }));
       load();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     finally { setCreating(false); }
   };
 
@@ -77,7 +77,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
       await api.patch(`/pms/shift-handover/${id}/acknowledge`, {});
       toast.success('Devir notu onaylandı');
       load();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
   };
 
   const remove = async (id) => {
@@ -86,7 +86,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
       await api.delete(`/pms/shift-handover/${id}`);
       toast.success('Silindi');
       load();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
   };
 
   const prioMeta = (p) => PRIORITIES.find(x => x.v === p) || PRIORITIES[1];

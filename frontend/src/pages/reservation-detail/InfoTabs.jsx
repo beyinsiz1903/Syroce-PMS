@@ -123,7 +123,7 @@ export function GeneralInfoTab({
       setEditing(false);
       onGuestUpdate?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
   };
   const nights = booking?.check_in && booking?.check_out ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
@@ -574,7 +574,7 @@ export function GuestsTab({
       cancelEdit();
       onRefresh?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
     setSaving(false);
   };
@@ -628,7 +628,7 @@ export function GuestsTab({
                 setAddingFromScan(false);
                 setForm({});
                 onRefresh?.();
-              } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+              } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
               setSaving(false);
             }} disabled={saving || !form.name?.trim()} className="h-8">{saving ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />} Ekle</Button>
             <Button size="sm" variant="outline" onClick={() => { setAddingGuest(false); setAddingFromScan(false); }} className="h-8">İptal</Button>

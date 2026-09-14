@@ -194,7 +194,7 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
       await api.post('/pms/room-map/assign', { booking_id, room_id, business_date: date });
       toast.success(`Oda ${targetRoom.room_number} olarak değiştirildi`);
       load();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
   };
 
   // Arama: misafir adı veya oda numarasına göre filtrele (büyük/küçük harf

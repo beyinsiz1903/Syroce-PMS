@@ -26,7 +26,7 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/communication`, form);
       toast.success('İletişim kaydedildi'); setShowForm(false); setForm({ channel: 'email', direction: 'outbound', subject: '', content: '', recipient: '' }); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -108,7 +108,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/add-note`, { content, note_type: noteType });
       toast.success('Not eklendi'); setContent(''); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
