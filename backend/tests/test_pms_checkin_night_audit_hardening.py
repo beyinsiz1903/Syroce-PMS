@@ -129,9 +129,12 @@ async def test_checkin_names_the_checked_in_guest_when_room_is_occupied():
     assert result.ok is False
     assert result.code == "ROOM_NOT_READY"
     assert result.error == (
-        "Oda 107, Nurşema Aras için hâlâ içeride görünüyor. "
-        "Önce çıkış işlemini tamamlayın veya mevcut misafiri başka odaya taşıyın."
+        "Oda 107 (Nurşema Aras) henüz tahliye edilmemiş. "
+        "Lütfen önce çıkış işlemini tamamlayın veya odayı değiştirin."
     )
+
+
+
     assert service._db.guests.find_one.await_args.args[0] == {
         "id": "guest-blocking",
         "tenant_id": "tenant-a",
