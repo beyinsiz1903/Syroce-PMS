@@ -735,7 +735,6 @@ async def manual_pull(
         raise
     except Exception as exc:
         logger.exception("[EXELY] manual reservation pull failed")
-        raise HTTPException(
         return {
             "success": False,
             "error": type(exc).__name__,
