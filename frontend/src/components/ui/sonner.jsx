@@ -8,10 +8,7 @@ const Toaster = ({ style, ...props }) => {
     <Sonner
       theme={theme}
       className="toaster group"
-      // Sonner defaults to z-index: 999999999. Keep transient messages above
-      // the app header (50) but below full reservation dialogs (60), so a
-      // toast can never cover a modal close button.
-      style={{ zIndex: 55, ...style }}
+      style={{ zIndex: 99999, ...style }}
       toastOptions={{
         classNames: {
           toast:
