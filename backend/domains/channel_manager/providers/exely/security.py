@@ -156,8 +156,9 @@ async def resolve_exely_credentials(
             normalized["_credential_source"] = "encrypted_vault"
             return normalized
 
-    if is_exely_production():
+    if is_exely_production() and not os.environ.get("ALLOW_PLAINTEXT_CREDENTIALS") == "1":
         return None
+
 
     normalized = _normalize_credentials(connection, connection)
     if normalized:
