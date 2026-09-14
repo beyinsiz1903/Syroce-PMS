@@ -1426,6 +1426,7 @@ def _payroll_apply_extras_and_overtime(
     extras: list[dict],
     overtime_by_staff: dict[str, dict],
     leaves_by_staff: dict[str, dict] | None = None,
+    advances_by_staff: dict[str, list[dict]] | None = None,
     rates: dict[str, float] | None = None,
 ) -> list[dict]:
     """Base payroll satırlarına (saat × ücret) ekstra kalemleri ve onaylı
@@ -1518,6 +1519,20 @@ def _payroll_apply_extras_and_overtime(
                         "amount": amt,
                         "direction": "deduction",
                         "note": ex.get("note"),
+                    }
+                )
+
+        if advances_by_staff and sid in advances_by_staff:
+            for adv in advances_by_staff[sid]:
+                adv_amt = round(float(adv["amount"]), 2)
+                post_tax_deductions += adv_amt
+                line_items.append(
+                    {
+                        "kind": "advance",
+                        "label": f"Avans ({adv.get('reason', '')})",
+                        "amount": adv_amt,
+                        "direction": "deduction",
+                        "note": "Sistemden otomatik eklendi",
                     }
                 )
 
@@ -1678,6 +1693,24 @@ async def _payroll_collect_overtime(tenant_id: str, period_month: str) -> dict[s
     return by_staff
 
 
+
+async def _payroll_collect_advances(tenant_id: str, period_month: str) -> dict[str, list[dict]]:
+    """Onaylanmış (status=approved) avansları bordro ayı bazında toplar."""
+    by_staff: dict[str, list[dict]] = {}
+    cursor = db.hr_advances.find(
+        {
+            "tenant_id": tenant_id,
+            "status": "approved",
+            "request_month": period_month,
+        },
+        {"_id": 0, "staff_id": 1, "amount": 1, "reason": 1, "id": 1},
+    )
+    async for r in cursor:
+        sid = r["staff_id"]
+        if sid not in by_staff:
+            by_staff[sid] = []
+        by_staff[sid].append(r)
+    return by_staff
 async def _build_payroll_v2(
     tenant_id: str,
     month: str | None,
@@ -1740,6 +1773,8 @@ async def _build_payroll_v2(
             period_month,
         ))
     lv_map = await _payroll_collect_leaves(tenant_id, period_month)
+    adv_map = await _payroll_collect_advances(tenant_id, period_month)
+
     if {ex["staff_id"] for ex in (extras or [])} - {r["staff_id"] for r in base}:
         raise HTTPException(422, "Ek kalem personeli bu dönemin bordrosunda bulunamadı; başka otel veya dönem personeline kalem eklenemez")
     rates = await _get_payroll_tax_rates(tenant_id)
@@ -1748,6 +1783,7 @@ async def _build_payroll_v2(
         extras or [],
         ot_map,
         lv_map,
+        adv_map,
         rates,
     )
     for row in enriched:
@@ -5515,6 +5551,19 @@ class OvertimeDecisionPayload(BaseModel):
     note: str | None = Field(None, max_length=500)
 
 
+class AdvanceRequestPayload(BaseModel):
+    staff_id: str = Field(..., min_length=1, max_length=128)
+    amount: float = Field(..., gt=0)
+    currency: str = Field("TRY", min_length=3, max_length=3)
+    reason: str = Field(..., min_length=3, max_length=500)
+    request_month: str = Field(..., pattern=r"^\d{4}-\d{2}$", description="Avansin yansiyacagi bordro ayi, YYYY-MM formatinda")
+
+
+class AdvanceDecisionPayload(BaseModel):
+    action: Literal["approve", "reject"]
+    note: str | None = Field(None, max_length=500)
+
+
 async def _yearly_overtime_hours(tenant_id: str, staff_id: str, year: int, *, database=None) -> float:
     """Onaylanmış (status=approved) yıllık fazla mesai toplamı."""
     database = database if database is not None else db
@@ -5532,6 +5581,124 @@ async def _yearly_overtime_hours(tenant_id: str, staff_id: str, year: int, *, da
         total += float(d.get("hours") or 0)
     return total
 
+
+@router.post("/hr/advances")
+async def create_advance_request(
+    payload: AdvanceRequestPayload,
+    current_user: User = Depends(get_current_user),
+):
+    staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+    is_self = payload.staff_id == getattr(current_user, "id", None)
+    if not is_self and not _user_has_hr_op(current_user, "manage_hr"):
+        raise HTTPException(status_code=403, detail="Başka personel adına talep edemezsiniz")
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": payload.staff_id,
+        "amount": payload.amount,
+        "currency": payload.currency,
+        "reason": payload.reason,
+        "request_month": payload.request_month,
+        "status": "pending",
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
+    }
+    await db.hr_advances.insert_one(doc)
+
+    if not _user_has_hr_op(current_user, "manage_hr"):
+        await _notify_hr_managers(
+            current_user.tenant_id,
+            title="Yeni Avans Talebi",
+            message=f"{staff.get('first_name')} {staff.get('last_name')} personelinden {payload.amount} {payload.currency} tutarında avans talebi geldi.",
+            actor_id=current_user.id,
+            link=f"/hr/advances?id={doc['id']}",
+        )
+    return {"success": True, "id": doc["id"]}
+
+
+@router.get("/hr/advances")
+async def list_advance_requests(
+    staff_id: str | None = None,
+    status: str | None = None,
+    month: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    query = {"tenant_id": current_user.tenant_id}
+    if not _user_has_hr_op(current_user, "manage_hr"):
+        query["staff_id"] = current_user.id
+    elif staff_id:
+        query["staff_id"] = staff_id
+
+    if status:
+        query["status"] = status
+    if month:
+        query["request_month"] = month
+
+    pipeline = [
+        {"$match": query},
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "staff_id",
+                "foreignField": "id",
+                "as": "_staff",
+            }
+        },
+        {"$unwind": {"path": "$_staff", "preserveNullAndEmptyArrays": True}},
+        {
+            "$addFields": {
+                "staff_name": {
+                    "$concat": [{"$ifNull": ["$_staff.first_name", ""]}, " ", {"$ifNull": ["$_staff.last_name", ""]}]
+                },
+                "staff_department": "$_staff.department",
+            }
+        },
+        {"$project": {"_staff": 0, "_id": 0}},
+        {"$sort": {"created_at": -1}},
+    ]
+    items = await db.hr_advances.aggregate(pipeline).to_list(1000)
+    return {"success": True, "items": items}
+
+
+@router.post("/hr/advances/{request_id}/decide")
+async def decide_advance_request(
+    request_id: str,
+    payload: AdvanceDecisionPayload,
+    current_user: User = Depends(get_current_user),
+):
+    if not _user_has_hr_op(current_user, "manage_hr"):
+        raise HTTPException(status_code=403, detail="Avans onaylama yetkiniz yok")
+
+    req = await db.hr_advances.find_one({"id": request_id, "tenant_id": current_user.tenant_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı")
+
+    if req["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Sadece bekleyen talepler yanıtlanabilir")
+
+    if payload.action == "reject" and not payload.note:
+        raise HTTPException(status_code=400, detail="Reddedilen taleplerde açıklama zorunludur")
+
+    update = {
+        "status": "approved" if payload.action == "approve" else "rejected",
+        "decision_note": payload.note,
+        "decided_by": current_user.id,
+        "decided_at": datetime.now(UTC).isoformat(),
+    }
+    await db.hr_advances.update_one({"_id": req["_id"]}, {"$set": update})
+
+    await _notify_user(
+        req["staff_id"],
+        title="Avans Talebi Sonucu",
+        message=f"{req['request_month']} ayı için istediğiniz {req['amount']} {req['currency']} avans talebiniz {'onaylandı' if payload.action == 'approve' else 'reddedildi'}.",
+        actor_id=current_user.id,
+        link="/hr",
+    )
+    return {"success": True}
 
 @router.post("/hr/overtime-request", dependencies=[Depends(require_feature("hr", "shift"))])
 async def create_overtime_request(

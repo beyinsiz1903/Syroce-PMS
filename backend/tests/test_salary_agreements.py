@@ -109,6 +109,7 @@ async def test_monthly_salary_without_attendance_and_tenant_scope(monkeypatch):
     monkeypatch.setattr(hr, "_build_payroll", AsyncMock(return_value=("2026-01", [])))
     monkeypatch.setattr(hr, "_payroll_collect_overtime", AsyncMock(return_value={}))
     monkeypatch.setattr(hr, "_payroll_collect_leaves", AsyncMock(return_value={}))
+    monkeypatch.setattr(hr, "_payroll_collect_advances", AsyncMock(return_value={}))
     monkeypatch.setattr(hr, "_get_payroll_tax_rates", AsyncMock(return_value=hr.TR_PAYROLL_TAX_RATES_DEFAULT))
     _, rows, summary = await hr._build_payroll_v2("qa", "2026-01")
     assert find.call_args.args[0]["tenant_id"] == "qa"
@@ -138,6 +139,7 @@ async def test_other_month_agreement_keeps_attendance_as_approximate(monkeypatch
     monkeypatch.setattr(hr, "_build_payroll", AsyncMock(return_value=("2026-09", legacy)))
     monkeypatch.setattr(hr, "_payroll_collect_overtime", AsyncMock(return_value={}))
     monkeypatch.setattr(hr, "_payroll_collect_leaves", AsyncMock(return_value={}))
+    monkeypatch.setattr(hr, "_payroll_collect_advances", AsyncMock(return_value={}))
     monkeypatch.setattr(hr, "_get_payroll_tax_rates", AsyncMock(return_value=hr.TR_PAYROLL_TAX_RATES_DEFAULT))
 
     _, rows, _ = await hr._build_payroll_v2("qa", "2026-09")

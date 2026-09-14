@@ -24,6 +24,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import PayrollExtras from '@/components/hr/PayrollExtras';
 import PayrollMapping from '@/components/hr/PayrollMapping';
+import HRAdvancesTab from '@/components/hr/HRAdvancesTab';
 import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import PaginationBar from '@/components/PaginationBar';
@@ -1022,12 +1023,15 @@ const HRComplete = ({ user }) => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+        <TabsList className="grid w-full grid-cols-7 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
           <TabsTrigger value="attendance" data-testid="tab-attendance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
           {hasFeature("hr", "payroll") && (<TabsTrigger value="payroll" data-testid="tab-payroll" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <DollarSign className="w-4 h-4 mr-2" />Bordro
+          </TabsTrigger>)}
+          {hasFeature("hr", "payroll") && (<TabsTrigger value="advances" data-testid="tab-advances" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+            <DollarSign className="w-4 h-4 mr-2" />Avanslar
           </TabsTrigger>)}
           {hasFeature("hr", "leave") && (<TabsTrigger value="leave" data-testid="tab-leave" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Calendar className="w-4 h-4 mr-2" />İzin
@@ -1539,6 +1543,11 @@ const HRComplete = ({ user }) => {
             </Card>
           </div>
         </TabsContent>
+
+        {/* === ADVANCES === */}
+        {hasFeature("hr", "payroll") && (
+          <HRAdvancesTab user={user} />
+        )}
 
         {/* === LEAVE === */}
         <TabsContent value="leave" className="mt-4">
