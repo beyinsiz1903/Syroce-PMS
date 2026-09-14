@@ -203,7 +203,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={payForm.amount} onChange={v => setPayForm(p => ({ ...p, amount: v }))} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
-              options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online']]} />
+              options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
             <FormField label="Referans" value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder="Fis/Dekont No" />
           </div>
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
