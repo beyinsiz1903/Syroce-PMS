@@ -1774,7 +1774,7 @@ async def _build_payroll_v2(
         ))
     lv_map = await _payroll_collect_leaves(tenant_id, period_month)
     adv_map = await _payroll_collect_advances(tenant_id, period_month)
-    
+
     if {ex["staff_id"] for ex in (extras or [])} - {r["staff_id"] for r in base}:
         raise HTTPException(422, "Ek kalem personeli bu dönemin bordrosunda bulunamadı; başka otel veya dönem personeline kalem eklenemez")
     rates = await _get_payroll_tax_rates(tenant_id)
