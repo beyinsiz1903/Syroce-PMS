@@ -139,7 +139,7 @@ const WakeUpCallsPage = () => {
       setForm({ room_number: '', guest_name: '', wake_time: '07:00', wake_date: filterDate || '', recurring: false, recurrence_end_date: '', notes: '', method: 'phone' });
       loadCalls();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
   };
 

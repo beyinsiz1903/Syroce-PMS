@@ -122,7 +122,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
 
   const loadCari = async () => { try { const r = await axios.get(`/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch { /* fetch error */ } };
 
-  const exec = async (fn) => { setLoading(true); try { await fn(); onRefresh?.(); } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); } setLoading(false); };
+  const exec = async (fn) => { setLoading(true); try { await fn(); onRefresh?.(); } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); } setLoading(false); };
 
   const allItems = [
     ...(charges || []).map(c => ({ ...c, _type: 'charge' })),
@@ -295,7 +295,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                 setShowNewCari(false);
                 setNewCariForm({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
                 loadCari();
-              } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+              } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
               setLoading(false);
             }} disabled={loading} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="create-cari-btn">
               {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Olustur'}

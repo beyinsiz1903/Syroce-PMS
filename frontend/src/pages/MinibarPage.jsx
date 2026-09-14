@@ -148,7 +148,7 @@ const MinibarPage = () => {
       setShowItemDialog(false);
       loadItems();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
   };
 
@@ -166,7 +166,7 @@ const MinibarPage = () => {
       toast.success('Ürün pasifleştirildi');
       loadItems();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
   };
 
@@ -221,7 +221,7 @@ const MinibarPage = () => {
       loadItems();
     } catch (e) {
       // Anahtarı KORU: kullanıcı tekrar denerse aynı key gider, backend çift yazmaz.
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setSubmitting(false);
     }

@@ -27,12 +27,12 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
         booking_id: bookingId, direction, actual_hour: h,
       });
       setCalc(data);
-    } catch (e) { toast.error('Hesaplama hatası: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('Tutar hesaplanırken bir hata oluştu: ' + (e.response?.data?.detail || e.message)); }
     finally { setBusy(false); }
   };
 
   const apply = async () => {
-    if (!calc?.applicable && !overrideAmount) { toast.error('Tutar yok'); return; }
+    if (!calc?.applicable && !overrideAmount) { toast.error('Uygulanacak bir tutar bulunamadı.'); return; }
     const amount = overrideAmount ? parseFloat(overrideAmount) : calc.amount;
     const label = (calc?.label || (direction === 'early_checkin' ? 'Erken Giriş' : 'Geç Çıkış')) + ` (saat ${hour})`;
     setBusy(true);
@@ -45,7 +45,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
       toast.success('Ek ücret folyoya işlendi');
       onApplied?.();
       onClose();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     finally { setBusy(false); }
   };
 

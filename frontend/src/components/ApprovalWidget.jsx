@@ -37,7 +37,7 @@ const ApprovalWidget = ({ userRole }) => {
     } catch (error) {
       console.error('Failed to load approvals:', error);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -52,7 +52,7 @@ const ApprovalWidget = ({ userRole }) => {
       loadData();
       setDetailsOpen(false);
     } catch (error) {
-      toast.error('Onaylama başarısız');
+      toast.error('Onay işlemi gerçekleştirilemedi.');
     }
   };
 
@@ -68,7 +68,7 @@ const ApprovalWidget = ({ userRole }) => {
       loadData();
       setDetailsOpen(false);
     } catch (error) {
-      toast.error('Reddetme başarısız');
+      toast.error('Red işlemi gerçekleştirilemedi.');
     }
   };
 

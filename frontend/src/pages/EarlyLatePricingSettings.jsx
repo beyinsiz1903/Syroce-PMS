@@ -211,7 +211,7 @@ export default function EarlyLatePricingSettings() {
       setMeta(_meta || null);
       toast.success('Kurallar kaydedildi');
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setSaving(false);
     }

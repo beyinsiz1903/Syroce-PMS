@@ -151,7 +151,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       if (operation) await finishOperation(operation);
       else await loadData();
     }
-    catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
   };
 
   const repairChannelPricing = async () => {
@@ -815,7 +815,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       if (e.response?.status === 402) {
                         toast.error(`Açık bakiye var: ${detail}. Lütfen önce ödeme alınız.`);
                       } else {
-                        toast.error('Hata: ' + detail);
+                        toast.error('İşlem Hatası: ' + detail);
                       }
                     }
                   }}
@@ -953,7 +953,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
             
             await finishOperation('checked_in');
-          } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+          } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
         }}
       />
     </div>

@@ -151,7 +151,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
       toast.success(`Check-in tamam — Oda ${data.room_number}`);
       setDone(true);
       setTimeout(() => nav(`/reservations/${data.booking_id}`), 1200);
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     finally { setSubmitting(false); }
   };
 

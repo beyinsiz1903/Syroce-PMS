@@ -428,7 +428,7 @@ async def get_current_user(
         # offboarding.  Refresh-token rotation already enforced this invariant,
         # but ordinary authenticated requests did not.
         if user_doc.get("is_active") is False:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Hesap devre dışı")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
 
         # v46 (Bug CC): mass-revoke on password change. If the user has
         # `tokens_invalid_before` set (epoch seconds), any token whose `iat`
@@ -441,7 +441,7 @@ async def get_current_user(
             if not iat:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                    detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
                 )
             try:
                 import math
@@ -452,12 +452,12 @@ async def get_current_user(
             except (TypeError, ValueError):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                    detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
                 )
             if f_iat < f_ib:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                    detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
                 )
 
         # v105 Bug DAA (architect P1): defense-in-depth tenant consistency check.

@@ -146,7 +146,7 @@ const CashierTab = () => {
       setShowOpenDialog(false);
       setOpeningAmount('');
       loadShift();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
   const openShift = () => requirePin('Vardiya açmadan önce PIN doğrulayın', doOpenShift);
@@ -170,7 +170,7 @@ const CashierTab = () => {
       setClosingNote('');
       loadShift();
       loadHistory();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
   const closeShift = () => {
@@ -198,7 +198,7 @@ const CashierTab = () => {
       setHandoverTarget({ email: '', password: '', note: '' });
       loadShift();
       loadHistory();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -233,7 +233,7 @@ const CashierTab = () => {
       setShowPaidOutDialog(false);
       setManualTxn({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' });
       loadShift();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -259,7 +259,7 @@ const CashierTab = () => {
       setShowBankDepositDialog(false);
       setBankDeposit({ amount: '', bank_name: '', account_no: '', reference: '', note: '' });
       loadShift();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 

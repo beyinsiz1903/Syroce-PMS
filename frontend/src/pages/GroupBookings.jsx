@@ -199,7 +199,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
       setNewRows([emptyRow()]);
       await loadGroups();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setCreating(false);
     }

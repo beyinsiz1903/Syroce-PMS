@@ -88,7 +88,7 @@ export default function PackagesTab() {
       await load();
     } catch (e) {
       await alertDialog({
-        message: 'Hata: ' + (e.response?.data?.detail || e.message)
+        message: 'İşlem Hatası: ' + (e.response?.data?.detail || e.message)
       });
     }
   };

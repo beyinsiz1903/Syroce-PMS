@@ -12,7 +12,7 @@ export function normalizeCheckoutResponse(response) {
   };
 }
 
-export function getCheckoutErrorMessage(error, fallback = 'Çıkış yapılamadı') {
+export function getCheckoutErrorMessage(error, fallback = 'Check-out (Çıkış) işlemi gerçekleştirilemedi.') {
   const detail = error?.response?.data?.detail;
   const code = detail && typeof detail === 'object'
     ? String(detail.code || detail.error_code || '').trim().toUpperCase()

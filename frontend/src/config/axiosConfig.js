@@ -295,7 +295,7 @@ axios.interceptors.response.use(
       const detail = error.response.data.detail;
       // Yapılandırılmış iş hatası nesnesinden insan-okunur metin türet.
       // Legacy çağrılar `e.response?.data?.detail || e.message` veya
-      // `'Hata: ' + detail` paterniyle tüketiyor; toString override sayesinde
+      // `'İşlem Hatası: ' + detail` paterniyle tüketiyor; toString override sayesinde
       // hem nesne korunur hem string concat'te '[object Object]' çıkmaz.
       const humanize = (d) =>
         d?.error || d?.message || d?.msg || (d?.code ? `İşlem engellendi (${d.code})` : "İşlem başarısız");

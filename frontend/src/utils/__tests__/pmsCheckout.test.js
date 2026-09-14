@@ -17,7 +17,7 @@ describe('PMS checkout response guards', () => {
     expect(getCheckoutErrorMessage({ response: { data: { detail: { message: 'Açık bakiye var' } } } }))
       .toBe('Açık bakiye var');
     expect(getCheckoutErrorMessage({ response: { data: { detail: ['invalid'] } } }))
-      .toBe('Çıkış yapılamadı');
+      .toBe('Check-out (Çıkış) işlemi gerçekleştirilemedi.');
   });
 
   it('localizes reservation edit lock errors instead of exposing backend English', () => {
