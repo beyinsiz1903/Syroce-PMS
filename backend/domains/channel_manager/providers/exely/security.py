@@ -156,7 +156,8 @@ async def resolve_exely_credentials(
             normalized["_credential_source"] = "encrypted_vault"
             return normalized
 
-    if is_exely_production() and not os.environ.get("ALLOW_PLAINTEXT_CREDENTIALS") == "1":
+    from infra.feature_flags import is_enabled
+    if is_exely_production() and not is_enabled("ALLOW_PLAINTEXT_CREDENTIALS"):
         return None
 
 
