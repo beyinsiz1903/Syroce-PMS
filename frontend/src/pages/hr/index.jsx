@@ -23,6 +23,7 @@ import HRAttendanceTab from './HRAttendanceTab';
 import HRPayrollTab from './HRPayrollTab';
 import HRLeaveTab from './HRLeaveTab';
 import HRPerformanceTab from './HRPerformanceTab';
+import HRAdvancesTab from '@/components/hr/HRAdvancesTab';
 import HROvertimeTab from './HROvertimeTab';
 import HRRecruitmentTab from './HRRecruitmentTab';
 const LEAVE_TYPE_LABEL = {
@@ -948,12 +949,15 @@ const HRComplete = () => {
       <PageHeader icon={Users} title={t('cm.pages_HRComplete.ik_yonetim_paketi')} subtitle={t('cm.pages_HRComplete.devam_takibi_bordro_izin_performans_ve_i')} actions={headerActions} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="attendance" data-testid="tab-attendance">
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
           <TabsTrigger value="payroll" data-testid="tab-payroll">
             <DollarSign className="w-4 h-4 mr-2" />Bordro
+          </TabsTrigger>
+          <TabsTrigger value="advances" data-testid="tab-advances">
+            <DollarSign className="w-4 h-4 mr-2" />Avanslar
           </TabsTrigger>
           <TabsTrigger value="leave" data-testid="tab-leave">
             <Calendar className="w-4 h-4 mr-2" />{t('cm.pages_HRComplete.izin')}

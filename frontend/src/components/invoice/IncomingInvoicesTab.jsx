@@ -62,7 +62,7 @@ const IncomingInvoicesTab = () => {
       const { invoice, type, note } = answerDialog;
       await axios.post(`/api/integrations/incoming-invoices/${invoice.id}/answer`, {
         answer: type,
-        note: note || undefined,
+        note: type === 'APPROVE' ? undefined : (note || undefined),
         request_uuid: crypto.randomUUID(),
       });
       toast.success(t('invoice.incoming.answerSuccess') || 'Fatura yanıtı başarıyla iletildi.');
@@ -124,11 +124,11 @@ const IncomingInvoicesTab = () => {
                         {new Date(inv.issue_date).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-blue-600">
-                        {inv.document_number}
+                        {inv.invoice_number}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium">{inv.sender_name}</div>
-                        <div className="text-xs text-gray-500">VKN/TCKN: {inv.sender_tax_number}</div>
+                        <div className="font-medium">{inv.sender_title}</div>
+                        <div className="text-xs text-gray-500">VKN/TCKN: {inv.sender_vkn_tckn}</div>
                       </td>
                       <td className="px-4 py-3 text-right font-medium">
                         {fmtMoney(inv.payable_amount, inv.currency || 'TRY')}
@@ -166,8 +166,8 @@ const IncomingInvoicesTab = () => {
               {answerDialog.type === 'APPROVE' ? 'Faturayı Kabul Et' : 'Faturayı Reddet'}
             </DialogTitle>
             <DialogDescription>
-              <strong>{answerDialog.invoice?.document_number}</strong> numaralı, 
-              <strong> {answerDialog.invoice?.sender_name}</strong> tarafından gönderilen faturayı 
+              <strong>{answerDialog.invoice?.invoice_number}</strong> numaralı, 
+              <strong> {answerDialog.invoice?.sender_title}</strong> tarafından gönderilen faturayı 
               {answerDialog.type === 'APPROVE' ? ' KABUL' : ' RED'} etmek üzeresiniz.
             </DialogDescription>
           </DialogHeader>

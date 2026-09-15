@@ -764,11 +764,22 @@
     },
     "tabs": {
       "banks": "Banks",
+      "incoming": "Incoming e-Invoices",
       "expenses": "Expenses",
       "inventory": "Inventory",
       "invoices": "Invoices",
       "reports": "Reports",
       "suppliers": "Suppliers"
+    },
+    "incoming": {
+      "title": "Incoming e-Invoices",
+      "description": "Manage incoming e-invoices from your integrator (Nilvera) here.",
+      "sync": "Sync",
+      "fetchError": "Error fetching incoming invoices.",
+      "syncSuccess": "Synchronization completed.",
+      "syncError": "Synchronization failed.",
+      "answerSuccess": "Invoice response successfully submitted.",
+      "answerError": "Failed to submit invoice response."
     },
     "efatura": {
       "pending": "E-Fatura: Kuyrukta",

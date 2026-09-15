@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.routes.incoming_invoice_integrations import require_admin, router
+from api.routes.incoming_invoice_integrations import require_finance, router
 from models.schemas.incoming_invoice import (
     IncomingInvoice,
     IncomingInvoiceAnswerStatus,
@@ -29,11 +29,11 @@ app = FastAPI()
 app.include_router(router)
 
 
-def mock_require_admin():
+def mock_require_finance():
     return type("MockUser", (), {"id": "admin-user", "tenant_id": "tenant-1"})()
 
 
-app.dependency_overrides[require_admin] = mock_require_admin
+app.dependency_overrides[require_finance] = mock_require_finance
 
 
 @pytest.fixture(autouse=True)

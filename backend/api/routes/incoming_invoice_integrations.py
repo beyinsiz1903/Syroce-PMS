@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pymongo.errors import PyMongoError
 
-from core.helpers import require_admin
+from core.helpers import require_finance
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncService
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
@@ -206,7 +206,7 @@ async def list_incoming_invoices(
     profile: IncomingInvoiceProfile | None = None,
     answer_status: IncomingInvoiceAnswerStatus | None = None,
     provider_status: IncomingInvoiceProviderStatus | None = None,
-    user: User = Depends(require_admin),
+    user: User = Depends(require_finance),
 ) -> IncomingInvoiceListResponse:
     invoices, total = await IncomingInvoiceRepository.list_invoices(
         user.tenant_id,
@@ -227,7 +227,7 @@ async def list_incoming_invoices(
 @router.post("/sync", response_model=IncomingInvoiceSyncResponse)
 async def sync_incoming_invoices(
     payload: IncomingInvoiceSyncRequest,
-    user: User = Depends(require_admin),
+    user: User = Depends(require_finance),
 ) -> IncomingInvoiceSyncResponse:
     end_date = payload.end_date or datetime.now(UTC)
     start_date = payload.start_date or end_date - timedelta(days=31)
@@ -258,7 +258,7 @@ async def sync_incoming_invoices(
 @router.get("/{invoice_id}", response_model=IncomingInvoiceDetailResponse)
 async def get_incoming_invoice(
     invoice_id: str,
-    user: User = Depends(require_admin),
+    user: User = Depends(require_finance),
 ) -> IncomingInvoiceDetailResponse:
     invoice = await IncomingInvoiceRepository.get_by_id(user.tenant_id, invoice_id)
     if invoice is None:
@@ -274,7 +274,7 @@ async def get_incoming_invoice(
 async def answer_incoming_invoice(
     invoice_id: str,
     request: IncomingInvoiceAnswerRequest,
-    user: User = Depends(require_admin),
+    user: User = Depends(require_finance),
 ) -> InvoiceLifecycleResponse:
     if not is_nilvera_incoming_answer_enabled():
         raise HTTPException(
@@ -355,7 +355,7 @@ async def answer_incoming_invoice(
 
 
 @router.get("/{invoice_id}/lifecycle", response_model=list[InvoiceLifecycleResponse])
-async def get_invoice_lifecycle(invoice_id: str, user: User = Depends(require_admin)) -> list[InvoiceLifecycleResponse]:
+async def get_invoice_lifecycle(invoice_id: str, user: User = Depends(require_finance)) -> list[InvoiceLifecycleResponse]:
     tenant_id = user.tenant_id
     from core.tenant_db import get_db_for_tenant
 
@@ -397,7 +397,7 @@ class IncomingInvoiceReturnResponse(BaseModel):
 async def create_incoming_invoice_return(
     invoice_id: str,
     payload: IncomingInvoiceReturnRequest,
-    user: User = Depends(require_admin),
+    user: User = Depends(require_finance),
 ) -> IncomingInvoiceReturnResponse:
     if not is_nilvera_create_return_enabled():
         raise HTTPException(

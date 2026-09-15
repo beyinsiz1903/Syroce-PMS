@@ -746,11 +746,22 @@
     "generateEInvoice": "E-Fatura Oluştur",
     "tabs": {
       "invoices": "Faturalar",
+      "incoming": "Gelen e-Faturalar",
       "expenses": "Giderler",
       "suppliers": "Tedarikçiler",
       "banks": "Bankalar",
       "inventory": "Stok",
       "reports": "Raporlar"
+    },
+    "incoming": {
+      "title": "Gelen e-Faturalar",
+      "description": "Entegratörünüze (Nilvera) gelen faturalarınızı buradan yönetebilirsiniz.",
+      "sync": "Eşitle (Sync)",
+      "fetchError": "Gelen faturalar yüklenirken hata oluştu.",
+      "syncSuccess": "Senkronizasyon tamamlandı.",
+      "syncError": "Senkronizasyon başarısız oldu.",
+      "answerSuccess": "Fatura yanıtı başarıyla iletildi.",
+      "answerError": "Fatura yanıtı iletilemedi."
     },
     "actions": {
       "addExpense": "Gider Ekle",
