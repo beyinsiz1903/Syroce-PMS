@@ -505,6 +505,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       Aktif oda tahakkukları, onaylı rezervasyon toplamını {fmtCurrency(pricingReconciliationDifference, currency)} aşıyor. Ödeme yerine finansal mutabakat yapın.
                     </div>
                   )}
+                  {(summary?.total_discounts || 0) > 0 && (
+                    <div className="flex justify-between text-xs" data-testid="total-discounts">
+                      <span className="text-slate-500">İndirim</span>
+                      <span className="font-semibold text-rose-600">-{fmtCurrency(summary.total_discounts, currency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
                     <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.total_payments, currency)}</span>

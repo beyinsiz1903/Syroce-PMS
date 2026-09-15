@@ -136,6 +136,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <SummaryCard currency={currency} label="Toplam" value={summary?.total_amount} color="blue" />
         <SummaryCard currency={currency} label="Borçlar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
         <SummaryCard currency={currency} label="Ödemeler" value={summary?.total_payments} color="emerald" />
+        {(summary?.total_discounts || 0) > 0 && (
+          <SummaryCard currency={currency} label="İndirimler" value={summary?.total_discounts} color="rose" />
+        )}
         <SummaryCard currency={currency} label="Bakiye" value={displayedFolioBalance} color={displayedFolioBalance > 0 ? 'red' : 'green'} />
       </div>
       {hasAllocatedPrepayment && (

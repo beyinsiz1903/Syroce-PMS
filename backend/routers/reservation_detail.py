@@ -376,7 +376,8 @@ def _build_financial_summary(
     """
     active_charges = [charge for charge in charges if not charge.get("voided")]
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
-    total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided"))
+    total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") != "discount")
+    total_discounts = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") == "discount")
     total_extra = sum(_extra_charge_total(charge) for charge in extra_charges if not charge.get("voided"))
     total_deposits = sum(
         max(
@@ -409,8 +410,8 @@ def _build_financial_summary(
     reservation_price_component_total = room_charge_total + accommodation_tax_total
     room_charge_posted = room_charge_total > 0
     unposted_room_total = 0 if room_charge_posted else booking.get("total_amount", 0)
-    balance = unposted_room_total + total_charges + total_extra - total_payments
-    folio_balance = total_charges + total_extra - total_payments
+    balance = unposted_room_total + total_charges + total_extra - total_payments - total_discounts
+    folio_balance = total_charges + total_extra - total_payments - total_discounts
     # The confirmed stay total remains collectible even before every night is
     # posted to the folio.  ``max`` protects legacy bookings where the posted
     # room charge is already larger than the booking total (for example when a
@@ -420,6 +421,7 @@ def _build_financial_summary(
         + (total_charges - reservation_price_component_total)
         + total_extra
         - total_payments
+        - total_discounts
     )
     # A posted accommodation amount above the confirmed reservation total is
     # a pricing reconciliation problem, not an amount the receptionist should
@@ -433,6 +435,7 @@ def _build_financial_summary(
         "total_amount": booking.get("total_amount", 0),
         "total_charges": round(total_charges, 2),
         "total_payments": round(total_payments, 2),
+        "total_discounts": round(total_discounts, 2),
         "total_extra": round(total_extra, 2),
         "accommodation_tax_total": round(accommodation_tax_total, 2),
         "total_deposits": round(total_deposits, 2),
