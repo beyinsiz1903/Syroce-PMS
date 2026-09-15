@@ -192,6 +192,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showPayment && (
         <FormPanel color="emerald" title={t('common.paymentRecord')} testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
           onSubmit={() => exec(async () => {
+            if (payForm.method === 'discount' && !payForm.reference) { toast.error('Lütfen indirim sebebini yazın'); return; }
             const amount = parseFloat(payForm.amount);
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
               ...payForm,
@@ -204,8 +205,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             <FormField label="Tutar (TL)" type="number" value={payForm.amount} onChange={v => setPayForm(p => ({ ...p, amount: v }))} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
-            <FormField label="Referans" value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder="Fis/Dekont No" />
           </div>
+          <FormField label={payForm.method === 'discount' ? 'İndirim Sebebi / Not' : 'Referans'} value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder={payForm.method === 'discount' ? 'İndirimin nedeni (Zorunlu)' : 'Fis/Dekont No'} />
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
             <div className="font-medium">{guestPaymentClassificationLabel(payForm.amount, summary?.balance)}</div>
             <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>

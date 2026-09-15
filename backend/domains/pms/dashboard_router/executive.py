@@ -86,7 +86,7 @@ async def _build_complaint_management(current_user) -> dict:
         .limit(20)
         .to_list(20),
         db.feedback.find(
-            {"tenant_id": tid, "rating": {"$lte": 2}},
+            {"tenant_id": tid, "method": {"$ne": "discount"}, "rating": {"$lte": 2}},
             {"_id": 0, "category": 1},
         ).to_list(10000),
         db.feedback.find(
@@ -208,11 +208,11 @@ async def get_executive_kpi_snapshot(
         bank_accounts,
         yesterday_revenue_doc,
     ) = await asyncio.gather(
-        db.rooms.count_documents({"tenant_id": tid}),
-        db.rooms.count_documents({"tenant_id": tid, "status": "occupied"}),
+        db.rooms.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}}),
+        db.rooms.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}, "status": "occupied"}),
         db.payments.aggregate(
             [
-                {"$match": {"tenant_id": tid, "payment_date": {"$gte": yesterday}}},
+                {"$match": {"tenant_id": tid, "method": {"$ne": "discount"}, "payment_date": {"$gte": yesterday}}},
                 {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
             ]
         ).to_list(1),
@@ -225,14 +225,14 @@ async def get_executive_kpi_snapshot(
         ),
         db.reviews.aggregate(
             [
-                {"$match": {"tenant_id": tid}},
+                {"$match": {"tenant_id": tid, "method": {"$ne": "discount"}}},
                 {"$group": {"_id": None, "sum_rating": {"$sum": "$rating"}, "cnt": {"$sum": 1}}},
             ]
         ).to_list(1),
-        db.bank_accounts.find({"tenant_id": tid}).to_list(100),
+        db.bank_accounts.find({"tenant_id": tid, "method": {"$ne": "discount"}}).to_list(100),
         db.payments.aggregate(
             [
-                {"$match": {"tenant_id": tid, "payment_date": {"$gte": two_days_ago, "$lt": yesterday}}},
+                {"$match": {"tenant_id": tid, "method": {"$ne": "discount"}, "payment_date": {"$gte": two_days_ago, "$lt": yesterday}}},
                 {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
             ]
         ).to_list(1),
@@ -362,8 +362,8 @@ async def get_executive_performance_alerts(credentials: HTTPAuthorizationCredent
                 }
             )
         ).to_list(1),
-        db.rooms.count_documents({"tenant_id": tid}),
-        db.rooms.count_documents({"tenant_id": tid, "status": "occupied"}),
+        db.rooms.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}}),
+        db.rooms.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}, "status": "occupied"}),
         db.bookings.count_documents(
             {
                 "tenant_id": tid,
@@ -384,7 +384,7 @@ async def get_executive_performance_alerts(credentials: HTTPAuthorizationCredent
                 "priority": {"$in": ["high", "urgent"]},
             }
         ),
-        db.bank_accounts.find({"tenant_id": tid}, {"_id": 0, "balance": 1}).to_list(1000),
+        db.bank_accounts.find({"tenant_id": tid, "method": {"$ne": "discount"}}, {"_id": 0, "balance": 1}).to_list(1000),
         db.expenses.aggregate(
             _sum_pipeline(
                 {
@@ -759,13 +759,13 @@ async def get_executive_daily_summary(
         complaints,
         incidents,
     ) = await asyncio.gather(
-        db.bookings.count_documents({"tenant_id": tid, "created_at": {"$gte": target_date}}),
-        db.bookings.count_documents({"tenant_id": tid, "check_in": target_date, "status": "checked_in"}),
-        db.bookings.count_documents({"tenant_id": tid, "check_out": target_date, "status": "checked_out"}),
-        db.bookings.count_documents({"tenant_id": tid, "status": "cancelled", "updated_at": {"$gte": target_date}}),
+        db.bookings.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}, "created_at": {"$gte": target_date}}),
+        db.bookings.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}, "check_in": target_date, "status": "checked_in"}),
+        db.bookings.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}, "check_out": target_date, "status": "checked_out"}),
+        db.bookings.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}, "status": "cancelled", "updated_at": {"$gte": target_date}}),
         db.payments.aggregate(
             [
-                {"$match": {"tenant_id": tid, "payment_date": {"$gte": target_date}}},
+                {"$match": {"tenant_id": tid, "method": {"$ne": "discount"}, "payment_date": {"$gte": target_date}}},
                 {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
             ]
         ).to_list(1),
@@ -776,7 +776,7 @@ async def get_executive_daily_summary(
                 "created_at": {"$gte": target_date},
             }
         ),
-        db.incidents.count_documents({"tenant_id": tid, "incident_date": target_date}),
+        db.incidents.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}, "incident_date": target_date}),
     )
 
     revenue = (revenue_doc[0]["total"] if revenue_doc else 0) or 0

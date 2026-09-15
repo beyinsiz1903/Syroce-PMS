@@ -741,6 +741,7 @@ async def manual_pull(
             "message": f"EXELY_RESERVATION_PULL_FAILED:{type(exc).__name__} - {str(exc)}",
         }
 
+@router.get("/reservations/local")
 async def get_local_reservations(
     pms_status: str | None = None,
     current_user: User = Depends(get_current_user),
