@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.routes.incoming_invoice_integrations import require_admin, router
+from api.routes.incoming_invoice_integrations import require_finance, router
 from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncResult
 from core.integrations.nilvera.errors import NilveraServerError
 from models.schemas.incoming_invoice import (
@@ -30,7 +30,7 @@ def _admin_user():
     return AdminUser()
 
 
-app.dependency_overrides[require_admin] = _admin_user
+app.dependency_overrides[require_finance] = _admin_user
 
 
 @pytest.fixture

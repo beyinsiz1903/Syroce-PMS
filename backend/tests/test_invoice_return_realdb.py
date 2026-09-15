@@ -207,18 +207,18 @@ async def test_partial_return_and_state_transitions(migrated_db):
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from api.routes.incoming_invoice_integrations import require_admin, router
+from api.routes.incoming_invoice_integrations import require_finance, router
 
 app = FastAPI()
 app.include_router(router)
 
-def mock_require_admin():
+def mock_require_finance():
     class MockUser:
         id = "admin_user_123"
         tenant_id = "tenant_test"
     return MockUser()
 
-app.dependency_overrides[require_admin] = mock_require_admin
+app.dependency_overrides[require_finance] = mock_require_finance
 
 
 async def test_api_invalid_uuid_returns_422():
