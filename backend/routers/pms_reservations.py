@@ -524,10 +524,11 @@ async def search_reservations(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
-import httpx
-import xml.etree.ElementTree as ET
-import time
 import asyncio
+import time
+import xml.etree.ElementTree as ET
+
+import httpx
 
 _tcmb_cache = {"rates": {}, "timestamp": 0}
 _tcmb_lock = asyncio.Lock()
@@ -540,16 +541,16 @@ async def get_exchange_rates(current_user=Depends(get_current_user)):
     # Cache for 1 hour (3600 seconds)
     if now - _tcmb_cache["timestamp"] < 3600 and _tcmb_cache["rates"]:
         return {"ok": True, "source": "TCMB (cached)", "rates": _tcmb_cache["rates"]}
-    
+
     async with _tcmb_lock:
         if now - _tcmb_cache["timestamp"] < 3600 and _tcmb_cache["rates"]:
             return {"ok": True, "source": "TCMB (cached)", "rates": _tcmb_cache["rates"]}
-        
+
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get("https://tcmb.gov.tr/kurlar/today.xml", timeout=5.0)
                 resp.raise_for_status()
-                
+
                 root = ET.fromstring(resp.text)
                 rates = {}
                 for currency in root.findall("Currency"):
@@ -560,7 +561,7 @@ async def get_exchange_rates(current_user=Depends(get_current_user)):
                             rates[code] = float(forex_buying.text)
                         except ValueError:
                             pass
-                
+
                 if rates:
                     rates["TL"] = 1.0  # Base currency
                     rates["TRY"] = 1.0
