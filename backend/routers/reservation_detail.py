@@ -1100,6 +1100,12 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         ]
         if ag_ids:
             async for ag in db.guests.find({"id": {"$in": ag_ids}, "tenant_id": tid}, {"_id": 0}):
+                # inject checkout_date from bg_link
+                for link in ag_links:
+                    if link.get("guest_id") == ag.get("id"):
+                        if link.get("checkout_date"):
+                            ag["checkout_date"] = link["checkout_date"]
+                        break
                 guests_list.append(ag)
         # Older additional-guest records embedded the guest payload directly in
         # booking_guests. Keep them readable while all new writes use guest_id.
@@ -4924,3 +4930,61 @@ async def unlink_reservation_guest(
     else:
         await db.booking_guests.delete_many({"booking_id": booking_id, "tenant_id": tid, "guest_id": guest_id})
     return {"status": "ok"}
+
+
+@router.post(
+    "/{booking_id}/guests/{guest_id}/checkout",
+    response_model=dict,
+    summary="Checkout a specific guest",
+    description="Marks a specific guest as checked out and enqueues a KBS checkout job.",
+)
+async def checkout_reservation_guest(
+    booking_id: str = Path(..., description="The reservation ID"),
+    guest_id: str = Path(..., description="The ID of the guest to checkout"),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    # Ana misafir mi kontrol et
+    booking = await db.bookings.find_one(
+        {"tenant_id": tenant_id, "id": booking_id},
+        {"_id": 0, "guest_id": 1, "status": 1}
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+        
+    if booking.get("guest_id") == guest_id:
+        raise HTTPException(
+            status_code=400, 
+            detail="Ana misafir erken çıkış yapamaz. Tüm rezervasyonu çıkış yapmalısınız."
+        )
+
+    # Ekstra misafir kontrolü
+    bg = await db.booking_guests.find_one(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id}
+    )
+    if not bg:
+        raise HTTPException(status_code=404, detail="Guest is not linked to this reservation")
+        
+    if bg.get("checkout_date"):
+        raise HTTPException(status_code=400, detail="Misafir zaten çıkış yapmış")
+
+    from datetime import datetime, UTC
+    now_iso = datetime.now(UTC).isoformat()
+    
+    await db.booking_guests.update_one(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id},
+        {"$set": {"checkout_date": now_iso}}
+    )
+    
+    # KBS Queue
+    if booking.get("status") in ("checked_in", "checked_out"):
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+        await auto_enqueue_kbs(
+            tenant_id,
+            booking_id,
+            action="checkout",
+            actor="user:manual_guest_checkout",
+            target_guest_id=guest_id
+        )
+
+    return {"status": "ok", "checkout_date": now_iso}

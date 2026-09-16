@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { LogOut, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -652,19 +652,20 @@ export function GuestsTab({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
+                                    {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
                   {isPrimary && <Badge className="bg-blue-100 text-blue-700">Ana Misafir</Badge>}
-                  {quickIdOn && <Button variant="outline" size="sm" disabled={readOnly} className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
+                  {g.checkout_date && <Badge className="bg-rose-100 text-rose-700">Ayrıldı</Badge>}
+                  {quickIdOn && <Button variant="outline" size="sm" disabled={readOnly || g.checkout_date} className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
                       <ScanLine className="w-3.5 h-3.5" />
                       <span className="ml-1 text-xs">Kimlik Tara</span>
                     </Button>}
-                  <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
+                  <Button variant="ghost" size="sm" disabled={readOnly || g.checkout_date} className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
                     {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                     <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Düzenle'}</span>
                   </Button>
                   {!isEditing && (
                     <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={async () => {
-                      if (!window.confirm('Bu misafiri odadan silmek istediğinize emin misiniz?')) return;
+                      if (!window.confirm('Bu misafiri odadan tamamen SİLMEK istediğinize emin misiniz?')) return;
                       try {
                         await axios.delete(`/pms/reservations/${booking.id}/guests/${g.id}`);
                         toast.success('Misafir odadan çıkarıldı');
@@ -675,6 +676,21 @@ export function GuestsTab({
                     }}>
                       <X className="w-3.5 h-3.5" />
                       <span className="ml-1 text-xs">Çıkar</span>
+                    </Button>
+                  )}
+                  {!isEditing && !isPrimary && !g.checkout_date && booking.status === 'checked_in' && (
+                    <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50" onClick={async () => {
+                      if (!window.confirm('Bu misafiri odadan ÇIKIŞ YAPMAK (erken çıkış) istediğinize emin misiniz? Bu işlem KBSye bildirilecektir.')) return;
+                      try {
+                        await axios.post(`/pms/reservations/${booking.id}/guests/${g.id}/checkout`);
+                        toast.success('Misafir çıkışı yapıldı');
+                        onRefresh?.();
+                      } catch (e) {
+                        toast.error('Çıkış yapılamadı: ' + (e.response?.data?.detail || e.message));
+                      }
+                    }}>
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span className="ml-1 text-xs">Çıkış Yap</span>
                     </Button>
                   )}
                 </div>
