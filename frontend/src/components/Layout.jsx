@@ -25,8 +25,8 @@ import {
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
   ChevronDown, Server, CalendarCheck, X, Undo2,
-  BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare, Activity
-, Utensils, Briefcase, ConciergeBell} from 'lucide-react';
+  BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare, Activity,
+  Utensils, Briefcase, ConciergeBell, BedDouble } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
@@ -543,6 +543,37 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
               })}
 
               <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
+              {/* Odalar kısayolu — PMS'in rooms sekmesine direkt bağlantı */}
+              {visibleNav.some((item) => item.key === 'pms') && (() => {
+                const roomsPath = '/app/pms#rooms';
+                const isRoomsActive = location.pathname === '/app/pms' && location.hash === '#rooms';
+                return (
+                  <TooltipProvider key="rooms-shortcut" delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleNavigate(roomsPath)}
+                          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
+                            isRoomsActive
+                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          data-nav-key="rooms-shortcut"
+                          data-testid="nav-rooms-shortcut-button"
+                        >
+                          <BedDouble className="w-3.5 h-3.5 shrink-0" />
+                          <span className="hidden lg:inline font-medium">Odalar</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="lg:hidden">
+                        <p>Odalar</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })()}
               {primaryGroups.map((groupDef) => renderGroupDropdown(groupDef))}
               {renderApplicationsDropdown()}
             </nav>
