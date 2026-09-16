@@ -247,6 +247,10 @@ const RoomsTab = ({
   // Open quick payment dialog
   const handlePaymentClick = useCallback((e, guestInfo) => {
     e.stopPropagation();
+    if (!guestInfo?.booking_id) {
+      toast.error('Rezervasyon bilgisi yüklenemedi. Sayfayı yenileyip tekrar deneyin.');
+      return;
+    }
     setPaymentTarget(guestInfo);
     setPaymentAmount(guestInfo.balance > 0 ? String(guestInfo.balance) : '');
     setPaymentMethod('cash');
@@ -256,6 +260,10 @@ const RoomsTab = ({
   // Submit quick payment
   const handleQuickPayment = useCallback(async () => {
     if (!paymentTarget) return;
+    if (!paymentTarget.booking_id) {
+      toast.error('Rezervasyon bilgisi bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin.');
+      return;
+    }
     const amount = parseFloat(paymentAmount);
     if (!amount || amount <= 0) {
       toast.error('Lutfen geçerli bir tutar giriniz');
