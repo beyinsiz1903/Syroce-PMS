@@ -144,6 +144,7 @@ class ExelyPullScheduler:
                     password=creds["password"],
                     hotel_code=creds["hotel_code"],
                     endpoint_url=creds["endpoint_url"],
+                    connection_mode=conn.get("mode", ""),
                     safety_window_minutes=safety_window_minutes,
                 )
             except Exception as e:
@@ -205,6 +206,7 @@ class ExelyPullScheduler:
         password: str,
         hotel_code: str,
         endpoint_url: str = "",
+        connection_mode: str = "",
         safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
         runtime_block = reservation_sync_block_reason()
@@ -227,6 +229,8 @@ class ExelyPullScheduler:
         }
         if endpoint_url:
             provider_kwargs["endpoint_url"] = endpoint_url
+        if connection_mode:
+            provider_kwargs["connection_mode"] = connection_mode
         provider = ExelyProvider(**provider_kwargs)
 
         # Heartbeat: keep connection alive in Exely
