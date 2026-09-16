@@ -855,7 +855,17 @@ const RoomsTab = ({
                     step="0.01"
                     min="0"
                     value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    onChange={(e) => {
+                      setPaymentAmount(e.target.value);
+                      if (useCurrencyConverter && exchangeRate) {
+                        const baseAmt = parseFloat(e.target.value);
+                        if (!isNaN(baseAmt)) {
+                          setForeignAmount((baseAmt * parseFloat(exchangeRate)).toFixed(2));
+                        } else {
+                          setForeignAmount('');
+                        }
+                      }
+                    }}
                     placeholder="0.00"
                     className="flex-1"
                     data-testid="quick-payment-amount"
@@ -865,7 +875,12 @@ const RoomsTab = ({
                       variant="outline"
                       size="sm"
                       className="text-xs whitespace-nowrap"
-                      onClick={() => setPaymentAmount(String(paymentTarget.balance))}
+                      onClick={() => {
+                        setPaymentAmount(String(paymentTarget.balance));
+                        if (useCurrencyConverter && exchangeRate) {
+                          setForeignAmount((paymentTarget.balance * parseFloat(exchangeRate)).toFixed(2));
+                        }
+                      }}
                       data-testid="quick-payment-fill-balance"
                     >
                       Tamamini Al
@@ -882,8 +897,15 @@ const RoomsTab = ({
                     checked={useCurrencyConverter} 
                     onCheckedChange={(checked) => {
                       setUseCurrencyConverter(checked);
-                      if (checked && foreignCurrency && tcmbRates[foreignCurrency] && !exchangeRate) {
-                        setExchangeRate(tcmbRates[foreignCurrency].toFixed(4));
+                      if (checked && foreignCurrency && tcmbRates[foreignCurrency]) {
+                        const newRate = exchangeRate || tcmbRates[foreignCurrency].toFixed(4);
+                        if (!exchangeRate) setExchangeRate(newRate);
+                        
+                        const baseAmt = parseFloat(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
+                        if (baseAmt > 0) {
+                          setForeignAmount((baseAmt * parseFloat(newRate)).toFixed(2));
+                          if (!paymentAmount) setPaymentAmount(String(baseAmt));
+                        }
                       }
                     }} 
                   />
@@ -904,8 +926,11 @@ const RoomsTab = ({
                             if (tcmbRates[val]) {
                               const newRate = tcmbRates[val].toFixed(4);
                               setExchangeRate(newRate);
-                              if (foreignAmount) {
-                                setPaymentAmount((parseFloat(foreignAmount) / parseFloat(newRate)).toFixed(2));
+                              
+                              const baseAmt = parseFloat(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
+                              if (baseAmt > 0) {
+                                setForeignAmount((baseAmt * parseFloat(newRate)).toFixed(2));
+                                if (!paymentAmount) setPaymentAmount(String(baseAmt));
                               }
                             }
                           }}
@@ -930,9 +955,9 @@ const RoomsTab = ({
                           onChange={(e) => {
                              setExchangeRate(e.target.value);
                              const rate = parseFloat(e.target.value);
-                             const famt = parseFloat(foreignAmount);
-                             if (rate > 0 && famt > 0) {
-                                 setPaymentAmount((famt / rate).toFixed(2));
+                             const baseAmt = parseFloat(paymentAmount);
+                             if (rate > 0 && !isNaN(baseAmt)) {
+                                 setForeignAmount((baseAmt * rate).toFixed(2));
                              }
                           }}
                         />
