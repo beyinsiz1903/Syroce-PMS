@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2 } from 'lucide-react';
 import BookingConflictDialog from '@/components/pms/BookingConflictDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
@@ -70,6 +71,13 @@ const RoomsTab = ({
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // Currency Converter state
+  const [useCurrencyConverter, setUseCurrencyConverter] = useState(false);
+  const [foreignCurrency, setForeignCurrency] = useState('TL');
+  const [foreignAmount, setForeignAmount] = useState('');
+  const [exchangeRate, setExchangeRate] = useState('');
+  const [tcmbRates, setTcmbRates] = useState({});
 
   // Quick reservation dialog state
   const [quickResDialog, setQuickResDialog] = useState(false);
@@ -258,8 +266,25 @@ const RoomsTab = ({
     setPaymentDialog(true);
   }, []);
 
-  // Submit quick payment
-  const handleQuickPayment = useCallback(async () => {
+  const fetchExchangeRates = async () => {
+    try {
+      const res = await axios.get('/pms/reservations/exchange-rates');
+      if (res.data?.rates) {
+        setTcmbRates(res.data.rates);
+      }
+    } catch (e) {
+      console.error('Failed to fetch exchange rates', e);
+    }
+  };
+
+  useEffect(() => {
+    if (useCurrencyConverter && Object.keys(tcmbRates).length === 0) {
+      fetchExchangeRates();
+    }
+  }, [useCurrencyConverter]);
+
+  // Record payment
+  const handlePaymentSubmit = useCallback(async () => {
     if (!paymentTarget) return;
     if (!paymentTarget.booking_id) {
       toast.error('Rezervasyon bilgisi bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin.');
@@ -272,11 +297,17 @@ const RoomsTab = ({
     }
     setPaymentLoading(true);
     try {
-      await axios.post(`/pms/reservations/${paymentTarget.booking_id}/record-payment`, {
+      const payload = {
         amount,
         method: paymentMethod,
         payment_type: classifyGuestPayment(amount, paymentTarget.balance),
-      });
+      };
+      
+      if (useCurrencyConverter && foreignAmount && exchangeRate) {
+        payload.notes = `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`;
+      }
+
+      await axios.post(`/pms/reservations/${paymentTarget.booking_id}/record-payment`, payload);
       toast.success(`${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ödeme başarıyla alindi`);
       setPaymentDialog(false);
       setPaymentTarget(null);
@@ -841,6 +872,93 @@ const RoomsTab = ({
                     </Button>
                   )}
                 </div>
+              </div>
+
+              {/* Currency Converter */}
+              <div className="mt-4 border-t pt-3 border-slate-100">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="useConverter" 
+                    checked={useCurrencyConverter} 
+                    onCheckedChange={(checked) => {
+                      setUseCurrencyConverter(checked);
+                      if (checked && foreignCurrency && tcmbRates[foreignCurrency] && !exchangeRate) {
+                        setExchangeRate(tcmbRates[foreignCurrency].toFixed(4));
+                      }
+                    }} 
+                  />
+                  <label htmlFor="useConverter" className="text-sm font-medium text-slate-700 cursor-pointer">
+                    Farklı Döviz ile Hesapla (Kur Çevirici)
+                  </label>
+                </div>
+                
+                {useCurrencyConverter && (
+                  <div className="bg-slate-50 border border-slate-200 rounded p-3 mt-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">Alınan Döviz Cinsi</Label>
+                        <Select 
+                          value={foreignCurrency} 
+                          onValueChange={(val) => {
+                            setForeignCurrency(val);
+                            if (tcmbRates[val]) {
+                              const newRate = tcmbRates[val].toFixed(4);
+                              setExchangeRate(newRate);
+                              if (foreignAmount) {
+                                setPaymentAmount((parseFloat(foreignAmount) / parseFloat(newRate)).toFixed(2));
+                              }
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="TL">TL (Türk Lirası)</SelectItem>
+                            <SelectItem value="USD">USD (Dolar)</SelectItem>
+                            <SelectItem value="EUR">EUR (Euro)</SelectItem>
+                            <SelectItem value="GBP">GBP (Sterlin)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">
+                          Kur {tcmbRates[foreignCurrency] ? <span className="text-[10px] text-green-600 ml-1">(TCMB: {tcmbRates[foreignCurrency].toFixed(4)})</span> : null}
+                        </Label>
+                        <Input
+                          type="number" step="0.0001" min="0" placeholder="Örn: 35.00"
+                          className="mt-1 h-8 text-sm"
+                          value={exchangeRate}
+                          onChange={(e) => {
+                             setExchangeRate(e.target.value);
+                             const rate = parseFloat(e.target.value);
+                             const famt = parseFloat(foreignAmount);
+                             if (rate > 0 && famt > 0) {
+                                 setPaymentAmount((famt / rate).toFixed(2));
+                             }
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Misafirden Alınan Tutar</Label>
+                      <Input
+                        type="number" step="0.01" min="0" placeholder="Örn: 7500"
+                        className="mt-1 h-8 text-sm"
+                        value={foreignAmount}
+                        onChange={(e) => {
+                            setForeignAmount(e.target.value);
+                            const famt = parseFloat(e.target.value);
+                            const rate = parseFloat(exchangeRate);
+                            if (rate > 0 && famt > 0) {
+                                setPaymentAmount((famt / rate).toFixed(2));
+                            }
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500 italic">
+                      Hesaplanan tutar otomatik olarak "{paymentTarget.currency}" kutusuna yansıtılır. İşlem açıklamasına kur notu düşülür.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Payment method */}

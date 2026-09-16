@@ -523,3 +523,55 @@ async def search_reservations(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+import httpx
+import xml.etree.ElementTree as ET
+import time
+import asyncio
+
+_tcmb_cache = {"rates": {}, "timestamp": 0}
+_tcmb_lock = asyncio.Lock()
+
+@router.get("/exchange-rates")
+async def get_exchange_rates(current_user=Depends(get_current_user)):
+    """Fetches and caches daily exchange rates from TCMB."""
+    global _tcmb_cache
+    now = time.time()
+    # Cache for 1 hour (3600 seconds)
+    if now - _tcmb_cache["timestamp"] < 3600 and _tcmb_cache["rates"]:
+        return {"ok": True, "source": "TCMB (cached)", "rates": _tcmb_cache["rates"]}
+    
+    async with _tcmb_lock:
+        if now - _tcmb_cache["timestamp"] < 3600 and _tcmb_cache["rates"]:
+            return {"ok": True, "source": "TCMB (cached)", "rates": _tcmb_cache["rates"]}
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get("https://tcmb.gov.tr/kurlar/today.xml", timeout=5.0)
+                resp.raise_for_status()
+                
+                root = ET.fromstring(resp.text)
+                rates = {}
+                for currency in root.findall("Currency"):
+                    code = currency.get("CurrencyCode")
+                    forex_buying = currency.find("ForexBuying")
+                    if forex_buying is not None and forex_buying.text:
+                        try:
+                            rates[code] = float(forex_buying.text)
+                        except ValueError:
+                            pass
+                
+                if rates:
+                    rates["TL"] = 1.0  # Base currency
+                    rates["TRY"] = 1.0
+                    _tcmb_cache["rates"] = rates
+                    _tcmb_cache["timestamp"] = now
+                    return {"ok": True, "source": "TCMB (fresh)", "rates": rates}
+                else:
+                    raise Exception("No rates found in XML")
+        except Exception as e:
+            # Fallback to cache if request fails, even if expired
+            if _tcmb_cache["rates"]:
+                return {"ok": True, "source": "TCMB (fallback)", "rates": _tcmb_cache["rates"]}
+            raise HTTPException(status_code=503, detail=f"Failed to fetch exchange rates: {str(e)}")
+
