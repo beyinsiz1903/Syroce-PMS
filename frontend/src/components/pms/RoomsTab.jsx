@@ -123,6 +123,7 @@ const RoomsTab = ({
           total_amount: b.total_amount || 0,
           paid_amount: b.paid_amount || 0,
           balance: Math.round(balance * 100) / 100,
+          currency: b.currency || "TL",
           isCheckInToday: ci === today,
           isCheckOutToday: co === today,
           category,
@@ -620,7 +621,7 @@ const RoomsTab = ({
                       <div className="flex items-center gap-1 mt-1" data-testid={`room-balance-${room.room_number}`}>
                         <AlertTriangle className="w-3 h-3 text-amber-600" />
                         <span className="text-[11px] font-semibold text-amber-700">
-                          Bakiye: {guestInfo.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                          Bakiye: {guestInfo.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {guestInfo.currency}
                         </span>
                       </div>
                     )}
@@ -708,15 +709,15 @@ const RoomsTab = ({
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Tutar:</span>
-                    <span className="font-medium">{checkoutBooking.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-medium">{checkoutBooking.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {checkoutBooking.currency}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Odenen:</span>
-                    <span className="font-medium text-green-700">{checkoutBooking.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-medium text-green-700">{checkoutBooking.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {checkoutBooking.currency}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
                     <span className="text-amber-800 font-semibold">Kalan Bakiye:</span>
-                    <span className="font-bold text-amber-800">{checkoutBooking.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold text-amber-800">{checkoutBooking.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {checkoutBooking.currency}</span>
                   </div>
                 </div>
               </div>
@@ -801,15 +802,15 @@ const RoomsTab = ({
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Tutar:</span>
-                    <span className="font-medium">{paymentTarget.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-medium">{paymentTarget.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {paymentTarget.currency}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Odenen:</span>
-                    <span className="font-medium text-green-700">{paymentTarget.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-medium text-green-700">{paymentTarget.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {paymentTarget.currency}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
                     <span className="text-sky-800 font-semibold">Kalan Bakiye:</span>
-                    <span className="font-bold text-sky-800">{paymentTarget.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold text-sky-800">{paymentTarget.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {paymentTarget.currency}</span>
                   </div>
                 </div>
               </div>
