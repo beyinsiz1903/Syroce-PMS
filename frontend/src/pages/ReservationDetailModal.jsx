@@ -790,7 +790,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                         `Çıkış için önce folio bakiyesini (${balance.toLocaleString('tr-TR', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
-                        })} TL) kapatın.`,
+                        })} ${currency}) kapatın.`,
                       );
                       return;
                     }
