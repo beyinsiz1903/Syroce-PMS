@@ -42,6 +42,8 @@ ALLOWED_RAW_HTTPX = {
     "backend/core/afsadakat_provisioner.py",
     # Operator env OPS_*_WEBHOOK_URL / PAGERDUTY_URL / SLACK_OPS_URL
     "backend/infra/live_ops_alerts.py",
+    # Server constant - TCMB Daily Exchange Rates API
+    "backend/routers/pms_reservations.py",
     # Operator env OPS_VAULT_URL — secrets infrastructure
     "backend/infra/secrets_manager.py",
     # Operator-only "test connection" feature: SENDGRID_API_KEY env / fixed Twilio URL
