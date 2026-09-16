@@ -728,15 +728,9 @@ async def _validate_preconditions(
     if invalid_checkouts:
         blocking.append(f"{len(invalid_checkouts)} checked-in rezervasyonda gecerli cikis tarihi yok. Gece denetiminden once rezervasyon tarihlerini duzeltin.")
     if invalid_stays:
-        blocking.append(
-            f"{len(invalid_stays)} checked-in rezervasyonda gecerli konaklama tarih araligi yok. "
-            "Gece denetiminden once giris/cikis tarihlerini duzeltin."
-        )
+        blocking.append(f"{len(invalid_stays)} checked-in rezervasyonda gecerli konaklama tarih araligi yok. Gece denetiminden once giris/cikis tarihlerini duzeltin.")
     if future_stays:
-        warnings.append(
-            f"{len(future_stays)} checked-in rezervasyonun giris tarihi is gununden sonra; "
-            "bu rezervasyonlar oda masrafi adaylarina dahil edilmedi."
-        )
+        warnings.append(f"{len(future_stays)} checked-in rezervasyonun giris tarihi is gununden sonra; bu rezervasyonlar oda masrafi adaylarina dahil edilmedi.")
 
     # 5. BLOCKING: pending arrivals (confirmed/guaranteed but never checked in by audit time)
     # Otomatik no-show yerine personel karari bekleyelim. 'Dogrulamalari Atla'
@@ -1293,10 +1287,13 @@ async def _reconcile(run_id: str) -> dict[str, Any]:
 async def _roll_business_date(tenant_id: str, current_bd: str, run_id: str):
     """Advance the business date. Only called after successful reconciliation."""
     next_bd = _next_date(current_bd)
-    run = await db.night_audit_runs.find_one(
-        {"tenant_id": tenant_id, "id": run_id},
-        {"_id": 0, "trigger_source": 1, "started_by": 1},
-    ) or {}
+    run = (
+        await db.night_audit_runs.find_one(
+            {"tenant_id": tenant_id, "id": run_id},
+            {"_id": 0, "trigger_source": 1, "started_by": 1},
+        )
+        or {}
+    )
     actor = run.get("started_by") or {}
     await db.tenant_settings.update_one(
         {"tenant_id": tenant_id},
@@ -1695,10 +1692,7 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
             {
                 "category": "future_checked_in_stays",
                 "label": "Gelecek tarihli check-in kaydi",
-                "message": (
-                    f"{len(future_stays)} check-in rezervasyonun giris tarihi is gununden sonra. "
-                    "Bu kayitlar bugunun oda masrafina dahil edilmeyecek."
-                ),
+                "message": (f"{len(future_stays)} check-in rezervasyonun giris tarihi is gununden sonra. Bu kayitlar bugunun oda masrafina dahil edilmeyecek."),
                 "count": len(future_stays),
                 "items": await _sample_classified_bookings(tenant_id, future_stays),
                 "action": "edit_booking",

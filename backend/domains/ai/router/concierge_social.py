@@ -292,9 +292,7 @@ async def get_crisis_alerts(current_user: User = Depends(get_current_user)):
 
 @router.get("/social-media/automation-rules")
 async def list_social_automation_rules(current_user: User = Depends(get_current_user)):
-    rules = await db.social_automation_rules.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+    rules = await db.social_automation_rules.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return rules
 
 
@@ -339,9 +337,7 @@ async def delete_social_automation_rule(
     rule_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.social_automation_rules.delete_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id}
-    )
+    result = await db.social_automation_rules.delete_one({"id": rule_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Otomasyon kuralı bulunamadı")
     return {"deleted": True, "id": rule_id}

@@ -142,27 +142,24 @@ async def create_booking(tenant_id: str, req: WBEBookingRequest):
         "children": req.children,
         "total_price": total_price,
         "special_requests": req.special_requests,
-        "created_at": datetime.now(UTC)
+        "created_at": datetime.now(UTC),
     }
 
     try:
         await db.pms_bookings.insert_one(new_booking)
 
         # Also log to audit
-        await db.audit_logs.insert_one({
-            "tenant_id": tenant_id,
-            "action": "wbe_booking_created",
-            "target_id": booking_id,
-            "details": {"confirmation": confirmation_number, "guest": req.guest_name},
-            "created_at": datetime.now(UTC)
-        })
+        await db.audit_logs.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "action": "wbe_booking_created",
+                "target_id": booking_id,
+                "details": {"confirmation": confirmation_number, "guest": req.guest_name},
+                "created_at": datetime.now(UTC),
+            }
+        )
     except Exception:
         # Just pass for tests if DB is mocked differently
         pass
 
-    return WBEBookingResponse(
-        booking_id=booking_id,
-        confirmation_number=confirmation_number,
-        status="pending",
-        total_price=total_price
-    )
+    return WBEBookingResponse(booking_id=booking_id, confirmation_number=confirmation_number, status="pending", total_price=total_price)

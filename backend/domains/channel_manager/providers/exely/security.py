@@ -64,9 +64,7 @@ def validate_exely_endpoint(endpoint_url: str, *, connection_mode: str = "") -> 
     # the allowlisted Exely test host; production still refuses arbitrary
     # endpoints and plaintext credentials remain unavailable below.
     sandbox_connection = str(connection_mode or "").strip().lower() == "sandbox"
-    if is_exely_production() and hostname != EXELY_PRODUCTION_HOST and not (
-        sandbox_connection and hostname == EXELY_TEST_HOST
-    ):
+    if is_exely_production() and hostname != EXELY_PRODUCTION_HOST and not (sandbox_connection and hostname == EXELY_TEST_HOST):
         raise ExelyValidationError("Production requires the Exely production endpoint", field="endpoint_url")
     if (parsed.path or "").rstrip("/").lower() != EXELY_ENDPOINT_PATH:
         raise ExelyValidationError("Exely endpoint path is not allowed", field="endpoint_url")
@@ -102,9 +100,7 @@ def _normalize_credentials(credentials: dict[str, Any], connection: dict[str, An
     # authoritative for secrets, but never for routing scope.
     hotel_code = str(connection.get("hotel_code") or credentials.get("hotel_code") or "")
     connection_mode = str(connection.get("mode") or "").strip().lower()
-    default_endpoint = (
-        EXELY_TEST_ENDPOINT_URL if connection_mode == "sandbox" else EXELY_PRODUCTION_ENDPOINT_URL
-    )
+    default_endpoint = EXELY_TEST_ENDPOINT_URL if connection_mode == "sandbox" else EXELY_PRODUCTION_ENDPOINT_URL
     # Endpoint and mode are connection routing state, just like hotel_code.
     # Prefer the active connection so a stale vault record cannot redirect a
     # certification connection to production (or the reverse).
@@ -157,9 +153,9 @@ async def resolve_exely_credentials(
             return normalized
 
     from infra.feature_flags import is_enabled
+
     if is_exely_production() and not is_enabled("ALLOW_PLAINTEXT_CREDENTIALS"):
         return None
-
 
     normalized = _normalize_credentials(connection, connection)
     if normalized:

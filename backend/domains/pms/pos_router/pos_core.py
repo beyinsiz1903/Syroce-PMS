@@ -382,7 +382,7 @@ async def get_z_report(
         # Kategori dagilimi (gercek — items[].category)
         category_sales: dict[str, float] = {}
         for t in valid_tx:
-            for item in (t.get("items") or t.get("order_items") or []):
+            for item in t.get("items") or t.get("order_items") or []:
                 cat = item.get("category") or "other"
                 line_total = item.get("total")
                 if line_total is None:

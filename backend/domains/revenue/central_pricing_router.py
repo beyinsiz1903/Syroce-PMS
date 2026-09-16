@@ -252,20 +252,28 @@ async def bulk_update_rates(
 @router.get("/rate-history")
 async def get_rate_history(current_user=Depends(get_current_user)):
     chain_id, _ = await _chain_context(current_user)
-    history = await system_db.central_pricing_history.find(
-        {"chain_id": chain_id},
-        {"_id": 0},
-    ).sort("updated_at", -1).to_list(1000)
+    history = (
+        await system_db.central_pricing_history.find(
+            {"chain_id": chain_id},
+            {"_id": 0},
+        )
+        .sort("updated_at", -1)
+        .to_list(1000)
+    )
     return {"history": history, "total": len(history)}
 
 
 @router.get("/rate-templates")
 async def get_rate_templates(current_user=Depends(get_current_user)):
     chain_id, _ = await _chain_context(current_user)
-    templates = await system_db.central_pricing_templates.find(
-        {"chain_id": chain_id, "is_active": {"$ne": False}},
-        {"_id": 0},
-    ).sort("updated_at", -1).to_list(500)
+    templates = (
+        await system_db.central_pricing_templates.find(
+            {"chain_id": chain_id, "is_active": {"$ne": False}},
+            {"_id": 0},
+        )
+        .sort("updated_at", -1)
+        .to_list(500)
+    )
     return {"templates": templates, "total": len(templates)}
 
 

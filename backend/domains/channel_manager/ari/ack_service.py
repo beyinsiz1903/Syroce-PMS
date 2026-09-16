@@ -57,11 +57,7 @@ async def process_ack(
     # worker must not turn that safe single-write guard into a permanent error:
     # the first delivery is already responsible for applying the exact same
     # payload.  Replaying it would defeat the no-blind-retry contract.
-    if (
-        provider == "exely"
-        and result.delivery_state == "blocked"
-        and result.error == "EXELY_ARI_DELIVERY_IN_PROGRESS"
-    ):
+    if provider == "exely" and result.delivery_state == "blocked" and result.error == "EXELY_ARI_DELIVERY_IN_PROGRESS":
         await repo.update_change_set_status(
             cs_id,
             STATUS_SKIPPED,

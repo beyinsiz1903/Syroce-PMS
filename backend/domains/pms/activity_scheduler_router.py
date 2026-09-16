@@ -247,9 +247,7 @@ async def create_booking(body: ActivityBookingCreate, user: User = Depends(get_c
     activity = await db.activities.find_one({"id": body.activity_id, "tenant_id": user.tenant_id, "active": True})
     if not activity:
         raise HTTPException(404, "Aktivite bulunamadı")
-    resource = await db.activity_resources.find_one(
-        {"id": body.resource_id, "tenant_id": user.tenant_id, "active": True}
-    )
+    resource = await db.activity_resources.find_one({"id": body.resource_id, "tenant_id": user.tenant_id, "active": True})
     if not resource:
         raise HTTPException(404, "Aktivite kaynağı bulunamadı")
     supported_types = resource.get("activity_types") or []

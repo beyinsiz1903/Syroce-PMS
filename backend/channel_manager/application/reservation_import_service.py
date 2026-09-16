@@ -694,22 +694,14 @@ class ReservationImportService:
         }
         if imported.room_type_mapped_id:
             updates["room_type"] = imported.room_type_mapped_id
-        changes = {
-            field: {"from": existing.get(field), "to": value}
-            for field, value in updates.items()
-            if field not in {"updated_at", "updated_by"} and existing.get(field) != value
-        }
+        changes = {field: {"from": existing.get(field), "to": value} for field, value in updates.items() if field not in {"updated_at", "updated_by"} and existing.get(field) != value}
         await db.bookings.update_one(
             {"id": imported.pms_booking_id, "tenant_id": tenant_id},
             {"$set": updates},
         )
         if changes:
             now = datetime.now(UTC).isoformat()
-            activity_action = (
-                "stay_dates_updated"
-                if {"check_in", "check_out"} & set(changes)
-                else "reservation_modified"
-            )
+            activity_action = "stay_dates_updated" if {"check_in", "check_out"} & set(changes) else "reservation_modified"
             source_label = imported.channel_name or "Kanal / OTA"
             correlation_id = f"channel-import:{imported.id}"
             activity_details = {

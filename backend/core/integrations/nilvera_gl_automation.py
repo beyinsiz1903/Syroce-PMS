@@ -88,11 +88,7 @@ async def save_nilvera_gl_settings(tenant_id: str, payload: dict, *, actor: str)
         elif key.endswith("_accounts_by_rate") or key.endswith("_accounts_by_code"):
             if not isinstance(value, dict):
                 raise InvoiceGLBridgeError(f"Invalid rate mapping: {key}")
-            clean[key] = {
-                str(rate).strip(): str(account).strip()
-                for rate, account in value.items()
-                if str(rate).strip() and str(account).strip()
-            }
+            clean[key] = {str(rate).strip(): str(account).strip() for rate, account in value.items() if str(rate).strip() and str(account).strip()}
 
     now = _now_iso()
     db = get_db_for_tenant(tenant_id)
@@ -213,9 +209,7 @@ async def process_nilvera_gl_queue_item(tenant_id: str, item_id: str, *, actor: 
                 vat_account_code=settings.get("outgoing_vat_account_code"),
                 accommodation_tax_account_code=settings.get("outgoing_accommodation_tax_account_code"),
                 vat_accounts_by_rate=settings.get("outgoing_vat_accounts_by_rate"),
-                accommodation_tax_accounts_by_rate=settings.get(
-                    "outgoing_accommodation_tax_accounts_by_rate"
-                ),
+                accommodation_tax_accounts_by_rate=settings.get("outgoing_accommodation_tax_accounts_by_rate"),
                 actor=actor,
             )
     except Exception as exc:
@@ -269,12 +263,7 @@ async def list_nilvera_gl_queue(
     query: dict = {"tenant_id": tenant_id}
     if status:
         query["status"] = status
-    return await (
-        db.gl_nilvera_queue.find(query, {"_id": 0})
-        .sort("created_at", -1)
-        .limit(max(1, min(limit, 1000)))
-        .to_list(length=max(1, min(limit, 1000)))
-    )
+    return await db.gl_nilvera_queue.find(query, {"_id": 0}).sort("created_at", -1).limit(max(1, min(limit, 1000))).to_list(length=max(1, min(limit, 1000)))
 
 
 async def handle_incoming_invoice_synced(tenant_id: str, invoice_id: str) -> dict | None:

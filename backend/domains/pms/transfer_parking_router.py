@@ -625,12 +625,14 @@ async def cancel_booking(
     if charge:
         await db.folio_charges.update_one(
             {"id": charge.get("id"), "tenant_id": tenant_id},
-            {"$set": {
-                "voided": True,
-                "voided_at": _now_iso(),
-                "voided_by": _actor_id(current_user),
-                "void_reason": "Transfer/otopark rezervasyonu iptal edildi",
-            }},
+            {
+                "$set": {
+                    "voided": True,
+                    "voided_at": _now_iso(),
+                    "voided_by": _actor_id(current_user),
+                    "void_reason": "Transfer/otopark rezervasyonu iptal edildi",
+                }
+            },
         )
         if charge.get("folio_id"):
             await _recalc_folio_balance(db, tenant_id, charge["folio_id"])
@@ -717,13 +719,17 @@ async def create_valet_ticket(payload: ValetTicketIn, current_user: User = Depen
         raise HTTPException(status_code=409, detail="Bu plaka için açık vale kaydı zaten var")
     now = _now_iso()
     doc = {
-        "id": str(uuid.uuid4()), "tenant_id": tenant_id, "plate": plate,
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "plate": plate,
         "guest_name": (payload.guest_name or "").strip() or None,
         "room_number": (payload.room_number or "").strip() or None,
         "vehicle_info": (payload.vehicle_info or "").strip() or None,
         "parking_spot": (payload.parking_spot or "").strip() or None,
         "note": (payload.note or "").strip() or None,
-        "status": "waiting", "created_at": now, "updated_at": now,
+        "status": "waiting",
+        "created_at": now,
+        "updated_at": now,
         "created_by": _actor_id(current_user),
     }
     await db.parking_valet_tickets.insert_one(dict(doc))
@@ -756,9 +762,7 @@ async def list_lpr_events(
     limit: int = Query(200, ge=1, le=500),
     current_user: User = Depends(get_current_user),
 ):
-    rows = await db.parking_lpr_events.find(
-        {"tenant_id": _tenant_of(current_user)}, {"_id": 0}
-    ).sort("occurred_at", -1).to_list(limit)
+    rows = await db.parking_lpr_events.find({"tenant_id": _tenant_of(current_user)}, {"_id": 0}).sort("occurred_at", -1).to_list(limit)
     return {"events": rows}
 
 
@@ -769,11 +773,15 @@ async def create_lpr_event(payload: LPREventIn, current_user: User = Depends(get
         raise HTTPException(status_code=422, detail="Geçersiz geçiş yönü")
     now = _now_iso()
     doc = {
-        "id": str(uuid.uuid4()), "tenant_id": _tenant_of(current_user),
-        "plate": _normalise_plate(payload.plate), "direction": payload.direction,
-        "confidence": payload.confidence, "camera": (payload.camera or "").strip() or None,
+        "id": str(uuid.uuid4()),
+        "tenant_id": _tenant_of(current_user),
+        "plate": _normalise_plate(payload.plate),
+        "direction": payload.direction,
+        "confidence": payload.confidence,
+        "camera": (payload.camera or "").strip() or None,
         "occurred_at": (payload.occurred_at or datetime.now(UTC)).isoformat(),
-        "created_at": now, "created_by": _actor_id(current_user),
+        "created_at": now,
+        "created_by": _actor_id(current_user),
     }
     await db.parking_lpr_events.insert_one(dict(doc))
     return {"event": _serialize(doc)}
@@ -794,7 +802,8 @@ async def parking_analytics(current_user: User = Depends(get_current_user)):
             "transfer_vehicles": sum(1 for row in resources if row.get("kind") == _KIND_TRANSFER),
         },
         "bookings": {
-            "total": len(bookings), "active": len(active_bookings),
+            "total": len(bookings),
+            "active": len(active_bookings),
             "cancelled": sum(1 for row in bookings if row.get("status") == "cancelled"),
             "folio_charged": sum(1 for row in bookings if row.get("folio_charged")),
             "revenue": round(sum(float(row.get("total", 0) or 0) for row in active_bookings), 2),

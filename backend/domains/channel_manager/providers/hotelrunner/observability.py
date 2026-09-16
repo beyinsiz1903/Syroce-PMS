@@ -29,6 +29,7 @@ def _payload_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         "sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
     }
 
+
 # In-memory counters for the current process
 _metrics = {
     "success_count": 0,

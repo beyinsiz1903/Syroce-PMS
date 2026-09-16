@@ -3,6 +3,7 @@ guest_menu.py
 
 Public endpoints for the QR Digital Menu and Ordering System.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -15,20 +16,19 @@ from domains.pms.pos_fnb_router.pos_core import _auto_kds_and_kot, _ensure_adisy
 
 router = APIRouter(tags=["guest_menu"])
 
+
 class GuestOrderRequest(BaseModel):
     table_id: str
     items: list[dict[str, Any]]  # [{"item_id": "...", "quantity": 1}]
     guest_name: str | None = None
     notes: str | None = None
 
+
 @router.get("/public/fnb/{tenant_id}/{outlet_id}/menu")
 async def get_guest_menu(tenant_id: str, outlet_id: str):
     """Get active menu categories and items for the guest."""
 
-    items = await db.pos_menu_items.find({
-        "tenant_id": tenant_id,
-        "is_active": True
-    }, {"_id": 0}).to_list(1000)
+    items = await db.pos_menu_items.find({"tenant_id": tenant_id, "is_active": True}, {"_id": 0}).to_list(1000)
 
     if not items:
         return {"categories": []}
@@ -42,10 +42,7 @@ async def get_guest_menu(tenant_id: str, outlet_id: str):
 
     result = []
     for cat_name, cat_items in categories.items():
-        result.append({
-            "name": cat_name,
-            "items": cat_items
-        })
+        result.append({"name": cat_name, "items": cat_items})
 
     return {"categories": result}
 
@@ -59,10 +56,7 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
 
     # 1. Fetch items to calculate prices
     item_ids = [it["item_id"] for it in req.items]
-    db_items = await db.pos_menu_items.find({
-        "tenant_id": tenant_id,
-        "id": {"$in": item_ids}
-    }).to_list(1000)
+    db_items = await db.pos_menu_items.find({"tenant_id": tenant_id, "id": {"$in": item_ids}}).to_list(1000)
 
     db_items_map = {str(it["id"]): it for it in db_items}
 
@@ -78,15 +72,17 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
         price = float(db_item.get("unit_price", 0))
         total_price = qty * price
 
-        order_items.append({
-            "item_id": db_item["id"],
-            "item_name": db_item["item_name"],
-            "category": db_item.get("category", "Diğer"),
-            "quantity": qty,
-            "unit_price": price,
-            "total_price": total_price,
-            "notes": it.get("notes", "")
-        })
+        order_items.append(
+            {
+                "item_id": db_item["id"],
+                "item_name": db_item["item_name"],
+                "category": db_item.get("category", "Diğer"),
+                "quantity": qty,
+                "unit_price": price,
+                "total_price": total_price,
+                "notes": it.get("notes", ""),
+            }
+        )
         total_amount += total_price
 
     if not order_items:
@@ -110,7 +106,7 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
         "business_date": business_date,
         "ordered_at": datetime.now(UTC).isoformat(),
         "adisyon_no": adisyon_no,
-        "notes": req.notes
+        "notes": req.notes,
     }
 
     # Atomicity could be improved, but this is a guest facing non-financial draft order
@@ -118,6 +114,7 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
 
     # Send to KDS/Kitchen
     try:
+
         class DummyOrder:
             id = order_doc["id"]
             items = order_items
@@ -132,8 +129,4 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
     # Cleanup _id just in case
     order_doc.pop("_id", None)
 
-    return {
-        "success": True,
-        "message": "Siparişiniz mutfağa iletildi.",
-        "order_id": order_doc["id"]
-    }
+    return {"success": True, "message": "Siparişiniz mutfağa iletildi.", "order_id": order_doc["id"]}

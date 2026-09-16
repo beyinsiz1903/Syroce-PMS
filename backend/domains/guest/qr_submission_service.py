@@ -24,6 +24,7 @@ raw_db = None
 def _db_for_tenant(tenant_id: str):
     return raw_db if raw_db is not None else get_db_for_tenant(tenant_id)
 
+
 def generate_public_reference(prefix="REQ"):
     chars = string.ascii_uppercase + string.digits
     suffix = "".join(secrets.choice(chars) for _ in range(8))
@@ -41,7 +42,9 @@ def _build_ledger_upsert_update(ledger_doc: dict, updated_at):
     return {"$setOnInsert": insert_doc, "$set": {"updated_at": updated_at}}
 
 
-async def handle_structured_submission(tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None):
+async def handle_structured_submission(
+    tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None
+):
     tenant_db = _db_for_tenant(tenant_id)
     seen_codes = set()
     for it in payload.items:
@@ -52,12 +55,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     fingerprint = compute_payload_fingerprint(payload.language, payload.items)
 
     # 1. Lookup existing ledger
-    ledger = await tenant_db["guest_service_submissions"].find_one({
-        "tenant_id": tenant_id,
-        "property_id": property_id,
-        "booking_id": booking_id,
-        "idempotency_key": payload.idempotency_key
-    })
+    ledger = await tenant_db["guest_service_submissions"].find_one({"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "idempotency_key": payload.idempotency_key})
 
     if ledger:
         if ledger.get("payload_fingerprint") != fingerprint:
@@ -86,7 +84,6 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
         prepared_items = []
         expected_codes = []
-
 
         for it in payload.items:
             cat_item = services_map.get(it.service_code)
@@ -125,15 +122,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             cat, dept = map_legacy_routing(cat_item["service_code"], cat_item["department_code"])
             title_label = cat_item.get("labels", {}).get(payload.language) or cat_item.get("labels", {}).get("tr", cat_item["service_code"])
 
-            desc = generate_deterministic_description(
-                input_type,
-                validated_val,
-                it.note,
-                cat_item.get("labels"),
-                cat_item.get("input_config", {}),
-                payload.language,
-                prop_lang
-            )
+            desc = generate_deterministic_description(input_type, validated_val, it.note, cat_item.get("labels"), cat_item.get("input_config", {}), payload.language, prop_lang)
 
             req_ref = generate_public_reference("REQ")
             req_id = str(uuid.uuid4())
@@ -179,12 +168,12 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     "charge_warning_snapshot": cat_item.get("charge_warning"),
                     "catalogue_version": cat_item.get("version", 1),
                     "catalogue_mode": mode,
-                    "timezone_snapshot": prop_tz
-                }
+                    "timezone_snapshot": prop_tz,
+                },
             }
 
             if input_type in ("time", "datetime", "date") and "time_value" in val_obj:
-                 doc["catalogue_snapshot"]["submitted_local_time"] = val_obj["time_value"]
+                doc["catalogue_snapshot"]["submitted_local_time"] = val_obj["time_value"]
             if input_type in ("time", "datetime"):
                 if "submitted_local_time" in validated_val:
                     doc["catalogue_snapshot"]["submitted_local_time"] = validated_val["submitted_local_time"]
@@ -198,7 +187,6 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             prepared_items.append(doc)
             expected_codes.append(it.service_code)
 
-
         ledger_doc = {
             "tenant_id": tenant_id,
             "property_id": property_id,
@@ -210,26 +198,20 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             "status": "pending",
             "expected_service_codes": expected_codes,
             "prepared_items": prepared_items,
-
             "attempt_count": 0,
             "last_error_code": None,
             "created_at": now_utc,
             "updated_at": now_utc,
-            "completed_at": None
+            "completed_at": None,
         }
 
         # 3. Write Ledger
         try:
             res = await tenant_db["guest_service_submissions"].find_one_and_update(
-                {
-                    "tenant_id": tenant_id,
-                    "property_id": property_id,
-                    "booking_id": booking_id,
-                    "idempotency_key": payload.idempotency_key
-                },
+                {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "idempotency_key": payload.idempotency_key},
                 _build_ledger_upsert_update(ledger_doc, _utc_now()),
                 upsert=True,
-                return_document=ReturnDocument.AFTER
+                return_document=ReturnDocument.AFTER,
             )
             if res.get("payload_fingerprint") != fingerprint:
                 raise HTTPException(status_code=409, detail="Talep işleme alınamadı")
@@ -241,12 +223,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                 raise HTTPException(status_code=503, detail="Sistem hatası")
         except DuplicateKeyError:
             for _ in range(5):
-                res = await tenant_db["guest_service_submissions"].find_one({
-                    "tenant_id": tenant_id,
-                    "property_id": property_id,
-                    "booking_id": booking_id,
-                    "idempotency_key": payload.idempotency_key
-                })
+                res = await tenant_db["guest_service_submissions"].find_one({"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "idempotency_key": payload.idempotency_key})
                 if res:
                     break
                 await asyncio.sleep(0.05)
@@ -263,13 +240,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                 raise HTTPException(status_code=503, detail="Sistem hatası")
 
     upd_res = await tenant_db["guest_service_submissions"].update_one(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "booking_id": booking_id,
-            "submission_group_id": submission_group_id
-        },
-        {"$inc": {"attempt_count": 1}, "$set": {"updated_at": _utc_now()}}
+        {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id}, {"$inc": {"attempt_count": 1}, "$set": {"updated_at": _utc_now()}}
     )
     if upd_res.matched_count != 1:
         raise HTTPException(status_code=503, detail="Sistem hatası")
@@ -301,18 +272,15 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                             "property_id": property_id,
                             "booking_id": booking_id,
                             "submission_group_id": submission_group_id,
-                            "prepared_items.service_code": item_doc["service_code"]
+                            "prepared_items.service_code": item_doc["service_code"],
                         },
-                        {"$set": {"prepared_items.$.request_reference": new_ref, "updated_at": _utc_now()}}
+                        {"$set": {"prepared_items.$.request_reference": new_ref, "updated_at": _utc_now()}},
                     )
                     if upd_res.matched_count != 1:
                         raise HTTPException(status_code=503, detail="Sistem hatası")
-                    reread = await tenant_db["guest_service_submissions"].find_one({
-                        "tenant_id": tenant_id,
-                        "property_id": property_id,
-                        "booking_id": booking_id,
-                        "submission_group_id": submission_group_id
-                    })
+                    reread = await tenant_db["guest_service_submissions"].find_one(
+                        {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id}
+                    )
                     if not reread:
                         raise HTTPException(status_code=503, detail="Sistem hatası")
                     found = False
@@ -338,54 +306,30 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     # 5. Convergence check
     expected_set = {it["service_code"] for it in prepared_items}
     expected_pairs = {(it["service_code"], it.get("request_reference")) for it in prepared_items}
-    actual_docs = await tenant_db["qr_requests"].find({
-        "tenant_id": tenant_id,
-        "submission_group_id": submission_group_id
-    }).to_list(None)
+    actual_docs = await tenant_db["qr_requests"].find({"tenant_id": tenant_id, "submission_group_id": submission_group_id}).to_list(None)
     actual_set = {d["service_code"] for d in actual_docs}
     actual_pairs = {(d["service_code"], d.get("request_reference")) for d in actual_docs}
 
-    if (
-        expected_set == actual_set and
-        len(actual_docs) == len(prepared_items) and
-        len(actual_docs) == len(actual_set) and
-        expected_pairs == actual_pairs
-    ):
+    if expected_set == actual_set and len(actual_docs) == len(prepared_items) and len(actual_docs) == len(actual_set) and expected_pairs == actual_pairs:
         upd_res = await tenant_db["guest_service_submissions"].update_one(
-            {
-                "tenant_id": tenant_id,
-                "property_id": property_id,
-                "booking_id": booking_id,
-                "submission_group_id": submission_group_id
-            },
-            {"$set": {"status": "completed", "completed_at": _utc_now(), "updated_at": _utc_now()}}
+            {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id},
+            {"$set": {"status": "completed", "completed_at": _utc_now(), "updated_at": _utc_now()}},
         )
 
         if upd_res.matched_count == 1:
-            reread = await tenant_db["guest_service_submissions"].find_one({
-                "tenant_id": tenant_id,
-                "property_id": property_id,
-                "booking_id": booking_id,
-                "submission_group_id": submission_group_id
-            })
+            reread = await tenant_db["guest_service_submissions"].find_one({"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id})
             if reread and reread.get("status") == "completed" and reread.get("completed_at"):
                 # Always derive public refs from winning ledger
                 final_refs = []
                 for itm in reread.get("prepared_items", []):
-                    final_refs.append({
-                        "service_code": itm["service_code"],
-                        "request_reference": itm["request_reference"]
-                    })
+                    final_refs.append({"service_code": itm["service_code"], "request_reference": itm["request_reference"]})
 
                 return {
                     "success": True,
                     "submission_reference": submission_reference,
                     "request_references": final_refs,
-                    "stats": {
-                        "created": created_count,
-                        "replayed": replayed_count
-                    },
-                    "docs_to_emit": docs_to_emit
+                    "stats": {"created": created_count, "replayed": replayed_count},
+                    "docs_to_emit": docs_to_emit,
                 }
 
         logger.error("Ledger completion update failed: group=ledger_completion_failure")
@@ -393,13 +337,8 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     else:
         # Items are missing. Leave as pending, update last_error_code
         await tenant_db["guest_service_submissions"].update_one(
-            {
-                "tenant_id": tenant_id,
-                "property_id": property_id,
-                "booking_id": booking_id,
-                "submission_group_id": submission_group_id
-            },
-            {"$set": {"status": "pending", "last_error_code": "CONVERGENCE_MISS", "updated_at": _utc_now()}}
+            {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id},
+            {"$set": {"status": "pending", "last_error_code": "CONVERGENCE_MISS", "updated_at": _utc_now()}},
         )
         logger.error("Ledger convergence failed: group=ledger_convergence_miss")
         raise HTTPException(status_code=503, detail="Talep işleme alınamadı, eksik kayıtlar var.")

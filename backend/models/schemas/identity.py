@@ -149,10 +149,7 @@ class CommercialQuote(BaseModel):
 
     @model_validator(mode="after")
     def require_override_reason(self):
-        changed = (
-            abs(self.final_monthly_total - self.list_monthly_total) > 0.001
-            or abs(self.final_setup_total - self.list_setup_total) > 0.001
-        )
+        changed = abs(self.final_monthly_total - self.list_monthly_total) > 0.001 or abs(self.final_setup_total - self.list_setup_total) > 0.001
         if changed and not (self.override_reason or "").strip():
             raise ValueError("Fiyat değişikliği nedeni zorunludur")
         return self

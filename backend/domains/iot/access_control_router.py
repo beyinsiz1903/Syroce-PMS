@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/v1/access-control", tags=["IoT Access Control"])
 # Gerçekte bunu DB'den alabiliriz ama şimdilik hızlı prototip için sabit
 IOT_DEVICE_SECRET = "super_secret_esp32_token_2026"
 
+
 @router.post("/verify")
 async def verify_qr_access(request: Request):
     """
@@ -60,12 +61,7 @@ async def verify_qr_access(request: Request):
         logger.info(f"Access GRANTED for booking_id: {booking_id}")
 
         # Geçiş logu oluştur (Opsiyonel)
-        await db.access_logs.insert_one({
-            "booking_id": booking_id,
-            "device": "main_door_qr",
-            "action": "granted",
-            "timestamp": datetime.now(UTC)
-        })
+        await db.access_logs.insert_one({"booking_id": booking_id, "device": "main_door_qr", "action": "granted", "timestamp": datetime.now(UTC)})
 
         return {"action": "grant", "message": "Access Granted"}
 

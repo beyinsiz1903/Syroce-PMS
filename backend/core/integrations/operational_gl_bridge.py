@@ -101,18 +101,12 @@ async def post_night_audit_daily_to_gl(
         raise OperationalGLBridgeError("Night-audit tax total is outside the charge total")
     lines: list[dict] = []
     if charge_total:
-        lines.append(
-            {"account_code": mapping["receivable_account_code"], "debit": _amount(charge_total), "memo": "Günlük folio tahakkukları"}
-        )
+        lines.append({"account_code": mapping["receivable_account_code"], "debit": _amount(charge_total), "memo": "Günlük folio tahakkukları"})
         net_revenue = charge_total - tax_total
         if net_revenue:
-            lines.append(
-                {"account_code": mapping["revenue_account_code"], "credit": _amount(net_revenue), "memo": "Günlük oda/PMS geliri"}
-            )
+            lines.append({"account_code": mapping["revenue_account_code"], "credit": _amount(net_revenue), "memo": "Günlük oda/PMS geliri"})
         if tax_total:
-            lines.append(
-                {"account_code": mapping["tax_account_code"], "credit": _amount(tax_total), "memo": "Günlük hesaplanan vergi"}
-            )
+            lines.append({"account_code": mapping["tax_account_code"], "credit": _amount(tax_total), "memo": "Günlük hesaplanan vergi"})
 
     payment_totals: dict[str, int] = {}
     for payment in payments:
@@ -123,9 +117,7 @@ async def post_night_audit_daily_to_gl(
         if amount_minor:
             lines.append({"account_code": account_code, "debit": _amount(amount_minor), "memo": "Günlük tahsilatlar"})
     if payment_total:
-        lines.append(
-            {"account_code": mapping["receivable_account_code"], "credit": _amount(payment_total), "memo": "Günlük folio tahsilat kapaması"}
-        )
+        lines.append({"account_code": mapping["receivable_account_code"], "credit": _amount(payment_total), "memo": "Günlük folio tahsilat kapaması"})
     if not lines:
         await db.night_audit_runs.update_one(
             {"tenant_id": tenant_id, "id": run_id},

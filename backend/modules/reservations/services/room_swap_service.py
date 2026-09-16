@@ -139,11 +139,7 @@ class RoomSwapService:
                             "TARGET_ROOM_CONFLICT",
                         )
 
-            desired_locks = [
-                (target_room_id, night, booking_id) for night in source_nights
-            ] + [
-                (source_room_id, night, target_booking_id) for night in target_nights
-            ]
+            desired_locks = [(target_room_id, night, booking_id) for night in source_nights] + [(source_room_id, night, target_booking_id) for night in target_nights]
             desired_pairs = {(room_id, night) for room_id, night, _ in desired_locks}
             existing_locks = await db.room_night_locks.find(
                 {

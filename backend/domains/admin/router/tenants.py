@@ -148,10 +148,16 @@ def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, 
         charged_setup = 0.0 if included else setup
         addon_monthly += charged_monthly
         setup_total += charged_setup
-        line_items.append({
-            "module_key": key, "label": label, "monthly": charged_monthly,
-            "setup": charged_setup, "included": included, "usage_note": usage_note,
-        })
+        line_items.append(
+            {
+                "module_key": key,
+                "label": label,
+                "monthly": charged_monthly,
+                "setup": charged_setup,
+                "included": included,
+                "usage_note": usage_note,
+            }
+        )
 
     base_monthly = PLAN_MONTHLY_PRICES[tier]
     monthly_total = base_monthly + addon_monthly
@@ -161,14 +167,22 @@ def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, 
         raise HTTPException(status_code=400, detail="Teklif liste toplamları güncel fiyat kataloğuyla eşleşmiyor")
 
     return {
-        "pricing_version": COMMERCIAL_PRICING_VERSION, "currency": "EUR", "plan_key": tier,
-        "plan_label": PLAN_LABELS[tier], "base_monthly": base_monthly, "addon_monthly": addon_monthly,
-        "list_monthly_total": monthly_total, "list_setup_total": setup_total,
+        "pricing_version": COMMERCIAL_PRICING_VERSION,
+        "currency": "EUR",
+        "plan_key": tier,
+        "plan_label": PLAN_LABELS[tier],
+        "base_monthly": base_monthly,
+        "addon_monthly": addon_monthly,
+        "list_monthly_total": monthly_total,
+        "list_setup_total": setup_total,
         "final_monthly_total": payload_quote.final_monthly_total,
         "final_setup_total": payload_quote.final_setup_total,
         "override_reason": (payload_quote.override_reason or "").strip() or None,
-        "line_items": line_items, "quoted_at": quoted_at.isoformat(), "quoted_by": actor_id,
+        "line_items": line_items,
+        "quoted_at": quoted_at.isoformat(),
+        "quoted_by": actor_id,
     }
+
 
 _env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or os.environ.get("ENV") or "development").lower()
 _cookie_secure = _env_mode != "development"
@@ -443,11 +457,7 @@ def _validate_provider_credentials(provider: str, credentials: dict[str, str]) -
     if not definition:
         raise HTTPException(status_code=400, detail="Desteklenmeyen kanal yöneticisi")
     allowed = {field["key"] for field in definition["fields"]}
-    cleaned = {
-        key: str(value).strip()
-        for key, value in credentials.items()
-        if key in allowed and value is not None and str(value).strip()
-    }
+    cleaned = {key: str(value).strip() for key, value in credentials.items() if key in allowed and value is not None and str(value).strip()}
     missing = [field["label"] for field in definition["fields"] if field["required"] and not cleaned.get(field["key"])]
     if missing:
         raise HTTPException(status_code=400, detail=f"Zorunlu alanlar eksik: {', '.join(missing)}")
@@ -597,9 +607,7 @@ async def update_tenant_provisioning(
     after = await _require_target_tenant(sys_db, tenant_id)
     before_chain_id = before.get("chain_id")
     after_chain_id = after.get("chain_id")
-    if before.get("is_chain_headquarters") and before_chain_id and (
-        before_chain_id != after_chain_id or not after.get("is_chain_headquarters")
-    ):
+    if before.get("is_chain_headquarters") and before_chain_id and (before_chain_id != after_chain_id or not after.get("is_chain_headquarters")):
         await sys_db.hotel_chains.update_one(
             {"id": before_chain_id, "headquarters_tenant_id": tenant_id},
             {"$set": {"headquarters_tenant_id": None, "updated_at": datetime.now(UTC).isoformat()}},
@@ -807,11 +815,7 @@ async def enter_tenant_context(
     target = await sys_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     origin = await sys_db.tenants.find_one({"id": actor_tenant_id}, {"_id": 0})
     target_status = str((target or {}).get("status") or "").lower()
-    if (
-        not target
-        or target.get("is_active") is False
-        or target_status in {"deleted", "archived"}
-    ):
+    if not target or target.get("is_active") is False or target_status in {"deleted", "archived"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Otel bulunamadı veya kullanılamıyor.")
     if not origin:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Süperadmin ana oteli bulunamadı.")

@@ -804,6 +804,7 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
             return None
         try:
             import math
+
             f_iat = float(iat)
             f_ib = float(invalid_before)
             if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):

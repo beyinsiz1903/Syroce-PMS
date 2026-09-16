@@ -339,7 +339,7 @@ async def create_walk_in_booking(data: dict, http_request: Request, current_user
                 "status": "confirmed",
                 "source": "walk-in",
                 "created_at": datetime.now(UTC).isoformat(),
-            }
+            },
         )
     except BookingConflictError as e:
         # Atomic insert failed -> no booking persisted -> safe to release.

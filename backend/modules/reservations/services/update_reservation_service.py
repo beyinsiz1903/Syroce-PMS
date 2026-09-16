@@ -42,11 +42,8 @@ def _operator_room_conflict_message(conflict_type: str) -> str:
         return "Hedef oda servis dışı. Başka bir oda seçin."
     if conflict_type == "maintenance":
         return "Hedef oda bakımda. Başka bir oda seçin."
-    return (
-        "Hedef oda seçilen gece için başka bir rezervasyonla dolu. "
-        "İki rezervasyonu karşılıklı değiştirmek için kartı doğrudan diğer "
-        "rezervasyon kartının üzerine bırakın."
-    )
+    return "Hedef oda seçilen gece için başka bir rezervasyonla dolu. İki rezervasyonu karşılıklı değiştirmek için kartı doğrudan diğer rezervasyon kartının üzerine bırakın."
+
 
 ALLOWED_FIELDS = {
     "room_id",

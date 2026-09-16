@@ -13,6 +13,7 @@ from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
+
 async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[str]:
     """
     Returns the list of active edition keys (e.g. ['basic', 'pro'])
@@ -29,9 +30,9 @@ async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[st
                 {"end_date": None},
                 {"end_date": {"$gt": now.isoformat()}},
             ],
-            "product_key": {"$regex": f"^{module_key}_"}
+            "product_key": {"$regex": f"^{module_key}_"},
         },
-        {"_id": 0, "product_key": 1}
+        {"_id": 0, "product_key": 1},
     ).to_list(100)
 
     editions = []
@@ -39,7 +40,7 @@ async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[st
         pk = sub.get("product_key", "")
         # e.g. pos_fnb_pro -> edition is 'pro'
         if pk.startswith(f"{module_key}_"):
-            editions.append(pk[len(module_key)+1:])
+            editions.append(pk[len(module_key) + 1 :])
 
     # Fallback to check if module is natively enabled via legacy tenant plan
     if not editions:
@@ -49,6 +50,7 @@ async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[st
             editions.append("pro")
 
     return editions
+
 
 async def tenant_has_feature(tenant_id: str, module_key: str, feature_key: str) -> bool:
     """Check if the tenant has a specific feature for the given module."""
@@ -67,6 +69,7 @@ async def tenant_has_feature(tenant_id: str, module_key: str, feature_key: str) 
             return True
 
     return False
+
 
 async def get_tenant_limit(tenant_id: str, module_key: str, limit_key: str) -> int | None:
     """
@@ -97,6 +100,7 @@ import os
 
 # ─── FASTAPI DEPENDENCIES ───
 
+
 def require_module(module_key: str) -> Callable:
     async def _require_module(request: Request, current_user: User = Depends(get_current_user)):
         has_access = await tenant_has_module(current_user.tenant_id, module_key)
@@ -109,7 +113,9 @@ def require_module(module_key: str) -> Callable:
                 status_code=403,
                 detail=f"Bu islem icin {module_key} modulu gereklidir.",
             )
+
     return _require_module
+
 
 def require_feature(module_key: str, feature_key: str) -> Callable:
     async def _require_feature(request: Request, current_user: User = Depends(get_current_user)):
@@ -123,7 +129,9 @@ def require_feature(module_key: str, feature_key: str) -> Callable:
                 status_code=403,
                 detail=f"Bu islem icin {module_key} ({feature_key}) ozelligi gereklidir. Lutfen planinizi yukseltin.",
             )
+
     return _require_feature
+
 
 def require_limit(module_key: str, limit_key: str, current_count_resolver: Callable) -> Callable:
     """

@@ -173,55 +173,25 @@ async def _ensure_indexes() -> None:
 
     # Guest Service Catalogue Indexes
     try:
-        await raw_db["guest_service_catalogue_settings"].create_index(
-            [("tenant_id", 1), ("property_id", 1)],
-            unique=True,
-            name="gsc_settings_lookup"
-        )
-        await raw_db["guest_service_departments"].create_index(
-            [("tenant_id", 1), ("property_id", 1), ("department_code", 1)],
-            unique=True,
-            name="gsc_dept_unique"
-        )
-        await raw_db["guest_service_departments"].create_index(
-            [("tenant_id", 1), ("property_id", 1), ("enabled", 1), ("display_order", 1)],
-            name="gsc_dept_order"
-        )
-        await raw_db["guest_service_items"].create_index(
-            [("tenant_id", 1), ("property_id", 1), ("service_code", 1)],
-            unique=True,
-            name="gsc_item_unique"
-        )
-        await raw_db["guest_service_items"].create_index(
-            [("tenant_id", 1), ("property_id", 1), ("department_code", 1), ("enabled", 1), ("display_order", 1)],
-            name="gsc_item_order"
-        )
-        await raw_db["guest_service_submissions"].create_index(
-            [("tenant_id", 1), ("property_id", 1), ("booking_id", 1), ("idempotency_key", 1)],
-            unique=True,
-            name="gsc_ledger_unique"
-        )
-        await raw_db["guest_service_submissions"].create_index(
-            [("tenant_id", 1), ("submission_reference", 1)],
-            unique=True,
-            name="gsc_ledger_reference_unique"
-        )
+        await raw_db["guest_service_catalogue_settings"].create_index([("tenant_id", 1), ("property_id", 1)], unique=True, name="gsc_settings_lookup")
+        await raw_db["guest_service_departments"].create_index([("tenant_id", 1), ("property_id", 1), ("department_code", 1)], unique=True, name="gsc_dept_unique")
+        await raw_db["guest_service_departments"].create_index([("tenant_id", 1), ("property_id", 1), ("enabled", 1), ("display_order", 1)], name="gsc_dept_order")
+        await raw_db["guest_service_items"].create_index([("tenant_id", 1), ("property_id", 1), ("service_code", 1)], unique=True, name="gsc_item_unique")
+        await raw_db["guest_service_items"].create_index([("tenant_id", 1), ("property_id", 1), ("department_code", 1), ("enabled", 1), ("display_order", 1)], name="gsc_item_order")
+        await raw_db["guest_service_submissions"].create_index([("tenant_id", 1), ("property_id", 1), ("booking_id", 1), ("idempotency_key", 1)], unique=True, name="gsc_ledger_unique")
+        await raw_db["guest_service_submissions"].create_index([("tenant_id", 1), ("submission_reference", 1)], unique=True, name="gsc_ledger_reference_unique")
         await raw_db["qr_requests"].create_index(
             [("tenant_id", 1), ("submission_group_id", 1), ("service_code", 1)],
             unique=True,
             partialFilterExpression={"submission_group_id": {"$exists": True}, "service_code": {"$exists": True}},
-            name="gsc_request_group_service_unique"
+            name="gsc_request_group_service_unique",
         )
         await raw_db["qr_requests"].create_index(
-            [("tenant_id", 1), ("request_reference", 1)],
-            unique=True,
-            partialFilterExpression={"request_reference": {"$exists": True}},
-            name="gsc_request_reference_unique"
+            [("tenant_id", 1), ("request_reference", 1)], unique=True, partialFilterExpression={"request_reference": {"$exists": True}}, name="gsc_request_reference_unique"
         )
 
     except Exception as e:
         logger.warning(f"[room_qr] Failed to create catalogue indexes: group=catalogue_indexes error_class={e.__class__.__name__}")
-
 
 
 from domains.guest.qr_constants import CATEGORY_CATALOG, CATEGORY_LABELS, CATEGORY_MAP, VALID_PRIORITIES
@@ -391,10 +361,10 @@ def _resolve_property_id(tenant_id: str, room: dict, booking: dict) -> str | Non
     return room_property_id or booking_property_id or tenant_id
 
 
-
 # ═══════════════════════════════════════════════════════════════
 # GUEST SESSION MANAGEMENT (Phase 1 Security Hardening)
 # ═══════════════════════════════════════════════════════════════
+
 
 async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str | None) -> tuple[dict, dict]:
     if not session_token:
@@ -419,13 +389,15 @@ async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str
     booking = {**booking, "property_id": property_id}
 
     # Check session exists with all strict mandatory fields
-    session = await raw_db["room_guest_sessions"].find_one({
-        "tenant_id": tenant_id,
-        "property_id": property_id,
-        "room_id": room_id,
-        "booking_id": booking["id"],
-        "token_hash": token_hash,
-    })
+    session = await raw_db["room_guest_sessions"].find_one(
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "room_id": room_id,
+            "booking_id": booking["id"],
+            "token_hash": token_hash,
+        }
+    )
 
     if not session:
         raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
@@ -445,13 +417,9 @@ async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str
 
     return booking, session
 
+
 @router.post("/api/public/room-qr/{tenant_id}/{room_id}/session")
-async def public_create_guest_session(
-    tenant_id: str,
-    room_id: str,
-    request: Request,
-    t: str = Query(...)
-):
+async def public_create_guest_session(tenant_id: str, room_id: str, request: Request, t: str = Query(...)):
     """Static QR okutulduktan sonra aktif rezervasyona bağlı kısa ömürlü session üretir."""
     client_ip = _client_ip(request)
     if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:session"):
@@ -486,12 +454,14 @@ async def public_create_guest_session(
             if isinstance(departure_date, str):
                 departure_date_str = departure_date.strip()
                 import re
+
                 if re.match(r"^\d{4}-\d{2}-\d{2}$", departure_date_str):
                     is_date_only = True
 
                 if is_date_only:
                     import zoneinfo
                     from datetime import date
+
                     y, m, d = map(int, departure_date_str.split("-"))
                     dep_date = date(y, m, d)
 
@@ -535,14 +505,12 @@ async def public_create_guest_session(
         "token_hash": token_hash,
         "created_at": now,
         "expires_at": expires_at,
-        "revoked_at": None
+        "revoked_at": None,
     }
     await raw_db["room_guest_sessions"].insert_one(doc)
 
-    return {
-        "session_token": raw_token,
-        "expires_at": expires_at.isoformat()
-    }
+    return {"session_token": raw_token, "expires_at": expires_at.isoformat()}
+
 
 # ═══════════════════════════════════════════════════════════════
 # PUBLIC ENDPOINTS (misafir — auth yok)
@@ -585,13 +553,7 @@ from models.schemas.qr_catalogue_submission import LegacyRequestSubmit, Structur
 
 
 @router.post("/api/public/room-qr/{tenant_id}/{room_id}/submit")
-async def public_submit_request(
-    tenant_id: str,
-    room_id: str,
-    payload: dict,
-    request: Request,
-    x_guest_session: str = Header(None)
-):
+async def public_submit_request(tenant_id: str, room_id: str, payload: dict, request: Request, x_guest_session: str = Header(None)):
     """Misafir talep gönderir (aktif rezervasyon gerektirir)."""
     client_ip = _client_ip(request)
     if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:submit"):
@@ -634,7 +596,7 @@ async def public_submit_request(
             room_number=room_number,
             payload=struct_payload,
             guest_name=guest_name,
-            guest_phone=guest_phone
+            guest_phone=guest_phone,
         )
 
         docs_to_emit = res.pop("docs_to_emit", [])
@@ -675,13 +637,15 @@ async def public_submit_request(
                             "created_by": None,
                             "created_at": doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else doc["created_at"],
                             "updated_at": doc["updated_at"].isoformat() if isinstance(doc["updated_at"], datetime) else doc["updated_at"],
-                            "history": [{
-                                "action": "created",
-                                "actor_id": None,
-                                "actor_name": doc.get("guest_name") or "Misafir",
-                                "at": doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else doc["created_at"],
-                                "notes": "Misafir tarafından oda QR üzerinden iletildi (Structured)"
-                            }]
+                            "history": [
+                                {
+                                    "action": "created",
+                                    "actor_id": None,
+                                    "actor_name": doc.get("guest_name") or "Misafir",
+                                    "at": doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else doc["created_at"],
+                                    "notes": "Misafir tarafından oda QR üzerinden iletildi (Structured)",
+                                }
+                            ],
                         }
                         await raw_db["service_complaints"].insert_one(complaint_doc)
                     except Exception as exc:
@@ -689,18 +653,24 @@ async def public_submit_request(
 
             try:
                 from domains.guest.messaging import guest_requests as _gr
+
                 await _gr.add_guest_message(
-                    tenant_id=tenant_id, room_id=room_id, property_id=booking.get("property_id"),
-                    room_number=doc.get("room_number"), sender_type="guest", body=doc["description"],
-                    booking_id=doc.get("booking_id"), sender_name=doc.get("guest_name") or "Misafir",
-                    request_id=doc["_id"], category=doc["category"], department=doc["department"],
-                    priority=doc["priority"], guest_session_id=guest_session["id"]
+                    tenant_id=tenant_id,
+                    room_id=room_id,
+                    property_id=booking.get("property_id"),
+                    room_number=doc.get("room_number"),
+                    sender_type="guest",
+                    body=doc["description"],
+                    booking_id=doc.get("booking_id"),
+                    sender_name=doc.get("guest_name") or "Misafir",
+                    request_id=doc["_id"],
+                    category=doc["category"],
+                    department=doc["department"],
+                    priority=doc["priority"],
+                    guest_session_id=guest_session["id"],
                 )
                 cat_label_tr = CATEGORY_LABELS.get(doc["category"], {}).get("tr", doc["category"])
-                await _gr.notify_department(
-                    tenant_id=tenant_id, room_number=doc.get("room_number"),
-                    qr_department=doc["department"], category_label=cat_label_tr
-                )
+                await _gr.notify_department(tenant_id=tenant_id, room_number=doc.get("room_number"), qr_department=doc["department"], category_label=cat_label_tr)
                 await _gr.emit_guest_requests_ping(tenant_id, room_id)
             except Exception as exc:
                 logger.warning(f"[room_qr] guest-requests chat entegrasyonu atlandı: {exc}")
@@ -708,6 +678,7 @@ async def public_submit_request(
             try:
                 from core.ws_rooms import tenant_broadcast_room
                 from websocket_server import sio  # type: ignore
+
                 await sio.emit(
                     "room_request:new",
                     {
@@ -829,6 +800,7 @@ async def public_submit_request(
 
         try:
             from domains.guest.messaging import guest_requests as _gr
+
             await _gr.add_guest_message(
                 tenant_id=tenant_id,
                 room_id=room_id,
@@ -881,20 +853,16 @@ async def public_submit_request(
             "message": "Talebiniz alındı, ilgili departmana iletildi.",
         }
 
+
 def _utc_now():
     from datetime import UTC, datetime
+
     return datetime.now(UTC)
 
+
 @router.get("/api/public/room-qr/{tenant_id}/{room_id}/catalogue")
-async def public_get_catalogue(
-    tenant_id: str,
-    room_id: str,
-    lang: str = Query("en"),
-    x_guest_session: str = Header(None)
-):
+async def public_get_catalogue(tenant_id: str, room_id: str, lang: str = Query("en"), x_guest_session: str = Header(None)):
     """Misafir için dinamik QR hizmet kataloğunu döndürür."""
-
-
 
     try:
         booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
@@ -921,7 +889,7 @@ async def public_get_catalogue(
     depts_out, services_out = await fetch_catalogue_data(tenant_id, property_id, mode)
 
     if not depts_out and not services_out:
-         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
     def local_process_lang(labels: dict | None) -> str:
         return process_lang(labels, lang, prop_lang)
@@ -940,12 +908,7 @@ async def public_get_catalogue(
         dept_code = d.get("department_code")
         if not dept_code:
             continue
-        initial_depts.append({
-            "department_code": dept_code,
-            "display_order": d.get("display_order", 0),
-            "label": local_process_lang(d.get("labels")),
-            "icon": d.get("icon")
-        })
+        initial_depts.append({"department_code": dept_code, "display_order": d.get("display_order", 0), "label": local_process_lang(d.get("labels")), "icon": d.get("icon")})
         enabled_dept_codes.add(dept_code)
 
     formatted_services = []
@@ -966,25 +929,24 @@ async def public_get_catalogue(
             opts = config.get("options", [])
             mapped_opts = []
             for opt in opts:
-                mapped_opts.append({
-                    "code": opt.get("code"),
-                    "label": local_process_lang(opt.get("labels"))
-                })
+                mapped_opts.append({"code": opt.get("code"), "label": local_process_lang(opt.get("labels"))})
             config["options"] = mapped_opts
 
-        formatted_services.append({
-            "service_code": s.get("service_code"),
-            "department_code": dept_code,
-            "label": local_process_lang(s.get("labels")),
-            "description": local_process_lang_dict(s.get("description")),
-            "icon": s.get("icon"),
-            "input_type": s.get("input_type"),
-            "input_config": config,
-            "auto_priority": s.get("auto_priority", "normal"),
-            "estimated_minutes": s.get("estimated_minutes", 0),
-            "is_chargeable": s.get("is_chargeable", False),
-            "charge_warning": local_process_lang_dict(s.get("charge_warning"))
-        })
+        formatted_services.append(
+            {
+                "service_code": s.get("service_code"),
+                "department_code": dept_code,
+                "label": local_process_lang(s.get("labels")),
+                "description": local_process_lang_dict(s.get("description")),
+                "icon": s.get("icon"),
+                "input_type": s.get("input_type"),
+                "input_config": config,
+                "auto_priority": s.get("auto_priority", "normal"),
+                "estimated_minutes": s.get("estimated_minutes", 0),
+                "is_chargeable": s.get("is_chargeable", False),
+                "charge_warning": local_process_lang_dict(s.get("charge_warning")),
+            }
+        )
         used_dept_codes.add(dept_code)
 
     formatted_depts = []
@@ -996,13 +958,7 @@ async def public_get_catalogue(
     if not formatted_depts and not formatted_services:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    return {
-        "catalogue_version": 1,
-        "departments": formatted_depts,
-        "services": formatted_services,
-        "server_timestamp": _utc_now().isoformat()
-    }
-
+    return {"catalogue_version": 1, "departments": formatted_depts, "services": formatted_services, "server_timestamp": _utc_now().isoformat()}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1031,23 +987,14 @@ def _guest_facing_messages(messages: list[dict]) -> list[dict]:
 
 
 @router.get("/api/public/room-qr/{tenant_id}/{room_id}/thread")
-async def public_get_thread(
-    tenant_id: str,
-    room_id: str,
-    x_guest_session: str = Header(None)
-):
+async def public_get_thread(tenant_id: str, room_id: str, x_guest_session: str = Header(None)):
     """Misafir kendi mesaj thread'ini görür."""
     booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
 
     from domains.guest.messaging import guest_requests as _gr
 
     # Strict property and booking scoped query for guest isolation
-    messages = await _gr.public_get_guest_thread(
-        tenant_id=tenant_id,
-        property_id=booking["property_id"],
-        room_id=room_id,
-        booking_id=booking["id"]
-    )
+    messages = await _gr.public_get_guest_thread(tenant_id=tenant_id, property_id=booking["property_id"], room_id=room_id, booking_id=booking["id"])
     return {"messages": _guest_facing_messages(messages)}
 
 
@@ -1290,6 +1237,7 @@ async def update_request(
     if payload.note:
         try:
             from domains.guest.messaging import guest_requests as _gr
+
             property_id = doc.get("property_id")
             if not property_id:
                 room = await raw_db["rooms"].find_one({"id": doc["room_id"], "tenant_id": tenant_id})

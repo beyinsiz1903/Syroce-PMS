@@ -1,4 +1,5 @@
 """Build v2 journal lines from immutable payroll snapshots, never current rates."""
+
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from fastapi import HTTPException
@@ -32,8 +33,7 @@ def detailed_payroll_lines(run, mapping):
             raise HTTPException(409, "Bordro kesinti/net mutabakatı tutmuyor; aktarım yapılmadı")
         if amount(row.get("employer_contributions")) != employer or amount(row.get("employer_cost")) != gross + employer:
             raise HTTPException(409, "İşveren maliyeti mutabakatı tutmuyor")
-        for key, value in {"gross": gross, "net": net, "tax": tax, "sgk": employee + employer,
-                           "employer": employer, "advance": advance, "other": other}.items():
+        for key, value in {"gross": gross, "net": net, "tax": tax, "sgk": employee + employer, "employer": employer, "advance": advance, "other": other}.items():
             totals[key] += value
     summary = run.get("summary") or {}
     if amount(summary.get("total_gross")) != totals["gross"] or amount(summary.get("total_net")) != totals["net"]:

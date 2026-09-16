@@ -450,8 +450,7 @@ async def create_room_mapping(
         raise HTTPException(status_code=409, detail="Bu oda ve fiyat plani eslemesi zaten mevcut")
     if payload.sync_availability:
         other_inventory_mapping = await db.exely_room_mappings.find_one(
-            {"tenant_id": current_user.tenant_id, "pms_room_type": payload.pms_room_type,
-             "sync_availability": True},
+            {"tenant_id": current_user.tenant_id, "pms_room_type": payload.pms_room_type, "sync_availability": True},
             {"_id": 1},
         )
         if other_inventory_mapping:
@@ -494,17 +493,14 @@ async def update_room_mapping(
     if not all((room_code, rate_code, pms_type)):
         raise HTTPException(status_code=422, detail="Oda tipi ve fiyat planı kodları zorunludur")
     duplicate = await db.exely_room_mappings.find_one(
-        {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id},
-         "pms_room_type": pms_type, "exely_room_code": room_code,
-         "exely_rate_plan_code": rate_code},
+        {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id}, "pms_room_type": pms_type, "exely_room_code": room_code, "exely_rate_plan_code": rate_code},
         {"_id": 1},
     )
     if duplicate:
         raise HTTPException(status_code=409, detail="Bu oda ve fiyat planı eşlemesi zaten mevcut")
     if payload.sync_availability:
         other_inventory_mapping = await db.exely_room_mappings.find_one(
-            {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id},
-             "pms_room_type": pms_type, "sync_availability": True},
+            {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id}, "pms_room_type": pms_type, "sync_availability": True},
             {"_id": 1},
         )
         if other_inventory_mapping:
@@ -514,12 +510,10 @@ async def update_room_mapping(
         "exely_room_code": room_code,
         "exely_rate_plan_code": rate_code,
         "exely_room_name": payload.exely_room_name.strip(),
-        "pms_api_room_code": payload.pms_api_room_code.strip() or existing.get("pms_api_room_code") or (
-            existing.get("exely_room_code", "") if existing.get("exely_room_code") != room_code else ""
-        ),
-        "pms_api_rate_plan_code": payload.pms_api_rate_plan_code.strip() or existing.get("pms_api_rate_plan_code") or (
-            existing.get("exely_rate_plan_code", "") if existing.get("exely_rate_plan_code") != rate_code else ""
-        ),
+        "pms_api_room_code": payload.pms_api_room_code.strip() or existing.get("pms_api_room_code") or (existing.get("exely_room_code", "") if existing.get("exely_room_code") != room_code else ""),
+        "pms_api_rate_plan_code": payload.pms_api_rate_plan_code.strip()
+        or existing.get("pms_api_rate_plan_code")
+        or (existing.get("exely_rate_plan_code", "") if existing.get("exely_rate_plan_code") != rate_code else ""),
         "sync_availability": payload.sync_availability,
         "sync_price": payload.sync_price,
         "sync_restrictions": payload.sync_restrictions,
@@ -740,6 +734,7 @@ async def manual_pull(
             "error": type(exc).__name__,
             "message": f"EXELY_RESERVATION_PULL_FAILED:{type(exc).__name__} - {str(exc)}",
         }
+
 
 @router.get("/reservations/local")
 async def get_local_reservations(

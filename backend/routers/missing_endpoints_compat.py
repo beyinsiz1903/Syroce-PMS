@@ -108,9 +108,7 @@ async def _central_property_metrics(property_doc: dict, period_start: str, perio
         {"_id": 0, "total": 1, "amount": 1},
     ).to_list(100000)
     revenue = round(sum(float(row.get("total", row.get("amount", 0)) or 0) for row in charges), 2)
-    today_checkins = await _system_db.bookings.count_documents(
-        {"tenant_id": tenant_id, "check_in": today, "status": {"$ne": "cancelled"}}
-    )
+    today_checkins = await _system_db.bookings.count_documents({"tenant_id": tenant_id, "check_in": today, "status": {"$ne": "cancelled"}})
     total_guests = await _system_db.guests.count_documents({"tenant_id": tenant_id})
     total_rooms = len(rooms)
     return {
@@ -133,9 +131,7 @@ async def central_office_dashboard(current_user=Depends(get_current_user), _perm
     month_start = now.date().replace(day=1).isoformat()
     tomorrow = (now.date() + timedelta(days=1)).isoformat()
     properties = await _central_chain_properties(current_user)
-    breakdown = await asyncio.gather(
-        *(_central_property_metrics(property_doc, month_start, tomorrow, today) for property_doc in properties)
-    )
+    breakdown = await asyncio.gather(*(_central_property_metrics(property_doc, month_start, tomorrow, today) for property_doc in properties))
     total_rooms = sum(row["total_rooms"] for row in breakdown)
     occupied = sum(row["occupied_rooms"] for row in breakdown)
     total_revenue = round(sum(row["total_revenue"] for row in breakdown), 2)
@@ -163,12 +159,8 @@ async def central_office_alerts(current_user=Depends(get_current_user), _perm=De
     alerts = []
     for property_doc in properties:
         tenant_id = property_doc["tenant_id"]
-        failed_night = await _system_db.night_audit_runs.count_documents(
-            {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
-        )
-        failed_pos = await _system_db.pos_transactions.count_documents(
-            {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
-        )
+        failed_night = await _system_db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
+        failed_pos = await _system_db.pos_transactions.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
         if failed_night or failed_pos:
             alerts.append(
                 {
@@ -364,7 +356,6 @@ async def hotel_booking_request_approve(
         }
     )
 
-
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
         {
@@ -485,11 +476,7 @@ async def patch_booking_guest_info(
     if not update:
         return {"updated": False, "id": booking_id}
     if not update.get("guest_name") and (update.get("guest_first_name") or update.get("guest_last_name")):
-        update["guest_name"] = " ".join(
-            value.strip()
-            for value in (update.get("guest_first_name", ""), update.get("guest_last_name", ""))
-            if value and value.strip()
-        )
+        update["guest_name"] = " ".join(value.strip() for value in (update.get("guest_first_name", ""), update.get("guest_last_name", "")) if value and value.strip())
     update["updated_at"] = datetime.now(UTC).isoformat()
     from security.field_encryption import get_field_encryption_service
 

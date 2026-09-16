@@ -25,7 +25,6 @@ from core.tenant_db import clear_tenant_context, set_tenant_context
 logger = logging.getLogger("channel_manager.availability_auto_sync")
 
 
-
 async def _load_authoritative_availability(
     tenant_id: str,
     room_type: str,
@@ -57,10 +56,7 @@ async def _load_authoritative_availability(
         inventory = await get_room_type_inventory(tenant_id, date_string, room_type)
         item = next((row for row in inventory if row.get("room_type") == room_type), None)
         if item is None or not isinstance(item.get("sellable"), int):
-            raise RuntimeError(
-                "Canonical inventory is unavailable for "
-                f"room_type={room_type!r}, date={date_string!r}"
-            )
+            raise RuntimeError(f"Canonical inventory is unavailable for room_type={room_type!r}, date={date_string!r}")
         availability[date_string] = max(item["sellable"], 0)
         current_date += timedelta(days=1)
 

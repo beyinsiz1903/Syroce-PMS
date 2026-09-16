@@ -27,6 +27,7 @@ class NilveraWorkerErrorCode(str, Enum):
 
 class NilveraWorkerHealth(BaseModel):
     """Standardized health reporting model for all Nilvera background workers."""
+
     worker_name: str
     enabled: bool
     status: NilveraWorkerStatus

@@ -94,13 +94,8 @@ class DashboardTrendsService:
         """Calculate occupancy from the canonical room-night service."""
         if not date_range:
             return []
-        metrics = await load_stay_night_metrics(
-            db, tenant_id, date.fromisoformat(date_range[0]), date.fromisoformat(date_range[-1])
-        )
-        return [
-            {"date": row["date"], "rate": row["occupancy_rate"], "occupied": row["occupied_rooms"], "total": row["total_rooms"]}
-            for row in metrics
-        ]
+        metrics = await load_stay_night_metrics(db, tenant_id, date.fromisoformat(date_range[0]), date.fromisoformat(date_range[-1]))
+        return [{"date": row["date"], "rate": row["occupancy_rate"], "occupied": row["occupied_rooms"], "total": row["total_rooms"]} for row in metrics]
 
     async def _housekeeping_readiness_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Housekeeping readiness: percentage of rooms in available/inspected state."""

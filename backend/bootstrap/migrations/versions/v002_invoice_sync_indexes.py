@@ -25,7 +25,7 @@ class InvoiceSyncIndexesMigration(Migration):
                 ("document_kind", pymongo.ASCENDING),
             ],
             unique=True,
-            name="uq_invoice_sync_invoice_provider_kind"
+            name="uq_invoice_sync_invoice_provider_kind",
         )
 
         # uq_invoice_sync_provider_request_uuid: provider + request_uuid (Unique)
@@ -35,7 +35,7 @@ class InvoiceSyncIndexesMigration(Migration):
                 ("request_uuid", pymongo.ASCENDING),
             ],
             unique=True,
-            name="uq_invoice_sync_provider_request_uuid"
+            name="uq_invoice_sync_provider_request_uuid",
         )
 
         # uq_invoice_sync_tenant_provider_idempotency: tenant_id + provider + idempotency_key (Unique)
@@ -46,7 +46,7 @@ class InvoiceSyncIndexesMigration(Migration):
                 ("idempotency_key", pymongo.ASCENDING),
             ],
             unique=True,
-            name="uq_invoice_sync_tenant_provider_idempotency"
+            name="uq_invoice_sync_tenant_provider_idempotency",
         )
 
         # ix_invoice_sync_tenant_state_retry: tenant_id + state + next_retry_at
@@ -56,16 +56,11 @@ class InvoiceSyncIndexesMigration(Migration):
                 ("state", pymongo.ASCENDING),
                 ("next_retry_at", pymongo.ASCENDING),
             ],
-            name="ix_invoice_sync_tenant_state_retry"
+            name="ix_invoice_sync_tenant_state_retry",
         )
 
     async def down(self, db) -> None:
-        indexes_to_drop = [
-            "uq_invoice_sync_invoice_provider_kind",
-            "uq_invoice_sync_provider_request_uuid",
-            "uq_invoice_sync_tenant_provider_idempotency",
-            "ix_invoice_sync_tenant_state_retry"
-        ]
+        indexes_to_drop = ["uq_invoice_sync_invoice_provider_kind", "uq_invoice_sync_provider_request_uuid", "uq_invoice_sync_tenant_provider_idempotency", "ix_invoice_sync_tenant_state_retry"]
         for idx in indexes_to_drop:
             try:
                 await db.invoice_sync.drop_index(idx)
@@ -74,5 +69,6 @@ class InvoiceSyncIndexesMigration(Migration):
                 if "index not found" in msg or "not found" in msg:
                     continue
                 raise
+
 
 MIGRATION = InvoiceSyncIndexesMigration()

@@ -792,9 +792,7 @@ async def _update_lineage(
     existing["arrival_date"] = canonical.get("check_in", existing.get("arrival_date", ""))
     existing["departure_date"] = canonical.get("check_out", existing.get("departure_date", ""))
     existing["room_type_code"] = canonical.get("room_type_code", existing.get("room_type_code", ""))
-    existing["provider_room_number"] = canonical.get(
-        "provider_room_number", existing.get("provider_room_number", "")
-    )
+    existing["provider_room_number"] = canonical.get("provider_room_number", existing.get("provider_room_number", ""))
     existing["rate_plan_code"] = canonical.get("rate_plan_code", existing.get("rate_plan_code", ""))
     existing["adults"] = canonical.get("adults", existing.get("adults", 1))
     existing["children"] = canonical.get("children", existing.get("children", 0))

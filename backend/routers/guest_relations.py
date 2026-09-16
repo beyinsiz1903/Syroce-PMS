@@ -74,9 +74,7 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
         guest_folios = await db.folios.find({"booking_id": {"$in": booking_ids}, "tenant_id": tenant_id}, {"_id": 0, "id": 1}).to_list(100)
         folio_ids = [f["id"] for f in guest_folios if "id" in f]
         if folio_ids:
-            postings = await db.folio_postings.find(
-                {"folio_id": {"$in": folio_ids}, "tenant_id": tenant_id, "description": {"$regex": "Minibar", "$options": "i"}}
-            ).to_list(200)
+            postings = await db.folio_postings.find({"folio_id": {"$in": folio_ids}, "tenant_id": tenant_id, "description": {"$regex": "Minibar", "$options": "i"}}).to_list(200)
 
     if postings:
         counts = {"Soda": 0, "Bira": 0, "Kola": 0, "Çikolata": 0, "Su": 0}
@@ -139,15 +137,13 @@ async def trigger_room_preparations(
     tomorrow_date_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
 
     # Find bookings arriving tomorrow directly via MongoDB query (TI-003 and performant index matching)
-    tomorrow_bookings = await db.bookings.find({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "checked_in", "in_house"]},
-        "$or": [
-            {"check_in": {"$gte": tomorrow_start_iso, "$lte": tomorrow_end_iso}},
-            {"check_in": {"$gte": tomorrow_start_z, "$lte": tomorrow_end_z}},
-            {"check_in": tomorrow_date_str}
-        ]
-    }).to_list(1000)
+    tomorrow_bookings = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "checked_in", "in_house"]},
+            "$or": [{"check_in": {"$gte": tomorrow_start_iso, "$lte": tomorrow_end_iso}}, {"check_in": {"$gte": tomorrow_start_z, "$lte": tomorrow_end_z}}, {"check_in": tomorrow_date_str}],
+        }
+    ).to_list(1000)
 
     generated_count = 0
     for booking in tomorrow_bookings:

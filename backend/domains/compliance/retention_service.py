@@ -68,10 +68,15 @@ async def enforce_guest_retention(
             {"check_out_date": {"$lte": cutoff_iso}},
         ],
     }
-    old_stays = await db.bookings.find(
-        booking_query,
-        {"_id": 0, "guest_id": 1},
-    ).sort("check_out", 1).limit(limit * 4).to_list(limit * 4)
+    old_stays = (
+        await db.bookings.find(
+            booking_query,
+            {"_id": 0, "guest_id": 1},
+        )
+        .sort("check_out", 1)
+        .limit(limit * 4)
+        .to_list(limit * 4)
+    )
     candidate_ids = list(dict.fromkeys(row.get("guest_id") for row in old_stays if row.get("guest_id")))[:limit]
 
     eligible_ids: list[str] = []

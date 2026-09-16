@@ -22,7 +22,7 @@ async def resolve_booking_room_number(database, tenant_id: str, booking: dict) -
     return str((room or {}).get("room_number") or room_number).strip()
 
 
-async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str) -> tuple[dict, dict, dict]:
+async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str, target_guest_id: str | None = None) -> tuple[dict, dict, dict]:
     """Return ``(booking, guest, payload)`` using current canonical records."""
     booking = await database.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
@@ -49,13 +49,22 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str) 
 
     room_number = await resolve_booking_room_number(database, tenant_id, booking)
     guest: dict = {}
-    if booking.get("guest_id"):
+
+    actual_guest_id = target_guest_id or booking.get("guest_id")
+    guest_check_out = booking.get("check_out", "")
+
+    if target_guest_id and target_guest_id != booking.get("guest_id"):
+        bg_link = await database.booking_guests.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": target_guest_id}, {"_id": 0, "checkout_date": 1})
+        if bg_link and bg_link.get("checkout_date"):
+            guest_check_out = bg_link["checkout_date"]
+
+    if actual_guest_id:
         from security.encrypted_lookup import decrypt_guest_doc
 
         guest = (
             decrypt_guest_doc(
                 await database.guests.find_one(
-                    {"tenant_id": tenant_id, "id": booking["guest_id"]},
+                    {"tenant_id": tenant_id, "id": actual_guest_id},
                     {
                         "_id": 0,
                         "id": 1,
@@ -73,33 +82,34 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str) 
                         "father_name": 1,
                         "mother_name": 1,
                         "birth_place": 1,
+                        "phone": 1,
                     },
                 )
             )
             or {}
         )
 
-    # ``bookings.guest_name`` is a legacy display snapshot and can be empty
-    # even though the canonical guest profile has a name.  KBS must never
-    # reject an otherwise complete identity record merely because that stale
-    # booking field was not populated.
-    guest_name = str(booking.get("guest_name") or "").strip()
+    # ``bookings.guest_name`` is a legacy display snapshot for the PRIMARY guest.
+    guest_name = ""
+    if not target_guest_id or target_guest_id == booking.get("guest_id"):
+        guest_name = str(booking.get("guest_name") or "").strip()
+
     if not guest_name:
         guest_name = str(guest.get("name") or guest.get("full_name") or "").strip()
     if not guest_name:
-        guest_name = " ".join(
-            part.strip()
-            for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or ""))
-            if part.strip()
-        )
+        guest_name = " ".join(part.strip() for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or "")) if part.strip())
+
+    phone = str(guest.get("phone") or "").strip()
+    if not phone and (not target_guest_id or target_guest_id == booking.get("guest_id")):
+        phone = booking.get("guest_phone", "")
 
     snapshot = {
         "guest_name": guest_name,
-        "phone": booking.get("guest_phone", ""),
+        "phone": phone,
         "room_number": room_number,
         "check_in": booking.get("check_in", ""),
-        "check_out": booking.get("check_out", ""),
-        "nationality": guest.get("nationality") or booking.get("guest_nationality") or "TC",
+        "check_out": guest_check_out,
+        "nationality": guest.get("nationality") or (booking.get("guest_nationality") if (not target_guest_id or target_guest_id == booking.get("guest_id")) else "TC") or "TC",
         "id_number": guest.get("id_number", ""),
         "passport_number": guest.get("passport_number", ""),
         "birth_date": guest.get("birth_date") or guest.get("date_of_birth", ""),

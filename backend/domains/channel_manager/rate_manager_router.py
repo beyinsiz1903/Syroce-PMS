@@ -244,10 +244,7 @@ async def update_rates(
         {"tenant_id": tenant_id},
         {"_id": 0},
     ).to_list(200)
-    mapping_controls = {
-        (str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row
-        for row in mapping_rows
-    }
+    mapping_controls = {(str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row for row in mapping_rows}
 
     bulk_ops = []
     push_tasks = []
@@ -402,10 +399,7 @@ async def bulk_grid_update(
         {"tenant_id": tenant_id},
         {"_id": 0},
     ).to_list(200)
-    mapping_controls = {
-        (str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row
-        for row in mapping_rows
-    }
+    mapping_controls = {(str(row.get("exely_room_code") or ""), str(row.get("exely_rate_plan_code") or "")): row for row in mapping_rows}
 
     selected_days_set = set(request.selected_days) if request.selected_days else None
     update_fields = set(request.update_fields)

@@ -6,8 +6,10 @@ from dotenv import load_dotenv
 load_dotenv(override=False)
 sys.path.append("/app")
 
+
 def log_result(step: str, status: str, extra: str = ""):
     print(f"[{status}] {step:<35} {extra}")
+
 
 async def main():
     print("==================================================")
@@ -72,6 +74,7 @@ async def main():
 
     print("Token/secret log: Yok (Redacted & Clean)")
     print("==================================================")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

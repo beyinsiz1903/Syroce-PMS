@@ -8,6 +8,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(ROOT_DIR)
 load_dotenv(override=False)
 
+
 async def main():
     print("==================================================")
     print("HOTELRUNNER SECRET BACKFILL")
@@ -46,12 +47,7 @@ async def main():
 
         try:
             # Store credentials securely
-            path = await sm.store_provider_credentials(
-                tenant_id,
-                "hotelrunner",
-                hr_id,
-                creds
-            )
+            path = await sm.store_provider_credentials(tenant_id, "hotelrunner", hr_id, creds)
             print(f"  tenant_id: {tenant_id}")
             print(f"  hr_id: {hr_id}")
             print(f"  secret_path: {path}")
@@ -65,6 +61,7 @@ async def main():
             print(f"  stored: false")
             print(f"  token_logged: false")
             print(f"  error: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

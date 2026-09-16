@@ -190,10 +190,7 @@ async def post_konaklama_vergisi_to_folio(
     # tax_breakdown ile toplamın içine zaten dahil eder. Checkout'ta tekrar
     # CITY_TAX satırı yazmak aynı vergiyi ikinci kez misafire yansıtırdı.
     embedded_tax = round(
-        sum(
-            float((charge.get("tax_breakdown") or {}).get("accommodation_tax") or 0.0)
-            for charge in room_charges
-        ),
+        sum(float((charge.get("tax_breakdown") or {}).get("accommodation_tax") or 0.0) for charge in room_charges),
         2,
     )
     # Reservation prices are guest-payable gross totals.  Checkout
@@ -227,9 +224,7 @@ async def post_konaklama_vergisi_to_folio(
                 if raise_on_error:
                     raise
                 return {"ok": False, "posted": False, "reason": "posting_insert_failed"}
-            existing = await db.accommodation_tax_postings.find_one(
-                {"tenant_id": tenant_id, "folio_id": folio_id}
-            )
+            existing = await db.accommodation_tax_postings.find_one({"tenant_id": tenant_id, "folio_id": folio_id})
             return {
                 "ok": True,
                 "posted": False,

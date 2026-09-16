@@ -53,11 +53,7 @@ async def resolve_legacy_hotelrunner_note(
         return None
 
     booking_id = str(booking.get("id") or "").strip()
-    external_reservation_id = str(
-        booking.get("external_reservation_id")
-        or source.get("external_reservation_id")
-        or ""
-    ).strip()
+    external_reservation_id = str(booking.get("external_reservation_id") or source.get("external_reservation_id") or "").strip()
     if not booking_id or not external_reservation_id:
         return None
 
@@ -80,11 +76,7 @@ async def resolve_legacy_hotelrunner_note(
             {"id": import_record_id, "tenant_id": tenant_id},
             projection,
         )
-        if (
-            provider_record
-            and str(provider_record.get("provider") or "").strip().lower()
-            != "hotelrunner"
-        ):
+        if provider_record and str(provider_record.get("provider") or "").strip().lower() != "hotelrunner":
             provider_record = None
     if not provider_record:
         provider_record = await database.imported_reservations.find_one(

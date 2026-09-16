@@ -113,10 +113,7 @@ class HorizontalScalingManager:
             self._heartbeat_failure_class,
             phase,
         )
-        if (
-            self._heartbeat_failures >= self._heartbeat_error_threshold
-            and self._heartbeat_escalated_failure_class != self._heartbeat_failure_class
-        ):
+        if self._heartbeat_failures >= self._heartbeat_error_threshold and self._heartbeat_escalated_failure_class != self._heartbeat_failure_class:
             logger.error(
                 "Heartbeat failed repeatedly (%s consecutive): failure_class=%s phase=%s",
                 self._heartbeat_failures,

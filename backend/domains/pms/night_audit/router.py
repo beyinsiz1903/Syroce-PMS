@@ -95,10 +95,7 @@ async def run_night_audit(
             detail={
                 "success": False,
                 "code": "BUSINESS_DATE_MISMATCH",
-                "error": (
-                    f"İstenen iş günü {request.business_date}, otelin açık iş günü "
-                    f"{authoritative_bd} ile eşleşmiyor. Yenileyip tekrar deneyin."
-                ),
+                "error": (f"İstenen iş günü {request.business_date}, otelin açık iş günü {authoritative_bd} ile eşleşmiyor. Yenileyip tekrar deneyin."),
                 "requested_business_date": request.business_date,
                 "current_business_date": authoritative_bd,
             },

@@ -75,8 +75,7 @@ async def run_phase_a(
                 # application-error issue in Sentry. Invalid payloads and raised
                 # exceptions below remain ERROR events.
                 logger.warning(
-                    "[PULL-A] Provider page fetch failed; no delivery ACKs sent: "
-                    "failure_class=%s",
+                    "[PULL-A] Provider page fetch failed; no delivery ACKs sent: failure_class=%s",
                     failure_class,
                 )
                 await log_pull(tenant_id, "failed", 0, "PROVIDER_PULL_FAILED")

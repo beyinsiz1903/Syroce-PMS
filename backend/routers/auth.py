@@ -502,8 +502,8 @@ async def login(data: UserLogin, request: Request, response: Response):
             cached_at = float(cached.get("cached_at") or 0)
             if cached_uid:
                 u = await db.users.find_one(
-                     {"id": cached_uid},
-                     {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1, "is_active": 1},
+                    {"id": cached_uid},
+                    {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1, "is_active": 1},
                 )
                 _watermark = float((u or {}).get("tokens_invalid_before") or 0)
                 if not u or u.get("is_active") is False:
@@ -855,6 +855,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
         else:
             try:
                 import math
+
                 f_iat = float(ch_iat)
                 f_ib = float(invalid_before)
                 if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
@@ -1220,6 +1221,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
             )
         try:
             import math
+
             f_iat = float(iat)
             f_ib = float(invalid_before)
             if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
@@ -1413,6 +1415,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
         )
 
     return resp_data
+
 
 @router.post("/auth/logout")
 async def logout(

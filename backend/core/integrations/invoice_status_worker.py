@@ -70,8 +70,6 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
                 self._mark_stopped()
         logger.info("InvoiceStatusWorker stopped")
 
-
-
     async def _run_loop(self) -> None:
         try:
             while not self._stop_event.is_set():
@@ -106,17 +104,18 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
 
         # Only process SUBMITTED records that do NOT require reconciliation
         # and are due for a status check
-        cursor = _raw_db.invoice_sync.find(
-            {
-                "state": InvoiceSyncState.SUBMITTED.value,
-                "reconciliation_required": {"$ne": True},
-                "next_status_check_at": {"$lte": now},
-                "$or": [
-                    {"status_lease_owner": None},
-                    {"status_lease_expires_at": {"$lte": now}}
-                ]
-            }
-        ).sort("next_status_check_at", 1).limit(self._batch_size)
+        cursor = (
+            _raw_db.invoice_sync.find(
+                {
+                    "state": InvoiceSyncState.SUBMITTED.value,
+                    "reconciliation_required": {"$ne": True},
+                    "next_status_check_at": {"$lte": now},
+                    "$or": [{"status_lease_owner": None}, {"status_lease_expires_at": {"$lte": now}}],
+                }
+            )
+            .sort("next_status_check_at", 1)
+            .limit(self._batch_size)
+        )
 
         docs = await cursor.to_list(length=self._batch_size)
         if not docs:
@@ -135,5 +134,6 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
                 logger.error("Invoice status worker failed error_type=%s", type(exc).__name__)
 
         return processed
+
 
 invoice_status_worker = InvoiceStatusWorker()

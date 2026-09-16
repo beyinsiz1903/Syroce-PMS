@@ -94,11 +94,14 @@ async def _resolve_agency_reservation_reference(booking: dict, tenant_id: str) -
     except Exception:
         imported = None
 
-    return _agency_reservation_reference_from_sources(
-        booking,
-        raw_payload=raw_payload,
-        imported=imported,
-    ) or direct
+    return (
+        _agency_reservation_reference_from_sources(
+            booking,
+            raw_payload=raw_payload,
+            imported=imported,
+        )
+        or direct
+    )
 
 
 def _invoice_note_with_agency_reference(note: str | None, reference: str) -> str:
@@ -522,7 +525,7 @@ body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial
     {special_requests_html}
     <div class="footer">
         <div>Bu belge <strong>{_e(settings.get("hotel_name"))}</strong> tarafından elektronik olarak düzenlenmiştir.</div>
-        {f'<div>{_e(contact_line)}</div>' if contact_line else ""}
+        {f"<div>{_e(contact_line)}</div>" if contact_line else ""}
         <div>Düzenlenme tarihi: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M UTC")}</div>
     </div>
 </div>

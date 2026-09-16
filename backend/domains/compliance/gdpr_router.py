@@ -183,10 +183,7 @@ async def run_retention_policy(
         action="gdpr.retention.previewed" if body.dry_run else "gdpr.retention.executed",
         entity_type="gdpr_retention_run",
         entity_id=str(uuid.uuid4()),
-        details=(
-            f"Retention {'önizlemesi' if body.dry_run else 'anonimleştirmesi'}: "
-            f"{result['eligible_count']} uygun, {result['anonymized_count']} anonimleştirildi"
-        ),
+        details=(f"Retention {'önizlemesi' if body.dry_run else 'anonimleştirmesi'}: {result['eligible_count']} uygun, {result['anonymized_count']} anonimleştirildi"),
         after_value=result,
         db=db,
         severity="warning" if not body.dry_run else "info",
@@ -196,10 +193,14 @@ async def run_retention_policy(
 
 @router.get("/dpa")
 async def list_dpas(current_user=Depends(get_current_user)):
-    items = await db.dpa_records.find(
-        {"tenant_id": current_user.tenant_id},
-        {"_id": 0},
-    ).sort("updated_at", -1).to_list(500)
+    items = (
+        await db.dpa_records.find(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+        .sort("updated_at", -1)
+        .to_list(500)
+    )
     return {"agreements": items, "total": len(items)}
 
 
@@ -273,13 +274,9 @@ async def get_compliance_status(current_user=Depends(get_current_user)):
     tenant_id = current_user.tenant_id
     total_guests = await db.guests.count_documents({"tenant_id": tenant_id})
     guests_with_consent = await db.kvkk_consents.count_documents({"tenant_id": tenant_id})
-    anonymized_guests = await db.guests.count_documents(
-        {"tenant_id": tenant_id, "$or": [{"anonymized": True}, {"is_anonymized": True}]}
-    )
+    anonymized_guests = await db.guests.count_documents({"tenant_id": tenant_id, "$or": [{"anonymized": True}, {"is_anonymized": True}]})
     erasure_requests = await db.kvkk_erasure_requests.count_documents({"tenant_id": tenant_id})
-    open_erasure_requests = await db.kvkk_erasure_requests.count_documents(
-        {"tenant_id": tenant_id, "status": {"$nin": ["completed", "rejected", "cancelled"]}}
-    )
+    open_erasure_requests = await db.kvkk_erasure_requests.count_documents({"tenant_id": tenant_id, "status": {"$nin": ["completed", "rejected", "cancelled"]}})
     active_dpas = await db.dpa_records.count_documents({"tenant_id": tenant_id, "status": "active"})
     retention = await db.gdpr_retention_policies.find_one({"tenant_id": tenant_id}, {"_id": 0})
     consent_coverage = total_guests == 0 or guests_with_consent >= total_guests
@@ -300,10 +297,14 @@ async def get_compliance_status(current_user=Depends(get_current_user)):
     if not active_dpas:
         recommendations.append("Aktif veri işleyen sağlayıcılar için DPA kaydı oluşturun.")
 
-    recent_actions = await db.audit_logs.find(
-        {"tenant_id": tenant_id, "operation_name": {"$regex": "^gdpr\\."}},
-        {"_id": 0, "id": 1, "operation_name": 1, "details": 1, "timestamp": 1},
-    ).sort("timestamp", -1).to_list(20)
+    recent_actions = (
+        await db.audit_logs.find(
+            {"tenant_id": tenant_id, "operation_name": {"$regex": "^gdpr\\."}},
+            {"_id": 0, "id": 1, "operation_name": 1, "details": 1, "timestamp": 1},
+        )
+        .sort("timestamp", -1)
+        .to_list(20)
+    )
     recent_actions = [
         {
             "id": item.get("id"),

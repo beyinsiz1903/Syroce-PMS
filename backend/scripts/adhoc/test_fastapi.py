@@ -8,21 +8,16 @@ with mock.patch("core.database.AsyncIOMotorClient"):
     from server import app
 
     def mock_get_current_user():
-        return User(
-            id="test_user_id",
-            name="Admin",
-            tenant_id="syrocedemo",
-            email="admin@syrocedemo.com",
-            role="admin",
-            permissions=["all"]
-        )
+        return User(id="test_user_id", name="Admin", tenant_id="syrocedemo", email="admin@syrocedemo.com", role="admin", permissions=["all"])
 
     app.dependency_overrides = {}
     from core.security import get_current_user
+
     app.dependency_overrides[get_current_user] = mock_get_current_user
 
     # Bypass migrations
     from server import _db_migrations_startup
+
     app.router.on_startup.remove(_db_migrations_startup) if _db_migrations_startup in app.router.on_startup else None
 
     with TestClient(app) as client:

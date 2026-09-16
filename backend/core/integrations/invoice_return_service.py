@@ -89,19 +89,13 @@ async def initialize_balances_for_invoice(tenant_id: str, incoming_invoice_id: s
         )
 
 
-async def calculate_full_return_quantities(
-    tenant_id: str,
-    incoming_invoice_id: str
-) -> list[ReturnQuantityRequest]:
+async def calculate_full_return_quantities(tenant_id: str, incoming_invoice_id: str) -> list[ReturnQuantityRequest]:
     """
     Calculates the maximum remaining returnable quantity for all lines of an incoming invoice.
     """
     db = get_db_for_tenant(tenant_id)
 
-    cursor = db.invoice_return_balances.find({
-        "tenant_id": tenant_id,
-        "source_incoming_invoice_id": incoming_invoice_id
-    })
+    cursor = db.invoice_return_balances.find({"tenant_id": tenant_id, "source_incoming_invoice_id": incoming_invoice_id})
 
     requests = []
     async for bal_doc in cursor:
@@ -114,11 +108,7 @@ async def calculate_full_return_quantities(
 
 
 async def process_return_request(
-    tenant_id: str,
-    incoming_invoice_id: str,
-    action_id: str,
-    return_type: str,
-    partial_requests: Sequence[ReturnQuantityRequest] | None = None
+    tenant_id: str, incoming_invoice_id: str, action_id: str, return_type: str, partial_requests: Sequence[ReturnQuantityRequest] | None = None
 ) -> list[InvoiceReturnAllocation]:
     """
     Main service method to process a return request (FULL or PARTIAL).
@@ -140,21 +130,10 @@ async def process_return_request(
         if req.quantity <= Decimal("0"):
             raise ReturnValidationError(f"Return quantity for line {req.source_line_id} must be > 0")
 
-    alloc_requests = [
-        ReturnAllocationRequest(
-            source_line_id=r.source_line_id,
-            quantity=r.quantity,
-            return_action_id=action_id
-        )
-        for r in requests_to_process
-    ]
+    alloc_requests = [ReturnAllocationRequest(source_line_id=r.source_line_id, quantity=r.quantity, return_action_id=action_id) for r in requests_to_process]
 
     # This will fail-closed if there is not enough balance or transaction fails
-    allocations = await allocate_return_quantities(
-        tenant_id=tenant_id,
-        source_incoming_invoice_id=incoming_invoice_id,
-        allocations=alloc_requests
-    )
+    allocations = await allocate_return_quantities(tenant_id=tenant_id, source_incoming_invoice_id=incoming_invoice_id, allocations=alloc_requests)
 
     return allocations
 
@@ -205,9 +184,7 @@ async def reserve_return_action(
         )
     except pymongo.errors.OperationFailure as error:
         if "Transaction" in str(error) or error.code in (20, 246):
-            raise PreconditionFailedError(
-                "MongoDB transaction support is required for return allocation"
-            ) from error
+            raise PreconditionFailedError("MongoDB transaction support is required for return allocation") from error
         raise
 
 
@@ -270,16 +247,18 @@ async def handle_return_action_success(tenant_id: str, action_id: str) -> None:
     Marks all allocations for a successful action as CONFIRMED.
     """
     db = get_db_for_tenant(tenant_id)
-    cursor = db.invoice_return_allocations.find({
-        "tenant_id": tenant_id,
-        "return_action_id": action_id,
-        "state": {
-            "$in": [
-                ReturnAllocationState.PROVIDER_PENDING.value,
-                ReturnAllocationState.RECONCILIATION_REQUIRED.value,
-            ]
-        },
-    })
+    cursor = db.invoice_return_allocations.find(
+        {
+            "tenant_id": tenant_id,
+            "return_action_id": action_id,
+            "state": {
+                "$in": [
+                    ReturnAllocationState.PROVIDER_PENDING.value,
+                    ReturnAllocationState.RECONCILIATION_REQUIRED.value,
+                ]
+            },
+        }
+    )
 
     async for alloc_doc in cursor:
         alloc = InvoiceReturnAllocation(**alloc_doc)
@@ -291,16 +270,18 @@ async def handle_return_action_validation_failure(tenant_id: str, action_id: str
     Marks allocations as RELEASED when the provider rejects them cleanly (e.g. 400/422).
     """
     db = get_db_for_tenant(tenant_id)
-    cursor = db.invoice_return_allocations.find({
-        "tenant_id": tenant_id,
-        "return_action_id": action_id,
-        "state": {
-            "$in": [
-                ReturnAllocationState.RESERVED.value,
-                ReturnAllocationState.PROVIDER_PENDING.value,
-            ]
-        },
-    })
+    cursor = db.invoice_return_allocations.find(
+        {
+            "tenant_id": tenant_id,
+            "return_action_id": action_id,
+            "state": {
+                "$in": [
+                    ReturnAllocationState.RESERVED.value,
+                    ReturnAllocationState.PROVIDER_PENDING.value,
+                ]
+            },
+        }
+    )
 
     async for alloc_doc in cursor:
         alloc = InvoiceReturnAllocation(**alloc_doc)
@@ -312,11 +293,13 @@ async def handle_return_action_unknown_failure(tenant_id: str, action_id: str) -
     Marks allocations as RECONCILIATION_REQUIRED for timeouts or 5xx errors.
     """
     db = get_db_for_tenant(tenant_id)
-    cursor = db.invoice_return_allocations.find({
-        "tenant_id": tenant_id,
-        "return_action_id": action_id,
-        "state": ReturnAllocationState.PROVIDER_PENDING.value,
-    })
+    cursor = db.invoice_return_allocations.find(
+        {
+            "tenant_id": tenant_id,
+            "return_action_id": action_id,
+            "state": ReturnAllocationState.PROVIDER_PENDING.value,
+        }
+    )
 
     async for alloc_doc in cursor:
         alloc = InvoiceReturnAllocation(**alloc_doc)

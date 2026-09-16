@@ -1,2 +1,1 @@
 """Compliance domain package."""
-

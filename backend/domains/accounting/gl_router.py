@@ -1470,11 +1470,7 @@ async def sequence_audit(
     if fiscal_year is not None:
         query["fiscal_year"] = fiscal_year
     rows = await db.gl_sequence_reservations.find(query, {"_id": 0}).sort([("fiscal_year", -1), ("sequence", 1)]).to_list(100000)
-    counters = [
-        counter
-        for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
-        if counter.get("counter_type") != "voucher"
-    ]
+    counters = [counter for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000) if counter.get("counter_type") != "voucher"]
     counts = {"posted": 0, "void": 0, "reserved": 0}
     sequences_by_year: dict[int, set[int]] = {}
     for row in rows:
@@ -1517,11 +1513,7 @@ async def journal_integrity_audit(
         query["fiscal_year"] = fiscal_year
     entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(100000)
     reservations = await db.gl_sequence_reservations.find(query, {"_id": 0}).to_list(100000)
-    counters = [
-        counter
-        for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
-        if counter.get("counter_type") != "voucher"
-    ]
+    counters = [counter for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000) if counter.get("counter_type") != "voucher"]
 
     entries_by_key = {(int(entry.get("fiscal_year") or str(entry.get("date") or "0000")[:4]), int(entry.get("posting_sequence") or 0)): entry for entry in entries if entry.get("posting_sequence")}
     reservations_by_key = {(int(row.get("fiscal_year") or 0), int(row.get("sequence") or 0)): row for row in reservations if row.get("fiscal_year") and row.get("sequence")}
@@ -1778,12 +1770,7 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
 
 
 def _reconciliation_minor(value: object) -> int:
-    return int(
-        (
-            Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            * 100
-        ).to_integral_exact()
-    )
+    return int((Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100).to_integral_exact())
 
 
 def _reconciliation_amount(value: int) -> float:
@@ -1896,11 +1883,7 @@ async def operational_reconciliation(
     )
 
     entries_by_id = {str(entry.get("id")): entry for entry in journal_entries if entry.get("id")}
-    entries_by_source = {
-        (str(entry.get("source")), str(entry.get("source_ref"))): entry
-        for entry in journal_entries
-        if entry.get("source_ref")
-    }
+    entries_by_source = {(str(entry.get("source")), str(entry.get("source_ref"))): entry for entry in journal_entries if entry.get("source_ref")}
     settlement_accounts = {
         mapping["cash_account_code"],
         mapping["card_account_code"],
@@ -1925,9 +1908,7 @@ async def operational_reconciliation(
     posted_night_runs = [run for run in night_audits if run.get("gl_bridge_status") == "posted"]
     linked_night_entries: list[dict] = []
     for run in posted_night_runs:
-        entry = entries_by_id.get(str(run.get("gl_journal_entry_id"))) or entries_by_source.get(
-            ("night_audit", str(run.get("id")))
-        )
+        entry = entries_by_id.get(str(run.get("gl_journal_entry_id"))) or entries_by_source.get(("night_audit", str(run.get("id"))))
         if not entry:
             blockers.append(
                 {
@@ -1950,9 +1931,7 @@ async def operational_reconciliation(
         for line in entry.get("lines", []):
             account = str(line.get("account_code") or "")
             if account in settlement_accounts:
-                night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(
-                    line.get("debit_minor") or 0
-                )
+                night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(line.get("debit_minor") or 0)
     payment_variance_minor = payment_total_minor - sum(night_gl_by_account.values())
     if payment_variance_minor:
         blockers.append(
@@ -1962,27 +1941,14 @@ async def operational_reconciliation(
             }
         )
 
-    folio_pos_orders = {
-        str(row.get("source_pos_order_id"))
-        for row in source_folio_charges
-        if row.get("source_pos_order_id")
-    }
-    direct_pos = [
-        row
-        for row in pos_transactions
-        if str(row.get("order_id") or "") not in folio_pos_orders
-        and row.get("gl_bridge_status") != "folio_path"
-    ]
+    folio_pos_orders = {str(row.get("source_pos_order_id")) for row in source_folio_charges if row.get("source_pos_order_id")}
+    direct_pos = [row for row in pos_transactions if str(row.get("order_id") or "") not in folio_pos_orders and row.get("gl_bridge_status") != "folio_path"]
     pos_total_minor = 0
     pos_gl_total_minor = 0
     for transaction in direct_pos:
-        amount_minor = _reconciliation_minor(
-            transaction.get("total_amount", transaction.get("amount"))
-        )
+        amount_minor = _reconciliation_minor(transaction.get("total_amount", transaction.get("amount")))
         pos_total_minor += amount_minor
-        entry = entries_by_id.get(str(transaction.get("gl_journal_entry_id"))) or entries_by_source.get(
-            ("pos_direct", str(transaction.get("order_id")))
-        )
+        entry = entries_by_id.get(str(transaction.get("gl_journal_entry_id"))) or entries_by_source.get(("pos_direct", str(transaction.get("order_id"))))
         if transaction.get("gl_bridge_status") != "posted" or not entry:
             blockers.append(
                 {
@@ -1993,11 +1959,7 @@ async def operational_reconciliation(
             )
             continue
         account = _settlement_account(mapping, transaction.get("payment_method"))
-        linked_minor = sum(
-            int(line.get("debit_minor") or 0)
-            for line in entry.get("lines", [])
-            if str(line.get("account_code") or "") == account
-        )
+        linked_minor = sum(int(line.get("debit_minor") or 0) for line in entry.get("lines", []) if str(line.get("account_code") or "") == account)
         pos_gl_total_minor += linked_minor
         if linked_minor != amount_minor:
             blockers.append(
@@ -2022,9 +1984,7 @@ async def operational_reconciliation(
     for transaction in matched_bank:
         amount_minor = _reconciliation_minor(transaction.get("amount"))
         bank_total_minor += amount_minor
-        entry = entries_by_id.get(str(transaction.get("journal_entry_id"))) or entries_by_source.get(
-            ("bank_reconciliation", str(transaction.get("id")))
-        )
+        entry = entries_by_id.get(str(transaction.get("journal_entry_id"))) or entries_by_source.get(("bank_reconciliation", str(transaction.get("id"))))
         if not entry:
             blockers.append(
                 {
@@ -2034,11 +1994,7 @@ async def operational_reconciliation(
                 }
             )
             continue
-        linked_minor = sum(
-            int(line.get("debit_minor") or 0)
-            for line in entry.get("lines", [])
-            if str(line.get("account_code") or "") == mapping["bank_account_code"]
-        )
+        linked_minor = sum(int(line.get("debit_minor") or 0) for line in entry.get("lines", []) if str(line.get("account_code") or "") == mapping["bank_account_code"])
         bank_gl_total_minor += linked_minor
         if linked_minor != amount_minor:
             blockers.append(
@@ -2056,11 +2012,7 @@ async def operational_reconciliation(
             }
         )
 
-    cashier_difference_minor = sum(
-        _reconciliation_minor(shift.get("difference"))
-        for shift in cashier_shifts
-        if shift.get("status") == "closed"
-    )
+    cashier_difference_minor = sum(_reconciliation_minor(shift.get("difference")) for shift in cashier_shifts if shift.get("status") == "closed")
     open_cashier_count = sum(1 for shift in cashier_shifts if shift.get("status") == "open")
     if cashier_difference_minor:
         blockers.append(
@@ -2077,18 +2029,8 @@ async def operational_reconciliation(
             }
         )
 
-    referenced_entries = linked_night_entries + [
-        entry
-        for entry in journal_entries
-        if entry.get("source") in {"pos_direct", "bank_reconciliation"}
-    ]
-    invalid_entries = sorted(
-        {
-            str(entry.get("entry_no") or entry.get("id"))
-            for entry in referenced_entries
-            if not entry.get("entry_hash") or not verify_journal_entry_hash(entry)
-        }
-    )
+    referenced_entries = linked_night_entries + [entry for entry in journal_entries if entry.get("source") in {"pos_direct", "bank_reconciliation"}]
+    invalid_entries = sorted({str(entry.get("entry_no") or entry.get("id")) for entry in referenced_entries if not entry.get("entry_hash") or not verify_journal_entry_hash(entry)})
     if invalid_entries:
         blockers.append(
             {
@@ -2108,10 +2050,7 @@ async def operational_reconciliation(
             "payment_total": _reconciliation_amount(payment_total_minor),
             "gl_total": _reconciliation_amount(sum(night_gl_by_account.values())),
             "variance": _reconciliation_amount(payment_variance_minor),
-            "by_account": {
-                code: _reconciliation_amount(amount)
-                for code, amount in sorted(payment_by_account.items())
-            },
+            "by_account": {code: _reconciliation_amount(amount) for code, amount in sorted(payment_by_account.items())},
         },
         "pos": {
             "direct_count": len(direct_pos),
@@ -2677,9 +2616,7 @@ async def create_accounting_setup_opening_balance(
         return {"voucher": existing, "idempotent_replay": True, **(await _accounting_setup_state(tenant_id))}
     actor = _actor_id(current_user)
     now = _now_iso()
-    normalized = _normalized_voucher_payload(
-        VoucherCreateIn(date=payload.date, voucher_type="acilis", memo=payload.memo, lines=payload.lines)
-    )
+    normalized = _normalized_voucher_payload(VoucherCreateIn(date=payload.date, voucher_type="acilis", memo=payload.memo, lines=payload.lines))
     fiscal_year = int(normalized["date"][:4])
     voucher_sequence, voucher_no = await _allocate_voucher_number(tenant_id, fiscal_year, now)
     voucher = {

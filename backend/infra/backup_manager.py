@@ -162,11 +162,7 @@ class BackupManager:
             metadata.status = "failed" if is_prod else "simulated"
             metadata.completed_at = datetime.now(UTC).isoformat()
             metadata.size_bytes = 0
-            metadata.error = (
-                "mongodump not available — backup failed"
-                if is_prod
-                else "mongodump not available — simulated backup"
-            )
+            metadata.error = "mongodump not available — backup failed" if is_prod else "mongodump not available — simulated backup"
             if is_prod:
                 self._metrics["failed_backups"] += 1
                 logger.error("mongodump not found — production backup failed")

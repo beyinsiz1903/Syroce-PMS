@@ -195,7 +195,7 @@ async def ai_chat(
 
     # Format history for OpenAI
     history = []
-    for msg in raw_history[-10:]: # Keep last 10 to avoid token limits
+    for msg in raw_history[-10:]:  # Keep last 10 to avoid token limits
         role = "assistant" if msg.get("sender") == "bot" else "user"
         content = msg.get("message", "")
         if content and not msg.get("isError"):
@@ -497,8 +497,10 @@ async def ai_chat(
                 tasks_list.append(f"- Oda {t.get('room_number', '?')}: {t.get('title', '?')} | Durum: {t.get('status', '?')} | Aciliyet: {t.get('severity', '?')}")
 
             data_context = (
-                "\n\n## ODALAR VE TEMİZLİK DURUMU:\n" + ("\n".join(rooms_list) if rooms_list else "Oda bulunamadı.") +
-                "\n\n## ARIZA VE BAKIM KAYITLARI:\n" + ("\n".join(tasks_list) if tasks_list else "Aktif arıza kaydı yok.")
+                "\n\n## ODALAR VE TEMİZLİK DURUMU:\n"
+                + ("\n".join(rooms_list) if rooms_list else "Oda bulunamadı.")
+                + "\n\n## ARIZA VE BAKIM KAYITLARI:\n"
+                + ("\n".join(tasks_list) if tasks_list else "Aktif arıza kaydı yok.")
             )
 
         # ── STAFF / HR INTENT ──
@@ -522,10 +524,7 @@ async def ai_chat(
             adr = total_daily_rate / len(checked_in_bookings) if checked_in_bookings else 0
 
             data_context = (
-                f"\n\n## FİNANSAL ÖZET:\n"
-                f"- Toplam Ödenmiş Fatura Geliri: {total_revenue:,.2f} TL\n"
-                f"- Bekleyen Ödemeler: {pending_revenue:,.2f} TL\n"
-                f"- Güncel ADR (Ort. Günlük Fiyat): {adr:,.2f} TL\n"
+                f"\n\n## FİNANSAL ÖZET:\n- Toplam Ödenmiş Fatura Geliri: {total_revenue:,.2f} TL\n- Bekleyen Ödemeler: {pending_revenue:,.2f} TL\n- Güncel ADR (Ort. Günlük Fiyat): {adr:,.2f} TL\n"
             )
 
         if not ai_svc.llm_enabled:
@@ -607,6 +606,7 @@ async def ai_chat(
         # ── KNOWLEDGE BASE SEARCH ──
         try:
             from domains.ai.knowledge_base import get_knowledge_base
+
             kb = get_knowledge_base()
             if kb.enabled:
                 kb_results = await kb.search(user_message, top_k=3)
@@ -632,7 +632,7 @@ async def ai_chat(
         logger.info(f"AI chat error: {exc}")
 
         # Fallback to raw data context if we gathered it before the error (e.g. LLM disabled)
-        if 'data_context' in locals() and data_context:
+        if "data_context" in locals() and data_context:
             return {"response": f"⚠️ **AI Servisi Kapalı / API Hatası:** Sadece ham veritabanı sonuçları listeleniyor.\n{data_context}"}
 
         # Fallback to keyword-based responses with accurate app navigation info

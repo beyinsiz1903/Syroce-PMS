@@ -184,9 +184,7 @@ class DeploymentOrchestrator:
             if factor == "no_redis":
                 mitigations.append("Configure REDIS_URL with a managed Redis instance (ElastiCache, Cloud Memorystore)")
             elif factor == "no_backup":
-                mitigations.append(
-                    "Verify Atlas Cloud Backup/PITR and a fresh snapshot, or configure a scheduled backup on durable offsite storage"
-                )
+                mitigations.append("Verify Atlas Cloud Backup/PITR and a fresh snapshot, or configure a scheduled backup on durable offsite storage")
             elif factor == "no_monitoring":
                 mitigations.append("Configure OTEL_EXPORTER_ENDPOINT or SENTRY_DSN for production observability")
             elif factor == "no_alerting":

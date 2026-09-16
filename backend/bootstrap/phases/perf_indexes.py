@@ -96,19 +96,29 @@ async def ensure_performance_indexes():
         # A sparse unique index still indexes explicit ``null`` values.  Old
         # voucher rows carry that value, so they can make startup index builds
         # fail even though only a real setup idempotency key must be unique.
-        ("gl_vouchers", [("tenant_id", 1), ("setup_idempotency_key", 1)], "ux_gl_vouchers_setup_idem", {
-            "unique": True,
-            "partialFilterExpression": {"setup_idempotency_key": {"$type": "string"}},
-        }),
+        (
+            "gl_vouchers",
+            [("tenant_id", 1), ("setup_idempotency_key", 1)],
+            "ux_gl_vouchers_setup_idem",
+            {
+                "unique": True,
+                "partialFilterExpression": {"setup_idempotency_key": {"$type": "string"}},
+            },
+        ),
         ("gl_vouchers", [("tenant_id", 1), ("status", 1), ("updated_at", -1)], "idx_gl_vouchers_work_queue", {}),
         ("gl_journal_entries", [("tenant_id", 1), ("entry_no", 1)], "ux_gl_journal_entry_no", {"unique": True}),
-        ("gl_journal_entries", [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)], "ux_gl_journal_sequence", {
-            "unique": True,
-            "partialFilterExpression": {
-                "fiscal_year": {"$type": "number"},
-                "posting_sequence": {"$type": "number"},
+        (
+            "gl_journal_entries",
+            [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)],
+            "ux_gl_journal_sequence",
+            {
+                "unique": True,
+                "partialFilterExpression": {
+                    "fiscal_year": {"$type": "number"},
+                    "posting_sequence": {"$type": "number"},
+                },
             },
-        }),
+        ),
         ("ap_gl_mapping", [("tenant_id", 1)], "idx_ap_gl_mapping_tenant", {"unique": True}),
         ("fixed_asset_gl_mapping", [("tenant_id", 1)], "idx_fixed_asset_gl_mapping_tenant", {"unique": True}),
         ("hotelrunner_connections", [("tenant_id", 1), ("status", 1)], "idx_hr_status", {}),

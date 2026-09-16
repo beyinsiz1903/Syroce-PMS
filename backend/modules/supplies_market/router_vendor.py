@@ -231,6 +231,7 @@ async def vendor_upload_product_image(
     }
 
     from core.database import db
+
     await db.uploads.insert_one(upload_record)
 
     url = f"/api/uploads/{upload_id}"

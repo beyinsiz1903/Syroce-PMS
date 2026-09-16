@@ -184,6 +184,7 @@ class TimeConstraints(BaseModel):
             raise ValueError("60 must be divisible by interval_minutes")
         return v
 
+
 class DateTimeConstraints(BaseModel):
     model_config = ConfigDict(extra="forbid")
     min_days_ahead: int = 0

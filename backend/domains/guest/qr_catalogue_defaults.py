@@ -120,7 +120,6 @@ DEFAULT_SERVICES = [
         created_at=_NOW,
         updated_at=_NOW,
     ),
-
     # Technical
     GuestServiceItem(
         tenant_id="default",
@@ -206,7 +205,6 @@ DEFAULT_SERVICES = [
         created_at=_NOW,
         updated_at=_NOW,
     ),
-
     # Reception
     GuestServiceItem(
         tenant_id="default",
@@ -266,6 +264,7 @@ DEFAULT_SERVICES = [
     ),
 ]
 
+
 def get_default_catalogue() -> dict:
     """Returns a deep copy of the default catalogue components."""
     # Using model_dump (pydantic v2)
@@ -273,4 +272,3 @@ def get_default_catalogue() -> dict:
         "departments": [d.model_dump() for d in DEFAULT_DEPARTMENTS],
         "services": [s.model_dump() for s in DEFAULT_SERVICES],
     }
-

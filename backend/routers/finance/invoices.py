@@ -108,11 +108,7 @@ async def update_invoice(
 
     old_status = (before_doc or {}).get("status")
     new_status = invoice_doc.get("status")
-    is_cancellation = (
-        old_status != new_status
-        and isinstance(new_status, str)
-        and new_status.lower() in {"cancelled", "canceled", "void", "voided", "iptal"}
-    )
+    is_cancellation = old_status != new_status and isinstance(new_status, str) and new_status.lower() in {"cancelled", "canceled", "void", "voided", "iptal"}
 
     # Task #578 — fatura durumu değişikliklerini (özellikle iptal/void)
     # tamper-evident audit trail'e before/after snapshot ile yaz. İptale

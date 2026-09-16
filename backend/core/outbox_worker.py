@@ -220,6 +220,7 @@ class OutboxWorker:
         if self.tenant_id:
             query["tenant_id"] = self.tenant_id
         import sys
+
         if "pytest" not in sys.modules and not self.tenant_id:
             query["tenant_id"] = {"$not": {"$regex": "^test_outbox_"}}
 

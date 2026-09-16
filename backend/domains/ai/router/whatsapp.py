@@ -13,10 +13,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
+
 class WhatsAppConfig(BaseModel):
     phone_number_id: str
     access_token: str
     verify_token: str
+
 
 @router.get("/config")
 async def get_whatsapp_config(current_user: User = Depends(get_current_user)):
@@ -27,26 +29,20 @@ async def get_whatsapp_config(current_user: User = Depends(get_current_user)):
     # For security, we might mask the tokens in a real scenario, but we return them for the setup UI
     return {"config": config}
 
+
 @router.post("/config")
-async def save_whatsapp_config(
-    payload: WhatsAppConfig,
-    current_user: User = Depends(get_current_user)
-):
-    await db.tenants.update_one(
-        {"id": current_user.tenant_id},
-        {"$set": {"whatsapp_config": payload.dict()}}
-    )
+async def save_whatsapp_config(payload: WhatsAppConfig, current_user: User = Depends(get_current_user)):
+    await db.tenants.update_one({"id": current_user.tenant_id}, {"$set": {"whatsapp_config": payload.dict()}})
     return {"message": "WhatsApp configuration saved successfully"}
+
 
 class WhatsAppOAuthRequest(BaseModel):
     access_token: str
     phone_number_id: str = None
 
+
 @router.post("/oauth")
-async def whatsapp_oauth_exchange(
-    payload: WhatsAppOAuthRequest,
-    current_user: User = Depends(get_current_user)
-):
+async def whatsapp_oauth_exchange(payload: WhatsAppOAuthRequest, current_user: User = Depends(get_current_user)):
     import os
     import secrets
 
@@ -63,20 +59,13 @@ async def whatsapp_oauth_exchange(
             "message": "Mock OAuth successful, missing FACEBOOK_APP_ID in env",
             "access_token": payload.access_token,
             "verify_token": mock_verify,
-            "phone_numbers": [
-                {"id": mock_phone, "display_phone_number": "+90 555 123 4567", "verified_name": "Mock Hotel"}
-            ]
+            "phone_numbers": [{"id": mock_phone, "display_phone_number": "+90 555 123 4567", "verified_name": "Mock Hotel"}],
         }
 
     async with httpx.AsyncClient() as client:
         response = await client.get(
             "https://graph.facebook.com/v19.0/oauth/access_token",
-            params={
-                "grant_type": "fb_exchange_token",
-                "client_id": app_id,
-                "client_secret": app_secret,
-                "fb_exchange_token": payload.access_token
-            }
+            params={"grant_type": "fb_exchange_token", "client_id": app_id, "client_secret": app_secret, "fb_exchange_token": payload.access_token},
         )
         if response.status_code != 200:
             logger.error(f"Failed to exchange FB token: {response.text}")
@@ -90,55 +79,36 @@ async def whatsapp_oauth_exchange(
         phone_numbers = []
         try:
             # 1. Get Businesses
-            biz_res = await client.get(
-                "https://graph.facebook.com/v19.0/me/businesses",
-                params={"access_token": long_lived_token}
-            )
+            biz_res = await client.get("https://graph.facebook.com/v19.0/me/businesses", params={"access_token": long_lived_token})
             biz_data = biz_res.json()
             businesses = biz_data.get("data", [])
 
             for biz in businesses:
                 biz_id = biz["id"]
                 # 2. Get WABAs for business
-                waba_res = await client.get(
-                    f"https://graph.facebook.com/v19.0/{biz_id}/owned_whatsapp_business_accounts",
-                    params={"access_token": long_lived_token}
-                )
+                waba_res = await client.get(f"https://graph.facebook.com/v19.0/{biz_id}/owned_whatsapp_business_accounts", params={"access_token": long_lived_token})
                 waba_data = waba_res.json()
                 wabas = waba_data.get("data", [])
 
                 for waba in wabas:
                     waba_id = waba["id"]
                     # 3. Get Phone Numbers for WABA
-                    pn_res = await client.get(
-                        f"https://graph.facebook.com/v19.0/{waba_id}/phone_numbers",
-                        params={"access_token": long_lived_token}
-                    )
+                    pn_res = await client.get(f"https://graph.facebook.com/v19.0/{waba_id}/phone_numbers", params={"access_token": long_lived_token})
                     pn_data = pn_res.json()
                     for pn in pn_data.get("data", []):
-                        phone_numbers.append({
-                            "id": pn["id"],
-                            "display_phone_number": pn.get("display_phone_number"),
-                            "verified_name": pn.get("verified_name"),
-                            "quality_rating": pn.get("quality_rating")
-                        })
+                        phone_numbers.append(
+                            {"id": pn["id"], "display_phone_number": pn.get("display_phone_number"), "verified_name": pn.get("verified_name"), "quality_rating": pn.get("quality_rating")}
+                        )
         except Exception as e:
             logger.error(f"Error fetching phone numbers: {e}")
 
         # Note: We do not save it to DB yet, we let frontend choose the phone number.
-        return {
-            "message": "Token exchanged successfully",
-            "access_token": long_lived_token,
-            "verify_token": verify_token,
-            "phone_numbers": phone_numbers
-        }
+        return {"message": "Token exchanged successfully", "access_token": long_lived_token, "verify_token": verify_token, "phone_numbers": phone_numbers}
+
 
 @router.get("/{tenant_id}/webhook")
 async def verify_webhook(
-    tenant_id: str,
-    hub_mode: str = Query(None, alias="hub.mode"),
-    hub_challenge: str = Query(None, alias="hub.challenge"),
-    hub_verify_token: str = Query(None, alias="hub.verify_token")
+    tenant_id: str, hub_mode: str = Query(None, alias="hub.mode"), hub_challenge: str = Query(None, alias="hub.challenge"), hub_verify_token: str = Query(None, alias="hub.verify_token")
 ):
     """
     Verify the Meta Webhook setup.
