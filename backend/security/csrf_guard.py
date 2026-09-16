@@ -36,6 +36,7 @@ if _ENV_ORIGINS:
 
 CSRF_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
+
 async def csrf_guard_middleware(request: Request, call_next):
     """
     State-less CSRF protection for cookie-based authentication.
@@ -77,8 +78,6 @@ async def csrf_guard_middleware(request: Request, call_next):
     )
     if request.url.path.startswith(HR_WEBHOOK_PATHS):
         return await call_next(request)
-
-
 
     origin = request.headers.get("Origin")
     referer = request.headers.get("Referer")

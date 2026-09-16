@@ -49,9 +49,7 @@ def calculate_ktb_stays(
         if booking.get("adults") in (None, 0):
             result["adults_fallback_count"] += 1
         guests = int(booking.get("adults") or 1) + int(booking.get("children") or 0)
-        country = normalize_country(
-            booking.get("nationality") or booking.get("guest_country") or booking.get("country")
-        )
+        country = normalize_country(booking.get("nationality") or booking.get("guest_country") or booking.get("country"))
         person_nights = nights * guests
         result["room_nights_sold"] += nights
         result["arrivals_total"] += guests
@@ -81,9 +79,5 @@ def calculate_ktb_stays(
             result["arrivals_foreign"] += guests
             result["person_nights_foreign"] += person_nights
 
-    result["person_nights_total"] = (
-        result["person_nights_domestic"]
-        + result["person_nights_foreign"]
-        + result["person_nights_unspecified"]
-    )
+    result["person_nights_total"] = result["person_nights_domestic"] + result["person_nights_foreign"] + result["person_nights_unspecified"]
     return result

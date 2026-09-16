@@ -49,15 +49,12 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str, 
 
     room_number = await resolve_booking_room_number(database, tenant_id, booking)
     guest: dict = {}
-    
+
     actual_guest_id = target_guest_id or booking.get("guest_id")
     guest_check_out = booking.get("check_out", "")
-    
+
     if target_guest_id and target_guest_id != booking.get("guest_id"):
-        bg_link = await database.booking_guests.find_one(
-            {"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": target_guest_id},
-            {"_id": 0, "checkout_date": 1}
-        )
+        bg_link = await database.booking_guests.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": target_guest_id}, {"_id": 0, "checkout_date": 1})
         if bg_link and bg_link.get("checkout_date"):
             guest_check_out = bg_link["checkout_date"]
 
@@ -96,15 +93,11 @@ async def build_kbs_payload_snapshot(database, tenant_id: str, booking_id: str, 
     guest_name = ""
     if not target_guest_id or target_guest_id == booking.get("guest_id"):
         guest_name = str(booking.get("guest_name") or "").strip()
-        
+
     if not guest_name:
         guest_name = str(guest.get("name") or guest.get("full_name") or "").strip()
     if not guest_name:
-        guest_name = " ".join(
-            part.strip()
-            for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or ""))
-            if part.strip()
-        )
+        guest_name = " ".join(part.strip() for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or "")) if part.strip())
 
     phone = str(guest.get("phone") or "").strip()
     if not phone and (not target_guest_id or target_guest_id == booking.get("guest_id")):

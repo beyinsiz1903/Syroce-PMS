@@ -6,11 +6,13 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/gl", tags=["Genel Muhasebe"])
 
+
 # --- Models ---
 class GLAccountCreate(BaseModel):
     code: str
     name: str
-    type: str # 'Asset', 'Liability', 'Equity', 'Revenue', 'Expense'
+    type: str  # 'Asset', 'Liability', 'Equity', 'Revenue', 'Expense'
+
 
 class JournalLine(BaseModel):
     account_code: str
@@ -18,11 +20,13 @@ class JournalLine(BaseModel):
     credit: float = 0.0
     description: str | None = None
 
+
 class JournalEntryCreate(BaseModel):
     date: str
-    type: str # 'Mahsup', 'Tahsilat', 'Tediye'
+    type: str  # 'Mahsup', 'Tahsilat', 'Tediye'
     description: str
     lines: list[JournalLine]
+
 
 # --- Mock Database ---
 # Seed standard TDHP accounts
@@ -40,10 +44,11 @@ mock_db = {
         {"code": "740", "name": "Hizmet Üretim Maliyeti", "type": "Expense", "balance": 0.0},
         {"code": "770", "name": "Genel Yönetim Giderleri", "type": "Expense", "balance": 0.0},
     ],
-    "journals": []
+    "journals": [],
 }
 
 # --- Endpoints ---
+
 
 @router.get("/accounts")
 async def get_accounts():
@@ -53,7 +58,7 @@ async def get_accounts():
     for journal in mock_db["journals"]:
         for line in journal["lines"]:
             if line["account_code"] in balances:
-                balances[line["account_code"]] += (line["debit"] - line["credit"])
+                balances[line["account_code"]] += line["debit"] - line["credit"]
 
     # Update mock_db balances
     for acc in mock_db["accounts"]:
@@ -63,6 +68,7 @@ async def get_accounts():
         acc["balance"] = balances.get(acc["code"], 0.0)
 
     return mock_db["accounts"]
+
 
 @router.post("/accounts")
 async def create_account(acc: GLAccountCreate):
@@ -77,10 +83,12 @@ async def create_account(acc: GLAccountCreate):
     mock_db["accounts"].sort(key=lambda x: x["code"])
     return {"status": "success", "account": new_acc}
 
+
 @router.get("/journals")
 async def get_journals():
     """List all Journal Entries"""
     return sorted(mock_db["journals"], key=lambda x: x["date"], reverse=True)
+
 
 @router.post("/journals")
 async def create_journal(entry: JournalEntryCreate):
@@ -90,10 +98,7 @@ async def create_journal(entry: JournalEntryCreate):
 
     # Check Double-Entry Accounting Rule
     if abs(total_debit - total_credit) > 0.01:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Borç ({total_debit}) ve Alacak ({total_credit}) toplamları eşit olmak zorundadır!"
-        )
+        raise HTTPException(status_code=400, detail=f"Borç ({total_debit}) ve Alacak ({total_credit}) toplamları eşit olmak zorundadır!")
 
     new_entry = entry.model_dump()
     new_entry["id"] = str(uuid.uuid4())
@@ -103,19 +108,13 @@ async def create_journal(entry: JournalEntryCreate):
     mock_db["journals"].append(new_entry)
     return {"status": "success", "journal_id": new_entry["id"]}
 
+
 @router.get("/trial-balance")
 async def get_trial_balance():
     """Trial Balance (Mizan)"""
     tb = {}
     for acc in mock_db["accounts"]:
-        tb[acc["code"]] = {
-            "code": acc["code"],
-            "name": acc["name"],
-            "total_debit": 0.0,
-            "total_credit": 0.0,
-            "balance": 0.0,
-            "balance_type": "-"
-        }
+        tb[acc["code"]] = {"code": acc["code"], "name": acc["name"], "total_debit": 0.0, "total_credit": 0.0, "balance": 0.0, "balance_type": "-"}
 
     for journal in mock_db["journals"]:
         for line in journal["lines"]:
@@ -137,10 +136,4 @@ async def get_trial_balance():
     total_debit = sum(x["total_debit"] for x in result)
     total_credit = sum(x["total_credit"] for x in result)
 
-    return {
-        "lines": sorted(result, key=lambda x: x["code"]),
-        "totals": {
-            "total_debit": total_debit,
-            "total_credit": total_credit
-        }
-    }
+    return {"lines": sorted(result, key=lambda x: x["code"]), "totals": {"total_debit": total_debit, "total_credit": total_credit}}

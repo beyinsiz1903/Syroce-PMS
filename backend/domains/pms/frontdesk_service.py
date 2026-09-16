@@ -181,9 +181,7 @@ class FrontdeskService:
                     blocker_name = display_guest_name(raw_name, blocker_guest_id)
                     room_number = room.get("room_number") or "atanan"
                     return ServiceResult.fail(
-                        f"Oda {room_number} ({blocker_name}) henüz tahliye edilmemiş. " \
-                        "Lütfen önce çıkış işlemini tamamlayın veya odayı değiştirin.",
-
+                        f"Oda {room_number} ({blocker_name}) henüz tahliye edilmemiş. Lütfen önce çıkış işlemini tamamlayın veya odayı değiştirin.",
                         "ROOM_NOT_READY",
                     )
             # Stale occupied status or no active blocker — allow check-in

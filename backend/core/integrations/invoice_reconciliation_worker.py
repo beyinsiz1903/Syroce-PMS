@@ -184,8 +184,8 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                             {"status_lease_expires_at": {"$exists": False}},
                             {"status_lease_expires_at": {"$lte": now}},
                         ]
-                    }
-                ]
+                    },
+                ],
             },
             {
                 "$set": {
@@ -203,10 +203,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
         # Cycle idempotency: Generate a new cycle ID upon successful claim
         if record:
             new_cycle = uuid.uuid4().hex
-            sysdb.invoice_sync.update_one(
-                {"id": record["id"], "tenant_id": record["tenant_id"]},
-                {"$set": {"current_reconciliation_cycle_id": new_cycle}}
-            )
+            sysdb.invoice_sync.update_one({"id": record["id"], "tenant_id": record["tenant_id"]}, {"$set": {"current_reconciliation_cycle_id": new_cycle}})
 
         return record
 
@@ -222,18 +219,22 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
 
         with tenant_context(tenant_id):
             from core.integrations.nilvera.config import get_nilvera_tenant_config
+
             nilvera_cfg = await get_nilvera_tenant_config(tenant_id, decrypt_api_key=True)
             reader = None
             if nilvera_cfg.get("enabled") and nilvera_cfg.get("api_key"):
                 from core.integrations.nilvera.client import NilveraHttpClient
                 from core.integrations.nilvera.config import NilveraEndpoints
+
                 class NilveraReadClient:
                     def __init__(self, api_key: str):
                         self.api_key = api_key
+
                     async def get_sale_status(self, uuid_str: str) -> dict:
                         async with NilveraHttpClient(api_key=self.api_key) as client:
                             endpoint = NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=uuid_str)
                             return await client.get(endpoint, correlation_id=uuid_str, retryable=False)
+
                     async def get_sale_details(self, uuid_str: str) -> dict:
                         async with NilveraHttpClient(api_key=self.api_key) as client:
                             endpoint = NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=uuid_str)
@@ -242,13 +243,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                 reader = NilveraReadClient(nilvera_cfg["api_key"])
 
             try:
-                await InvoiceReconciliationService.execute_reconciliation(
-                    tenant_id,
-                    record_id,
-                    expected_version=expected_version,
-                    worker_id=self.worker_id,
-                    reader=reader
-                )
+                await InvoiceReconciliationService.execute_reconciliation(tenant_id, record_id, expected_version=expected_version, worker_id=self.worker_id, reader=reader)
                 self._record_success(1)
             except Exception as exc:
                 self._record_job_error(NilveraWorkerErrorCode.RECONCILIATION_FAILED)
@@ -263,9 +258,10 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                     "state": InvoiceSyncState.RECONCILIATION_REQUIRED.value,
                     "version": expected_version,
                     "status_lease_owner": self.worker_id,
-                    "status_lease_expires_at": {"$gt": _utc_now()}
+                    "status_lease_expires_at": {"$gt": _utc_now()},
                 },
-                {"$set": {"status_lease_owner": None, "status_lease_expires_at": None}}
+                {"$set": {"status_lease_owner": None, "status_lease_expires_at": None}},
             )
+
 
 invoice_reconciliation_worker = InvoiceReconciliationWorker()

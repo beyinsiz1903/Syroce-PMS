@@ -2,6 +2,7 @@
 WhatsApp Business AI Concierge Service
 Handles Meta Webhook validation, parsing incoming messages, and generating AI responses.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -12,6 +13,7 @@ from core.database import db
 from domains.ai.service import get_ai_service
 
 logger = logging.getLogger(__name__)
+
 
 class WhatsAppConciergeService:
     def __init__(self):
@@ -75,10 +77,7 @@ class WhatsAppConciergeService:
 
             if ai_reply:
                 # Update conversation
-                await db.ai_conversations.update_one(
-                    {"id": conversation_id},
-                    {"$set": {"ai_response": ai_reply, "answered": True, "action_taken": "replied"}}
-                )
+                await db.ai_conversations.update_one({"id": conversation_id}, {"$set": {"ai_response": ai_reply, "answered": True, "action_taken": "replied"}})
 
                 # Send reply via WhatsApp API
                 await self._send_whatsapp_message(tenant_id, phone, ai_reply)
@@ -150,7 +149,10 @@ Provide concise, friendly answers. If you don't know the answer, politely inform
             except Exception as e:
                 logger.error(f"[ai] Failed to send WhatsApp message to {phone}: {e}")
 
+
 _whatsapp_concierge_instance = None
+
+
 def get_whatsapp_concierge():
     global _whatsapp_concierge_instance
     if _whatsapp_concierge_instance is None:

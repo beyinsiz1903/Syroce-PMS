@@ -111,9 +111,7 @@ pwd_context = BcryptContext()
 JWT_SECRET = os.environ.get("JWT_SECRET")
 
 if not JWT_SECRET or len(JWT_SECRET) < 32:
-    raise RuntimeError(
-        "JWT_SECRET must be configured and contain at least 32 characters."
-    )
+    raise RuntimeError("JWT_SECRET must be configured and contain at least 32 characters.")
 JWT_ALGORITHM = "HS256"
 # v44 (Bug BJ): default lowered 168h → 24h. 7-day tokens are way too long for
 # a stolen-token blast radius given there was previously no revocation path.
@@ -193,6 +191,7 @@ class CookieHTTPBearer(HTTPBearer):
         if self.auto_error:
             raise HTTPException(status_code=403, detail="Not authenticated")
         return None
+
 
 security = CookieHTTPBearer(auto_error=False)
 
@@ -416,6 +415,7 @@ async def get_current_user(
         user_doc = _user_doc_cache_get(user_id)
         if user_doc is None:
             from core.tenant_db import get_system_db
+
             sys_db = get_system_db()
             user_doc = await sys_db.users.find_one({"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0})
             if user_doc:
@@ -445,6 +445,7 @@ async def get_current_user(
                 )
             try:
                 import math
+
                 f_iat = float(iat)
                 f_ib = float(invalid_before)
                 if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
@@ -470,17 +471,9 @@ async def get_current_user(
         doc_tenant = user_doc.get("tenant_id")
         if jwt_tenant and doc_tenant and jwt_tenant != doc_tenant:
             role = getattr(user_doc.get("role"), "value", user_doc.get("role"))
-            roles = {
-                getattr(item, "value", item)
-                for item in (user_doc.get("roles") or [])
-            }
+            roles = {getattr(item, "value", item) for item in (user_doc.get("roles") or [])}
             is_stored_super_admin = role == "super_admin" or "super_admin" in roles
-            is_admin_context = (
-                payload.get("impersonation") is True
-                and payload.get("purpose") == "admin_tenant_context"
-                and payload.get("actor_tenant_id") == doc_tenant
-                and is_stored_super_admin
-            )
+            is_admin_context = payload.get("impersonation") is True and payload.get("purpose") == "admin_tenant_context" and payload.get("actor_tenant_id") == doc_tenant and is_stored_super_admin
 
             if not is_admin_context:
                 logger.warning(f"JWT tenant mismatch: user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}")
@@ -507,11 +500,7 @@ async def get_current_user(
                 },
             )
             target_status = str((target_tenant or {}).get("status") or "").lower()
-            if (
-                not target_tenant
-                or target_tenant.get("is_active") is False
-                or target_status in {"deleted", "archived"}
-            ):
+            if not target_tenant or target_tenant.get("is_active") is False or target_status in {"deleted", "archived"}:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Target hotel is unavailable",

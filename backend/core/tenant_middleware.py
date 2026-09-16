@@ -104,7 +104,7 @@ class TenantContextMiddleware:
                 for chunk in cookie_header.split(";"):
                     chunk = chunk.strip()
                     if chunk.startswith("access_token="):
-                        token = chunk[len("access_token="):]
+                        token = chunk[len("access_token=") :]
                         break
 
         if token:

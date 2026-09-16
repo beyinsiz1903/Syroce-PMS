@@ -145,10 +145,11 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
     if not run:
         raise HTTPException(404, "Bordro çalışması bulunamadı")
     await ensure_gl_idem_index(db)
+
     async def post(database):
         return await _post_payroll(run_id, current_user, database)
-    return await run_atomic(db, get_motor_database().client, tenant_id,
-                            f"payroll-gl:{run.get('period_month')}", post)
+
+    return await run_atomic(db, get_motor_database().client, tenant_id, f"payroll-gl:{run.get('period_month')}", post)
 
 
 async def _post_payroll(run_id, current_user, database):
@@ -180,7 +181,8 @@ async def _post_payroll(run_id, current_user, database):
         prior_entry = await _find_posted_entry(tenant_id, parent_id, database)
         if prior_entry:
             reversal = await database.gl_journal_entries.find_one(
-                {"tenant_id": tenant_id, "reverses_entry_id": prior_entry["id"]}, {"_id": 0, "id": 1},
+                {"tenant_id": tenant_id, "reverses_entry_id": prior_entry["id"]},
+                {"_id": 0, "id": 1},
             )
             if not reversal:
                 raise HTTPException(
@@ -191,16 +193,23 @@ async def _post_payroll(run_id, current_user, database):
 
     # Serialize all full payroll snapshots for the period, including siblings
     # and a parent submitted AFTER a child. A run-only key cannot protect this.
-    runs = await database.payroll_runs.find({
-        "tenant_id": tenant_id, "period_month": run.get("period_month"),
-    }, {"_id": 0, "id": 1}).to_list(None)
+    runs = await database.payroll_runs.find(
+        {
+            "tenant_id": tenant_id,
+            "period_month": run.get("period_month"),
+        },
+        {"_id": 0, "id": 1},
+    ).to_list(None)
     for other in runs:
         if other["id"] == run_id:
             continue
         posted = await _find_posted_entry(tenant_id, other["id"], database)
-        if posted and not await database.gl_journal_entries.find_one({
-            "tenant_id": tenant_id, "reverses_entry_id": posted["id"],
-        }):
+        if posted and not await database.gl_journal_entries.find_one(
+            {
+                "tenant_id": tenant_id,
+                "reverses_entry_id": posted["id"],
+            }
+        ):
             raise HTTPException(409, "Bu dönemde ters kaydı oluşturulmamış bordro fişi var; çift tahakkuk engellendi")
 
     mapping = await database.payroll_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})

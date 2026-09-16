@@ -61,11 +61,7 @@ def canonical_guest_name(guest: dict | None) -> str:
         value = str(guest.get(field) or "").strip()
         if value:
             return value
-    return " ".join(
-        part.strip()
-        for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or ""))
-        if part.strip()
-    )
+    return " ".join(part.strip() for part in (str(guest.get("first_name") or ""), str(guest.get("last_name") or "")) if part.strip())
 
 
 def display_guest_name(raw_name: str | None, guest_id: str | None) -> str:

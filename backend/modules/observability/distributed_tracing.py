@@ -140,8 +140,7 @@ class TracingService:
                 db.observability_traces.find(
                     {"completed_at": {"$gte": cutoff.isoformat()}},
                     # Summaries never need spans, attributes or request payloads.
-                    {"_id": 0, "trace_id": 1, "request_path": 1,
-                     "duration_ms": 1, "status_code": 1, "is_slow": 1},
+                    {"_id": 0, "trace_id": 1, "request_path": 1, "duration_ms": 1, "status_code": 1, "is_slow": 1},
                 )
                 .sort("completed_at", -1)
                 .to_list(self._max_buffer * 5),
@@ -151,17 +150,12 @@ class TracingService:
             persisted = []
 
         combined = persisted + local
-        by_id = {
-            trace.get("trace_id", f"legacy-{index}"): trace
-            for index, trace in enumerate(combined)
-        }
+        by_id = {trace.get("trace_id", f"legacy-{index}"): trace for index, trace in enumerate(combined)}
         return list(by_id.values())
 
     @classmethod
     def _aggregate_paths(cls, traces: list[dict]) -> list[dict]:
-        path_stats: dict[str, dict] = defaultdict(
-            lambda: {"durations": [], "errors": 0, "slow": 0}
-        )
+        path_stats: dict[str, dict] = defaultdict(lambda: {"durations": [], "errors": 0, "slow": 0})
         for trace in traces:
             path = trace.get("request_path") or "unknown"
             duration = float(trace.get("duration_ms") or 0)
@@ -243,9 +237,7 @@ class TracingService:
 
             q = {"is_slow": True} if slow_only else {}
             persisted = await asyncio.wait_for(
-                db.observability_traces.find(q, {"_id": 0})
-                .sort("started_at_iso", -1)
-                .to_list(limit),
+                db.observability_traces.find(q, {"_id": 0}).sort("started_at_iso", -1).to_list(limit),
                 timeout=0.5,
             )
         except Exception:
@@ -268,11 +260,7 @@ class TracingService:
         for trace in traces:
             if float(trace.get("duration_ms") or 0) > threshold_ms:
                 slow_counts[trace.get("request_path") or "unknown"] += 1
-        slow = [
-            {**endpoint, "slow_count": slow_counts[endpoint["path"]]}
-            for endpoint in endpoints
-            if endpoint["count"] >= min_count and endpoint["max_ms"] > threshold_ms
-        ]
+        slow = [{**endpoint, "slow_count": slow_counts[endpoint["path"]]} for endpoint in endpoints if endpoint["count"] >= min_count and endpoint["max_ms"] > threshold_ms]
         return sorted(slow, key=lambda item: (-item["p95_ms"], -item["max_ms"]))
 
     async def get_hot_paths(self, top_n: int = 10) -> list[dict]:

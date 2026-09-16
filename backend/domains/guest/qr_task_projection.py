@@ -171,9 +171,7 @@ async def update_qr_task(
         raise ValueError("task is not linked to a QR request")
 
     tenant_db = get_db_for_tenant(tenant_id)
-    source = await tenant_db[source_collection].find_one(
-        {"tenant_id": tenant_id, "_id": request_id}
-    )
+    source = await tenant_db[source_collection].find_one({"tenant_id": tenant_id, "_id": request_id})
     if not source:
         raise LookupError("QR request source not found")
 

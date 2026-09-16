@@ -167,8 +167,7 @@ async def create_booking_with_auto_assignment(
     if preferred_room_number:
         candidates.sort(
             key=lambda room: (
-                str(room.get("room_number") or room.get("name") or "").strip()
-                != preferred_room_number,
+                str(room.get("room_number") or room.get("name") or "").strip() != preferred_room_number,
                 _natural_room_key(room),
             )
         )

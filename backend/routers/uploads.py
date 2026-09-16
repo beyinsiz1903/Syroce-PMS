@@ -22,18 +22,15 @@ UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(_backend_dir / "uploads"))).r
 
 security = HTTPBearer(auto_error=False)
 
-async def get_optional_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> User | None:
+
+async def get_optional_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)) -> User | None:
     try:
         return await get_current_user(request, credentials)
     except HTTPException:
         return None
 
-async def get_optional_vendor(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> str | None:
+
+async def get_optional_vendor(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str | None:
     try:
         return await get_current_vendor_id(credentials)
     except HTTPException:
@@ -41,11 +38,7 @@ async def get_optional_vendor(
 
 
 @router.get("/api/uploads/{path:path}")
-async def get_upload(
-    path: str,
-    optional_user: User | None = Depends(get_optional_user),
-    optional_vendor_id: str | None = Depends(get_optional_vendor)
-):
+async def get_upload(path: str, optional_user: User | None = Depends(get_optional_user), optional_vendor_id: str | None = Depends(get_optional_vendor)):
     """
     Securely serve uploaded files.
     Supports both legacy physical path URLs (e.g. {tenant_id}/rooms/...)
@@ -74,15 +67,17 @@ async def get_upload(
             if optional_vendor_id and upload_record.get("vendor_id") != optional_vendor_id:
                 # Log unauthorized cross-vendor access
                 try:
-                    await db.audit_logs.insert_one({
-                        "id": str(uuid.uuid4()),
-                        "vendor_id": optional_vendor_id,
-                        "target_vendor_id": upload_record.get("vendor_id"),
-                        "action": "unauthorized_vendor_file_access",
-                        "resource_type": "upload",
-                        "resource_id": path,
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    })
+                    await db.audit_logs.insert_one(
+                        {
+                            "id": str(uuid.uuid4()),
+                            "vendor_id": optional_vendor_id,
+                            "target_vendor_id": upload_record.get("vendor_id"),
+                            "action": "unauthorized_vendor_file_access",
+                            "resource_type": "upload",
+                            "resource_id": path,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        }
+                    )
                 except Exception as e:
                     logger.warning(f"Failed to log vendor access violation: {e}")
                 raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this vendor file")
@@ -95,7 +90,7 @@ async def get_upload(
                 # Handled by the check at the top, but for completeness
                 raise HTTPException(status_code=403, detail="Forbidden")
 
-        else: # owner_type == "tenant"
+        else:  # owner_type == "tenant"
             # Vendors cannot access tenant files
             if not optional_user:
                 raise HTTPException(status_code=403, detail="Forbidden: Vendors cannot access tenant files")
@@ -118,15 +113,17 @@ async def get_upload(
             if optional_vendor_id and target_vendor_id != optional_vendor_id:
                 # Log unauthorized cross-vendor access for legacy paths too
                 try:
-                    await db.audit_logs.insert_one({
-                        "id": str(uuid.uuid4()),
-                        "vendor_id": optional_vendor_id,
-                        "target_vendor_id": target_vendor_id,
-                        "action": "unauthorized_vendor_file_access",
-                        "resource_type": "upload",
-                        "resource_id": path,
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    })
+                    await db.audit_logs.insert_one(
+                        {
+                            "id": str(uuid.uuid4()),
+                            "vendor_id": optional_vendor_id,
+                            "target_vendor_id": target_vendor_id,
+                            "action": "unauthorized_vendor_file_access",
+                            "resource_type": "upload",
+                            "resource_id": path,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        }
+                    )
                 except Exception as e:
                     logger.warning(f"Failed to log vendor access violation (legacy): {e}")
                 raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this vendor file")
@@ -162,26 +159,28 @@ async def get_upload(
     # Determine the file's owning tenant for audit logging (super admin only)
     if optional_user and optional_user.role == "super_admin":
         file_owner_tenant = None
-        if "/" not in path and 'upload_record' in locals() and upload_record.get("owner_type") != "vendor":
+        if "/" not in path and "upload_record" in locals() and upload_record.get("owner_type") != "vendor":
             file_owner_tenant = upload_record.get("tenant_id")
-        elif "vendors" not in locals().get('parts', []):
+        elif "vendors" not in locals().get("parts", []):
             parts = path.split("/")
             if len(parts) > 0 and parts[0] != "vendors":
                 file_owner_tenant = parts[0]
 
         if file_owner_tenant and optional_user.tenant_id != file_owner_tenant:
             try:
-                await db.audit_logs.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": optional_user.tenant_id,
-                    "target_tenant_id": file_owner_tenant,
-                    "user_id": optional_user.id,
-                    "user_email": getattr(optional_user, "email", "unknown"),
-                    "action": "super_admin_file_access",
-                    "resource_type": "upload",
-                    "resource_id": path,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                })
+                await db.audit_logs.insert_one(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": optional_user.tenant_id,
+                        "target_tenant_id": file_owner_tenant,
+                        "user_id": optional_user.id,
+                        "user_email": getattr(optional_user, "email", "unknown"),
+                        "action": "super_admin_file_access",
+                        "resource_type": "upload",
+                        "resource_id": path,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
             except Exception as e:
                 logger.warning(f"Failed to audit log super admin file access: {e}")
 

@@ -154,9 +154,7 @@ async def check_mapping_gate(
                 "is_active": legacy_exely_mapping.get("is_active", True),
                 "validation_status": legacy_exely_mapping.get("validation_status", "valid"),
                 "pms_rate_plan_id": (
-                    legacy_exely_mapping.get("pms_api_rate_plan_code")
-                    if legacy_exely_mapping.get("pms_api_rate_plan_code") == rate_plan_code
-                    else legacy_exely_mapping.get("exely_rate_plan_code")
+                    legacy_exely_mapping.get("pms_api_rate_plan_code") if legacy_exely_mapping.get("pms_api_rate_plan_code") == rate_plan_code else legacy_exely_mapping.get("exely_rate_plan_code")
                 ),
             }
         rate_error = validate_rate_plan_mapping(rate_mapping, rate_plan_code)

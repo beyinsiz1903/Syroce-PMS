@@ -6,6 +6,7 @@ from bootstrap.migrations.base import Migration
 
 logger = logging.getLogger(__name__)
 
+
 class InvoiceSyncStatusPollIndexMigration(Migration):
     version = "V004"
     description = "Add status worker polling index for invoice_sync collection"
@@ -22,7 +23,7 @@ class InvoiceSyncStatusPollIndexMigration(Migration):
                 ("status_lease_expires_at", ASCENDING),
             ],
             name="ix_invoice_sync_status_poll",
-            background=True
+            background=True,
         )
         await collection.create_indexes([index_model])
         logger.info("Created status worker index ix_invoice_sync_status_poll")
@@ -35,5 +36,6 @@ class InvoiceSyncStatusPollIndexMigration(Migration):
             logger.info("Dropped status worker index ix_invoice_sync_status_poll")
         except Exception as e:
             logger.warning("Failed to drop status worker index, might not exist: %s", e)
+
 
 MIGRATION = InvoiceSyncStatusPollIndexMigration()

@@ -22,6 +22,7 @@ MAX_IDLE_INTERVAL_SECONDS = 30  # Bound detection delay even without a wake-up e
 def next_poll_delay(previous: int, has_work: bool) -> int:
     return PUSH_INTERVAL_SECONDS if has_work else min(previous * 2, MAX_IDLE_INTERVAL_SECONDS)
 
+
 # Per-tenant + outer-loop streak tracker so transient Atlas hiccups
 # (AutoReconnect / NoPrimary / SSL timeout) do not flood Sentry on every
 # 5-second tick. See `core.transient_db_guard`.

@@ -86,8 +86,10 @@ class WalkInRequest(BaseModel):
     guest_id_number: str = ""
     adults: int = 1
 
+
 class WalkInBatchRequest(BaseModel):
     requests: list[WalkInRequest]
+
 
 class CancellationRequest(BaseModel):
     booking_id: str
@@ -216,8 +218,11 @@ async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_cur
 
     try:
         result = await front_desk.check_in(
-            tenant_id, req.booking_id,
-            current_user.id, current_user.name, req.override_reason,
+            tenant_id,
+            req.booking_id,
+            current_user.id,
+            current_user.name,
+            req.override_reason,
         )
     except TenantViolationError as e:
         raise HTTPException(status_code=500, detail=f"Tenant context error: {e}")
@@ -227,6 +232,7 @@ async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_cur
         raise HTTPException(status_code=status_code, detail={"success": False, "error": error_msg})
     except Exception as e:
         import logging
+
         logging.getLogger("pms_hardening").exception("Unexpected check-in error booking=%s", req.booking_id)
         raise HTTPException(status_code=500, detail=f"Check-in failed unexpectedly: {type(e).__name__}: {e}")
 
@@ -261,8 +267,11 @@ async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_cu
 
     try:
         result = await front_desk.checkout(
-            tenant_id, req.booking_id,
-            current_user.id, current_user.name, req.force,
+            tenant_id,
+            req.booking_id,
+            current_user.id,
+            current_user.name,
+            req.force,
         )
     except TenantViolationError as e:
         raise HTTPException(status_code=500, detail=f"Tenant context error: {e}")
@@ -272,6 +281,7 @@ async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_cu
         raise HTTPException(status_code=status_code, detail={"success": False, "error": error_msg})
     except Exception as e:
         import logging
+
         logging.getLogger("pms_hardening").exception("Unexpected checkout error booking=%s", req.booking_id)
         raise HTTPException(status_code=500, detail=f"Checkout failed unexpectedly: {type(e).__name__}: {e}")
 
@@ -378,14 +388,10 @@ async def api_walk_in_batch(req: WalkInBatchRequest, current_user: User = Depend
             "id_number": r.guest_id_number,
             "adults": r.adults,
         }
-        requests_data.append({
-            "room_id": r.room_id,
-            "nights": r.nights,
-            "rate": r.rate,
-            "guest_data": guest_data
-        })
+        requests_data.append({"room_id": r.room_id, "nights": r.nights, "rate": r.rate, "guest_data": guest_data})
 
     from fastapi.responses import JSONResponse
+
     res = await front_desk.walk_in_batch(
         tenant_id=current_user.tenant_id,
         requests=requests_data,

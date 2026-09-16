@@ -32,6 +32,7 @@ router = APIRouter(
 def _require_tenant(user: User) -> str:
     if not user.tenant_id:
         from core.security import _is_super_admin
+
         if _is_super_admin(user):
             return "system_super_admin"
         raise HTTPException(status_code=403, detail="Otel hesabi gerekli")
@@ -267,10 +268,15 @@ async def create_assignment(
         raise HTTPException(status_code=404, detail="Kurs bulunamadi")
     try:
         item = await academy.assign_course(
-            tenant_id, payload.user_id, payload.course_id,
-            assigned_by=current_user.id, source=payload.source,
-            required=payload.required, priority=payload.priority,
-            due_at=payload.due_at, reason=payload.reason,
+            tenant_id,
+            payload.user_id,
+            payload.course_id,
+            assigned_by=current_user.id,
+            source=payload.source,
+            required=payload.required,
+            priority=payload.priority,
+            due_at=payload.due_at,
+            reason=payload.reason,
             reference_id=payload.reference_id,
         )
     except ValueError as exc:
@@ -290,16 +296,15 @@ async def assignment_options(current_user: User = Depends(get_current_user)) -> 
         {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1},
     ):
         row = decrypt_user_doc(dict(raw))
-        users.append({
-            "id": row.get("id"), "name": row.get("name") or row.get("email") or "—",
-            "role": _norm_role(row.get("role")),
-        })
+        users.append(
+            {
+                "id": row.get("id"),
+                "name": row.get("name") or row.get("email") or "—",
+                "role": _norm_role(row.get("role")),
+            }
+        )
     courses = [academy.public_course_summary(c) for c in await academy.list_system_courses_for(tenant_id)]
-    courses.extend(
-        academy.public_course_summary(c)
-        for c in await academy.list_author_courses(tenant_id)
-        if not c.get("draft")
-    )
+    courses.extend(academy.public_course_summary(c) for c in await academy.list_author_courses(tenant_id) if not c.get("draft"))
     users.sort(key=lambda row: row["name"].lower())
     courses.sort(key=lambda row: (row.get("department_label") or "", row.get("title") or ""))
     return {"users": users, "courses": courses}

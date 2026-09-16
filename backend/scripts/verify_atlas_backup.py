@@ -79,9 +79,7 @@ def _fetch_latest_snapshot() -> dict[str, Any]:
         "type": snap.get("type"),
         "expires_at": snap.get("expiresAt"),
         "size_mb": snap.get("storageSizeBytes", 0) // (1024 * 1024),
-        "cloud_backup_enabled": bool(
-            cluster_data.get("backupEnabled") or cluster_data.get("providerBackupEnabled")
-        ),
+        "cloud_backup_enabled": bool(cluster_data.get("backupEnabled") or cluster_data.get("providerBackupEnabled")),
         "pitr_enabled": bool(cluster_data.get("pitEnabled")),
     }
 
@@ -147,10 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             verdict = "DISABLED"
         else:
             verdict = "FRESH" if fresh else "STALE"
-        print(
-            f"verify_atlas_backup: {verdict} — newest snapshot {age_hours:.1f}h old "
-            f"(threshold {args.max_age_hours}h)"
-        )
+        print(f"verify_atlas_backup: {verdict} — newest snapshot {age_hours:.1f}h old (threshold {args.max_age_hours}h)")
 
     return 0 if fresh else 1
 

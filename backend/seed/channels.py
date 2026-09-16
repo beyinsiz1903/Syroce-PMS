@@ -40,7 +40,6 @@ async def seed_channels(db, ctx):
         "hotel_code": ex_hotel if ex_is_active else "DEMO-EXELY",
         "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
         "endpoint_url": f"https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode={ex_hotel}" if ex_is_active else None,
-
         "property_name": "TEST Syroce PMS (Exely)",
         "auto_sync_reservations": False,
         "sync_interval_minutes": 15,

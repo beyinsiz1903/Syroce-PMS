@@ -81,12 +81,7 @@ def _redact_validation_text(value: Any) -> str:
 
 def _validation_field(content: str) -> str:
     lowered = content.casefold()
-    if (
-        "tarihleri arasında" in lowered
-        or "tarihleri arasinda" in lowered
-        or "date must be between" in lowered
-        or "dates must be between" in lowered
-    ):
+    if "tarihleri arasında" in lowered or "tarihleri arasinda" in lowered or "date must be between" in lowered or "dates must be between" in lowered:
         return "InvoiceInfo.IssueDate"
     normalized = "".join(character for character in content.lower() if character.isalnum())
     for alias in sorted(_VALIDATION_FIELD_ALIASES, key=len, reverse=True):
@@ -97,12 +92,7 @@ def _validation_field(content: str) -> str:
 
 def _validation_reason(content: str, field: str) -> str:
     lowered = content.casefold()
-    if field == "InvoiceInfo.IssueDate" and (
-        "tarihleri arasında" in lowered
-        or "tarihleri arasinda" in lowered
-        or "date must be between" in lowered
-        or "dates must be between" in lowered
-    ):
+    if field == "InvoiceInfo.IssueDate" and ("tarihleri arasında" in lowered or "tarihleri arasinda" in lowered or "date must be between" in lowered or "dates must be between" in lowered):
         return "DATE_OUT_OF_RANGE"
     if any(token in lowered for token in ("zorunlu", "required", "missing", "eksik", "boş olamaz", "bos olamaz", "null")):
         return "FIELD_MISSING"
@@ -162,11 +152,7 @@ class NilveraProviderError:
     safe_detail: str | None
 
     def __repr__(self) -> str:
-        return (
-            "<NilveraProviderError "
-            f"http_status={self.http_status} code_present={self.code is not None} "
-            f"classification={self.classification} retryable={self.retryable}>"
-        )
+        return f"<NilveraProviderError http_status={self.http_status} code_present={self.code is not None} classification={self.classification} retryable={self.retryable}>"
 
 
 class NilveraApiError(IntegrationError):
@@ -237,19 +223,13 @@ class NilveraApiError(IntegrationError):
             self.sanitized_detail = sanitize_provider_detail(provider_message, primary_description, primary_detail)
 
         normalized_issues = [
-            issue
-            for issue in (validation_issues or ())
-            if isinstance(issue, str)
-            and len(issue) <= _SAFE_VALIDATION_ISSUE_MAX_LENGTH
-            and _SAFE_VALIDATION_ISSUE_PATTERN.fullmatch(issue) is not None
+            issue for issue in (validation_issues or ()) if isinstance(issue, str) and len(issue) <= _SAFE_VALIDATION_ISSUE_MAX_LENGTH and _SAFE_VALIDATION_ISSUE_PATTERN.fullmatch(issue) is not None
         ]
         if not normalized_issues and any((provider_message, primary_description, primary_detail)):
             normalized_issues.append(combined_validation_issue)
         self.safe_validation_issues = tuple(normalized_issues)
 
-        self.safe_provider_details = tuple(
-            error.safe_detail for error in parsed_errors if error.safe_detail is not None
-        )
+        self.safe_provider_details = tuple(error.safe_detail for error in parsed_errors if error.safe_detail is not None)
         self.sanitized_context.update(
             {
                 "classification": self.classification,

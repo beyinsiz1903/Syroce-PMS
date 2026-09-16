@@ -2837,10 +2837,14 @@ async def _gdpr_guest_retention_async() -> dict[str, Any]:
     anonymized = 0
     errors: list[dict[str, str]] = []
     try:
-        policies = await db.gdpr_retention_policies.find(
-            {"configured": True, "auto_anonymize": True},
-            {"_id": 0, "tenant_id": 1, "guest_data_retention_days": 1},
-        ).limit(500).to_list(500)
+        policies = (
+            await db.gdpr_retention_policies.find(
+                {"configured": True, "auto_anonymize": True},
+                {"_id": 0, "tenant_id": 1, "guest_data_retention_days": 1},
+            )
+            .limit(500)
+            .to_list(500)
+        )
         for policy in policies:
             tenant_id = policy.get("tenant_id")
             if not tenant_id:

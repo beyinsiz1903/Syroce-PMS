@@ -36,9 +36,7 @@ def _room_key(booking: dict) -> str | None:
     return None
 
 
-def calculate_stay_night_metrics(
-    bookings: list[dict], rooms: list[dict], start_date: date, end_date: date
-) -> list[dict]:
+def calculate_stay_night_metrics(bookings: list[dict], rooms: list[dict], start_date: date, end_date: date) -> list[dict]:
     """Return inclusive daily metrics using ``check_in <= day < check_out``.
 
     Occupancy is the number of unique assigned rooms. Gross reservation totals

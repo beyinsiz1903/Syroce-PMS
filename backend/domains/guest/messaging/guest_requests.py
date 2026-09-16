@@ -353,11 +353,7 @@ async def list_threads_for_staff(tenant_id: str, *, limit: int = 100) -> list[di
 
     labels = await _load_request_labels(
         tenant_id,
-        [
-            room.get("last_request_id")
-            for room in rooms
-            if _is_generic_request_body(room.get("last_body"))
-        ],
+        [room.get("last_request_id") for room in rooms if _is_generic_request_body(room.get("last_body"))],
     )
     for room in rooms:
         request_id = room.pop("last_request_id", None)
@@ -417,11 +413,7 @@ async def get_thread_messages(
 
     labels = await _load_request_labels(
         tenant_id,
-        [
-            msg.get("request_id")
-            for msg in raw_messages
-            if _is_generic_request_body(msg.get("body"))
-        ],
+        [msg.get("request_id") for msg in raw_messages if _is_generic_request_body(msg.get("body"))],
     )
     msgs: list[dict] = []
     for msg in raw_messages:
@@ -431,8 +423,6 @@ async def get_thread_messages(
             serialized["body"] = labels[request_id]
         msgs.append(serialized)
     return msgs
-
-
 
 
 async def public_get_guest_thread(
@@ -458,6 +448,7 @@ async def public_get_guest_thread(
     async for msg in cursor:
         msgs.append(_serialize(msg))
     return msgs
+
 
 async def mark_thread_read(tenant_id: str, room_id: str, user_id: str) -> int:
     """Odadaki tüm misafir mesajlarını bu personel için okundu işaretler."""

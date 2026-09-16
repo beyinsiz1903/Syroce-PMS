@@ -35,9 +35,7 @@ def _parse_date(value: Any, *, label: str, error_cls: type[Exception]) -> date:
         # Accept both YYYY-MM-DD and ISO datetimes, including a trailing Z.
         return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
     except ValueError as exc:
-        raise error_cls(
-            f"{label} is invalid ({raw!r}); refusing date-sensitive transition"
-        ) from exc
+        raise error_cls(f"{label} is invalid ({raw!r}); refusing date-sensitive transition") from exc
 
 
 async def enforce_business_date_transition(
@@ -79,10 +77,6 @@ async def enforce_business_date_transition(
     )
 
     if business_date < scheduled_date:
-        raise error_cls(
-            f"Cannot {verb} before scheduled {display_field} date: "
-            f"business_date={business_date.isoformat()}, "
-            f"{booking_field}={scheduled_date.isoformat()}"
-        )
+        raise error_cls(f"Cannot {verb} before scheduled {display_field} date: business_date={business_date.isoformat()}, {booking_field}={scheduled_date.isoformat()}")
 
     return business_date, scheduled_date

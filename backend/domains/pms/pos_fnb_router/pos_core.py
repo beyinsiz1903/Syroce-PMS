@@ -1710,8 +1710,12 @@ async def create_pos_order(
 
         order_items_list.append(
             POSOrderItem(
-                item_id=menu_item["id"], item_name=item_name, category=category_enum,
-                quantity=quantity, unit_price=float(unit_price), total_price=total_price,
+                item_id=menu_item["id"],
+                item_name=item_name,
+                category=category_enum,
+                quantity=quantity,
+                unit_price=float(unit_price),
+                total_price=total_price,
                 tax_rate=line_tax_rate,
             )
         )

@@ -295,9 +295,7 @@ async def create_menu_item(
 
     if not item.outlet_id:
         raise HTTPException(status_code=422, detail="Menü ürünü için satış noktası seçin")
-    outlet = await db.pos_outlets.find_one(
-        {"id": item.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"}
-    )
+    outlet = await db.pos_outlets.find_one({"id": item.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"})
     if not outlet:
         raise HTTPException(status_code=404, detail="Aktif satış noktası bulunamadı")
 
@@ -343,9 +341,7 @@ async def update_menu_item(
 
     if not item.outlet_id:
         raise HTTPException(status_code=422, detail="Menü ürünü için satış noktası seçin")
-    outlet = await db.pos_outlets.find_one(
-        {"id": item.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"}
-    )
+    outlet = await db.pos_outlets.find_one({"id": item.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"})
     if not outlet:
         raise HTTPException(status_code=404, detail="Aktif satış noktası bulunamadı")
 

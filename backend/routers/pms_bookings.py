@@ -150,6 +150,7 @@ async def _publish_multi_room_booking_created_events(
                 type(exc).__name__,
             )
 
+
 # ── Local models ──
 
 RejectReasonCode = Literal[
@@ -338,6 +339,7 @@ async def get_arrivals(
     # Safely fetch timezone setting (ignoring schema proxy limits if any)
     try:
         from core.tenant_db import get_current_tenant_id
+
         tid = get_current_tenant_id() or current_user.tenant_id
         settings = await db.tenant_settings.find_one({"tenant_id": tid}, {"_id": 0, "timezone": 1})
         if settings and settings.get("timezone"):
@@ -778,12 +780,15 @@ async def swap_booking_rooms(
         )
     except RoomSwapError as exc:
         raise HTTPException(
-            status_code=409 if exc.code in {
+            status_code=409
+            if exc.code
+            in {
                 "TARGET_ROOM_CONFLICT",
                 "TARGET_LOCK_CONFLICT",
                 "CONCURRENT_MODIFICATION",
                 "CONCURRENT_ROOM_OCCUPANCY",
-            } else 400,
+            }
+            else 400,
             detail={"message": str(exc), "code": exc.code},
         ) from exc
 

@@ -520,6 +520,7 @@ async def _resolve_stress_tid_async(tid: str) -> str:
     """Resolve E2E_STRESS_TENANT_ID from a short hotel_id to its internal UUID."""
     try:
         from core.tenant_db import get_system_db
+
         sysdb = get_system_db()
         t = await sysdb.tenants.find_one({"$or": [{"id": tid}, {"hotel_id": tid}]})
         if t and "id" in t:
@@ -2488,7 +2489,6 @@ def _build_pos_docs(stress_tid: str, prefix: str, now: datetime):
     return [outlet]
 
 
-
 async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
     """Insert docs in chunks of `chunk_size`. Returns total insert count."""
     if not docs:
@@ -3621,6 +3621,7 @@ async def stress_cleanup(
 
     try:
         from core.tenant_db import get_system_db
+
         _sysdb = get_system_db()
         seeded_connections = await _sysdb.hotelrunner_connections.find(
             flt,

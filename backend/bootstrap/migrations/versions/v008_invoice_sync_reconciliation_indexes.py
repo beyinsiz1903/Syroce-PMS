@@ -6,6 +6,7 @@ from bootstrap.migrations.base import Migration
 
 logger = logging.getLogger(__name__)
 
+
 class InvoiceSyncReconciliationIndexMigration(Migration):
     version = "V008"
     description = "Add reconciliation worker polling indexes with tenant_id for multi-tenancy"
@@ -23,7 +24,7 @@ class InvoiceSyncReconciliationIndexMigration(Migration):
             ],
             name="ix_invoice_sync_reconciliation_poll_tenant",
             background=True,
-            partialFilterExpression={"state": "RECONCILIATION_REQUIRED"}
+            partialFilterExpression={"state": "RECONCILIATION_REQUIRED"},
         )
 
         index_model_2 = IndexModel(
@@ -34,7 +35,7 @@ class InvoiceSyncReconciliationIndexMigration(Migration):
             ],
             name="ix_invoice_sync_redispatch_tenant",
             background=True,
-            partialFilterExpression={"state": "SAFE_TO_RETRY"}
+            partialFilterExpression={"state": "SAFE_TO_RETRY"},
         )
 
         await collection.create_indexes([index_model_1, index_model_2])
@@ -55,5 +56,6 @@ class InvoiceSyncReconciliationIndexMigration(Migration):
             logger.info("Dropped index ix_invoice_sync_redispatch_tenant")
         except Exception as e:
             logger.warning("Failed to drop index ix_invoice_sync_redispatch_tenant: %s", e)
+
 
 MIGRATION = InvoiceSyncReconciliationIndexMigration()

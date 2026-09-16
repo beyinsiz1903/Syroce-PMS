@@ -109,13 +109,9 @@ async def run_preflight() -> None:
         except NilveraProductionPreflightError:
             raise
         except NilveraApiError as exc:
-            raise NilveraProductionPreflightError(
-                f"BLOCKED_PRODUCTION_PROVIDER_READ_{exc.classification or 'FAILED'}"
-            ) from None
+            raise NilveraProductionPreflightError(f"BLOCKED_PRODUCTION_PROVIDER_READ_{exc.classification or 'FAILED'}") from None
         except Exception as exc:
-            raise NilveraProductionPreflightError(
-                f"BLOCKED_PRODUCTION_PREFLIGHT_{type(exc).__name__.upper()}"
-            ) from None
+            raise NilveraProductionPreflightError(f"BLOCKED_PRODUCTION_PREFLIGHT_{type(exc).__name__.upper()}") from None
 
     expected_read_count = 2 if tenant_id is not None else 1
     if provider_read_count != expected_read_count:

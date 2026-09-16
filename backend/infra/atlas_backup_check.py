@@ -132,9 +132,7 @@ def _live_snapshot_verification() -> tuple[dict[str, Any] | None, str | None]:
         error = type(exc).__name__
 
     _LIVE_CACHE.clear()
-    _LIVE_CACHE.update(
-        {"cached_at": now_mono, "verification": verification, "error": error}
-    )
+    _LIVE_CACHE.update({"cached_at": now_mono, "verification": verification, "error": error})
     return verification, error
 
 
@@ -187,31 +185,21 @@ def get_atlas_backup_status() -> dict[str, Any]:
     # operators to turn Cloud Backup / Continuous Cloud Backup off, so tier
     # inference must never become a production-green signal by itself.
     _M10_PLUS_BASES = {"M10", "M20", "M30", "M40", "M50", "M60", "M80", "M140", "M200", "M300", "M400", "M700"}
-    supports_continuous_backup = tier in _M10_PLUS_BASES or any(
-        tier.startswith(b) for b in _M10_PLUS_BASES
-    )
+    supports_continuous_backup = tier in _M10_PLUS_BASES or any(tier.startswith(b) for b in _M10_PLUS_BASES)
     api_cloud_backup = sidecar.get("cloud_backup_enabled") if sidecar else None
     api_pitr = sidecar.get("pitr_enabled") if sidecar else None
-    cloud_backup_enabled = (
-        api_cloud_backup
-        if isinstance(api_cloud_backup, bool)
-        else _env_true("ATLAS_CLOUD_BACKUP_ENABLED")
-    )
+    cloud_backup_enabled = api_cloud_backup if isinstance(api_cloud_backup, bool) else _env_true("ATLAS_CLOUD_BACKUP_ENABLED")
     pitr_enabled = api_pitr if isinstance(api_pitr, bool) else _env_true("ATLAS_PITR_ENABLED")
     has_continuous_backup = supports_continuous_backup and cloud_backup_enabled and pitr_enabled
     has_snapshot_only = cloud_backup_enabled and not pitr_enabled
 
     max_snapshot_age = float(os.environ.get("ATLAS_BACKUP_MAX_AGE_HOURS", "26"))
-    max_verification_age = float(
-        os.environ.get("ATLAS_BACKUP_VERIFICATION_MAX_AGE_HOURS", "26")
-    )
+    max_verification_age = float(os.environ.get("ATLAS_BACKUP_VERIFICATION_MAX_AGE_HOURS", "26"))
     verified_time = _parse_iso(verified_at)
     verification_age_hours: float | None = None
     effective_snapshot_age_hours: float | None = None
     if verified_time is not None:
-        verification_age_hours = max(
-            0.0, (datetime.now(UTC) - verified_time).total_seconds() / 3600.0
-        )
+        verification_age_hours = max(0.0, (datetime.now(UTC) - verified_time).total_seconds() / 3600.0)
     if snapshot_age_hours is not None and verification_age_hours is not None:
         effective_snapshot_age_hours = snapshot_age_hours + verification_age_hours
 
@@ -298,10 +286,7 @@ def resolve_backup_check(local_backup_status: dict[str, Any]) -> tuple[dict[str,
                 {
                     "status": "atlas_backup_unverified",
                     "atlas": atlas,
-                    "warning": (
-                        "Atlas backup is declared, but no fresh snapshot verification exists. "
-                        "Run backend/scripts/verify_atlas_backup.py with Atlas API credentials."
-                    ),
+                    "warning": ("Atlas backup is declared, but no fresh snapshot verification exists. Run backend/scripts/verify_atlas_backup.py with Atlas API credentials."),
                 },
                 0.0 if is_prod else 0.5,
             )
@@ -329,23 +314,11 @@ def resolve_backup_check(local_backup_status: dict[str, Any]) -> tuple[dict[str,
     enabled = local_backup_status.get("enabled", False)
     last = local_backup_status.get("last_successful") or {}
     completed = _parse_iso(last.get("completed_at"))
-    age_hours = (
-        max(0.0, (datetime.now(UTC) - completed).total_seconds() / 3600.0)
-        if completed
-        else None
-    )
+    age_hours = max(0.0, (datetime.now(UTC) - completed).total_seconds() / 3600.0) if completed else None
     max_age = float(os.environ.get("BACKUP_MAX_AGE_HOURS", "26"))
     backup_path = str(local_backup_status.get("backup_path") or "")
-    durable = _env_true("BACKUP_DURABLE") or bool(
-        backup_path and not backup_path.startswith(("/tmp", "/var/tmp"))
-    )
-    fresh = bool(
-        enabled
-        and last.get("status") == "completed"
-        and age_hours is not None
-        and age_hours <= max_age
-        and durable
-    )
+    durable = _env_true("BACKUP_DURABLE") or bool(backup_path and not backup_path.startswith(("/tmp", "/var/tmp")))
+    fresh = bool(enabled and last.get("status") == "completed" and age_hours is not None and age_hours <= max_age and durable)
     if fresh:
         status = "enabled_verified"
         score = 1.0

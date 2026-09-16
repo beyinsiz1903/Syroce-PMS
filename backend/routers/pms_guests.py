@@ -125,17 +125,17 @@ async def create_guest(
 
         if guest.scanned_via_quick_id:
             from datetime import UTC, datetime
-            await db.audit_logs.insert_one({
-                "tenant_id": current_user.tenant_id,
-                "actor_id": current_user.id,
-                "action": "guest_created_via_quickid",
-                "target_id": guest.id,
-                "details": {
-                    "guest_name": guest.name,
-                    "kvkk_consent": guest.kvkk_consent
-                },
-                "created_at": datetime.now(UTC)
-            })
+
+            await db.audit_logs.insert_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "actor_id": current_user.id,
+                    "action": "guest_created_via_quickid",
+                    "target_id": guest.id,
+                    "details": {"guest_name": guest.name, "kvkk_consent": guest.kvkk_consent},
+                    "created_at": datetime.now(UTC),
+                }
+            )
 
         if lock_id:
             # Persist ONLY the guest id + tenant in the idempotency cache to
@@ -267,10 +267,15 @@ async def search_guests(
     guests_raw = primary
     if ng_cond:
         seen = {g.get("id") for g in primary}
-        ng_rows = await db.guests.find(
-            {"tenant_id": tenant_id, "archived": {"$ne": True}, "status": {"$ne": "deleted"}, **ng_cond},
-            {"_id": 0},
-        ).sort("name", 1).limit(fetch_limit).to_list(fetch_limit)
+        ng_rows = (
+            await db.guests.find(
+                {"tenant_id": tenant_id, "archived": {"$ne": True}, "status": {"$ne": "deleted"}, **ng_cond},
+                {"_id": 0},
+            )
+            .sort("name", 1)
+            .limit(fetch_limit)
+            .to_list(fetch_limit)
+        )
         extras = [r for r in ng_rows if r.get("id") not in seen and ngram_match(r, q, collection=_GUEST_COLLECTION)]
         if extras:
             guests_raw = primary + extras

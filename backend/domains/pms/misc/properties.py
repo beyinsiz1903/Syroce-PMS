@@ -109,17 +109,19 @@ async def get_quick_property_list(credentials: HTTPAuthorizationCredentials = De
 
         tenant = await get_system_db().tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
         if tenant:
-            properties = [{
-                "id": tenant["id"],
-                "property_id": tenant["id"],
-                "name": tenant.get("property_name") or tenant["id"],
-                "location": tenant.get("location") or "",
-                "type": tenant.get("property_type") or "hotel",
-                "logo": "",
-                "is_active": tenant.get("subscription_status", "active") == "active",
-                "room_count": int(tenant.get("total_rooms") or 0),
-                "is_current_tenant": True,
-            }]
+            properties = [
+                {
+                    "id": tenant["id"],
+                    "property_id": tenant["id"],
+                    "name": tenant.get("property_name") or tenant["id"],
+                    "location": tenant.get("location") or "",
+                    "type": tenant.get("property_type") or "hotel",
+                    "logo": "",
+                    "is_active": tenant.get("subscription_status", "active") == "active",
+                    "room_count": int(tenant.get("total_rooms") or 0),
+                    "is_current_tenant": True,
+                }
+            ]
 
     # Get user's current property
     current_property_id = current_user.property_id if hasattr(current_user, "property_id") else None

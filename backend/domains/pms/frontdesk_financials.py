@@ -38,11 +38,7 @@ def calculate_departure_balance(
         start=Decimal("0"),
     )
     room_charge_total = sum(
-        (
-            _amount(charge.get("total", charge.get("amount")))
-            for charge in active_charges
-            if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
-        ),
+        (_amount(charge.get("total", charge.get("amount"))) for charge in active_charges if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"),
         start=Decimal("0"),
     )
     # A partly posted stay still owes the portion of its confirmed total that

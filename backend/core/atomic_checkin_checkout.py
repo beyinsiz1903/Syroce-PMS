@@ -73,157 +73,157 @@ async def check_in_booking_atomic(
     import os
 
     async def _txn(session):
-            # ── 1. Load & validate booking ──
-            booking = await db.bookings.find_one(
-                {"id": booking_id, "tenant_id": tenant_id},
-                {"_id": 0},
-                session=session,
-            )
-            if not booking:
-                raise CheckInError("Booking not found")
+        # ── 1. Load & validate booking ──
+        booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"_id": 0},
+            session=session,
+        )
+        if not booking:
+            raise CheckInError("Booking not found")
 
-            current_status = booking.get("status", "")
-            if current_status not in CHECKIN_ELIGIBLE_STATUSES:
-                raise CheckInError(f"Cannot check in booking with status '{current_status}'. Eligible statuses: {CHECKIN_ELIGIBLE_STATUSES}")
+        current_status = booking.get("status", "")
+        if current_status not in CHECKIN_ELIGIBLE_STATUSES:
+            raise CheckInError(f"Cannot check in booking with status '{current_status}'. Eligible statuses: {CHECKIN_ELIGIBLE_STATUSES}")
 
-            # Business date is the operational clock. Wall-clock time must not
-            # allow a future arrival to be checked in while night audit is still
-            # on an earlier business date. Room override_reason does not bypass
-            # this date guard; early-arrival overrides require a separate flow.
-            await enforce_business_date_transition(
-                db,
-                tenant_id=tenant_id,
-                booking=booking,
-                operation="check_in",
-                error_cls=CheckInError,
-                session=session,
-            )
+        # Business date is the operational clock. Wall-clock time must not
+        # allow a future arrival to be checked in while night audit is still
+        # on an earlier business date. Room override_reason does not bypass
+        # this date guard; early-arrival overrides require a separate flow.
+        await enforce_business_date_transition(
+            db,
+            tenant_id=tenant_id,
+            booking=booking,
+            operation="check_in",
+            error_cls=CheckInError,
+            session=session,
+        )
 
-            room_id = booking.get("room_id")
-            if not room_id:
-                raise CheckInError("No room assigned to this booking")
+        room_id = booking.get("room_id")
+        if not room_id:
+            raise CheckInError("No room assigned to this booking")
 
-            # ── 2. Validate room ──
-            room = await db.rooms.find_one(
-                {"id": room_id, "tenant_id": tenant_id},
-                {"_id": 0},
-                session=session,
-            )
-            if not room:
-                raise CheckInError("Assigned room not found")
+        # ── 2. Validate room ──
+        room = await db.rooms.find_one(
+            {"id": room_id, "tenant_id": tenant_id},
+            {"_id": 0},
+            session=session,
+        )
+        if not room:
+            raise CheckInError("Assigned room not found")
 
-            room_status = room.get("status", "")
-            allowed_room_statuses = {"available", "inspected", "clean"}
-            if room_status in ROOM_BLOCKED_STATUSES:
-                raise CheckInError(f"Room {room.get('room_number')} is {room_status} and cannot be used for check-in")
-            if room_status not in allowed_room_statuses and not override_reason:
-                raise CheckInError(f"Room {room.get('room_number')} is not ready (status: {room_status}). Provide override_reason to force check-in.")
+        room_status = room.get("status", "")
+        allowed_room_statuses = {"available", "inspected", "clean"}
+        if room_status in ROOM_BLOCKED_STATUSES:
+            raise CheckInError(f"Room {room.get('room_number')} is {room_status} and cannot be used for check-in")
+        if room_status not in allowed_room_statuses and not override_reason:
+            raise CheckInError(f"Room {room.get('room_number')} is not ready (status: {room_status}). Provide override_reason to force check-in.")
 
-            # ── 3. Ensure folio exists ──
-            folio = await db.folios.find_one(
-                {"booking_id": booking_id, "tenant_id": tenant_id},
-                {"_id": 0},
-                session=session,
-            )
-            if not folio:
-                folio_id = str(uuid.uuid4())
-                folio_count = await db.folios.count_documents({"tenant_id": tenant_id}, session=session)
-                folio_number = f"F-{now.year}-{(folio_count + 1):05d}"
-                folio_doc = {
-                    "id": folio_id,
-                    "tenant_id": tenant_id,
-                    "booking_id": booking_id,
-                    "folio_number": folio_number,
-                    "folio_type": "guest",
-                    "status": "open",
-                    "guest_id": booking.get("guest_id"),
-                    "balance": 0.0,
-                    "created_at": now_iso,
-                }
-                await db.folios.insert_one(folio_doc, session=session)
-                logger.info("Auto-created folio %s for booking %s", folio_id, booking_id)
-
-            # ── 4. Update booking → checked_in ──
-            booking_update = {
-                "status": "checked_in",
-                "checked_in_at": now_iso,
-                "checked_in_by": actor_name or actor_id,
-                "updated_at": now_iso,
-            }
-            if override_reason:
-                booking_update["check_in_override_reason"] = override_reason
-            if extra_fields:
-                booking_update.update(extra_fields)
-
-            await db.bookings.update_one(
-                {"id": booking_id, "tenant_id": tenant_id},
-                {"$set": booking_update},
-                session=session,
-            )
-
-            # ── 5. Update room → occupied (atomic CAS — F8A tur-22 / CI #37
-            #        P0 fix: line-104 pre-check is TOCTOU vs the unconditional
-            #        update_one that used to live here; concurrent OOO/maintenance
-            #        marks could change room.status between find_one and
-            #        update_one, leading to walk-in/check-in succeeding on a
-            #        blocked room and returning success=true with a fresh booking
-            #        — overbook + maintenance-risk. CAS filter requires status
-            #        to STILL be in the allowed set at write time; if not,
-            #        modified_count==0 → raise CheckInError → transaction
-            #        rollback → no booking persisted, no audit, no outbox).
-            if override_reason:
-                # Override path: any non-blocked status is acceptable.
-                cas_status_filter = {"$nin": ROOM_BLOCKED_STATUSES}
-            else:
-                cas_status_filter = {"$in": list(allowed_room_statuses)}
-            room_update_result = await db.rooms.update_one(
-                {
-                    "id": room_id,
-                    "tenant_id": tenant_id,
-                    "status": cas_status_filter,
-                },
-                {"$set": {"status": "occupied", "current_booking_id": booking_id}},
-                session=session,
-            )
-            if room_update_result.modified_count == 0:
-                raise CheckInError(f"Room {room.get('room_number')} status changed during check-in (concurrent state mutation; check-in aborted to prevent overbook)")
-
-            # ── 6. Audit log ──
-            audit_doc = {
-                "id": str(uuid.uuid4()),
+        # ── 3. Ensure folio exists ──
+        folio = await db.folios.find_one(
+            {"booking_id": booking_id, "tenant_id": tenant_id},
+            {"_id": 0},
+            session=session,
+        )
+        if not folio:
+            folio_id = str(uuid.uuid4())
+            folio_count = await db.folios.count_documents({"tenant_id": tenant_id}, session=session)
+            folio_number = f"F-{now.year}-{(folio_count + 1):05d}"
+            folio_doc = {
+                "id": folio_id,
                 "tenant_id": tenant_id,
-                "entity_type": "booking",
-                "entity_id": booking_id,
-                "action": "check_in_completed",
-                "performed_by": actor_id,
-                "metadata": {
-                    "room_id": room_id,
-                    "room_number": room.get("room_number"),
-                    "override_reason": override_reason,
-                },
-                "timestamp": now_iso,
-            }
-            await db.pms_audit_trail.insert_one(audit_doc, session=session)
-
-            # ── 7. Outbox event ──
-            outbox_doc = {
-                "id": str(uuid.uuid4()),
-                "event_id": str(uuid.uuid4()),
-                "event_type": "guest.checked_in.v1",
-                "tenant_id": tenant_id,
-                "payload": {
-                    "booking_id": booking_id,
-                    "room_id": room_id,
-                    "guest_id": booking.get("guest_id"),
-                    "checked_in_at": now_iso,
-                },
-                "status": "pending",
+                "booking_id": booking_id,
+                "folio_number": folio_number,
+                "folio_type": "guest",
+                "status": "open",
+                "guest_id": booking.get("guest_id"),
+                "balance": 0.0,
                 "created_at": now_iso,
-                "retry_count": 0,
             }
-            await db.outbox_events.insert_one(outbox_doc, session=session)
+            await db.folios.insert_one(folio_doc, session=session)
+            logger.info("Auto-created folio %s for booking %s", folio_id, booking_id)
 
-            return {"room_id": room_id, "room_number": room.get("room_number")}
+        # ── 4. Update booking → checked_in ──
+        booking_update = {
+            "status": "checked_in",
+            "checked_in_at": now_iso,
+            "checked_in_by": actor_name or actor_id,
+            "updated_at": now_iso,
+        }
+        if override_reason:
+            booking_update["check_in_override_reason"] = override_reason
+        if extra_fields:
+            booking_update.update(extra_fields)
+
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"$set": booking_update},
+            session=session,
+        )
+
+        # ── 5. Update room → occupied (atomic CAS — F8A tur-22 / CI #37
+        #        P0 fix: line-104 pre-check is TOCTOU vs the unconditional
+        #        update_one that used to live here; concurrent OOO/maintenance
+        #        marks could change room.status between find_one and
+        #        update_one, leading to walk-in/check-in succeeding on a
+        #        blocked room and returning success=true with a fresh booking
+        #        — overbook + maintenance-risk. CAS filter requires status
+        #        to STILL be in the allowed set at write time; if not,
+        #        modified_count==0 → raise CheckInError → transaction
+        #        rollback → no booking persisted, no audit, no outbox).
+        if override_reason:
+            # Override path: any non-blocked status is acceptable.
+            cas_status_filter = {"$nin": ROOM_BLOCKED_STATUSES}
+        else:
+            cas_status_filter = {"$in": list(allowed_room_statuses)}
+        room_update_result = await db.rooms.update_one(
+            {
+                "id": room_id,
+                "tenant_id": tenant_id,
+                "status": cas_status_filter,
+            },
+            {"$set": {"status": "occupied", "current_booking_id": booking_id}},
+            session=session,
+        )
+        if room_update_result.modified_count == 0:
+            raise CheckInError(f"Room {room.get('room_number')} status changed during check-in (concurrent state mutation; check-in aborted to prevent overbook)")
+
+        # ── 6. Audit log ──
+        audit_doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "entity_type": "booking",
+            "entity_id": booking_id,
+            "action": "check_in_completed",
+            "performed_by": actor_id,
+            "metadata": {
+                "room_id": room_id,
+                "room_number": room.get("room_number"),
+                "override_reason": override_reason,
+            },
+            "timestamp": now_iso,
+        }
+        await db.pms_audit_trail.insert_one(audit_doc, session=session)
+
+        # ── 7. Outbox event ──
+        outbox_doc = {
+            "id": str(uuid.uuid4()),
+            "event_id": str(uuid.uuid4()),
+            "event_type": "guest.checked_in.v1",
+            "tenant_id": tenant_id,
+            "payload": {
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "guest_id": booking.get("guest_id"),
+                "checked_in_at": now_iso,
+            },
+            "status": "pending",
+            "created_at": now_iso,
+            "retry_count": 0,
+        }
+        await db.outbox_events.insert_one(outbox_doc, session=session)
+
+        return {"room_id": room_id, "room_number": room.get("room_number")}
 
     with tenant_context(tenant_id):
         if os.environ.get("MONGO_DISABLE_TRANSACTIONS") == "1":
@@ -305,204 +305,201 @@ async def check_out_booking_atomic(
     import os
 
     async def _txn(session):
-            # ── 1. Load & validate booking ──
-            booking = await db.bookings.find_one(
-                {"id": booking_id, "tenant_id": tenant_id},
+        # ── 1. Load & validate booking ──
+        booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"_id": 0},
+            session=session,
+        )
+        if not booking:
+            raise CheckOutError("Booking not found")
+
+        current_status = booking.get("status", "")
+        if current_status != "checked_in":
+            raise CheckOutError(f"Cannot check out booking with status '{current_status}'. Only 'checked_in' bookings can be checked out.")
+
+        # force=True remains a folio-balance override only. It must not turn
+        # into an implicit early-departure override; the PMS business date
+        # still has to reach the scheduled checkout date.
+        await enforce_business_date_transition(
+            db,
+            tenant_id=tenant_id,
+            booking=booking,
+            operation="check_out",
+            error_cls=CheckOutError,
+            session=session,
+        )
+
+        room_id = booking.get("room_id")
+
+        # ── 2. Folio balance validation ──
+        # NOTE: Balance is read from db.folio_ledger (canonical source) using the
+        # same aggregation as FolioLedgerService.compute_balance(), but with
+        # session=session so it participates in the atomic transaction.
+        # The old guard queried legacy folio_charges/payments collections which are
+        # no longer populated in the new ledger architecture, causing the guard to
+        # silently pass (balance always 0.0).
+        if not force:
+            folios = await db.folios.find(
+                {"booking_id": booking_id, "tenant_id": tenant_id, "status": "open"},
                 {"_id": 0},
                 session=session,
-            )
-            if not booking:
-                raise CheckOutError("Booking not found")
+            ).to_list(10)
 
-            current_status = booking.get("status", "")
-            if current_status != "checked_in":
-                raise CheckOutError(f"Cannot check out booking with status '{current_status}'. Only 'checked_in' bookings can be checked out.")
+            for folio in folios:
+                ledger_pipeline = [
+                    {
+                        "$match": {
+                            "tenant_id": tenant_id,
+                            "folio_id": folio["id"],
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": None,
+                            "total": {"$sum": "$amount"},
+                        }
+                    },
+                ]
+                rows = await db.folio_ledger.aggregate(
+                    ledger_pipeline,
+                    session=session,
+                ).to_list(1)
+                balance = round(float(rows[0]["total"]), 2) if rows else 0.0
 
-            # force=True remains a folio-balance override only. It must not turn
-            # into an implicit early-departure override; the PMS business date
-            # still has to reach the scheduled checkout date.
-            await enforce_business_date_transition(
+                if balance > 0.01:
+                    raise CheckOutError(f"Folio {folio.get('folio_number')} has unpaid balance of {balance}. Use force=True to override.")
+
+        # Complete the confirmed room revenue only after the existing
+        # balance guard passes.  This preserves the atomic no-side-effect
+        # guarantee when checkout is rejected for an unpaid folio.
+        from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+        try:
+            await reconcile_unposted_room_charge(
                 db,
                 tenant_id=tenant_id,
                 booking=booking,
-                operation="check_out",
-                error_cls=CheckOutError,
+                posted_by=f"checkout:{actor_name or actor_id}",
                 session=session,
             )
+        except ValueError as exc:
+            raise CheckOutError(str(exc)) from exc
 
-            room_id = booking.get("room_id")
+        # ── 3. Update booking → checked_out ──
+        booking_update = {
+            "status": "checked_out",
+            "checked_out_at": now_iso,
+            "checked_out_by": actor_name or actor_id,
+            "updated_at": now_iso,
+        }
+        if extra_fields:
+            booking_update.update(extra_fields)
 
-            # ── 2. Folio balance validation ──
-            # NOTE: Balance is read from db.folio_ledger (canonical source) using the
-            # same aggregation as FolioLedgerService.compute_balance(), but with
-            # session=session so it participates in the atomic transaction.
-            # The old guard queried legacy folio_charges/payments collections which are
-            # no longer populated in the new ledger architecture, causing the guard to
-            # silently pass (balance always 0.0).
-            if not force:
-                folios = await db.folios.find(
-                    {"booking_id": booking_id, "tenant_id": tenant_id, "status": "open"},
-                    {"_id": 0},
-                    session=session,
-                ).to_list(10)
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"$set": booking_update},
+            session=session,
+        )
 
-                for folio in folios:
-                    ledger_pipeline = [
-                        {
-                            "$match": {
-                                "tenant_id": tenant_id,
-                                "folio_id": folio["id"],
-                            }
-                        },
-                        {
-                            "$group": {
-                                "_id": None,
-                                "total": {"$sum": "$amount"},
-                            }
-                        },
-                    ]
-                    rows = await db.folio_ledger.aggregate(
-                        ledger_pipeline,
-                        session=session,
-                    ).to_list(1)
-                    balance = round(float(rows[0]["total"]), 2) if rows else 0.0
-
-                    if balance > 0.01:
-                        raise CheckOutError(
-                            f"Folio {folio.get('folio_number')} has unpaid balance of "
-                            f"{balance}. Use force=True to override."
-                        )
-
-            # Complete the confirmed room revenue only after the existing
-            # balance guard passes.  This preserves the atomic no-side-effect
-            # guarantee when checkout is rejected for an unpaid folio.
-            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
-
-            try:
-                await reconcile_unposted_room_charge(
-                    db,
-                    tenant_id=tenant_id,
-                    booking=booking,
-                    posted_by=f"checkout:{actor_name or actor_id}",
-                    session=session,
-                )
-            except ValueError as exc:
-                raise CheckOutError(str(exc)) from exc
-
-            # ── 3. Update booking → checked_out ──
-            booking_update = {
-                "status": "checked_out",
-                "checked_out_at": now_iso,
-                "checked_out_by": actor_name or actor_id,
-                "updated_at": now_iso,
-            }
-            if extra_fields:
-                booking_update.update(extra_fields)
-
-            await db.bookings.update_one(
-                {"id": booking_id, "tenant_id": tenant_id},
-                {"$set": booking_update},
-                session=session,
-            )
-
-            # ── 4. Update room → dirty ──
-            if room_id:
-                await db.rooms.update_one(
-                    {"id": room_id, "tenant_id": tenant_id},
-                    {
-                        "$set": {
-                            "status": "dirty",
-                            "current_booking_id": None,
-                            "housekeeping_status": "dirty",
-                            "housekeeping_updated_at": now_iso,
-                            "housekeeping_updated_by": f"Sistem (Check-out by {actor_name or actor_id})",
-                        }
-                    },
-                    session=session,
-                )
-
-            # ── 5. Close open folios ──
-            await db.folios.update_many(
-                {"booking_id": booking_id, "tenant_id": tenant_id, "status": "open"},
-                {"$set": {"status": "closed", "closed_at": now_iso}},
-                session=session,
-            )
-
-            # ── 5b. Release room_night_locks (F8A tur-21 perf: inline single
-            #        round-trip inside transaction; replaces post-commit
-            #        release_booking_nights helper which did 3 RTs and
-            #        regressed force-checkout latency from ~700ms to ~2000ms,
-            #        causing CI #36 02-B 180s timeout. Atomic with state
-            #        transition; audit captured in step-7 metadata below).
-            locks_release_result = await db.room_night_locks.delete_many(
-                {"tenant_id": tenant_id, "booking_id": booking_id},
-                session=session,
-            )
-            released_locks_count = locks_release_result.deleted_count
-
-            # ── 6. Create housekeeping task (deduplicated) ──
-            if room_id:
-                existing_hk = await db.housekeeping_tasks.find_one(
-                    {
-                        "tenant_id": tenant_id,
-                        "booking_id": booking_id,
-                        "task_type": "checkout_cleaning",
-                        "status": {"$nin": ["cancelled"]},
-                    },
-                    {"_id": 0, "id": 1},
-                    session=session,
-                )
-                if not existing_hk:
-                    hk_doc = {
-                        "id": str(uuid.uuid4()),
-                        "tenant_id": tenant_id,
-                        "room_id": room_id,
-                        "booking_id": booking_id,
-                        "task_type": "checkout_cleaning",
-                        "status": "pending",
-                        "priority": "high",
-                        "created_at": now_iso,
-                        "created_by": "system",
-                        "notes": f"Auto-created on checkout of booking {booking_id}",
+        # ── 4. Update room → dirty ──
+        if room_id:
+            await db.rooms.update_one(
+                {"id": room_id, "tenant_id": tenant_id},
+                {
+                    "$set": {
+                        "status": "dirty",
+                        "current_booking_id": None,
+                        "housekeeping_status": "dirty",
+                        "housekeeping_updated_at": now_iso,
+                        "housekeeping_updated_by": f"Sistem (Check-out by {actor_name or actor_id})",
                     }
-                    await db.housekeeping_tasks.insert_one(hk_doc, session=session)
-
-            # ── 7. Audit log ──
-            audit_doc = {
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "entity_type": "booking",
-                "entity_id": booking_id,
-                "action": "check_out_completed",
-                "performed_by": actor_id,
-                "metadata": {
-                    "room_id": room_id,
-                    "forced": force,
-                    "released_locks_count": released_locks_count,
                 },
-                "timestamp": now_iso,
-            }
-            await db.pms_audit_trail.insert_one(audit_doc, session=session)
+                session=session,
+            )
 
-            # ── 8. Outbox event ──
-            outbox_doc = {
-                "id": str(uuid.uuid4()),
-                "event_id": str(uuid.uuid4()),
-                "event_type": "guest.checked_out.v1",
-                "tenant_id": tenant_id,
-                "payload": {
+        # ── 5. Close open folios ──
+        await db.folios.update_many(
+            {"booking_id": booking_id, "tenant_id": tenant_id, "status": "open"},
+            {"$set": {"status": "closed", "closed_at": now_iso}},
+            session=session,
+        )
+
+        # ── 5b. Release room_night_locks (F8A tur-21 perf: inline single
+        #        round-trip inside transaction; replaces post-commit
+        #        release_booking_nights helper which did 3 RTs and
+        #        regressed force-checkout latency from ~700ms to ~2000ms,
+        #        causing CI #36 02-B 180s timeout. Atomic with state
+        #        transition; audit captured in step-7 metadata below).
+        locks_release_result = await db.room_night_locks.delete_many(
+            {"tenant_id": tenant_id, "booking_id": booking_id},
+            session=session,
+        )
+        released_locks_count = locks_release_result.deleted_count
+
+        # ── 6. Create housekeeping task (deduplicated) ──
+        if room_id:
+            existing_hk = await db.housekeeping_tasks.find_one(
+                {
+                    "tenant_id": tenant_id,
                     "booking_id": booking_id,
-                    "room_id": room_id,
-                    "guest_id": booking.get("guest_id"),
-                    "checked_out_at": now_iso,
+                    "task_type": "checkout_cleaning",
+                    "status": {"$nin": ["cancelled"]},
                 },
-                "status": "pending",
-                "created_at": now_iso,
-                "retry_count": 0,
-            }
-            await db.outbox_events.insert_one(outbox_doc, session=session)
+                {"_id": 0, "id": 1},
+                session=session,
+            )
+            if not existing_hk:
+                hk_doc = {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "room_id": room_id,
+                    "booking_id": booking_id,
+                    "task_type": "checkout_cleaning",
+                    "status": "pending",
+                    "priority": "high",
+                    "created_at": now_iso,
+                    "created_by": "system",
+                    "notes": f"Auto-created on checkout of booking {booking_id}",
+                }
+                await db.housekeeping_tasks.insert_one(hk_doc, session=session)
 
-            return {"room_id": room_id, "guest_id": booking.get("guest_id")}
+        # ── 7. Audit log ──
+        audit_doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "entity_type": "booking",
+            "entity_id": booking_id,
+            "action": "check_out_completed",
+            "performed_by": actor_id,
+            "metadata": {
+                "room_id": room_id,
+                "forced": force,
+                "released_locks_count": released_locks_count,
+            },
+            "timestamp": now_iso,
+        }
+        await db.pms_audit_trail.insert_one(audit_doc, session=session)
+
+        # ── 8. Outbox event ──
+        outbox_doc = {
+            "id": str(uuid.uuid4()),
+            "event_id": str(uuid.uuid4()),
+            "event_type": "guest.checked_out.v1",
+            "tenant_id": tenant_id,
+            "payload": {
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "guest_id": booking.get("guest_id"),
+                "checked_out_at": now_iso,
+            },
+            "status": "pending",
+            "created_at": now_iso,
+            "retry_count": 0,
+        }
+        await db.outbox_events.insert_one(outbox_doc, session=session)
+
+        return {"room_id": room_id, "guest_id": booking.get("guest_id")}
 
     with tenant_context(tenant_id):
         if os.environ.get("MONGO_DISABLE_TRANSACTIONS") == "1":

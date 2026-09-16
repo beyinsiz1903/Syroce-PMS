@@ -341,9 +341,7 @@ async def create_supplier(
     )
     supplier_dict = supplier.model_dump(mode="json")
     await db.suppliers.insert_one(supplier_dict)
-    persisted = await db.suppliers.find_one(
-        {"id": supplier.id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    persisted = await db.suppliers.find_one({"id": supplier.id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not persisted:
         raise HTTPException(status_code=500, detail="Tedarikçi kaydı doğrulanamadı")
     return persisted

@@ -45,6 +45,8 @@ logger = logging.getLogger(__name__)
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
 def _get_hr_docs_bucket():
     return AsyncIOMotorGridFSBucket(get_motor_database(), bucket_name="staff_docs")
+
+
 from core.audit import log_audit_event  # v2 HR Foundation (Task #262)
 from models.schemas import User
 from modules.pms_core.role_permission_service import (  # v96 DW
@@ -93,7 +95,10 @@ _PII_PHONE_FIELDS = ("phone", "mobile", "emergency_phone")
 _PII_ID_FIELDS = ("national_id", "identity_number", "tc_kimlik", "tc")
 _PII_BANK_FIELDS = ("iban", "bank_iban", "bank_account")
 _PII_SALARY_FIELDS = (
-    "sgk_employer", "unemployment_employer", "employer_contributions", "employer_cost",
+    "sgk_employer",
+    "unemployment_employer",
+    "employer_contributions",
+    "employer_cost",
     "salary_agreement",
     "tax_calculation",
     "salary",
@@ -715,10 +720,7 @@ async def create_leave_request(
     if not is_self:
         # HR yönetici yetkisi gereken roller: admin/supervisor/finance
         manager_roles = {"admin", "supervisor", "finance"}
-        if (
-            (getattr(current_user, "role", None) or "").lower() not in manager_roles
-            and not _user_has_hr_op(current_user, "manage_hr")
-        ):
+        if (getattr(current_user, "role", None) or "").lower() not in manager_roles and not _user_has_hr_op(current_user, "manage_hr"):
             raise HTTPException(status_code=403, detail="Başka personel adına izin talebi oluşturma yetkiniz yok")
 
     start = datetime.fromisoformat(payload.start_date).date()
@@ -792,7 +794,8 @@ async def list_leave_requests(
 async def _apply_leave_to_shifts(
     tenant_id: str,
     leave: dict,
-    *, database=None,
+    *,
+    database=None,
 ) -> int:
     """Final onaylı izin → izin gününe `shift_schedules` üzerinde
     status='on_leave' satırı upsert. Lock YARATMAZ (izin kapsayan gün
@@ -885,10 +888,11 @@ async def decide_leave_request(
     leave = await db.leave_requests.find_one({"tenant_id": current_user.tenant_id, "id": leave_id})
     if not leave:
         raise HTTPException(status_code=404, detail="İzin talebi bulunamadı")
+
     async def decide(database):
         return await _decide_leave_request(leave_id, payload, current_user, database)
-    return await run_atomic(db, get_motor_database().client, current_user.tenant_id,
-                            f"hr-leave:{leave['staff_id']}", decide)
+
+    return await run_atomic(db, get_motor_database().client, current_user.tenant_id, f"hr-leave:{leave['staff_id']}", decide)
 
 
 def _leave_days_in_year(leave: dict, year: int) -> int:
@@ -898,24 +902,33 @@ def _leave_days_in_year(leave: dict, year: int) -> int:
 
 
 async def _validate_leave_approval(database, leave, tenant_id):
-    overlap = await database.leave_requests.find_one({
-        "tenant_id": tenant_id, "staff_id": leave["staff_id"], "id": {"$ne": leave["id"]},
-        "status": {"$in": ["approved", "hr_approved"]},
-        "start_date": {"$lte": leave["end_date"]}, "end_date": {"$gte": leave["start_date"]},
-    })
+    overlap = await database.leave_requests.find_one(
+        {
+            "tenant_id": tenant_id,
+            "staff_id": leave["staff_id"],
+            "id": {"$ne": leave["id"]},
+            "status": {"$in": ["approved", "hr_approved"]},
+            "start_date": {"$lte": leave["end_date"]},
+            "end_date": {"$gte": leave["start_date"]},
+        }
+    )
     if overlap:
         raise HTTPException(409, "Bu tarihlerde onaylı izin mevcut")
     if leave.get("leave_type") != "annual":
         return
     for year in range(int(leave["start_date"][:4]), int(leave["end_date"][:4]) + 1):
-        balance = await database.leave_balances.find_one({
-            "tenant_id": tenant_id, "staff_id": leave["staff_id"], "year": year}) or {}
+        balance = await database.leave_balances.find_one({"tenant_id": tenant_id, "staff_id": leave["staff_id"], "year": year}) or {}
         used = 0
-        async for prior in database.leave_requests.find({
-            "tenant_id": tenant_id, "staff_id": leave["staff_id"], "leave_type": "annual",
-            "status": {"$in": ["approved", "hr_approved"]},
-            "start_date": {"$lte": f"{year}-12-31"}, "end_date": {"$gte": f"{year}-01-01"},
-        }):
+        async for prior in database.leave_requests.find(
+            {
+                "tenant_id": tenant_id,
+                "staff_id": leave["staff_id"],
+                "leave_type": "annual",
+                "status": {"$in": ["approved", "hr_approved"]},
+                "start_date": {"$lte": f"{year}-12-31"},
+                "end_date": {"$gte": f"{year}-01-01"},
+            }
+        ):
             used += _leave_days_in_year(prior, year)
         available = balance.get("annual_entitlement", 14) + balance.get("carry_over", 0) - used
         if _leave_days_in_year(leave, year) > available:
@@ -1186,8 +1199,7 @@ async def _notify_user(
 ):
     """Tek kullanıcıya in-app bildirim gönder."""
     if database is not None:
-        await database.notifications.insert_one(_build_notification_doc(
-            tenant_id, user_id=user_id, kind=kind, title=title, body=body, link=link, ref_id=ref_id))
+        await database.notifications.insert_one(_build_notification_doc(tenant_id, user_id=user_id, kind=kind, title=title, body=body, link=link, ref_id=ref_id))
         return
     try:
         await db.notifications.insert_one(
@@ -1693,7 +1705,6 @@ async def _payroll_collect_overtime(tenant_id: str, period_month: str) -> dict[s
     return by_staff
 
 
-
 async def _payroll_collect_advances(tenant_id: str, period_month: str) -> dict[str, list[dict]]:
     """Onaylanmış (status=approved) avansları bordro ayı bazında toplar."""
     by_staff: dict[str, list[dict]] = {}
@@ -1711,6 +1722,8 @@ async def _payroll_collect_advances(tenant_id: str, period_month: str) -> dict[s
             by_staff[sid] = []
         by_staff[sid].append(r)
     return by_staff
+
+
 async def _build_payroll_v2(
     tenant_id: str,
     month: str | None,
@@ -1728,11 +1741,7 @@ async def _build_payroll_v2(
         # A malformed agreement for a different, explicitly identified month
         # must not block this period's preview. Validate the full statutory
         # payload only when it belongs to the requested period.
-        if (
-            isinstance(raw_agreement, dict)
-            and raw_agreement.get("period_month")
-            and raw_agreement["period_month"] != period_month
-        ):
+        if isinstance(raw_agreement, dict) and raw_agreement.get("period_month") and raw_agreement["period_month"] != period_month:
             continue
         try:
             agreement = SalaryAgreement.model_validate(raw_agreement)
@@ -1750,9 +1759,13 @@ async def _build_payroll_v2(
         agreements[staff["id"]] = staff
         # Monthly contractual pay does not require an attendance clock-in.
         if staff.get("active", True) and staff["id"] not in {r["staff_id"] for r in base}:
-            base.extend(_compute_payroll_for_month(
-                [{"staff_id": staff["id"], "total_hours": 0}], {staff["id"]: staff}, period_month,
-            ))
+            base.extend(
+                _compute_payroll_for_month(
+                    [{"staff_id": staff["id"], "total_hours": 0}],
+                    {staff["id"]: staff},
+                    period_month,
+                )
+            )
     ot_map = await _payroll_collect_overtime(tenant_id, period_month)
     # Approved overtime is payable even without an attendance row that month.
     # Build zero-attendance bases using the same tariff calculation, without
@@ -1767,11 +1780,13 @@ async def _build_payroll_v2(
                 status_code=409,
                 detail="Onaylı mesainin personel kaydı bulunamadı; bordro hazırlanmadan önce personel kaydını kontrol edin",
             )
-        base.extend(_compute_payroll_for_month(
-            [{"staff_id": staff_id, "total_hours": 0}],
-            {staff_id: staff},
-            period_month,
-        ))
+        base.extend(
+            _compute_payroll_for_month(
+                [{"staff_id": staff_id, "total_hours": 0}],
+                {staff_id: staff},
+                period_month,
+            )
+        )
     lv_map = await _payroll_collect_leaves(tenant_id, period_month)
     adv_map = await _payroll_collect_advances(tenant_id, period_month)
 
@@ -1819,18 +1834,25 @@ async def _build_payroll_v2(
                 raise ValueError("Net kesintiler ödenecek ücreti aşıyor")
             result["net_salary"] -= deductions
             result["total_deductions"] += deductions
-            result.update({
-                "calculation_mode": "statutory_2026", "salary_agreement": a.model_dump(),
-                "hourly_rate": money(hourly), "overtime_rate": money(hourly * money(1.5)),
-                "overtime_hours": ot_hours, "attendance_overtime_hours": 0,
-                "extra_earnings": ot_pay + bonus, "extra_deductions": deductions,
-                "sgk_days": a.insurance_days, "eksik_gun": 30 - a.insurance_days,
-                "line_items": [
-                    {"kind": "base", "label": "Anlaşma ücreti (dönem)", "amount": base_gross, "direction": "earning"},
-                    {"kind": "overtime_approved", "label": "Onaylı mesai", "amount": ot_pay, "direction": "earning"},
-                    *[{**ex, "direction": "earning" if ex["kind"] == "bonus" else "deduction"} for ex in own_extras],
-                ],
-            })
+            result.update(
+                {
+                    "calculation_mode": "statutory_2026",
+                    "salary_agreement": a.model_dump(),
+                    "hourly_rate": money(hourly),
+                    "overtime_rate": money(hourly * money(1.5)),
+                    "overtime_hours": ot_hours,
+                    "attendance_overtime_hours": 0,
+                    "extra_earnings": ot_pay + bonus,
+                    "extra_deductions": deductions,
+                    "sgk_days": a.insurance_days,
+                    "eksik_gun": 30 - a.insurance_days,
+                    "line_items": [
+                        {"kind": "base", "label": "Anlaşma ücreti (dönem)", "amount": base_gross, "direction": "earning"},
+                        {"kind": "overtime_approved", "label": "Onaylı mesai", "amount": ot_pay, "direction": "earning"},
+                        *[{**ex, "direction": "earning" if ex["kind"] == "bonus" else "deduction"} for ex in own_extras],
+                    ],
+                }
+            )
             row.update(json_values(result))
         except ValueError as exc:
             # Validation errors may embed input PII; return no raw pydantic representation.
@@ -1910,15 +1932,11 @@ def _payroll_statutory_issues(rows: list[dict]) -> list[str]:
     issues: list[str] = []
     for row in rows:
         if row.get("calculation_mode") != "statutory_2026":
-            issues.append(
-                f"{row.get('staff_name') or row.get('staff_id')}: gerçek 2026 ücret anlaşması/matrahı eksik"
-            )
+            issues.append(f"{row.get('staff_name') or row.get('staff_id')}: gerçek 2026 ücret anlaşması/matrahı eksik")
             continue
         missing = [key for key in _STATUTORY_PAYROLL_FIELDS if row.get(key) is None]
         if missing:
-            issues.append(
-                f"{row.get('staff_name') or row.get('staff_id')}: zorunlu bordro alanları eksik ({', '.join(missing)})"
-            )
+            issues.append(f"{row.get('staff_name') or row.get('staff_id')}: zorunlu bordro alanları eksik ({', '.join(missing)})")
     return issues
 
 
@@ -2141,7 +2159,8 @@ async def save_payroll_draft(
 
 @router.put("/hr/payroll/runs/{run_id}/extras", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def update_payroll_extras(
-    run_id: str, payload: PayrollExtrasUpdatePayload,
+    run_id: str,
+    payload: PayrollExtrasUpdatePayload,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
@@ -2159,13 +2178,11 @@ async def update_payroll_extras(
     _, rows, summary = await _build_payroll_v2(current_user.tenant_id, run["period_month"], extras)
     result = await db.payroll_runs.update_one(
         {**query, "status": "draft", "updated_at": run.get("updated_at")},
-        {"$set": {"extras": extras, "rows": rows, "summary": summary,
-                  "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.id}},
+        {"$set": {"extras": extras, "rows": rows, "summary": summary, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.id}},
     )
     if not result.modified_count:
         raise HTTPException(409, "Bordro değişti veya kilitlendi; yeniden yükleyin")
-    await _audit(current_user, "payroll.update_extras", "payroll_run", run_id,
-                 f"Taslak ek kalemleri güncellendi (adet={len(extras)})", severity="warning")
+    await _audit(current_user, "payroll.update_extras", "payroll_run", run_id, f"Taslak ek kalemleri güncellendi (adet={len(extras)})", severity="warning")
     return {"success": True, "run_id": run_id, "summary": summary}
 
 
@@ -2353,29 +2370,43 @@ async def revise_payroll_run(
 
 @router.get("/hr/payroll/runs/{run_id}/export.csv", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def export_payroll_run_csv(
-    run_id: str, current_user: User = Depends(get_current_user),
+    run_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr_payroll")),
 ):
     """CSV of the saved snapshot, including extras; never recompute current payroll."""
     import csv
 
     from core.csv_safe import safe_dict_writerow
+
     run = await db.payroll_runs.find_one({"id": run_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not run:
         raise HTTPException(404, "Bordro bulunamadı")
     rows = _payroll_run_to_response(run, current_user).get("rows") or []
-    fields = ["staff_id", "staff_name", "department", "gross_pay", "sgk_employee", "unemployment",
-              "income_tax", "stamp_tax", "extra_earnings", "extra_deductions", "net_salary",
-              "sgk_employer", "unemployment_employer", "employer_contributions", "employer_cost"]
+    fields = [
+        "staff_id",
+        "staff_name",
+        "department",
+        "gross_pay",
+        "sgk_employee",
+        "unemployment",
+        "income_tax",
+        "stamp_tax",
+        "extra_earnings",
+        "extra_deductions",
+        "net_salary",
+        "sgk_employer",
+        "unemployment_employer",
+        "employer_contributions",
+        "employer_cost",
+    ]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields)
     writer.writeheader()
     for row in rows:
         safe_dict_writerow(writer, {field: row.get(field) for field in fields})
-    await _audit(current_user, "payroll.export_csv", "payroll_run", run_id,
-                 f"Kayıtlı bordro CSV (satır={len(rows)})", severity="info")
-    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f'attachment; filename="payroll_run_{run_id}.csv"'})
+    await _audit(current_user, "payroll.export_csv", "payroll_run", run_id, f"Kayıtlı bordro CSV (satır={len(rows)})", severity="info")
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="payroll_run_{run_id}.csv"'})
 
 
 @router.get("/hr/payroll/runs/{run_id}/export.xlsx", dependencies=[Depends(require_feature("hr", "payroll"))])
@@ -2413,8 +2444,12 @@ async def export_payroll_run_xlsx(
         "Ek Kesinti",
         "Net",
         "Para Birimi",
-        "İşveren SGK", "İşveren İşsizlik", "İşveren Prim Toplamı", "İşveren Maliyeti",
-        "Hesap Modu", "Kontrol Notu",
+        "İşveren SGK",
+        "İşveren İşsizlik",
+        "İşveren Prim Toplamı",
+        "İşveren Maliyeti",
+        "Hesap Modu",
+        "Kontrol Notu",
     ]
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
@@ -2443,25 +2478,23 @@ async def export_payroll_run_xlsx(
             row=r_idx,
             column=17,
             value=(
-                "Vergi matrahı, asgari ücret istisnası ve işveren primleri doğrulandı"
-                if is_statutory
-                else "Ücret anlaşması ve gerçek açılış matrahı eksik; kesinleştirme/muhasebe aktarımı yapılamaz"
+                "Vergi matrahı, asgari ücret istisnası ve işveren primleri doğrulandı" if is_statutory else "Ücret anlaşması ve gerçek açılış matrahı eksik; kesinleştirme/muhasebe aktarımı yapılamaz"
             ),
         )
         for col in range(5, 16):
             if col != 11:
-                ws.cell(row=r_idx, column=col).number_format = '#,##0.00'
+                ws.cell(row=r_idx, column=col).number_format = "#,##0.00"
     total_row = len(rows) + 2
     ws.cell(total_row, 1, "TOPLAM").font = Font(bold=True)
     for col in (3, 4, 5, 6, 7, 8, 9, 10):
         ws.cell(total_row, col, value=round(sum(float(ws.cell(r, col).value or 0) for r in range(2, total_row)), 2))
-        ws.cell(total_row, col).number_format = '#,##0.00'
+        ws.cell(total_row, col).number_format = "#,##0.00"
         ws.cell(total_row, col).font = Font(bold=True)
     for col in (12, 13, 14, 15):
         values = [ws.cell(r, col).value for r in range(2, total_row)]
         if values and all(value is not None for value in values):
             ws.cell(total_row, col, value=round(sum(float(value) for value in values), 2))
-            ws.cell(total_row, col).number_format = '#,##0.00'
+            ws.cell(total_row, col).number_format = "#,##0.00"
             ws.cell(total_row, col).font = Font(bold=True)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:Q{max(1, len(rows) + 1)}"
@@ -2900,15 +2933,13 @@ async def list_performance_reviews(
         {"$match": query},
         {"$sort": {"staff_id": 1, "reviewed_at": -1}},
         {"$group": {"_id": "$staff_id", "overall_score": {"$first": "$overall_score"}}},
-        {"$group": {
-            "_id": None,
-            "high_performers": {
-                "$sum": {"$cond": [{"$gte": ["$overall_score", 8]}, 1, 0]}
-            },
-            "low_performers": {
-                "$sum": {"$cond": [{"$lt": ["$overall_score", 5]}, 1, 0]}
-            },
-        }},
+        {
+            "$group": {
+                "_id": None,
+                "high_performers": {"$sum": {"$cond": [{"$gte": ["$overall_score", 8]}, 1, 0]}},
+                "low_performers": {"$sum": {"$cond": [{"$lt": ["$overall_score", 5]}, 1, 0]}},
+            }
+        },
     ]
     metric_rows = await db.performance_reviews.aggregate(latest_score_pipeline).to_list(1)
     metrics = metric_rows[0] if metric_rows else {}
@@ -5160,9 +5191,7 @@ async def upload_applicant_cv(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Store an applicant CV inside the tenant-scoped HR document store."""
-    applicant = await db.job_applicants.find_one(
-        {"tenant_id": current_user.tenant_id, "id": applicant_id}
-    )
+    applicant = await db.job_applicants.find_one({"tenant_id": current_user.tenant_id, "id": applicant_id})
     if not applicant:
         raise HTTPException(status_code=404, detail="Aday bulunamadı")
     if file.content_type not in ALLOWED_DOC_MIME:
@@ -5205,11 +5234,13 @@ async def upload_applicant_cv(
     await db.applicant_documents.insert_one(item)
     await db.job_applicants.update_one(
         {"tenant_id": current_user.tenant_id, "id": applicant_id},
-        {"$set": {
-            "cv_document_id": item["id"],
-            "cv_filename": safe_filename,
-            "cv_content_type": verified_content_type,
-        }},
+        {
+            "$set": {
+                "cv_document_id": item["id"],
+                "cv_filename": safe_filename,
+                "cv_content_type": verified_content_type,
+            }
+        },
     )
     return {"success": True, "document": {k: v for k, v in item.items() if k != "_id"}}
 
@@ -5221,21 +5252,25 @@ async def download_applicant_cv(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Download an applicant CV; finance and unrelated roles fail closed."""
-    doc = await db.applicant_documents.find_one(
-        {"tenant_id": current_user.tenant_id, "id": doc_id}
-    )
+    doc = await db.applicant_documents.find_one({"tenant_id": current_user.tenant_id, "id": doc_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Aday CV'si bulunamadı")
     try:
         gridfs_oid = ObjectId(doc["gridfs_id"])
     except Exception as exc:
         raise HTTPException(status_code=404, detail="Aday CV'si depolamada bulunamadı") from exc
-    gf_meta = await _get_hr_docs_bucket().find({
-        "_id": gridfs_oid,
-        "metadata.tenant_id": current_user.tenant_id,
-        "metadata.applicant_id": doc.get("applicant_id"),
-        "metadata.document_type": "applicant_cv",
-    }).to_list(1)
+    gf_meta = (
+        await _get_hr_docs_bucket()
+        .find(
+            {
+                "_id": gridfs_oid,
+                "metadata.tenant_id": current_user.tenant_id,
+                "metadata.applicant_id": doc.get("applicant_id"),
+                "metadata.document_type": "applicant_cv",
+            }
+        )
+        .to_list(1)
+    )
     if not gf_meta:
         raise HTTPException(status_code=404, detail="Aday CV'si depolamada bulunamadı")
     try:
@@ -5651,9 +5686,7 @@ async def list_advance_requests(
         {"$unwind": {"path": "$_staff", "preserveNullAndEmptyArrays": True}},
         {
             "$addFields": {
-                "staff_name": {
-                    "$concat": [{"$ifNull": ["$_staff.first_name", ""]}, " ", {"$ifNull": ["$_staff.last_name", ""]}]
-                },
+                "staff_name": {"$concat": [{"$ifNull": ["$_staff.first_name", ""]}, " ", {"$ifNull": ["$_staff.last_name", ""]}]},
                 "staff_department": "$_staff.department",
             }
         },
@@ -5699,6 +5732,7 @@ async def decide_advance_request(
         link="/hr",
     )
     return {"success": True}
+
 
 @router.post("/hr/overtime-request", dependencies=[Depends(require_feature("hr", "shift"))])
 async def create_overtime_request(
@@ -5767,10 +5801,11 @@ async def decide_overtime_request(
     req = await db.overtime_requests.find_one({"tenant_id": current_user.tenant_id, "id": req_id})
     if not req:
         raise HTTPException(404, "Talep bulunamadı")
+
     async def decide(database):
         return await _decide_overtime_request(req_id, payload, current_user, database)
-    return await run_atomic(db, get_motor_database().client, current_user.tenant_id,
-                            f"hr-overtime:{req['staff_id']}", decide)
+
+    return await run_atomic(db, get_motor_database().client, current_user.tenant_id, f"hr-overtime:{req['staff_id']}", decide)
 
 
 async def _decide_overtime_request(req_id, payload, current_user, database):
@@ -6326,13 +6361,7 @@ async def list_salary_history(
     q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
     total = await db.salary_history.count_documents(q)
     skip = (page - 1) * limit
-    items = (
-        await db.salary_history.find(q, {"_id": 0})
-        .sort("effective_date", -1)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
-    )
+    items = await db.salary_history.find(q, {"_id": 0}).sort("effective_date", -1).skip(skip).limit(limit).to_list(limit)
     # v2 Foundation: maaş alanları rol-bazlı maskelenir — sadece manage_hr unmask.
     self_id = str(getattr(current_user, "id", "") or "")
     self_email = str(getattr(current_user, "email", "") or "")
@@ -6493,9 +6522,7 @@ async def terminate_staff(
     # Users-derived staff records use the user id as their staff id. Older
     # derived payloads may not include an explicit user_id, so retain the
     # derived_from fallback to ensure termination closes the login account.
-    linked_user_id = staff.get("user_id") or (
-        staff_id if staff.get("derived_from") == "users" else None
-    )
+    linked_user_id = staff.get("user_id") or (staff_id if staff.get("derived_from") == "users" else None)
     if linked_user_id:
         await db.users.update_one(
             {
@@ -6594,13 +6621,7 @@ async def list_staff_certifications(
     q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
     total = await db.staff_certifications.count_documents(q)
     skip = (page - 1) * limit
-    items = (
-        await db.staff_certifications.find(q, {"_id": 0})
-        .sort("issue_date", -1)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
-    )
+    items = await db.staff_certifications.find(q, {"_id": 0}).sort("issue_date", -1).skip(skip).limit(limit).to_list(limit)
     today = _today_local().isoformat()
     # Aggregate counts reflect the full dataset, not just the current page
     active_total = await db.staff_certifications.count_documents({**q, "expiry_date": {"$gte": today}})
@@ -6831,12 +6852,16 @@ async def download_staff_document(
         # Defense-in-depth: GridFS bucket tenant-aware proxy bypass'lı (_raw_db) olduğundan
         # metadata.tenant_id'yi tekrar doğrula. Meta kaydı zaten scoped ama belge bütünlüğü
         # için cross-check yapıyoruz.
-        gf_meta = await _get_hr_docs_bucket().find(
-            {
-                "_id": gridfs_oid,
-                "metadata.tenant_id": current_user.tenant_id,
-            }
-        ).to_list(1)
+        gf_meta = (
+            await _get_hr_docs_bucket()
+            .find(
+                {
+                    "_id": gridfs_oid,
+                    "metadata.tenant_id": current_user.tenant_id,
+                }
+            )
+            .to_list(1)
+        )
         if not gf_meta:
             raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
         try:
@@ -7856,13 +7881,7 @@ async def list_staff_equipment(
         q["status"] = status
     total = await db.staff_equipment.count_documents(q)
     skip = (page - 1) * limit
-    items = (
-        await db.staff_equipment.find(q, {"_id": 0})
-        .sort("assigned_at", -1)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
-    )
+    items = await db.staff_equipment.find(q, {"_id": 0}).sort("assigned_at", -1).skip(skip).limit(limit).to_list(limit)
     base_q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
     active = await db.staff_equipment.count_documents({**base_q, "status": "assigned"})
     returned = await db.staff_equipment.count_documents({**base_q, "status": "returned"})
@@ -8051,13 +8070,7 @@ async def list_staff_warnings(
     q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
     total = await db.staff_warnings.count_documents(q)
     skip = (page - 1) * limit
-    items = (
-        await db.staff_warnings.find(q, {"_id": 0})
-        .sort("issued_at", -1)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
-    )
+    items = await db.staff_warnings.find(q, {"_id": 0}).sort("issued_at", -1).skip(skip).limit(limit).to_list(limit)
     # by_type reflects full dataset counts
     verbal = await db.staff_warnings.count_documents({**q, "warning_type": "verbal"})
     written = await db.staff_warnings.count_documents({**q, "warning_type": "written"})
@@ -8251,13 +8264,7 @@ async def list_staff_trainings(
     q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
     total = await db.staff_trainings.count_documents(q)
     skip = (page - 1) * limit
-    items = (
-        await db.staff_trainings.find(q, {"_id": 0})
-        .sort("completed_at", -1)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
-    )
+    items = await db.staff_trainings.find(q, {"_id": 0}).sort("completed_at", -1).skip(skip).limit(limit).to_list(limit)
     today = _today_local().isoformat()
     # valid/expired counts reflect full dataset, not just current page
     expired_total = await db.staff_trainings.count_documents({**q, "valid_until": {"$lt": today, "$exists": True}})

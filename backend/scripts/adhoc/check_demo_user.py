@@ -10,5 +10,6 @@ async def main():
     for user in users:
         print(f"Email: {user.get('email')} Role: {user.get('role')} Roles: {user.get('roles')}")
 
+
 if __name__ == "__main__":
     asyncio.run(main())

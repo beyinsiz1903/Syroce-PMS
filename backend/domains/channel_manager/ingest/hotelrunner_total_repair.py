@@ -53,9 +53,7 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     events = await event_cursor.to_list(max_events)
 
     latest_payloads: dict[tuple[str, str], dict[str, Any]] = {}
-    payload_candidates: dict[
-        tuple[str, str], list[tuple[dict[str, Any], str]]
-    ] = {}
+    payload_candidates: dict[tuple[str, str], list[tuple[dict[str, Any], str]]] = {}
     linked_booking_keys: dict[tuple[str, str], tuple[str, str]] = {}
     imported_record_ids: dict[tuple[str, str], str] = {}
 
@@ -209,14 +207,11 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
         if record_id and payload_key not in imported_record_ids:
             imported_record_ids[payload_key] = record_id
 
-    local_record_count = (
-        len(events) + len(legacy_events) + len(mirrors) + len(imported_payloads)
-    )
+    local_record_count = len(events) + len(legacy_events) + len(mirrors) + len(imported_payloads)
 
     if not latest_payloads:
         logger.info(
-            "HotelRunner local gross-total reconciliation completed "
-            "event_count=%d candidate_count=0 repaired_count=0",
+            "HotelRunner local gross-total reconciliation completed event_count=%d candidate_count=0 repaired_count=0",
             local_record_count,
         )
         return 0
@@ -274,11 +269,7 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
 
         matched_booking_count += 1
         matched_payload = next(
-            (
-                (candidate, source)
-                for candidate, source in candidates
-                if matches_legacy_before_tax_total(current_total, candidate)
-            ),
+            ((candidate, source) for candidate, source in candidates if matches_legacy_before_tax_total(current_total, candidate)),
             None,
         )
         if matched_payload is None:
@@ -335,9 +326,7 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
         )
 
     logger.info(
-        "HotelRunner local gross-total reconciliation completed "
-        "event_count=%d candidate_count=%d matched_booking_count=%d "
-        "legacy_signature_count=%d repaired_count=%d",
+        "HotelRunner local gross-total reconciliation completed event_count=%d candidate_count=%d matched_booking_count=%d legacy_signature_count=%d repaired_count=%d",
         local_record_count,
         len(latest_payloads),
         matched_booking_count,

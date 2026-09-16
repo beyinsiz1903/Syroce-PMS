@@ -310,23 +310,14 @@ async def _emit_overbooking_alert(
                         {"_id": 0, "guest_name": 1, "booking_number": 1, "reservation_number": 1},
                     )
                 if conflicting_booking:
-                    conflicting_booking_name = (
-                        conflicting_booking.get("guest_name")
-                        or conflicting_booking.get("booking_number")
-                        or conflicting_booking.get("reservation_number")
-                        or ""
-                    )
+                    conflicting_booking_name = conflicting_booking.get("guest_name") or conflicting_booking.get("booking_number") or conflicting_booking.get("reservation_number") or ""
             except Exception:
                 # Bildirim zenginleştirmesi rezervasyon korumasını etkilemez.
                 pass
 
         conflict_reference = ""
         if conflicting_booking_id:
-            conflict_reference = (
-                f" Çakışan rezervasyon: {conflicting_booking_name} ({conflicting_booking_id})."
-                if conflicting_booking_name
-                else f" Çakışan rezervasyon: {conflicting_booking_id}."
-            )
+            conflict_reference = f" Çakışan rezervasyon: {conflicting_booking_name} ({conflicting_booking_id})." if conflicting_booking_name else f" Çakışan rezervasyon: {conflicting_booking_id}."
 
         with tenant_context(tenant_id):
             await db.notifications.insert_one(
@@ -458,12 +449,8 @@ async def _find_overlapping_active_booking(
 
     for candidate in candidates:
         try:
-            candidate_check_in = datetime.fromisoformat(
-                str(candidate.get("check_in")).replace("Z", "+00:00")
-            ).date()
-            candidate_check_out = datetime.fromisoformat(
-                str(candidate.get("check_out")).replace("Z", "+00:00")
-            ).date()
+            candidate_check_in = datetime.fromisoformat(str(candidate.get("check_in")).replace("Z", "+00:00")).date()
+            candidate_check_out = datetime.fromisoformat(str(candidate.get("check_out")).replace("Z", "+00:00")).date()
         except (TypeError, ValueError):
             # A malformed legacy row must not silently make the room sellable.
             return candidate

@@ -18,9 +18,12 @@ raw_db = None
 def _db_for_tenant(tenant_id: str):
     return raw_db if raw_db is not None else get_db_for_tenant(tenant_id)
 
+
 def _utc_now():
     from datetime import UTC
+
     return dt.datetime.now(UTC)
+
 
 async def resolve_catalogue_mode(tenant_id: str, property_id: str) -> str:
     tenant_db = _db_for_tenant(tenant_id)
@@ -36,6 +39,7 @@ async def resolve_catalogue_mode(tenant_id: str, property_id: str) -> str:
             return "disabled"
     return mode
 
+
 def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
     if not service_hours:
         return True
@@ -45,7 +49,6 @@ def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
         return True
     if start_str == end_str:
         return False
-
 
     try:
         tz = zoneinfo.ZoneInfo(prop_tz)
@@ -63,6 +66,7 @@ def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
     else:
         return now_local >= start_t or now_local < end_t
 
+
 async def fetch_catalogue_data(tenant_id: str, property_id: str, mode: str) -> tuple[list[dict], list[dict]]:
     tenant_db = _db_for_tenant(tenant_id)
     depts_out = []
@@ -78,6 +82,7 @@ async def fetch_catalogue_data(tenant_id: str, property_id: str, mode: str) -> t
 
         if not raw_depts and not raw_items:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
         for rd in raw_depts:
@@ -97,6 +102,7 @@ async def fetch_catalogue_data(tenant_id: str, property_id: str, mode: str) -> t
     services_out.sort(key=lambda x: (x.get("display_order", 0), x.get("service_code", "")))
     return depts_out, services_out
 
+
 def process_lang(labels: dict | None, lang: str, prop_lang: str) -> str:
     if not labels:
         return ""
@@ -113,10 +119,12 @@ def process_lang(labels: dict | None, lang: str, prop_lang: str) -> str:
             return labels[k]
     return ""
 
+
 def process_lang_dict(data: dict | None, lang: str, prop_lang: str) -> str | None:
     if not data:
         return None
     return process_lang(data, lang, prop_lang)
+
 
 def validate_input_value(input_type: str, input_config: dict, value_obj: dict | None, prop_tz: str) -> dict:
     if value_obj is None:
@@ -214,7 +222,7 @@ def validate_input_value(input_type: str, input_config: dict, value_obj: dict | 
             "submitted_local_time": t.strftime("%H:%M"),
             "resolved_local_datetime": dt_fold_0.isoformat(),
             "resolved_utc_datetime": dt_fold_0.astimezone(dt.UTC).isoformat(),
-            "timezone_snapshot": prop_tz
+            "timezone_snapshot": prop_tz,
         }
 
     if input_type == "datetime":
@@ -267,8 +275,7 @@ def validate_input_value(input_type: str, input_config: dict, value_obj: dict | 
             "submitted_local_datetime": target_local_dt.isoformat(),
             "resolved_local_datetime": dt_fold_0.isoformat(),
             "resolved_utc_datetime": resolved_dt_utc.isoformat(),
-            "timezone_snapshot": prop_tz
+            "timezone_snapshot": prop_tz,
         }
-
 
     raise ValueError("Unknown input_type")

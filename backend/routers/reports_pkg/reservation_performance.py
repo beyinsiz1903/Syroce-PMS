@@ -89,13 +89,7 @@ def _status(booking: dict[str, Any]) -> str:
 
 
 def _channel(booking: dict[str, Any]) -> str:
-    return str(
-        booking.get("ota_channel")
-        or booking.get("source_channel")
-        or booking.get("channel")
-        or booking.get("source")
-        or "direct"
-    ).strip() or "direct"
+    return str(booking.get("ota_channel") or booking.get("source_channel") or booking.get("channel") or booking.get("source") or "direct").strip() or "direct"
 
 
 def _lead_time_bucket(days: int) -> str:
@@ -105,9 +99,7 @@ def _lead_time_bucket(days: int) -> str:
     return "same_day"
 
 
-def aggregate_reservation_performance(
-    bookings: list[dict[str, Any]], *, start_date: date, end_date: date
-) -> dict[str, Any]:
+def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_date: date, end_date: date) -> dict[str, Any]:
     """Return a stable, display-ready reservation-report payload.
 
     Dates are parsed in Python as old import data can contain either ISO
@@ -188,16 +180,12 @@ def aggregate_reservation_performance(
 
     total = len(bookings)
     status_breakdown = [
-        {"status": key, "label": _STATUS_LABELS.get(key, key.replace("_", " ").title()), "count": count}
-        for key, count in sorted(status_counts.items(), key=lambda item: (-item[1], item[0]))
+        {"status": key, "label": _STATUS_LABELS.get(key, key.replace("_", " ").title()), "count": count} for key, count in sorted(status_counts.items(), key=lambda item: (-item[1], item[0]))
     ]
     channels = sorted(channel_stats.values(), key=lambda item: (-item["bookings"], item["channel"].lower()))
     for item in channels:
         item["revenue"] = round(item["revenue"], 2)
-    lead_time_breakdown = [
-        {"bucket": key, "label": label, "count": lead_counts[key]}
-        for key, label, *_ in _LEAD_TIME_BUCKETS
-    ]
+    lead_time_breakdown = [{"bucket": key, "label": label, "count": lead_counts[key]} for key, label, *_ in _LEAD_TIME_BUCKETS]
     rows.sort(key=lambda row: (row["check_in"], row["guest_name"], row["booking_id"]))
 
     return {
@@ -223,9 +211,7 @@ def aggregate_reservation_performance(
     }
 
 
-async def _reservation_performance_payload(
-    *, tenant_id: str, start_date: date, end_date: date
-) -> dict[str, Any]:
+async def _reservation_performance_payload(*, tenant_id: str, start_date: date, end_date: date) -> dict[str, Any]:
     # The report is explicitly arrival-date based.  This matches the calendars,
     # arrivals list, and operational expectations of front desk users.
     # ISO date strings compare correctly with both historic ``YYYY-MM-DD``
@@ -309,6 +295,7 @@ async def export_reservation_performance_excel(
         data=data,
         sheet_name="Özet",
     )
+
     def add_sheet(title: str, headers: list[str], values: list[list[Any]]):
         sheet = workbook.create_sheet(title)
         sheet.append(headers)
@@ -316,10 +303,7 @@ async def export_reservation_performance_excel(
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         for row in values:
-            sheet.append([
-                xlsx_safe(ILLEGAL_CHARACTERS_RE.sub("", value)[:32767]) if isinstance(value, str) else value
-                for value in row
-            ])
+            sheet.append([xlsx_safe(ILLEGAL_CHARACTERS_RE.sub("", value)[:32767]) if isinstance(value, str) else value for value in row])
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
         for column in sheet.columns:
@@ -339,6 +323,9 @@ async def export_reservation_performance_excel(
     add_sheet(
         "Rezervasyonlar",
         ["Misafir", "Oda", "Giriş", "Çıkış", "Durum", "Kanal", "Gece", "Tutar", "Rezervasyon süresi (gün)"],
-        [[row["guest_name"], row["room_number"], row["check_in"], row["check_out"], row["status_label"], row["channel"], row["nights"], row["total_amount"], row["lead_time_days"]] for row in payload["rows"]],
+        [
+            [row["guest_name"], row["room_number"], row["check_in"], row["check_out"], row["status_label"], row["channel"], row["nights"], row["total_amount"], row["lead_time_days"]]
+            for row in payload["rows"]
+        ],
     )
     return excel_response(workbook, f"rezervasyon_performansi_{start.isoformat()}_{end.isoformat()}.xlsx")

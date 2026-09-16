@@ -280,9 +280,7 @@ class ReservationPullScheduler:
         from domains.channel_manager.providers.hotelrunner.mapping_bridge import backfill_hotelrunner_mappings
 
         await backfill_hotelrunner_mappings(tenant_id)
-        prior_cursor = await db.hotelrunner_pull_cursors.find_one(
-            {"tenant_id": tenant_id}, {"_id": 0, "last_pull_at": 1}
-        )
+        prior_cursor = await db.hotelrunner_pull_cursors.find_one({"tenant_id": tenant_id}, {"_id": 0, "last_pull_at": 1})
 
         phase_a_result = await run_phase_a(tenant_id, provider, safety_window_minutes, is_manual)
         if not phase_a_result["success"]:

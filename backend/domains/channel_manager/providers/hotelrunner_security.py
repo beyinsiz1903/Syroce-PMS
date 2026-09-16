@@ -12,6 +12,7 @@ from core.tenant_db import get_system_db
 
 logger = logging.getLogger(__name__)
 
+
 def _source_ip(request: Request) -> str:
     try:
         client = getattr(request, "client", None)
@@ -27,6 +28,7 @@ def _log_webhook_reject(reason: str, source_ip: str, tenant_hint: str, hr_id_hin
     material is never logged.
     """
     from core.masking import fingerprint_id
+
     masked_tenant = fingerprint_id(tenant_hint)
     masked_hr_id = fingerprint_id(hr_id_hint)
     masked_source = fingerprint_id(source_ip)
@@ -66,6 +68,7 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
                 # Fortunately, Starlette caches request.form() but we can't await it here.
                 # So we fallback to decoding raw manually for hints if needed.
                 from urllib.parse import parse_qsl
+
                 form_data = dict(parse_qsl(raw.decode("utf-8")))
                 if not hr_id_hint:
                     hr_id_hint = form_data.get("hr_id") or ""
@@ -85,13 +88,7 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
             if not hr_id_hint:
                 hotel = body.get("hotel")
                 if isinstance(hotel, dict):
-                    hr_id_hint = (
-                        hotel.get("hr_id")
-                        or hotel.get("hotel_id")
-                        or hotel.get("property_id")
-                        or hotel.get("id")
-                        or ""
-                    )
+                    hr_id_hint = hotel.get("hr_id") or hotel.get("hotel_id") or hotel.get("property_id") or hotel.get("id") or ""
     except Exception:
         pass
     return str(tenant_hint), str(hr_id_hint)
@@ -167,6 +164,7 @@ def _verified_tenant(request: Request) -> str:
 #    segment too, but a stored legacy secret never makes the official base URL
 #    unusable.
 
+
 async def _verify_hotelrunner_callback(request: Request) -> None:
     req_id = request.scope.get("req_id", "unknown")
     if not hasattr(request.state, "hr_diag"):
@@ -175,6 +173,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     t_start = _time.time()
     request.state.hr_diag["request_received"] = t_start
     import logging
+
     _logger = logging.getLogger(__name__)
     _logger.info(f"[DIAG] [{req_id}] HR webhook request received")
 
@@ -183,7 +182,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     t_body_start = _time.time()
     raw = await request.body()
     request.state.hr_diag["body_read_complete"] = _time.time()
-    _logger.info(f"[DIAG] [{req_id}] Body read complete in {(_time.time() - t_body_start)*1000:.2f}ms")
+    _logger.info(f"[DIAG] [{req_id}] Body read complete in {(_time.time() - t_body_start) * 1000:.2f}ms")
 
     t_sig_start = _time.time()
     request.state.hr_diag["signature_verification_start"] = t_sig_start
@@ -197,7 +196,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     request.state.hr_diag["tenant_property_resolution_start"] = t_resolve_start
     conn = await _lookup_signing_connection(hr_id_hint)
     request.state.hr_diag["tenant_property_resolution_end"] = _time.time()
-    _logger.info(f"[DIAG] [{req_id}] Tenant/property resolution took {(_time.time() - t_resolve_start)*1000:.2f}ms")
+    _logger.info(f"[DIAG] [{req_id}] Tenant/property resolution took {(_time.time() - t_resolve_start) * 1000:.2f}ms")
 
     if conn and not _hmac.compare_digest(str(conn["hr_id"]), str(hr_id_hint)):
         _log_webhook_reject("invalid_connection", source_ip, tenant_hint, hr_id_hint)
@@ -250,7 +249,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
 
         _bind_verified_tenant(request, conn)
         request.state.hr_diag["signature_verification_end"] = _time.time()
-        _logger.info(f"[DIAG] [{req_id}] Signature verification (HMAC) end in {(_time.time() - t_sig_start)*1000:.2f}ms")
+        _logger.info(f"[DIAG] [{req_id}] Signature verification (HMAC) end in {(_time.time() - t_sig_start) * 1000:.2f}ms")
         return
 
     # ── MODE 2: Official Callback Validation (Token + hr_id) ──
@@ -301,6 +300,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
                 token = form.get("token")
             else:
                 import json
+
                 body = json.loads(raw or b"{}")
                 if isinstance(body, dict):
                     token = body.get("token")
@@ -335,7 +335,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
 
     _bind_verified_tenant(request, conn)
     request.state.hr_diag["signature_verification_end"] = _time.time()
-    _logger.info(f"[DIAG] [{req_id}] Signature verification (Token) end in {(_time.time() - t_sig_start)*1000:.2f}ms")
+    _logger.info(f"[DIAG] [{req_id}] Signature verification (Token) end in {(_time.time() - t_sig_start) * 1000:.2f}ms")
 
 
 # ── Webhook Batch Processor ──────────────────────────────────────────

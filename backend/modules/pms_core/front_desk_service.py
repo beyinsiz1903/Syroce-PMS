@@ -382,7 +382,7 @@ class FrontDeskService:
                     "rate_plan": "Walk-in",
                     "market_segment": "leisure",
                     "created_at": now.isoformat(),
-                }
+                },
             )
         except BookingConflictError as e:
             return {"success": False, "error": str(e)}
@@ -430,6 +430,7 @@ class FrontDeskService:
                 return req["room_id"], res
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).exception("Batch walk-in failed for room %s", req["room_id"])
                 return req["room_id"], {"success": False, "error": str(e)}
 
@@ -442,12 +443,7 @@ class FrontDeskService:
             if res.get("success"):
                 success_count += 1
 
-        return {
-            "success": success_count > 0,
-            "success_count": success_count,
-            "total_count": len(requests),
-            "results": results
-        }
+        return {"success": success_count > 0, "success_count": success_count, "total_count": len(requests), "results": results}
 
     # ── EARLY CHECK-IN / LATE CHECKOUT ──
 

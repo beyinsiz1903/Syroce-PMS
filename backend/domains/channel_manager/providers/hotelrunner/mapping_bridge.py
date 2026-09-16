@@ -124,9 +124,7 @@ async def remove_mirrored_mapping(tenant_id: str, mapping: dict) -> None:
     rate_code = str(mapping.get("hr_rate_code") or "").strip()
     property_id = mapping.get("property_id") or await _property_id(tenant_id)
 
-    if room_code and not await db.hotelrunner_room_mappings.find_one(
-        {"tenant_id": tenant_id, "hr_inv_code": room_code}
-    ):
+    if room_code and not await db.hotelrunner_room_mappings.find_one({"tenant_id": tenant_id, "hr_inv_code": room_code}):
         await db.room_mappings.delete_many(
             {
                 "tenant_id": tenant_id,
@@ -135,9 +133,7 @@ async def remove_mirrored_mapping(tenant_id: str, mapping: dict) -> None:
                 "provider_room_code": room_code,
             }
         )
-    if rate_code and not await db.hotelrunner_room_mappings.find_one(
-        {"tenant_id": tenant_id, "hr_rate_code": rate_code}
-    ):
+    if rate_code and not await db.hotelrunner_room_mappings.find_one({"tenant_id": tenant_id, "hr_rate_code": rate_code}):
         await db.rate_plan_mappings.delete_many(
             {
                 "tenant_id": tenant_id,

@@ -9,6 +9,7 @@ def normalize_string(s: str | None) -> str | None:
     s = s.strip()
     return unicodedata.normalize("NFC", s)
 
+
 def compute_payload_fingerprint(lang: str, items: list) -> str:
     nl = lang.lower().strip()
     sorted_items = sorted(items, key=lambda x: x.service_code)
@@ -36,11 +37,13 @@ def compute_payload_fingerprint(lang: str, items: list) -> str:
         canonical_items.append(c_item)
 
     payload = {"lang": nl, "items": canonical_items}
-    compact_json = json.dumps(payload, separators=(',', ':'), sort_keys=True)
+    compact_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(compact_json.encode("utf-8")).hexdigest()
+
 
 def generate_deterministic_description(input_type: str, validated_value: dict, guest_note: str | None, service_labels: dict | None, input_config: dict, lang: str, prop_lang: str) -> str:
     from domains.guest.qr_catalogue_service import process_lang
+
     # The description is reused as the staff-facing guest-request message.
     # Always lead with the human service label so one-tap requests never turn
     # into the context-free "Talep alındı." message.

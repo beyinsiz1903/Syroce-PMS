@@ -325,13 +325,7 @@ class TwilioWhatsAppProvider(BaseProvider):
         from_number = creds.get("from_number") or os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
 
         if mode == ProviderMode.TEST:
-            return {
-                "success": True,
-                "provider_message_id": f"sandbox_wa_{int(time.time())}",
-                "status": "simulated",
-                "delivered": False,
-                "note": "Test modu: Mesaj gerçek WhatsApp’a gönderilmedi."
-            }
+            return {"success": True, "provider_message_id": f"sandbox_wa_{int(time.time())}", "status": "simulated", "delivered": False, "note": "Test modu: Mesaj gerçek WhatsApp’a gönderilmedi."}
 
         if mode == ProviderMode.SANDBOX:
             from_number = "whatsapp:+14155238886"
@@ -355,38 +349,23 @@ class TwilioWhatsAppProvider(BaseProvider):
         start = time.time()
         try:
             from twilio.rest import Client
+
             client = Client(account_sid, auth_token)
 
             base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
             status_callback_url = f"{base}/api/voice/whatsapp/status" if base else None
 
-            kwargs = {
-                "body": body,
-                "from_": sender,
-                "to": to_formatted
-            }
+            kwargs = {"body": body, "from_": sender, "to": to_formatted}
             if status_callback_url:
                 kwargs["status_callback"] = status_callback_url
 
             msg = client.messages.create(**kwargs)
             latency_ms = round((time.time() - start) * 1000, 2)
-            return {
-                "success": True,
-                "provider_message_id": msg.sid,
-                "status": "queued",
-                "error": None,
-                "latency_ms": latency_ms
-            }
+            return {"success": True, "provider_message_id": msg.sid, "status": "queued", "error": None, "latency_ms": latency_ms}
         except Exception as e:
             logger.exception("Twilio WhatsApp send error")
             err_str = str(e)[:300]
-            return {
-                "success": False,
-                "error": err_str,
-                "provider_message_id": None,
-                "error_class": self.classify_error(err_str),
-                "latency_ms": round((time.time() - start) * 1000, 2)
-            }
+            return {"success": False, "error": err_str, "provider_message_id": None, "error_class": self.classify_error(err_str), "latency_ms": round((time.time() - start) * 1000, 2)}
 
     async def send_template(
         self,
@@ -401,15 +380,10 @@ class TwilioWhatsAppProvider(BaseProvider):
             "hello_world": "Hello World",
             "reservation_confirmation": "Rezervasyonunuz onaylanmıştır.",
             "checkin_welcome": "Otelimize hoş geldiniz!",
-            "checkout_thank_you": "Bizi tercih ettiğiniz için teşekkür ederiz."
+            "checkout_thank_you": "Bizi tercih ettiğiniz için teşekkür ederiz.",
         }
         body = template_bodies.get(template_name, f"Template: {template_name}")
-        return await self.send(
-            recipient=recipient,
-            body=body,
-            credentials=credentials,
-            mode=mode
-        )
+        return await self.send(recipient=recipient, body=body, credentials=credentials, mode=mode)
 
     async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
@@ -421,6 +395,7 @@ class TwilioWhatsAppProvider(BaseProvider):
             return {"status": "unhealthy", "error": "Twilio API bilgileri eksik", "checked_at": datetime.now(UTC).isoformat()}
         try:
             from twilio.rest import Client
+
             client = Client(account_sid, auth_token)
             client.api.v2010.accounts(account_sid).fetch()
             return {"status": "healthy", "checked_at": datetime.now(UTC).isoformat()}

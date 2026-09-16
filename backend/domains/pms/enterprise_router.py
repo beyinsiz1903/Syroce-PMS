@@ -295,9 +295,7 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
     total_rooms = int(tenant.get("total_rooms") or 0)
     if total_rooms <= 0:
         total_rooms = await sys_db.rooms.count_documents({"tenant_id": tenant_id})
-    occupied_rooms = await sys_db.rooms.count_documents(
-        {"tenant_id": tenant_id, "$or": [{"status": "occupied"}, {"room_status": "occupied"}]}
-    )
+    occupied_rooms = await sys_db.rooms.count_documents({"tenant_id": tenant_id, "$or": [{"status": "occupied"}, {"room_status": "occupied"}]})
     total_guests = await sys_db.guests.count_documents({"tenant_id": tenant_id})
     payments = await sys_db.payments.find(
         {
@@ -388,10 +386,7 @@ async def get_multi_property_dashboard(property_id: str | None = None, current_u
     sys_db = get_system_db()
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
-    properties = [
-        await _chain_property_metrics(sys_db, member, today.isoformat(), tomorrow.isoformat())
-        for member in members
-    ]
+    properties = [await _chain_property_metrics(sys_db, member, today.isoformat(), tomorrow.isoformat()) for member in members]
     total_rooms = sum(p["total_rooms"] for p in properties)
     occupied_rooms = sum(p["occupied_rooms"] for p in properties)
     total_revenue = round(sum(p["today_revenue"] for p in properties), 2)

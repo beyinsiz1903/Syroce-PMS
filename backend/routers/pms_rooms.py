@@ -150,6 +150,7 @@ async def create_room(
     _: None = Depends(require_module("pms")),
 ):
     from core.database import db
+
     tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
     max_rooms = tenant.get("total_rooms", 50)
     current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
@@ -471,6 +472,7 @@ async def bulk_create_rooms_range(
     _: None = Depends(require_module("pms")),
 ):
     from core.database import db
+
     tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
     max_rooms = tenant.get("total_rooms", 50)
     current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
@@ -535,6 +537,7 @@ async def bulk_create_rooms_template(
     _: None = Depends(require_module("pms")),
 ):
     from core.database import db
+
     tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
     max_rooms = tenant.get("total_rooms", 50)
     current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
@@ -693,6 +696,7 @@ async def import_rooms_csv(
     _: None = Depends(require_module("pms")),
 ):
     from core.database import db
+
     tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
     max_rooms = tenant.get("total_rooms", 50)
     current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
@@ -772,7 +776,7 @@ async def import_rooms_csv(
             existing_numbers.add(room_number)
             created += 1
             if current_rooms + created > max_rooms:
-                raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor. Sadece ilk {created-1} oda eklenecek kapasite var.")
+                raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor. Sadece ilk {created - 1} oda eklenecek kapasite var.")
         except Exception as e:
             error_rows.append({"row_number": idx, "error": str(e)})
 

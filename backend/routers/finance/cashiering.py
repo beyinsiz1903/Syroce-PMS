@@ -756,9 +756,7 @@ async def post_city_ledger_adjustment(
     if adjustment_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Geçersiz ayarlama tipi. Geçerli değerler: {valid_types}")
 
-    account = await db.city_ledger_accounts.find_one(
-        {"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    account = await db.city_ledger_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not account:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
@@ -768,7 +766,7 @@ async def post_city_ledger_adjustment(
     if amount > current_balance + 0.005:
         raise HTTPException(status_code=409, detail="Ayarlama tutarı mevcut bakiyeyi aşamaz")
 
-    request_key = idempotency_key or f"adj:{current_user.tenant_id}:{account_id}:{round(amount,2)}"
+    request_key = idempotency_key or f"adj:{current_user.tenant_id}:{account_id}:{round(amount, 2)}"
     now = datetime.now(UTC).isoformat()
 
     transaction_doc = {

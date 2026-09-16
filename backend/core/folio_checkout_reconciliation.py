@@ -69,11 +69,7 @@ async def reconcile_unposted_room_charge(
             "amount": float(_money(existing.get("total", existing.get("amount")))),
         }
 
-    active_room_charges = [
-        charge for charge in charges
-        if not charge.get("voided")
-        and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")
-    ]
+    active_room_charges = [charge for charge in charges if not charge.get("voided") and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")]
     posted_room_total = sum(
         (_money(charge.get("total", charge.get("amount"))) for charge in active_room_charges),
         start=Decimal("0"),
@@ -134,10 +130,13 @@ async def reconcile_unposted_room_charge(
         {"_id": 0, "amount": 1},
         **query_kwargs,
     ).to_list(10_000)
-    active_charge_total = sum(
-        (_money(item.get("total", item.get("amount"))) for item in charges if not item.get("voided")),
-        start=Decimal("0"),
-    ) + missing_total
+    active_charge_total = (
+        sum(
+            (_money(item.get("total", item.get("amount"))) for item in charges if not item.get("voided")),
+            start=Decimal("0"),
+        )
+        + missing_total
+    )
     payment_total = sum((_money(payment.get("amount")) for payment in payments), start=Decimal("0"))
     await database.folios.update_one(
         {"id": folio["id"], "tenant_id": tenant_id},

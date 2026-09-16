@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
+
 async def ensure_entitlement_indexes(db):
     """
     Ensures entitlement indexes exist. Handles duplicate quota records safely by merging their resources.
@@ -10,13 +11,8 @@ async def ensure_entitlement_indexes(db):
     """
     # Entitlement Quota Deduplication & Index
     pipeline = [
-        {"$group": {
-            "_id": {"tenant_id": "$tenant_id", "module_key": "$module_key", "metric": "$metric"},
-            "count": {"$sum": 1},
-            "docs": {"$push": "$_id"},
-            "all_resources": {"$push": "$resources"}
-        }},
-        {"$match": {"count": {"$gt": 1}}}
+        {"$group": {"_id": {"tenant_id": "$tenant_id", "module_key": "$module_key", "metric": "$metric"}, "count": {"$sum": 1}, "docs": {"$push": "$_id"}, "all_resources": {"$push": "$resources"}}},
+        {"$match": {"count": {"$gt": 1}}},
     ]
     async for dup in db.entitlement_quota_usage.aggregate(pipeline):
         docs = dup["docs"]
@@ -37,14 +33,7 @@ async def ensure_entitlement_indexes(db):
         logger.warning(f"[STARTUP] Found duplicate quota docs for {dup['_id']}. Merging into {keeper_id} and deleting the rest.")
 
         # Update canonical doc
-        await db.entitlement_quota_usage.update_one(
-            {"_id": keeper_id},
-            {"$set": {
-                "resources": merged_resources_list,
-                "used": merged_used,
-                "updated_at": datetime.now(UTC)
-            }}
-        )
+        await db.entitlement_quota_usage.update_one({"_id": keeper_id}, {"$set": {"resources": merged_resources_list, "used": merged_used, "updated_at": datetime.now(UTC)}})
 
         # Delete duplicates
         await db.entitlement_quota_usage.delete_many({"_id": {"$in": docs_to_delete}})

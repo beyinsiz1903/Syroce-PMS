@@ -32,20 +32,10 @@ class InvoiceStatusRepository:
                 "tenant_id": tenant_id,
                 "state": InvoiceSyncState.SUBMITTED.value,
                 "reconciliation_required": {"$ne": True},
-                "$or": [
-                    {"status_lease_owner": None},
-                    {"status_lease_expires_at": {"$lte": now}}
-                ]
+                "$or": [{"status_lease_owner": None}, {"status_lease_expires_at": {"$lte": now}}],
             },
-            {
-                "$set": {
-                    "status_lease_owner": worker_id,
-                    "status_lease_expires_at": expires_at,
-                    "updated_at": now
-                },
-                "$inc": {"version": 1}
-            },
-            return_document=ReturnDocument.AFTER
+            {"$set": {"status_lease_owner": worker_id, "status_lease_expires_at": expires_at, "updated_at": now}, "$inc": {"version": 1}},
+            return_document=ReturnDocument.AFTER,
         )
         if not result:
             return None
@@ -71,16 +61,7 @@ class InvoiceStatusRepository:
         updates["updated_at"] = now
 
         result = await db.invoice_sync.update_one(
-            {
-                "id": dispatch_id,
-                "tenant_id": tenant_id,
-                "status_lease_owner": worker_id,
-                "status_lease_expires_at": {"$gt": now}
-            },
-            {
-                "$set": updates,
-                "$inc": {"version": 1}
-            }
+            {"id": dispatch_id, "tenant_id": tenant_id, "status_lease_owner": worker_id, "status_lease_expires_at": {"$gt": now}}, {"$set": updates, "$inc": {"version": 1}}
         )
         return result.modified_count > 0
 
@@ -118,7 +99,7 @@ class InvoiceStatusRepository:
                     "status_lease_owner": None,
                     "status_lease_expires_at": None,
                 },
-                "$inc": {"version": 1}
-            }
+                "$inc": {"version": 1},
+            },
         )
         return result.modified_count > 0

@@ -57,9 +57,7 @@ def _duration_ms(start: Any, end: Any) -> int:
         return 0
 
 
-def _reservation_view(
-    event: dict[str, Any], booking: dict | None, imported: dict | None
-) -> dict[str, Any]:
+def _reservation_view(event: dict[str, Any], booking: dict | None, imported: dict | None) -> dict[str, Any]:
     """Project a unified ingest event without exposing its raw PII payload."""
     normalized = event.get("normalization_result") or {}
     provider_room = _provider_room_number(event)
@@ -94,11 +92,7 @@ def _event_log_view(event: dict[str, Any]) -> dict[str, Any]:
     processing_status = str(event.get("processing_status") or "pending")
     return {
         "id": event.get("id"),
-        "status": (
-            "success"
-            if processing_status in {"processed", "duplicate"}
-            else ("pending" if processing_status == "pending" else "error")
-        ),
+        "status": ("success" if processing_status in {"processed", "duplicate"} else ("pending" if processing_status == "pending" else "error")),
         "sync_type": event.get("event_type") or "reservation_event",
         "initiator": event.get("received_via") or "webhook",
         "records_synced": 1 if processing_status in {"processed", "duplicate"} else 0,
@@ -184,10 +178,7 @@ async def get_local_reservations(
         ).to_list(500)
         imports = {str(row.get("external_reservation_id")): row for row in import_docs}
 
-    reservations = [
-        _reservation_view(event, bookings.get(external_id), imports.get(external_id))
-        for external_id, event in latest.items()
-    ]
+    reservations = [_reservation_view(event, bookings.get(external_id), imports.get(external_id)) for external_id, event in latest.items()]
     if pms_status:
         reservations = [row for row in reservations if row["pms_status"] == pms_status]
     return {"reservations": reservations[:100], "count": min(len(reservations), 100), "source": "unified_ingest"}

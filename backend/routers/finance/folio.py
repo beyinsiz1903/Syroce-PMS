@@ -224,7 +224,7 @@ async def get_pending_ar(
                 "balance": {"$gt": 0},
             },
             {"_id": 0, "id": 1, "booking_id": 1, "folio_number": 1, "company_id": 1, "balance": 1, "created_at": 1},
-            ).to_list(10000)
+        ).to_list(10000)
 
         if not all_folios:
             return []
@@ -305,45 +305,48 @@ async def get_pending_ar_details(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     tenant_id = current_user.tenant_id
-    company = await db.companies.find_one(
-        {"id": company_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    company = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0})
     if not company:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
-    folios = await db.folios.find(
-        {
-            "tenant_id": tenant_id,
-            "company_id": company_id,
-            "status": "open",
-            "balance": {"$gt": 0},
-        },
-        {"_id": 0},
-    ).sort("created_at", 1).to_list(1000)
+    folios = (
+        await db.folios.find(
+            {
+                "tenant_id": tenant_id,
+                "company_id": company_id,
+                "status": "open",
+                "balance": {"$gt": 0},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", 1)
+        .to_list(1000)
+    )
     booking_ids = [folio.get("booking_id") for folio in folios if folio.get("booking_id")]
     bookings = []
     if booking_ids:
         bookings = await db.bookings.find(
             {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
-            {"_id": 0, "id": 1, "reservation_number": 1, "confirmation_number": 1,
-             "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1},
+            {"_id": 0, "id": 1, "reservation_number": 1, "confirmation_number": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1},
         ).to_list(len(booking_ids))
     booking_map = {booking["id"]: booking for booking in bookings}
     rows = []
     for folio in folios:
         booking = booking_map.get(folio.get("booking_id"), {})
-        rows.append({
-            "folio_id": folio.get("id"),
-            "folio_number": folio.get("folio_number") or f"F-{str(folio.get('id') or '')[:8]}",
-            "booking_id": folio.get("booking_id"),
-            "reservation_number": booking.get("reservation_number") or booking.get("confirmation_number"),
-            "guest_name": booking.get("guest_name") or folio.get("guest_name") or "—",
-            "room_number": booking.get("room_number") or folio.get("room_number") or "—",
-            "check_in": booking.get("check_in"),
-            "check_out": booking.get("check_out"),
-            "created_at": folio.get("created_at"),
-            "balance": round(float(folio.get("balance") or 0), 2),
-        })
+        rows.append(
+            {
+                "folio_id": folio.get("id"),
+                "folio_number": folio.get("folio_number") or f"F-{str(folio.get('id') or '')[:8]}",
+                "booking_id": folio.get("booking_id"),
+                "reservation_number": booking.get("reservation_number") or booking.get("confirmation_number"),
+                "guest_name": booking.get("guest_name") or folio.get("guest_name") or "—",
+                "room_number": booking.get("room_number") or folio.get("room_number") or "—",
+                "check_in": booking.get("check_in"),
+                "check_out": booking.get("check_out"),
+                "created_at": folio.get("created_at"),
+                "balance": round(float(folio.get("balance") or 0), 2),
+            }
+        )
     return {
         "company": {
             "id": company_id,

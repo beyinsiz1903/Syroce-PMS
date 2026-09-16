@@ -108,6 +108,7 @@ async def _delayed_offline_check(tenant_id: str, user_id: str) -> None:
     if not is_user_online(tenant_id, user_id):
         try:
             from domains.contact_center.voice_router import set_agent_presence_state
+
             await set_agent_presence_state(tenant_id, user_id, "offline")
             logger.info(f"[CC-VOICE] Agent {user_id} automatically set to offline after disconnect grace period")
         except Exception as e:

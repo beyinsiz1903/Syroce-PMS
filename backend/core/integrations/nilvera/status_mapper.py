@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 class ProviderInvoiceOutcome(StrEnum):
     """Normalized provider status outcomes."""
+
     PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"

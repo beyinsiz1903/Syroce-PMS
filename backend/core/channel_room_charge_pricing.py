@@ -69,12 +69,7 @@ def is_channel_total_tax_inclusive(booking: dict[str, Any]) -> bool:
 
 def _nightly_gross(booking: dict[str, Any], business_date: Any) -> Decimal:
     """Allocate a gross stay total by cent while preserving the exact total."""
-    total = _decimal(
-        booking.get("provider_total_amount")
-        or booking.get("total_amount")
-        or booking.get("total_price")
-        or 0
-    )
+    total = _decimal(booking.get("provider_total_amount") or booking.get("total_amount") or booking.get("total_price") or 0)
     total_cents = int((total * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     check_in = _date(booking.get("check_in"))
     check_out = _date(booking.get("check_out"))
@@ -100,13 +95,7 @@ def _manual_nightly_gross(booking: dict[str, Any], business_date: Any) -> Decima
     if confirmed_total > 0:
         return _nightly_gross(booking, business_date)
 
-    explicit_rate = _decimal(
-        booking.get("room_rate")
-        or booking.get("rate")
-        or booking.get("rate_per_night")
-        or booking.get("base_rate")
-        or 0
-    )
+    explicit_rate = _decimal(booking.get("room_rate") or booking.get("rate") or booking.get("rate_per_night") or booking.get("base_rate") or 0)
     if explicit_rate > 0:
         return explicit_rate.quantize(MONEY, rounding=ROUND_HALF_UP)
     return _nightly_gross(booking, business_date)
@@ -134,11 +123,7 @@ def calculate_room_charge(
     if explicit_daily_rate is not None:
         gross = _decimal(explicit_daily_rate).quantize(MONEY, rounding=ROUND_HALF_UP)
     else:
-        gross = (
-            _nightly_gross(booking, business_date)
-            if provider_total
-            else _manual_nightly_gross(booking, business_date)
-        )
+        gross = _nightly_gross(booking, business_date) if provider_total else _manual_nightly_gross(booking, business_date)
 
     divisor = Decimal("1") + combined_rate
     net = (gross / divisor).quantize(MONEY, rounding=ROUND_HALF_UP) if divisor > 0 else gross

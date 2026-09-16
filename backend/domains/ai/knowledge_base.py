@@ -7,11 +7,13 @@ try:
     from langchain_core.documents import Document
     from langchain_openai import OpenAIEmbeddings
     from langchain_text_splitters import RecursiveCharacterTextSplitter
+
     _CHROMA_AVAILABLE = True
 except ImportError:
     _CHROMA_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
 
 class KnowledgeBaseService:
     def __init__(self):
@@ -37,13 +39,11 @@ class KnowledgeBaseService:
         class CustomEmbeddingFunction:
             def __init__(self, langchain_embeddings):
                 self.embeddings = langchain_embeddings
+
             def __call__(self, input: list[str]) -> list[list[float]]:
                 return self.embeddings.embed_documents(input)
 
-        self.collection = self.client.get_or_create_collection(
-            name="hotel_knowledge",
-            embedding_function=CustomEmbeddingFunction(self.embeddings)
-        )
+        self.collection = self.client.get_or_create_collection(name="hotel_knowledge", embedding_function=CustomEmbeddingFunction(self.embeddings))
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         self.enabled = True
 
@@ -63,15 +63,12 @@ class KnowledgeBaseService:
 
         # Create unique IDs for chunks
         import uuid
+
         ids = [str(uuid.uuid4()) for _ in chunks]
         texts = [chunk.page_content for chunk in chunks]
         metadatas = [chunk.metadata for chunk in chunks]
 
-        self.collection.add(
-            ids=ids,
-            documents=texts,
-            metadatas=metadatas
-        )
+        self.collection.add(ids=ids, documents=texts, metadatas=metadatas)
 
         return len(chunks)
 
@@ -102,11 +99,7 @@ class KnowledgeBaseService:
         if not self.enabled:
             return []
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"]
-        )
+        results = self.collection.query(query_texts=[query], n_results=top_k, include=["documents", "metadatas", "distances"])
 
         matches = []
         if results and results.get("documents") and len(results["documents"]) > 0:
@@ -115,11 +108,7 @@ class KnowledgeBaseService:
             dists = results["distances"][0]
 
             for doc, meta, dist in zip(docs, metas, dists):
-                matches.append({
-                    "content": doc,
-                    "metadata": meta,
-                    "distance": dist
-                })
+                matches.append({"content": doc, "metadata": meta, "distance": dist})
 
         return matches
 
@@ -130,8 +119,10 @@ class KnowledgeBaseService:
         self.collection.delete(where={"source": source_name})
         return True
 
+
 # Singleton
 _kb_service_instance = None
+
 
 def get_knowledge_base():
     global _kb_service_instance

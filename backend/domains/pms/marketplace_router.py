@@ -69,6 +69,7 @@ def _normalise_menu_item(item: dict) -> dict:
     row["available"] = row.get("available", row.get("status", "active") == "active")
     return row
 
+
 # ========================================
 
 
@@ -105,10 +106,7 @@ async def create_outlet(
 ):
     """Create new F&B outlet"""
     if request.client_request_id:
-        existing_outlet = await db.pos_outlets.find_one({
-            "tenant_id": current_user.tenant_id,
-            "client_request_id": request.client_request_id
-        }, {"_id": 0})
+        existing_outlet = await db.pos_outlets.find_one({"tenant_id": current_user.tenant_id, "client_request_id": request.client_request_id}, {"_id": 0})
         if existing_outlet:
             return existing_outlet
 
@@ -120,15 +118,13 @@ async def create_outlet(
             await reserve_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id, max_outlets)
         except QuotaExceededException:
             import os
+
             mode = os.environ.get("ENTITLEMENT_ENFORCEMENT_MODE", "observe")
             if mode == "observe":
                 logger.warning(f"[ENTITLEMENT_OBSERVE] Tenant {current_user.tenant_id} blocked for outlet limit ({max_outlets}) but allowed due to observe mode.")
                 await reserve_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id, max_outlets, force=True)
             else:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Maksimum outlet limitine ({max_outlets}) ulastiniz. Daha fazlasi icin paketinizi yukseltin."
-                )
+                raise HTTPException(status_code=403, detail=f"Maksimum outlet limitine ({max_outlets}) ulastiniz. Daha fazlasi icin paketinizi yukseltin.")
 
     outlet = {
         "id": outlet_id,
@@ -156,7 +152,7 @@ async def create_outlet(
                     "tenant_id": current_user.tenant_id,
                     "client_request_id": request.client_request_id,
                 },
-                {"_id": 0}
+                {"_id": 0},
             )
             if existing:
                 return existing
@@ -202,8 +198,7 @@ async def delete_outlet(
     Kotayi bosaltmak icin kalici silinmesi yani 'deleted' durumuna cekilmesi gerekir.)
     """
     res = await db.pos_outlets.update_one(
-        {"id": outlet_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}},
-        {"$set": {"status": "deleted", "deleted_at": datetime.now(UTC).isoformat()}}
+        {"id": outlet_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}}, {"$set": {"status": "deleted", "deleted_at": datetime.now(UTC).isoformat()}}
     )
 
     if res.matched_count == 0:
@@ -269,9 +264,7 @@ async def create_menu_item(
 ):
     """Create menu item for outlet"""
     # Verify outlet exists
-    outlet = await db.pos_outlets.find_one(
-        {"id": request.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"}
-    )
+    outlet = await db.pos_outlets.find_one({"id": request.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"})
 
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")

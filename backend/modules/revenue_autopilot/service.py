@@ -56,9 +56,7 @@ def new_approval_item(
     reason: str,
     source_job_id: str | None = None,
 ) -> dict:
-    recommendation_key = hashlib.sha256(
-        f"{tenant_id}|{property_id or ''}|{room_type}|{target_date}|{current_price}|{recommended_price}|{source_job_id or ''}".encode()
-    ).hexdigest()
+    recommendation_key = hashlib.sha256(f"{tenant_id}|{property_id or ''}|{room_type}|{target_date}|{current_price}|{recommended_price}|{source_job_id or ''}".encode()).hexdigest()
     return {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,

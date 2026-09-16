@@ -64,33 +64,18 @@ def _cari_account_lookup_filters(tenant_id: str, account_id: str) -> list[dict]:
     # transfer must restore the numeric candidate when looking the record up.
     if raw_id.isdecimal():
         lookup_values.append(int(raw_id))
-    filters = [
-        {"tenant_id": tenant_id, field: value}
-        for field in ("id", "account_id", "legacy_id", "_id")
-        for value in lookup_values
-    ]
+    filters = [{"tenant_id": tenant_id, field: value} for field in ("id", "account_id", "legacy_id", "_id") for value in lookup_values]
     if ObjectId.is_valid(raw_id):
         filters.append({"tenant_id": tenant_id, "_id": ObjectId(raw_id)})
     return filters
 
 
 def _canonical_cari_account_id(account: dict) -> str:
-    return str(
-        account.get("id")
-        or account.get("account_id")
-        or account.get("legacy_id")
-        or account.get("_id")
-        or ""
-    )
+    return str(account.get("id") or account.get("account_id") or account.get("legacy_id") or account.get("_id") or "")
 
 
 def _canonical_cari_account_name(account: dict) -> str:
-    return str(
-        account.get("name")
-        or account.get("account_name")
-        or account.get("company_name")
-        or "Cari Hesap"
-    )
+    return str(account.get("name") or account.get("account_name") or account.get("company_name") or "Cari Hesap")
 
 
 def _cari_transfer_lookup_id(account: dict) -> str:
@@ -146,10 +131,14 @@ async def _find_cari_account(
         unique_serialized_matches[identity] = (account, is_city_ledger)
     if len(unique_serialized_matches) == 1:
         account, is_city_ledger = next(iter(unique_serialized_matches.values()))
-        return account, is_city_ledger, {
-            "tenant_id": tenant_id,
-            "_id": account.get("_id"),
-        }
+        return (
+            account,
+            is_city_ledger,
+            {
+                "tenant_id": tenant_id,
+                "_id": account.get("_id"),
+            },
+        )
 
     # Some legacy city-ledger rows have had their public and persisted IDs
     # regenerated independently. The account list still knows the row, but an
@@ -182,10 +171,14 @@ async def _find_cari_account(
         unique_matches[identity] = (account, is_city_ledger)
     if len(unique_matches) == 1:
         account, is_city_ledger = next(iter(unique_matches.values()))
-        return account, is_city_ledger, {
-            "tenant_id": tenant_id,
-            "_id": account.get("_id"),
-        }
+        return (
+            account,
+            is_city_ledger,
+            {
+                "tenant_id": tenant_id,
+                "_id": account.get("_id"),
+            },
+        )
     return None, False, None
 
 
@@ -344,20 +337,11 @@ def _redundant_automatic_accommodation_taxes(booking: dict, charges: list[dict])
     because that row did not carry a tax breakdown.  That row is neither a
     new debt nor a tax that should be collected twice.
     """
-    active_room_charges = [
-        charge for charge in charges
-        if not charge.get("voided")
-        and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")
-    ]
+    active_room_charges = [charge for charge in charges if not charge.get("voided") and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")]
     if not active_room_charges or not all(charge.get("tax_inclusive") is True for charge in active_room_charges):
         return []
 
-    return [
-        charge for charge in charges
-        if not charge.get("voided")
-        and _is_automatic_accommodation_tax_charge(charge)
-        and float(charge.get("total", charge.get("amount", 0)) or 0) > 0
-    ]
+    return [charge for charge in charges if not charge.get("voided") and _is_automatic_accommodation_tax_charge(charge) and float(charge.get("total", charge.get("amount", 0)) or 0) > 0]
 
 
 def _build_financial_summary(
@@ -388,11 +372,7 @@ def _build_financial_summary(
         if deposit.get("status") != "refunded"
     )
 
-    room_charge_total = sum(
-        charge.get("total", charge.get("amount", 0))
-        for charge in active_charges
-        if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
-    )
+    room_charge_total = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")
     # Accommodation taxes are generated together with the nightly room
     # charge.  They are not a receptionist-entered extra service, so they
     # must participate in the same agreed-price reconciliation.  Otherwise a
@@ -401,11 +381,7 @@ def _build_financial_summary(
     accommodation_tax_total = sum(
         charge.get("total", charge.get("amount", 0))
         for charge in active_charges
-        if (
-            charge.get("charge_type") == "tax"
-            or charge.get("charge_category") in {"tax", "city_tax"}
-            or charge.get("konaklama_vergisi")
-        )
+        if (charge.get("charge_type") == "tax" or charge.get("charge_category") in {"tax", "city_tax"} or charge.get("konaklama_vergisi"))
     )
     reservation_price_component_total = room_charge_total + accommodation_tax_total
     room_charge_posted = room_charge_total > 0
@@ -503,10 +479,7 @@ def _build_channel_pricing_issue(
         }
     if not issues:
         return None
-    has_payments = any(
-        not payment.get("voided") and float(payment.get("amount", 0) or 0) > 0
-        for payment in payments
-    )
+    has_payments = any(not payment.get("voided") and float(payment.get("amount", 0) or 0) > 0 for payment in payments)
     return {
         "code": "CHANNEL_TOTAL_TAXED_TWICE",
         "charge_count": len(issues),
@@ -1025,10 +998,7 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
                 tenant_id=tid,
                 booking=booking,
             )
-            if provider_note and not any(
-                str(note.get("content") or "").strip() == provider_note["content"]
-                for note in notes
-            ):
+            if provider_note and not any(str(note.get("content") or "").strip() == provider_note["content"] for note in notes):
                 notes.append(provider_note)
                 notes.sort(key=lambda note: str(note.get("created_at") or ""), reverse=True)
 
@@ -1093,11 +1063,7 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
             {"booking_id": booking_id, "tenant_id": tid},
             {"_id": 0},
         ).to_list(100)
-        ag_ids = [
-            link["guest_id"]
-            for link in ag_links
-            if link.get("guest_id") and link.get("guest_id") != booking.get("guest_id")
-        ]
+        ag_ids = [link["guest_id"] for link in ag_links if link.get("guest_id") and link.get("guest_id") != booking.get("guest_id")]
         if ag_ids:
             async for ag in db.guests.find({"id": {"$in": ag_ids}, "tenant_id": tid}, {"_id": 0}):
                 # inject checkout_date from bg_link
@@ -1375,8 +1341,7 @@ async def repair_channel_pricing(
                 )
             ]
             balance = round(
-                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges)
-                - sum(float(row.get("amount", 0) or 0) for row in active_payments),
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges) - sum(float(row.get("amount", 0) or 0) for row in active_payments),
                 2,
             )
             await db.folios.update_one(
@@ -1385,11 +1350,7 @@ async def repair_channel_pricing(
                 session=session,
             )
 
-        fallback_source = (
-            "channel_manager"
-            if is_channel_total_tax_inclusive(locked_booking)
-            else "manual"
-        )
+        fallback_source = "channel_manager" if is_channel_total_tax_inclusive(locked_booking) else "manual"
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tid},
             {
@@ -1405,10 +1366,7 @@ async def repair_channel_pricing(
         audit_details = {
             "reason": data.reason,
             "repairs": repaired_rows,
-            "provider_reference": (
-                locked_booking.get("external_confirmation")
-                or locked_booking.get("external_reservation_id")
-            ),
+            "provider_reference": (locked_booking.get("external_confirmation") or locked_booking.get("external_reservation_id")),
         }
         await db.reservation_activity_log.insert_one(
             {
@@ -1442,12 +1400,7 @@ async def repair_channel_pricing(
             "repaired_charges": repaired_rows,
             "total_reduction": round(sum(row["difference"] for row in repaired_rows), 2),
             "new_booking_balance": round(
-                sum(
-                    float(row.get("total", row.get("amount", 0)) or 0)
-                    for row in charges
-                    if not row.get("voided")
-                )
-                - sum(row["difference"] for row in repaired_rows),
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in charges if not row.get("voided")) - sum(row["difference"] for row in repaired_rows),
                 2,
             ),
         }
@@ -1519,9 +1472,7 @@ async def repair_automatic_accommodation_tax(
                 "message": "Mükerrer otomatik konaklama vergisi bulunmuyor",
             }
 
-        folio_ids = sorted(
-            {str(charge["folio_id"]) for charge in duplicate_taxes if charge.get("folio_id")}
-        )
+        folio_ids = sorted({str(charge["folio_id"]) for charge in duplicate_taxes if charge.get("folio_id")})
         issued_invoice = await db.invoices.find_one(
             {
                 "tenant_id": tid,
@@ -1584,9 +1535,7 @@ async def repair_automatic_accommodation_tax(
                 },
                 session=session,
             )
-            repaired_rows.append(
-                {"charge_id": charge_id, "folio_id": charge.get("folio_id"), "difference": amount}
-            )
+            repaired_rows.append({"charge_id": charge_id, "folio_id": charge.get("folio_id"), "difference": amount})
 
         for folio_id in folio_ids:
             active_charges = [
@@ -1606,8 +1555,7 @@ async def repair_automatic_accommodation_tax(
                 )
             ]
             balance = round(
-                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges)
-                - sum(float(row.get("amount", 0) or 0) for row in active_payments),
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges) - sum(float(row.get("amount", 0) or 0) for row in active_payments),
                 2,
             )
             await db.folios.update_one(
@@ -1985,9 +1933,7 @@ async def transfer_to_cari(
         commit_stage["name"] = "cari hesabı yeniden okuma"
         current_is_city_ledger = resolved_is_city_ledger
         current_cari_filter = resolved_cari_filter
-        current_cari_collection = (
-            db.city_ledger_accounts if current_is_city_ledger else db.cari_accounts
-        )
+        current_cari_collection = db.city_ledger_accounts if current_is_city_ledger else db.cari_accounts
         current_cari = await current_cari_collection.find_one(
             current_cari_filter,
             session=session,
@@ -3157,9 +3103,7 @@ async def mark_reservation_complimentary(
                             "total": 0.0,
                             "is_complimentary": True,
                             "complimentary_scope": "full",
-                            "complimentary_original_amount": charge.get(
-                                "complimentary_original_amount", original_charge_total
-                            ),
+                            "complimentary_original_amount": charge.get("complimentary_original_amount", original_charge_total),
                             "updated_by": current_user.name,
                             "updated_at": now,
                         }
@@ -3251,7 +3195,8 @@ async def reconcile_complimentary_total(
         raise HTTPException(status_code=409, detail="Rezervasyonun geçerli konaklama tarihleri yok")
     stay_dates = {(check_in + timedelta(days=day)).isoformat() for day in range((check_out - check_in).days)}
     rate_rows = [
-        row async for row in db.daily_rates.find(
+        row
+        async for row in db.daily_rates.find(
             {"booking_id": booking_id, "tenant_id": tid},
             {"_id": 0, "date": 1, "rate": 1},
         )
@@ -3266,8 +3211,10 @@ async def reconcile_complimentary_total(
         recorded_dates.add(rate_date.isoformat())
 
     folios = [
-        row async for row in db.folios.find(
-            {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1},
+        row
+        async for row in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
         )
     ]
     folio_ids = [row["id"] for row in folios if row.get("id")]
@@ -3277,11 +3224,13 @@ async def reconcile_complimentary_total(
             "$and": [
                 financial_scope,
                 {"voided": {"$ne": True}},
-                {"$or": [
-                    {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
-                    {"charge_type": {"$in": ["room_charge", "tax"]}},
-                    {"konaklama_vergisi": True},
-                ]},
+                {
+                    "$or": [
+                        {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                        {"charge_type": {"$in": ["room_charge", "tax"]}},
+                        {"konaklama_vergisi": True},
+                    ]
+                },
             ]
         },
         {"_id": 0, "id": 1},
@@ -3306,45 +3255,53 @@ async def reconcile_complimentary_total(
         async with session.start_transaction():
             # Recheck inside the write snapshot so a financial posting made
             # after the initial validation cannot be overlooked by this repair.
-            if await db.folio_charges.find_one(
-                {
-                    "$and": [
-                        financial_scope,
-                        {"voided": {"$ne": True}},
-                        {"$or": [
-                            {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
-                            {"charge_type": {"$in": ["room_charge", "tax"]}},
-                            {"konaklama_vergisi": True},
-                        ]},
-                    ]
-                },
-                {"_id": 0, "id": 1},
-                session=session,
-            ) or await db.payments.find_one(
-                {"$and": [financial_scope, {"voided": {"$ne": True}}, {"amount": {"$gt": 0}}]},
-                {"_id": 0, "id": 1},
-                session=session,
-            ) or await db.invoices.find_one(
-                {
-                    "tenant_id": tid,
-                    "status": {"$nin": ["draft", "cancelled", "voided"]},
-                    "$or": [{"booking_id": booking_id}, {"folio_id": {"$in": folio_ids}}],
-                },
-                {"_id": 0, "id": 1},
-                session=session,
+            if (
+                await db.folio_charges.find_one(
+                    {
+                        "$and": [
+                            financial_scope,
+                            {"voided": {"$ne": True}},
+                            {
+                                "$or": [
+                                    {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                                    {"charge_type": {"$in": ["room_charge", "tax"]}},
+                                    {"konaklama_vergisi": True},
+                                ]
+                            },
+                        ]
+                    },
+                    {"_id": 0, "id": 1},
+                    session=session,
+                )
+                or await db.payments.find_one(
+                    {"$and": [financial_scope, {"voided": {"$ne": True}}, {"amount": {"$gt": 0}}]},
+                    {"_id": 0, "id": 1},
+                    session=session,
+                )
+                or await db.invoices.find_one(
+                    {
+                        "tenant_id": tid,
+                        "status": {"$nin": ["draft", "cancelled", "voided"]},
+                        "$or": [{"booking_id": booking_id}, {"folio_id": {"$in": folio_ids}}],
+                    },
+                    {"_id": 0, "id": 1},
+                    session=session,
+                )
             ):
                 raise HTTPException(status_code=409, detail="Finans kaydı değişti; finansal düzeltme fişi gerekir")
             for rate_date in sorted(stay_dates - recorded_dates):
                 await db.daily_rates.update_one(
                     {"booking_id": booking_id, "tenant_id": tid, "date": rate_date},
-                    {"$set": {
-                        "date": rate_date,
-                        "rate": 0.0,
-                        "daily_rate_key": f"{booking_id}:{rate_date}",
-                        "is_complimentary": True,
-                        "updated_by": current_user.name,
-                        "updated_at": now,
-                    }},
+                    {
+                        "$set": {
+                            "date": rate_date,
+                            "rate": 0.0,
+                            "daily_rate_key": f"{booking_id}:{rate_date}",
+                            "is_complimentary": True,
+                            "updated_by": current_user.name,
+                            "updated_at": now,
+                        }
+                    },
                     upsert=True,
                     session=session,
                 )
@@ -3359,7 +3316,10 @@ async def reconcile_complimentary_total(
     for folio_id in folio_ids:
         await _refresh_cached_folio_balance(tid, folio_id)
     await _log_activity(
-        tid, booking_id, "complimentary_total_reconciled", current_user.name,
+        tid,
+        booking_id,
+        "complimentary_total_reconciled",
+        current_user.name,
         {"old_total": old_total, "new_total": 0.0, "missing_zero_rate_dates": sorted(stay_dates - recorded_dates)},
     )
     await audit_log(
@@ -3481,10 +3441,7 @@ async def update_daily_rates(
                 if existing is None or _money_cents(existing.get("rate")) != _money_cents(rate):
                     raise HTTPException(
                         status_code=409,
-                        detail=(
-                            f"{rate_date} iş günü Night Audit ile kapatıldığı için "
-                            "oda fiyatı değiştirilemez"
-                        ),
+                        detail=(f"{rate_date} iş günü Night Audit ile kapatıldığı için oda fiyatı değiştirilemez"),
                     )
 
         # Sync an already-posted room charge only. Future nights must remain
@@ -3495,11 +3452,7 @@ async def update_daily_rates(
             {"booking_id": booking_id, "tenant_id": tid, "folio_type": "guest", "status": "open"},
             {"_id": 0, "id": 1},
         )
-        rate_changed_dates = {
-            rate_date
-            for rate_date, rate in submitted_rates.items()
-            if _money_cents(existing_rates.get(rate_date, {}).get("rate")) != _money_cents(rate)
-        }
+        rate_changed_dates = {rate_date for rate_date, rate in submitted_rates.items() if _money_cents(existing_rates.get(rate_date, {}).get("rate")) != _money_cents(rate)}
         posted_rate_mismatches = await _posted_room_charge_rate_mismatches(
             tid,
             booking_id,
@@ -3510,10 +3463,7 @@ async def update_daily_rates(
         if historical_mismatches:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    "Night Audit ile kapanmış oda tahakkuku günlük fiyatla uyuşmuyor; "
-                    f"manuel finans mutabakatı gerekir ({', '.join(historical_mismatches)})"
-                ),
+                detail=(f"Night Audit ile kapanmış oda tahakkuku günlük fiyatla uyuşmuyor; manuel finans mutabakatı gerekir ({', '.join(historical_mismatches)})"),
             )
 
         # Pricing after a payment or an issued invoice must be an explicit,
@@ -3538,6 +3488,7 @@ async def update_daily_rates(
 
         # Resolve tax rates once — same approach as Night Audit service.
         from core.channel_room_charge_pricing import calculate_room_charge
+
         accommodation_tax_rate = await get_accommodation_tax_rate(tid, booking.get("check_in"))
 
         async with await db.client.start_session() as session:
@@ -3587,7 +3538,8 @@ async def update_daily_rates(
 
                     # Find active room charges for this booking on this date
                     existing_room_charges = [
-                        c async for c in db.folio_charges.find(
+                        c
+                        async for c in db.folio_charges.find(
                             {
                                 "booking_id": booking_id,
                                 "tenant_id": tid,
@@ -3610,22 +3562,29 @@ async def update_daily_rates(
                     old_charge = existing_room_charges[0]
                     await db.folio_charges.update_one(
                         {"id": old_charge["id"], "tenant_id": tid, "voided": {"$ne": True}},
-                        {"$set": {"voided": True, "voided_at": datetime.now(UTC).isoformat(), "voided_by": current_user.name, "void_reason": f"Günlük fiyat güncellendi: {old_charge.get('total', old_charge.get('amount', 0))} TL → {rate} TL"}},
+                        {
+                            "$set": {
+                                "voided": True,
+                                "voided_at": datetime.now(UTC).isoformat(),
+                                "voided_by": current_user.name,
+                                "void_reason": f"Günlük fiyat güncellendi: {old_charge.get('total', old_charge.get('amount', 0))} TL → {rate} TL",
+                            }
+                        },
                         session=session,
                     )
                     single_night_booking = {
-                            **booking,
-                            "total_amount": rate,
-                            "provider_total_amount": None,
-                            "total_price": None,
-                            "check_in": rate_date,
-                            "check_out": rate_date,  # same day → nights=1 inside _nightly_gross
+                        **booking,
+                        "total_amount": rate,
+                        "provider_total_amount": None,
+                        "total_price": None,
+                        "check_in": rate_date,
+                        "check_out": rate_date,  # same day → nights=1 inside _nightly_gross
                     }
                     pricing = calculate_room_charge(
-                            single_night_booking,
-                            rate_date,
-                            vat_rate=0.10,
-                            accommodation_tax_rate=accommodation_tax_rate,
+                        single_night_booking,
+                        rate_date,
+                        vat_rate=0.10,
+                        accommodation_tax_rate=accommodation_tax_rate,
                     )
                     if _money_cents(pricing["total"]) != _money_cents(rate):
                         raise HTTPException(
@@ -3633,25 +3592,25 @@ async def update_daily_rates(
                             detail=f"{rate_date} için oda tahakkuku günlük fiyatla mutabık oluşturulamadı",
                         )
                     new_charge = {
-                            "id": str(uuid.uuid4()),
-                            "tenant_id": tid,
-                            "folio_id": old_charge["folio_id"],
-                            "booking_id": booking_id,
-                            "charge_category": "room",
-                            "description": old_charge.get("description") or f"Room charge - {rate_date}",
-                            "date": old_charge.get("date") or rate_date,
-                            "quantity": 1,
-                            "unit_price": pricing["unit_price"],
-                            "amount": pricing["amount"],
-                            "tax_rate": pricing["tax_rate"],
-                            "tax_amount": pricing["tax_amount"],
-                            "total": pricing["total"],
-                            "tax_breakdown": pricing["tax_breakdown"],
-                            "tax_inclusive": pricing["tax_inclusive"],
-                            "posted_at": datetime.now(UTC).isoformat(),
-                            "posted_by": current_user.name,
-                            "reposted_from_charge_id": old_charge["id"],
-                            "voided": False,
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tid,
+                        "folio_id": old_charge["folio_id"],
+                        "booking_id": booking_id,
+                        "charge_category": "room",
+                        "description": old_charge.get("description") or f"Room charge - {rate_date}",
+                        "date": old_charge.get("date") or rate_date,
+                        "quantity": 1,
+                        "unit_price": pricing["unit_price"],
+                        "amount": pricing["amount"],
+                        "tax_rate": pricing["tax_rate"],
+                        "tax_amount": pricing["tax_amount"],
+                        "total": pricing["total"],
+                        "tax_breakdown": pricing["tax_breakdown"],
+                        "tax_inclusive": pricing["tax_inclusive"],
+                        "posted_at": datetime.now(UTC).isoformat(),
+                        "posted_by": current_user.name,
+                        "reposted_from_charge_id": old_charge["id"],
+                        "voided": False,
                     }
                     for field in ("business_date", "night_audit_date", "charge_type", "audit_id"):
                         if old_charge.get(field) is not None:
@@ -3779,10 +3738,12 @@ async def update_reservation_guest(
             await db.guests.insert_one(isolated_guest)
             booking_updates = {"guest_id": isolated_guest_id}
             if _plain_name is not None:
-                booking_updates.update({
-                    "guest_name": _plain_name,
-                    **normalized_set_for_update({"guest_name": _plain_name}, collection="bookings"),
-                })
+                booking_updates.update(
+                    {
+                        "guest_name": _plain_name,
+                        **normalized_set_for_update({"guest_name": _plain_name}, collection="bookings"),
+                    }
+                )
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
                 {"$set": booking_updates},
@@ -3833,16 +3794,18 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
             continue
         seen_account_ids.add(account_id)
         # cari_accounts formatıyla uyumlu hale getir
-        accounts.append({
-            "id": account_id,
-            "transfer_id": _cari_transfer_lookup_id(acc),
-            "name": _canonical_cari_account_name(acc),
-            "company_name": acc.get("company_name"),
-            "account_type": "city_ledger",
-            "balance": acc.get("current_balance", 0),
-            "credit_limit": acc.get("credit_limit", 0),
-            "tenant_id": tid,
-        })
+        accounts.append(
+            {
+                "id": account_id,
+                "transfer_id": _cari_transfer_lookup_id(acc),
+                "name": _canonical_cari_account_name(acc),
+                "company_name": acc.get("company_name"),
+                "account_type": "city_ledger",
+                "balance": acc.get("current_balance", 0),
+                "credit_limit": acc.get("credit_limit", 0),
+                "tenant_id": tid,
+            }
+        )
 
     return {"accounts": accounts}
 
@@ -4152,11 +4115,7 @@ async def create_group_booking(
                 detail=f"Bu rezervasyonlar bulunamadı veya yetkiniz yok: {', '.join(list(missing)[:3])}",
             )
         business_date = await ensure_business_date_initialized(db, tid)
-        historical_ids = [
-            document["id"]
-            for document in existing_docs
-            if reservation_is_historical(document, business_date["business_date"])
-        ]
+        historical_ids = [document["id"] for document in existing_docs if reservation_is_historical(document, business_date["business_date"])]
         if historical_ids:
             raise HTTPException(
                 status_code=409,
@@ -4894,13 +4853,15 @@ async def add_reservation_guest(
             "already_linked": True,
         }
 
-    await db.booking_guests.insert_one({
-        "id": f"BG-{uuid.uuid4().hex[:8].upper()}",
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "guest_id": guest_id,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    await db.booking_guests.insert_one(
+        {
+            "id": f"BG-{uuid.uuid4().hex[:8].upper()}",
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "guest_id": guest_id,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
     return {
         "status": "ok",
@@ -4945,46 +4906,31 @@ async def checkout_reservation_guest(
     tenant_id: str = Depends(get_tenant_id),
 ):
     # Ana misafir mi kontrol et
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": booking_id},
-        {"_id": 0, "guest_id": 1, "status": 1}
-    )
+    booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0, "guest_id": 1, "status": 1})
     if not booking:
         raise HTTPException(status_code=404, detail="Reservation not found")
-        
+
     if booking.get("guest_id") == guest_id:
-        raise HTTPException(
-            status_code=400, 
-            detail="Ana misafir erken çıkış yapamaz. Tüm rezervasyonu çıkış yapmalısınız."
-        )
+        raise HTTPException(status_code=400, detail="Ana misafir erken çıkış yapamaz. Tüm rezervasyonu çıkış yapmalısınız.")
 
     # Ekstra misafir kontrolü
-    bg = await db.booking_guests.find_one(
-        {"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id}
-    )
+    bg = await db.booking_guests.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id})
     if not bg:
         raise HTTPException(status_code=404, detail="Guest is not linked to this reservation")
-        
+
     if bg.get("checkout_date"):
         raise HTTPException(status_code=400, detail="Misafir zaten çıkış yapmış")
 
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
+
     now_iso = datetime.now(UTC).isoformat()
-    
-    await db.booking_guests.update_one(
-        {"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id},
-        {"$set": {"checkout_date": now_iso}}
-    )
-    
+
+    await db.booking_guests.update_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id}, {"$set": {"checkout_date": now_iso}})
+
     # KBS Queue
     if booking.get("status") in ("checked_in", "checked_out"):
         from core.kbs_auto_enqueue import auto_enqueue_kbs
-        await auto_enqueue_kbs(
-            tenant_id,
-            booking_id,
-            action="checkout",
-            actor="user:manual_guest_checkout",
-            target_guest_id=guest_id
-        )
+
+        await auto_enqueue_kbs(tenant_id, booking_id, action="checkout", actor="user:manual_guest_checkout", target_guest_id=guest_id)
 
     return {"status": "ok", "checkout_date": now_iso}

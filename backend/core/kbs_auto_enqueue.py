@@ -63,10 +63,7 @@ async def _enqueue_single_guest(
             {"_id": 0, "guest_id": 1, "kbs_reported": 1, "kbs_test": 1},
         )
 
-        if action == "checkout" and not (
-            (booking or {}).get("kbs_reported")
-            and not (booking or {}).get("kbs_test")
-        ):
+        if action == "checkout" and not ((booking or {}).get("kbs_reported") and not (booking or {}).get("kbs_test")):
             await db.kbs_alerts.insert_one(
                 {
                     "id": str(uuid.uuid4()),
@@ -139,6 +136,7 @@ async def _enqueue_single_guest(
         logger.warning(f"KBS auto-enqueue failed for guest {guest_id}: {e}")
         return None
 
+
 async def auto_enqueue_kbs(
     tenant_id: str,
     booking_id: str,
@@ -157,9 +155,9 @@ async def auto_enqueue_kbs(
     booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0, "guest_id": 1})
     if not booking:
         return None
-        
+
     guests_to_enqueue = [booking.get("guest_id")]
-    
+
     # Also fetch all booking_guests that do NOT have a checkout_date yet (if checkin)
     # or fetch all if checkout.
     bg_links = await db.booking_guests.find({"tenant_id": tenant_id, "booking_id": booking_id}, {"_id": 0}).to_list(100)
@@ -169,15 +167,15 @@ async def auto_enqueue_kbs(
             if action == "checkout" and bg.get("checkout_date"):
                 continue
             guests_to_enqueue.append(bg["guest_id"])
-            
+
     jobs = []
     for gid in guests_to_enqueue:
-        if not gid: continue
+        if not gid:
+            continue
         res = await _enqueue_single_guest(tenant_id, booking_id, gid, action, actor)
         if res:
             jobs.append(res)
     return jobs if jobs else None
-
 
     try:
         existing = await db.kbs_reports.find_one(
@@ -216,10 +214,7 @@ async def auto_enqueue_kbs(
         # diye reddeder. Bu durumda sahte bir checkout kuyruğu yerine net bir
         # operatör alarmı üretiriz. Haricen kaydedilmiş istisnai kayıtlar için
         # resepsiyon yine bilinçli olarak force=true ile manuel gönderebilir.
-        if action == "checkout" and not (
-            (booking or {}).get("kbs_reported")
-            and not (booking or {}).get("kbs_test")
-        ):
+        if action == "checkout" and not ((booking or {}).get("kbs_reported") and not (booking or {}).get("kbs_test")):
             await db.kbs_alerts.insert_one(
                 {
                     "id": str(uuid.uuid4()),

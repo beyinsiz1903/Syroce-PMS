@@ -333,13 +333,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
     adr = today_metric.get("adr", 0)
     revpar = today_metric.get("revpar", 0)
     occupancy_trend = [
-        {"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "occupancy": row["occupancy_rate"], "rooms_occupied": row["occupied_rooms"]}
-        for row in metric_rows
+        {"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "occupancy": row["occupancy_rate"], "rooms_occupied": row["occupied_rooms"]} for row in metric_rows
     ]
-    revenue_trend = [
-        {"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "revenue": row["revenue"]}
-        for row in metric_rows
-    ]
+    revenue_trend = [{"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "revenue": row["revenue"]} for row in metric_rows]
 
     hk_completed = len([t for t in hk_tasks if t.get("status") == "completed"])
     hk_pending = len([t for t in hk_tasks if t.get("status") in ["pending", "assigned"]])

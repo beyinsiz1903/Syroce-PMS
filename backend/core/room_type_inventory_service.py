@@ -242,10 +242,12 @@ async def reconcile_date_range(
     # One operation-local snapshot, not a cross-request availability cache.
     # Night locks are still read fresh for each day; booking guards are unchanged.
     with tenant_context(tenant_id):
-        room_groups = await db.rooms.aggregate([
-            {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}},
-            {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
-        ]).to_list(200)
+        room_groups = await db.rooms.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}},
+                {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
+            ]
+        ).to_list(200)
 
     current = start
     while current <= end:
@@ -329,7 +331,7 @@ async def get_room_type_inventory(
         query["room_type"] = room_type
 
     with tenant_context(tenant_id):
-            results = await db.room_type_inventory.find(query, {"_id": 0}).to_list(200)
+        results = await db.room_type_inventory.find(query, {"_id": 0}).to_list(200)
 
     if not results:
         # Compute on-the-fly if materialized view is empty
@@ -338,11 +340,11 @@ async def get_room_type_inventory(
         for item in results:
             try:
                 with tenant_context(tenant_id):
-                        await db.room_type_inventory.update_one(
+                    await db.room_type_inventory.update_one(
                         {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date},
                         {"$set": item},
                         upsert=True,
-                        )
+                    )
             except Exception:
                 pass
 
@@ -365,13 +367,13 @@ async def get_inventory_summary(
     end = datetime.fromisoformat(end_date).date()
 
     with tenant_context(tenant_id):
-            all_items = await db.room_type_inventory.find(
+        all_items = await db.room_type_inventory.find(
             {
-            "tenant_id": tenant_id,
-            "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "tenant_id": tenant_id,
+                "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
             },
             {"_id": 0},
-            ).to_list(5000)
+        ).to_list(5000)
 
     # Aggregate by room type
     type_summary: dict[str, dict[str, Any]] = {}

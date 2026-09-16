@@ -779,12 +779,7 @@ def calculate_monthly_v6_rows(
         if not ci or not co or co.date() <= ci.date():
             continue
         guests = max(1, int(booking.get("adults") or 1) + int(booking.get("children") or 0))
-        raw_country = (
-            booking.get("nationality")
-            or booking.get("guest_country")
-            or booking.get("country")
-            or countries.get(str(booking.get("guest_id") or ""), "")
-        )
+        raw_country = booking.get("nationality") or booking.get("guest_country") or booking.get("country") or countries.get(str(booking.get("guest_id") or ""), "")
         iso3 = _to_iso3(raw_country)
         if iso3 == "ZZZ":
             iso3 = "OTHER"

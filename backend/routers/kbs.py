@@ -340,9 +340,7 @@ async def kbs_guest_list(
             # kayitlari olabilir); production complete akisi booking uzerine
             # kbs_reported bayragini yazar.
             is_reported = bool(b.get("kbs_reported")) and not bool(b.get("kbs_test"))
-            is_checkout_reported = bool(b.get("kbs_checkout_reported")) and not bool(
-                b.get("kbs_checkout_test")
-            )
+            is_checkout_reported = bool(b.get("kbs_checkout_reported")) and not bool(b.get("kbs_checkout_test"))
             ready, _missing = validate_kbs_payload(
                 {
                     "guest_name": b.get("guest_name", ""),
@@ -909,9 +907,7 @@ async def kbs_queue_list(
 
         # Durable production receipts are authoritative for each action.
         # Obsolete pending/failed/dead copies must not reappear after refresh.
-        delivery_booking_ids = list({
-            job.get("booking_id") for job in jobs if job.get("booking_id")
-        })
+        delivery_booking_ids = list({job.get("booking_id") for job in jobs if job.get("booking_id")})
         delivered_checkins: set[str] = set()
         delivered_checkouts: set[str] = set()
         if delivery_booking_ids:
@@ -935,16 +931,11 @@ async def kbs_queue_list(
                 if booking.get("kbs_checkout_reported") and not booking.get("kbs_checkout_test"):
                     delivered_checkouts.add(booking_key)
         jobs = [
-            job for job in jobs
+            job
+            for job in jobs
             if not (
-                (
-                    (job.get("action") or "checkin") == "checkin"
-                    and str(job.get("booking_id") or "") in delivered_checkins
-                )
-                or (
-                    job.get("action") == "checkout"
-                    and str(job.get("booking_id") or "") in delivered_checkouts
-                )
+                ((job.get("action") or "checkin") == "checkin" and str(job.get("booking_id") or "") in delivered_checkins)
+                or (job.get("action") == "checkout" and str(job.get("booking_id") or "") in delivered_checkouts)
             )
         ]
 
@@ -982,13 +973,7 @@ async def kbs_queue_list(
                     "as": "delivery_booking",
                 }
             },
-            {
-                "$set": {
-                    "delivery_booking": {
-                        "$arrayElemAt": ["$delivery_booking", 0]
-                    }
-                }
-            },
+            {"$set": {"delivery_booking": {"$arrayElemAt": ["$delivery_booking", 0]}}},
             {
                 "$match": {
                     "$expr": {

@@ -228,9 +228,9 @@ def validate_invoice_tax_snapshot(invoice: Invoice | InvoiceCreate) -> bool:
     if not invoice.items:
         raise ValueError("Invoice must have at least one item")
 
-    calc_line_ext = Decimal('0')
-    calc_kdv = Decimal('0')
-    calc_other_tax = Decimal('0')
+    calc_line_ext = Decimal("0")
+    calc_kdv = Decimal("0")
+    calc_other_tax = Decimal("0")
 
     for idx, item in enumerate(invoice.items):
         prefix = f"Item {idx}"

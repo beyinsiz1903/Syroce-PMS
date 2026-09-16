@@ -229,20 +229,14 @@ async def update_staff_task(
     safe["updated_at"] = datetime.now(UTC).isoformat()
 
     if task.get("source") == "guest_qr":
-        if safe.get("status") == "completed" and not (
-            safe.get("resolution_note") or task.get("resolution_note")
-        ):
+        if safe.get("status") == "completed" and not (safe.get("resolution_note") or task.get("resolution_note")):
             raise HTTPException(
                 status_code=400,
                 detail="Misafir talebi sonuçlandırılırken çözüm bilgisi zorunludur",
             )
         from domains.guest.qr_task_projection import update_qr_task
 
-        actor_name = (
-            getattr(current_user, "name", None)
-            or getattr(current_user, "email", None)
-            or "Personel"
-        )
+        actor_name = getattr(current_user, "name", None) or getattr(current_user, "email", None) or "Personel"
         try:
             projected = await update_qr_task(
                 task,

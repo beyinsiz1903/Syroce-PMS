@@ -473,7 +473,7 @@ def require_module(module_name: str):
                 )
         if not modules.get(module_name, False):
             if module_name == "academy":
-                pass # Local testing bypass for academy module
+                pass  # Local testing bypass for academy module
             else:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -485,11 +485,9 @@ def require_module(module_name: str):
 
 async def require_finance(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bu islemi sadece yonetici veya finans kullanicilari yapabilir"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu islemi sadece yonetici veya finans kullanicilari yapabilir")
     return current_user
+
 
 async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Allow only admin users to access admin endpoints."""

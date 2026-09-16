@@ -55,11 +55,7 @@ async def _derive_initial_business_date(db, tenant_id: str, today: date) -> tupl
         },
         {"_id": 0, "check_in": 1},
     ).to_list(5000)
-    unresolved_dates = sorted(
-        parsed
-        for parsed in (_date_only(item.get("check_in")) for item in candidates)
-        if parsed is not None and parsed <= today
-    )
+    unresolved_dates = sorted(parsed for parsed in (_date_only(item.get("check_in")) for item in candidates) if parsed is not None and parsed <= today)
     if unresolved_dates:
         return unresolved_dates[0].isoformat(), "earliest_unresolved_arrival"
 
@@ -127,10 +123,7 @@ async def ensure_business_date_initialized(
     # An aggregation-pipeline update makes initialization an atomic compare and
     # set. If a concurrent night audit establishes the date first, every field
     # below keeps the authoritative value already stored by that audit.
-    conditional_fields = {
-        key: {"$cond": [missing_date, value, f"${key}"]}
-        for key, value in fields.items()
-    }
+    conditional_fields = {key: {"$cond": [missing_date, value, f"${key}"]} for key, value in fields.items()}
     await db.tenant_settings.update_one(
         {"tenant_id": tenant_id},
         [

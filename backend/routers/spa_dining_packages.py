@@ -135,10 +135,7 @@ from core.entitlements.enforcement import require_feature
 
 
 @router.get("/packages")
-async def list_packages(
-    current_user: User = Depends(get_current_user),
-    _feat=Depends(require_feature("spa", "cross_department_packages"))
-) -> dict:
+async def list_packages(current_user: User = Depends(get_current_user), _feat=Depends(require_feature("spa", "cross_department_packages"))) -> dict:
     """Returns available SPA & Dining packages."""
     return {"packages": DEFAULT_PACKAGES}
 
