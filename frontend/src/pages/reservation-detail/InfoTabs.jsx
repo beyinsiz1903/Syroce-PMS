@@ -477,7 +477,7 @@ export function GuestsTab({
   const startEdit = g => {
     setEditingId(g.id);
     setForm({
-      name: g.name || '',
+      name: g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : ''),
       email: g.email || '',
       phone: g.phone || '',
       id_type: g.id_type || 'tc_kimlik',
@@ -522,7 +522,7 @@ export function GuestsTab({
   const applyExtractedData = (g, doc) => {
     const fullName = [doc.first_name, doc.last_name].filter(Boolean).join(' ').trim();
     const prev = editingId === g.id ? form : {
-      name: g.name || '',
+      name: g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : ''),
       email: g.email || '',
       phone: g.phone || '',
       id_type: g.id_type || 'tc_kimlik',
@@ -641,9 +641,9 @@ export function GuestsTab({
       const isEditing = editingId === g.id;
       return <div key={g.id || i} className="border rounded-lg overflow-hidden">
               <div className="p-4 flex items-center gap-4">
-                <Avatar name={g.name} size="lg" />
+                <Avatar name={g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')} size="lg" />
                 <div className="flex-1">
-                  <div className="text-sm font-semibold">{g.name}</div>
+                  <div className="text-sm font-semibold">{g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : 'İsimsiz Misafir')}</div>
                   <div className="text-xs text-gray-500 flex items-center gap-3 mt-0.5">
                     {g.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{g.email}</span>}
                     {g.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{g.phone}</span>}
