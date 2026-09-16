@@ -330,7 +330,7 @@ const BasicReports = ({
     value
   }));
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
-    name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key,
+    name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal Yöneticisi (OTA)' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
     revenue: bookingSources.revenue?.[key] || 0
   }));
