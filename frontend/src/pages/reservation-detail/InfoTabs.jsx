@@ -679,7 +679,7 @@ export function GuestsTab({
                     </Button>
                   )}
                   {!isEditing && !isPrimary && !g.checkout_date && booking.status === 'checked_in' && (
-                    <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50" onClick={async () => {
+                    <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50" onClick={async () => {
                       if (!window.confirm('Bu misafiri odadan ÇIKIŞ YAPMAK (erken çıkış) istediğinize emin misiniz? Bu işlem KBSye bildirilecektir.')) return;
                       try {
                         await axios.post(`/pms/reservations/${booking.id}/guests/${g.id}/checkout`);
