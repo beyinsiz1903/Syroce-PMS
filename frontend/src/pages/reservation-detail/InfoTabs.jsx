@@ -662,6 +662,21 @@ export function GuestsTab({
                     {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                     <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Düzenle'}</span>
                   </Button>
+                  {!isEditing && (
+                    <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={async () => {
+                      if (!window.confirm('Bu misafiri odadan silmek istediğinize emin misiniz?')) return;
+                      try {
+                        await axios.delete(`/pms/reservations/${booking.id}/guests/${g.id}`);
+                        toast.success('Misafir odadan çıkarıldı');
+                        onRefresh?.();
+                      } catch (e) {
+                        toast.error('Silinemedi: ' + (e.response?.data?.detail || e.message));
+                      }
+                    }}>
+                      <X className="w-3.5 h-3.5" />
+                      <span className="ml-1 text-xs">Çıkar</span>
+                    </Button>
+                  )}
                 </div>
               </div>
 

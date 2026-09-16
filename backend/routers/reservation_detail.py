@@ -4903,3 +4903,24 @@ async def add_reservation_guest(
         "linked": True,
         "already_linked": False,
     }
+
+
+@router.delete("/reservations/{booking_id}/guests/{guest_id}")
+async def unlink_reservation_guest(
+    booking_id: str,
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    _enforce_perm(current_user.role, "edit_booking")
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
+    if guest_id == booking.get("guest_id"):
+        await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": {"guest_id": None}})
+    else:
+        await db.booking_guests.delete_many({"booking_id": booking_id, "tenant_id": tid, "guest_id": guest_id})
+    return {"status": "ok"}
