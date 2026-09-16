@@ -4900,8 +4900,8 @@ async def unlink_reservation_guest(
     description="Marks a specific guest as checked out and enqueues a KBS checkout job.",
 )
 async def checkout_reservation_guest(
-    booking_id: str = Path(..., description="The reservation ID"),
-    guest_id: str = Path(..., description="The ID of the guest to checkout"),
+    booking_id: str,
+    guest_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),
     tenant_id: str = Depends(get_tenant_id),
 ):
