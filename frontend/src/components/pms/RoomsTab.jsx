@@ -281,7 +281,7 @@ const RoomsTab = ({
     if (useCurrencyConverter && Object.keys(tcmbRates).length === 0) {
       fetchExchangeRates();
     }
-  }, [useCurrencyConverter]);
+  }, [useCurrencyConverter, tcmbRates]);
 
   // Record payment
   const handlePaymentSubmit = useCallback(async () => {
@@ -317,7 +317,7 @@ const RoomsTab = ({
     } finally {
       setPaymentLoading(false);
     }
-  }, [paymentTarget, paymentAmount, paymentMethod, onDataRefresh]);
+  }, [paymentTarget, paymentAmount, paymentMethod, onDataRefresh, useCurrencyConverter, foreignAmount, foreignCurrency, exchangeRate]);
 
   // Open quick reservation dialog for an empty room
   const handleQuickResOpen = useCallback((e, room) => {
@@ -998,7 +998,7 @@ const RoomsTab = ({
               {/* Onay */}
               <Button
                 className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-                onClick={handleQuickPayment}
+                onClick={handlePaymentSubmit}
                 disabled={paymentLoading || !paymentAmount || parseFloat(paymentAmount) <= 0}
                 data-testid="quick-payment-submit"
               >
