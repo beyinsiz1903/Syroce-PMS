@@ -4902,9 +4902,10 @@ async def unlink_reservation_guest(
 async def checkout_reservation_guest(
     booking_id: str,
     guest_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_database),
-    tenant_id: str = Depends(get_tenant_id),
+    current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     # Ana misafir mi kontrol et
     booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0, "guest_id": 1, "status": 1})
     if not booking:
