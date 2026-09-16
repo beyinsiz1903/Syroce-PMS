@@ -109,7 +109,7 @@ async def get_market_segment_report(
         # Calculate nights
         check_in = datetime.fromisoformat(booking["check_in"])
         check_out = datetime.fromisoformat(booking["check_out"])
-        nights = (check_out - check_in).days
+        nights = (check_out.date() - check_in.date()).days
         revenue = booking.get("total_amount", 0)
 
         # Market segment aggregation
@@ -586,7 +586,7 @@ async def export_forecast_detail_excel(
         from routers.reports import get_forecast as _get_forecast
 
         forecast_response = await _get_forecast(
-            days=(datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)).days + 1,
+            days=(datetime.fromisoformat(end_date).date() - datetime.fromisoformat(start_date).date()).days + 1,
             current_user=current_user,
             _=None,
         )
