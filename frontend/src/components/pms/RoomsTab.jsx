@@ -815,7 +815,7 @@ const RoomsTab = ({
 
       {/* Quick Payment Dialog */}
       <Dialog open={paymentDialog} onOpenChange={(o) => !o && setPaymentDialog(false)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wallet className="w-5 h-5 text-amber-600" />
@@ -1021,7 +1021,7 @@ const RoomsTab = ({
 
       {/* Quick Reservation Dialog */}
       <Dialog open={quickResDialog} onOpenChange={(o) => { if (!o) { setQuickResDialog(false); setShowGuestDropdown(false); } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarPlus className="w-5 h-5 text-amber-600" />
