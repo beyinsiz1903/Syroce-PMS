@@ -817,7 +817,7 @@ const RoomsTab = ({
 
               {/* Payment amount */}
               <div>
-                <Label className="text-sm font-medium">Ödeme Tutari</Label>
+                <Label className="text-sm font-medium">Ödeme Tutarı ({paymentTarget.currency})</Label>
                 <div className="flex gap-2 mt-1">
                   <Input
                     type="number"
