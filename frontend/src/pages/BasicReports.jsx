@@ -71,9 +71,14 @@ const REPORT_MENU = [{
   label: 'MİSAFİR'
 }, {
   id: 'guests',
-  label: 'Misafir Listesi',
+  label: 'Tüm Misafirler',
   icon: Users,
-  desc: 'Tüm misafirler'
+  desc: 'Genel misafir listesi'
+}, {
+  id: 'inhouse',
+  label: 'Konaklayanlar (In-House)',
+  icon: Hotel,
+  desc: 'Şu an otelde olan misafirler'
 }, {
   id: 'nationality',
   label: 'Milliyet Dağılımı',
@@ -84,9 +89,9 @@ const REPORT_MENU = [{
   label: 'ÖN BÜRO'
 }, {
   id: 'front_office',
-  label: 'Giriş / Çıkış',
+  label: 'Giriş / Çıkış (Arrival)',
   icon: ArrowLeftRight,
-  desc: 'Günlük hareketler'
+  desc: 'Giriş ve çıkış hareketleri'
 }, {
   id: 'noshow',
   label: 'No-Show & İptaller',
@@ -123,9 +128,9 @@ const REPORT_MENU = [{
   label: 'FİNANS & MUHASEBE'
 }, {
   id: 'payments',
-  label: 'Ödemeler',
+  label: 'Kasa Raporu (Ödemeler)',
   icon: CreditCard,
-  desc: 'Ödeme yöntemleri'
+  desc: 'Tahsilat ve ödeme yöntemleri'
 }, {
   id: 'expenses',
   label: 'Gider Analitiği',
@@ -330,7 +335,7 @@ const BasicReports = ({
     value
   }));
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
-    name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key,
+    name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal Yöneticisi (OTA)' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
     revenue: bookingSources.revenue?.[key] || 0
   }));
@@ -340,6 +345,11 @@ const BasicReports = ({
   const noShowGuests = guestList.filter(g => g.status === 'no_show');
   const cancelledGuests = guestList.filter(g => g.status === 'cancelled');
   const filteredGuests = guestList.filter(g => {
+    if (!searchGuest) return true;
+    const term = searchGuest.toLowerCase();
+    return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
+  });
+  const inHouseGuests = guestList.filter(g => g.status === 'checked_in').filter(g => {
     if (!searchGuest) return true;
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
@@ -368,7 +378,9 @@ const BasicReports = ({
       case 'room_types':
         return <RoomTypesSection roomTypeData={roomTypeData} />;
       case 'guests':
-        return <div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+        return <div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Tüm Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+      case 'inhouse':
+        return <div data-testid="section-inhouse"><GuestTable guests={inHouseGuests} title="Konaklayanlar (In-House)" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'nationality':
         return <NationalitySection countryData={countryData} />;
       case 'front_office':
