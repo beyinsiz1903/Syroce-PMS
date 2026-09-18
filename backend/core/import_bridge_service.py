@@ -1053,8 +1053,16 @@ async def _handle_import_failure(
 ) -> None:
     """Handle import failure — retry or mark as permanently failed."""
     now = _utc_now()
-    retry_count = record.get("retry_count", 0) + 1
-    max_retries = record.get("max_retries", DEFAULT_MAX_RETRIES)
+    # A worker can receive a pre-claimed document, while another flow may have
+    # already updated its retry metadata.  Always use the persisted value for
+    # the retry decision so an exhausted import cannot remain ``processing``.
+    persisted_retry_state = await db[COLL_IMPORTED].find_one(
+        {"id": record["id"]},
+        {"_id": 0, "retry_count": 1, "max_retries": 1},
+    )
+    retry_state = persisted_retry_state or record
+    retry_count = retry_state.get("retry_count", 0) + 1
+    max_retries = retry_state.get("max_retries", DEFAULT_MAX_RETRIES)
     retryable = _is_retryable(error_msg)
 
     if not retryable or retry_count >= max_retries:
