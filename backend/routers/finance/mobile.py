@@ -61,9 +61,6 @@ async def get_daily_collections_mobile(
     else:
         target_date = datetime.now(UTC)
 
-    start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-
     # Get payments for the day
     total_collected = 0.0
     payment_count = 0
@@ -167,9 +164,6 @@ async def get_cashier_shift_report(
         target_date = datetime.fromisoformat(shift_date)
     else:
         target_date = datetime.now(UTC)
-
-    start_of_day = target_date.replace(hour=0, minute=0, second=0)
-    end_of_day = target_date.replace(hour=23, minute=59, second=59)
 
     business_day = target_date.date().isoformat()
     query = {"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$regex": f"^{business_day}"}}, {"payment_date": business_day}, {"date": business_day}]}
