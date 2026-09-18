@@ -322,7 +322,10 @@ const RoomsTab = ({
         payload.notes = `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`;
       }
 
-      await axios.post(`/pms/reservations/${paymentTarget.booking_id}/record-payment`, payload);
+      // Keep the room-card payment flow on the canonical folio endpoint.  The
+      // former reservations/{id}/record-payment route was retired, so using it
+      // here caused a misleading 404 after the operator confirmed a payment.
+      await axios.post(`/frontdesk/folio/${paymentTarget.booking_id}/payment`, payload);
       toast.success(`${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ödeme başarıyla alindi`);
       setPaymentDialog(false);
       setPaymentTarget(null);
