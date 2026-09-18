@@ -1,0 +1,37 @@
+name: Debug Booking
+on:
+  workflow_dispatch:
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            cat << 'PYEOF' > /tmp/check.py
+            import sys, asyncio, json
+            from motor.motor_asyncio import AsyncIOMotorClient
+            from bson import json_util
+            async def main():
+                client = AsyncIOMotorClient("mongodb://localhost:27017")
+                db = client.syroce
+                b = await db.bookings.find_one({"id": "HC-2609Z1X8"}, {"_id": 0})
+                print("BOOKING:")
+                print(json.dumps(b, indent=2, default=json_util.default))
+                if b and b.get("guest_id"):
+                    g = await db.guests.find_one({"id": b["guest_id"]}, {"_id": 0})
+                    print("GUEST:")
+                    print(json.dumps(g, indent=2, default=json_util.default))
+                
+                # Check Room 201 booking
+                b201 = await db.bookings.find_one({"room_number": "201", "guest_name": "Cengiz Didin"}, {"_id": 0})
+                print("BOOKING 201:")
+                print(json.dumps(b201, indent=2, default=json_util.default))
+            asyncio.run(main())
+            PYEOF
+            docker cp /tmp/check.py syroce-pms-backend-1:/tmp/check.py
+            docker exec syroce-pms-backend-1 pip install motor
+            docker exec syroce-pms-backend-1 python /tmp/check.py
