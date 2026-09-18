@@ -308,9 +308,15 @@ async def test_auto_import_pending_assignment_defers_availability_outbox():
             from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
 
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            print("=== ALL DOCS IN DB BEFORE CLAIM ===", all_docs)
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            doc_info = str(all_docs)
             success, msg = await auto_import_reservation_to_pms(record["id"])
 
-        assert success is True, f"Auto import failed: {msg}"
+        assert success is True, f"Auto import failed: {msg} | Docs: {doc_info} | searched ID: {record['id']}"
         assert await db.outbox_events.count_documents({"tenant_id": TEST_TENANT}) == 0
     finally:
         await _cleanup(db)
@@ -346,9 +352,15 @@ async def test_hotelrunner_import_projects_provider_note_into_existing_notes_col
                 "pending_auto_import",
                 connector_id=TEST_CONNECTOR,
             )
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            print("=== ALL DOCS IN DB BEFORE CLAIM ===", all_docs)
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            doc_info = str(all_docs)
             success, msg = await auto_import_reservation_to_pms(record["id"])
 
-        assert success is True, f"Auto import failed: {msg}"
+        assert success is True, f"Auto import failed: {msg} | Docs: {doc_info} | searched ID: {record['id']}"
         imported = await db[COLL_IMPORTED].find_one({"id": record["id"]}, {"_id": 0})
         note = await db.reservation_notes.find_one(
             {
@@ -388,9 +400,15 @@ async def test_import_uses_atomic_booking_core():
 
             from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            print("=== ALL DOCS IN DB BEFORE CLAIM ===", all_docs)
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            doc_info = str(all_docs)
             success, msg = await auto_import_reservation_to_pms(record["id"])
 
-        assert success is True, f"Auto import failed: {msg}"
+        assert success is True, f"Auto import failed: {msg} | Docs: {doc_info} | searched ID: {record['id']}"
         mock_atomic.assert_called_once()
         call_doc = mock_atomic.call_args.kwargs['booking_doc']
         assert call_doc["tenant_id"] == TEST_TENANT
@@ -793,9 +811,15 @@ async def test_lineage_linked_to_booking():
              patch("core.atomic_booking.db", db):
             from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            print("=== ALL DOCS IN DB BEFORE CLAIM ===", all_docs)
+            # DIAGNOSTIC
+            all_docs = await db["imported_reservations"].find().to_list(None)
+            doc_info = str(all_docs)
             success, msg = await auto_import_reservation_to_pms(record["id"])
 
-        assert success is True, f"Auto import failed: {msg}"
+        assert success is True, f"Auto import failed: {msg} | Docs: {doc_info} | searched ID: {record['id']}"
 
         updated_lineage = await db[COLL_LINEAGE].find_one({"id": lineage_id}, {"_id": 0})
         assert updated_lineage["reservation_id"] is not None
