@@ -1,0 +1,29 @@
+name: Debug Booking
+on:
+  workflow_dispatch:
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            cat << 'PYEOF' > /tmp/check_booking.py
+            import sys
+            import json
+            import urllib.request
+            try:
+                from pymongo import MongoClient
+                client = MongoClient("mongodb://localhost:27017")
+                db = client.syroce
+                # Find the bookings for Room 101 or 201 with guest Cengiz Didin or Mustafa
+                bookings = list(db.bookings.find({"guest_name": {"$regex": "Cengiz|Mustafa", "$options": "i"}}))
+                for b in bookings:
+                    print(f"Booking ID: {b.get('id')}, Room ID: {b.get('room_id')}, Guest ID: {b.get('guest_id')}, Guest Name: {b.get('guest_name')}")
+            except Exception as e:
+                print(e)
+            PYEOF
+            docker exec syroce-pms-backend-1 python /tmp/check_booking.py || python3 /tmp/check_booking.py
