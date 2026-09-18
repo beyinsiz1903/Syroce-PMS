@@ -30,6 +30,7 @@ const RoomsTab = ({
 }) => {
   const { t } = useTranslation();
   const [typeFilter, setTypeFilter] = useState('all');
+  const [sortMode, setSortMode] = useState('number');
   const [viewFilter, setViewFilter] = useState('all');
   const [amenityFilter, setAmenityFilter] = useState('all');
 
@@ -160,13 +161,26 @@ const RoomsTab = ({
   }, [bookings, today, tomorrow]);
 
   const filteredRooms = useMemo(() => {
-    return rooms.filter(r => {
+    let result = rooms.filter(r => {
       if (typeFilter !== 'all' && r.room_type !== typeFilter) return false;
       if (viewFilter !== 'all' && r.view !== viewFilter) return false;
       if (amenityFilter !== 'all' && !(r.amenities || []).includes(amenityFilter)) return false;
       return true;
     });
-  }, [rooms, typeFilter, viewFilter, amenityFilter]);
+    result.sort((a, b) => {
+      if (sortMode === 'type') {
+        const typeCmp = (a.room_type || '').localeCompare(b.room_type || '');
+        if (typeCmp !== 0) return typeCmp;
+      }
+      const numA = parseInt(a.room_number, 10);
+      const numB = parseInt(b.room_number, 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        if (numA !== numB) return numA - numB;
+      }
+      return String(a.room_number).localeCompare(String(b.room_number));
+    });
+    return result;
+  }, [rooms, typeFilter, viewFilter, amenityFilter, sortMode]);
 
   const allTypes = [...new Set(rooms.map(r => r.room_type).filter(Boolean))];
   const allViews = [...new Set(rooms.map(r => r.view).filter(Boolean))];
@@ -453,6 +467,14 @@ const RoomsTab = ({
 
       {/* Filtreler — kompakt, sticky değil ama hizalı */}
       <div className="flex gap-2 flex-wrap items-center bg-white border border-slate-200 rounded-lg p-2.5">
+        <Select value={sortMode} onValueChange={setSortMode}>
+          <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Sıralama" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="number">Oda No'ya Göre</SelectItem>
+            <SelectItem value="type">Oda Tipine Göre</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="w-px h-6 bg-slate-200 mx-1"></div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-40 h-9"><SelectValue placeholder={t('pms.roomType')} /></SelectTrigger>
           <SelectContent>
@@ -534,10 +556,10 @@ const RoomsTab = ({
           return (
             <Card
               key={room.id}
-              className={`hover:shadow-md transition-all ${cardExtra}`}
+              className={`hover:shadow-md transition-all h-full flex flex-col ${cardExtra}`}
               data-testid={`room-card-${room.room_number}`}
             >
-              <CardContent className="p-3">
+              <CardContent className="p-3 flex flex-col flex-1">
                 <div className="flex justify-between items-start mb-2 gap-2">
                   <span className="text-lg font-bold shrink-0 leading-none" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
                   <div className="flex flex-wrap justify-end gap-1">
@@ -697,24 +719,26 @@ const RoomsTab = ({
                   </div>
                 )}
 
-                {room.base_price && <p className="text-sm font-semibold mt-1">{room.base_price}</p>}
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
-                  {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
-                </div>
+                
+                <div className="mt-auto pt-2">
+                  <div className="flex gap-1 flex-wrap">
+                    {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
+                    {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
+                  </div>
 
-                {/* Boş oda için hızlı rezervasyon */}
-                {canCreateReservation && (
-                  <Button
-                    size="sm"
-                    className="w-full mt-2 h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-                    onClick={(e) => handleQuickResOpen(e, room)}
-                    data-testid={`quick-res-btn-${room.room_number}`}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    Rezervasyon Yap
-                  </Button>
-                )}
+                  {/* Boş oda için hızlı rezervasyon */}
+                  {canCreateReservation && (
+                    <Button
+                      size="sm"
+                      className="w-full mt-2 h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                      onClick={(e) => handleQuickResOpen(e, room)}
+                      data-testid={`quick-res-btn-${room.room_number}`}
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      Rezervasyon Yap
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           );
