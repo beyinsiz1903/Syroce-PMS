@@ -35,10 +35,14 @@ services:
     environment:
       <<: *backend-env
       INSTANCE_ID: backend-${HOSTNAME:-1}
+      # The 4 GB Droplet runs a single API container.  Keep two Uvicorn
+      # workers for concurrency without multiplying the application's
+      # in-memory caches and import clients across multiple containers.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
     env_file:
       - ./backend/.env
     deploy:
-      replicas: ${BACKEND_REPLICAS:-2}
+      replicas: ${BACKEND_REPLICAS:-1}
       update_config:
         order: start-first
         parallelism: 1
@@ -77,7 +81,7 @@ services:
         VITE_BACKEND_URL: ${VITE_BACKEND_URL}
     restart: always
     deploy:
-      replicas: ${FRONTEND_REPLICAS:-2}
+      replicas: ${FRONTEND_REPLICAS:-1}
       update_config:
         order: start-first
         parallelism: 1
@@ -110,8 +114,11 @@ services:
       INSTANCE_ID: worker-${HOSTNAME:-1}
     env_file:
       - ./backend/.env
+    # Four prefork children are excessive for the 4 GB single-node profile
+    # and compete with the API during OTA sync and night audit workloads.
+    command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-2}", "-Q", "default,ml,analytics,messaging,pipeline,backup,pricing"]
     deploy:
-      replicas: ${WORKER_REPLICAS:-2}
+      replicas: ${WORKER_REPLICAS:-1}
       update_config:
         order: start-first
         parallelism: 1
