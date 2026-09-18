@@ -47,6 +47,20 @@ async def _enqueue_kbs_after_frontdesk_transition(
         return None
 
 
+def _kbs_job_id(kbs_job: Any) -> str | None:
+    """Extract a KBS queue id without letting an integration shape break PMS.
+
+    The KBS enqueue contract historically returned a single job document, but
+    a batch enqueue can return a list.  Check-in/check-out is already durable
+    before this best-effort hand-off, therefore response serialization must be
+    tolerant of either shape.
+    """
+    if isinstance(kbs_job, dict):
+        job_id = kbs_job.get("id")
+        return str(job_id) if job_id is not None else None
+    return None
+
+
 class FrontdeskService:
     """Business logic for front desk operations."""
 
@@ -250,7 +264,7 @@ class FrontdeskService:
                 "checked_in_at": checked_in_time.isoformat(),
                 "room_number": room.get("room_number"),
                 "kbs_queued": bool(kbs_job),
-                "kbs_job_id": (kbs_job or {}).get("id"),
+                "kbs_job_id": _kbs_job_id(kbs_job),
             }
         )
 
@@ -405,7 +419,7 @@ class FrontdeskService:
                 "folios_closed": len(folios) if auto_close_folios else 0,
                 "folio_details": folio_details,
                 "kbs_queued": bool(kbs_job),
-                "kbs_job_id": (kbs_job or {}).get("id"),
+                "kbs_job_id": _kbs_job_id(kbs_job),
             }
         )
 
@@ -447,7 +461,7 @@ class FrontdeskService:
                 "message": "Express check-in tamamlandi",
                 "booking": booking,
                 "kbs_queued": bool(kbs_job),
-                "kbs_job_id": (kbs_job or {}).get("id"),
+                "kbs_job_id": _kbs_job_id(kbs_job),
             }
         )
 
