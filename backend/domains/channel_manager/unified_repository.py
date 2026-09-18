@@ -187,7 +187,7 @@ async def find_room_mapping_by_provider(
     provider: str,
     provider_room_code: str,
 ) -> dict | None:
-    return await db[COLL_ROOM_MAPPINGS].find_one(
+    mapping = await db[COLL_ROOM_MAPPINGS].find_one(
         {
             "tenant_id": tenant_id,
             "property_id": property_id,
@@ -197,6 +197,21 @@ async def find_room_mapping_by_provider(
         },
         _NO_ID,
     )
+    if not mapping and provider == "hotelrunner" and provider_room_code:
+        import re
+        match = re.search(r'(HR:\d+)', provider_room_code)
+        if match and match.group(1) != provider_room_code:
+            mapping = await db[COLL_ROOM_MAPPINGS].find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "property_id": property_id,
+                    "provider": provider,
+                    "provider_room_code": match.group(1),
+                    "is_active": True,
+                },
+                _NO_ID,
+            )
+    return mapping
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -262,7 +277,7 @@ async def find_rate_plan_mapping_by_provider(
     provider: str,
     provider_rate_code: str,
 ) -> dict | None:
-    return await db[COLL_RATE_PLAN_MAPPINGS].find_one(
+    mapping = await db[COLL_RATE_PLAN_MAPPINGS].find_one(
         {
             "tenant_id": tenant_id,
             "property_id": property_id,
@@ -272,6 +287,21 @@ async def find_rate_plan_mapping_by_provider(
         },
         _NO_ID,
     )
+    if not mapping and provider == "hotelrunner" and provider_rate_code:
+        import re
+        match = re.search(r'(HR:\d+)', provider_rate_code)
+        if match and match.group(1) != provider_rate_code:
+            mapping = await db[COLL_RATE_PLAN_MAPPINGS].find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "property_id": property_id,
+                    "provider": provider,
+                    "provider_rate_code": match.group(1),
+                    "is_active": True,
+                },
+                _NO_ID,
+            )
+    return mapping
 
 
 # ══════════════════════════════════════════════════════════════════════
