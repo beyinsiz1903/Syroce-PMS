@@ -160,7 +160,7 @@ export const NewBookingDialog = ({
 
   return (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-2xl">
+    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{t('cm.pages_calendar_CalendarDialogs.hizli_rezervasyon')}</DialogTitle>
       </DialogHeader>
@@ -1064,7 +1064,7 @@ export const FindRoomDialog = ({
 
   return (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-3xl">
+    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{t('cm.pages_calendar_CalendarDialogs.musaitlik_kontrolu')}</DialogTitle>
       </DialogHeader>
