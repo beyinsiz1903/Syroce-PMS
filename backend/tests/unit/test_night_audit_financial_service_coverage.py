@@ -115,6 +115,12 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
         },
         "charges_count": 3,
     }
+
+    daily_charge_match = charges.aggregate.call_args_list[0].args[0][0]["$match"]
+    daily_payment_pipeline = payments.aggregate.call_args.args[0]
+    assert daily_charge_match["business_date"] == "2026-08-25"
+    assert {"processed_at": {"$regex": "^2026-08-25"}} in daily_payment_pipeline[0]["$match"]["$or"]
+    assert daily_payment_pipeline[1]["$group"]["_id"] == {"$ifNull": ["$payment_method", "$method"]}
     assert result.data["payments"] == {
         "total": 550.0,
         "by_method": {
@@ -265,6 +271,16 @@ async def test_financial_report_aggregates_revenue_payments_audits_and_occupancy
     assert len(result.data["revenue_by_date"]) == 2
     assert result.data["payments_by_method"] == {"cash": {"amount": 80.0, "count": 1}}
     assert result.data["degraded"] is False
+
+    # Room charges are accounted by business date, while front-desk payments
+    # are timestamped when processed.  Both fields must remain in the report
+    # query; otherwise a completed night audit can misleadingly show zero.
+    charge_match = database.folio_charges.aggregate.call_args.args[0][0]["$match"]
+    payment_pipeline = database.payments.aggregate.call_args.args[0]
+    payment_match = payment_pipeline[0]["$match"]
+    assert charge_match["business_date"] == {"$gte": "2026-08-24", "$lte": "2026-08-25"}
+    assert {"processed_at": {"$gte": "2026-08-24", "$lte": "2026-08-25T99"}} in payment_match["$or"]
+    assert payment_pipeline[1]["$group"]["_id"] == {"$ifNull": ["$payment_method", "$method"]}
 
 
 @pytest.mark.asyncio

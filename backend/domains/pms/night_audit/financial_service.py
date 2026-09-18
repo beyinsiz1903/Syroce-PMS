@@ -60,7 +60,10 @@ class FinancialService:
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "date": business_date,
+                    # Room charges are posted after the business day closes;
+                    # their event timestamp is therefore the following day.
+                    # Financial reporting must use the accounting date.
+                    "business_date": business_date,
                     "voided": {"$ne": True},
                 }
             },
@@ -84,12 +87,13 @@ class FinancialService:
                     "$or": [
                         {"date": business_date},
                         {"payment_date": business_date},
+                        {"processed_at": {"$regex": f"^{business_date}"}},
                     ],
                 }
             },
             {
                 "$group": {
-                    "_id": "$payment_method",
+                    "_id": {"$ifNull": ["$payment_method", "$method"]},
                     "total_amount": {"$sum": "$amount"},
                     "count": {"$sum": 1},
                 }
@@ -122,7 +126,7 @@ class FinancialService:
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "date": business_date,
+                    "business_date": business_date,
                     "voided": {"$ne": True},
                     "tax_breakdown": {"$exists": True},
                 }
@@ -473,7 +477,7 @@ class FinancialService:
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "date": {"$gte": start_date, "$lte": end_date},
+                    "business_date": {"$gte": start_date, "$lte": end_date},
                     "voided": {"$ne": True},
                 }
             },
@@ -536,12 +540,13 @@ class FinancialService:
                     "$or": [
                         {"date": {"$gte": start_date, "$lte": end_date}},
                         {"payment_date": {"$gte": start_date, "$lte": end_date}},
+                        {"processed_at": {"$gte": start_date, "$lte": f"{end_date}T99"}},
                     ],
                 }
             },
             {
                 "$group": {
-                    "_id": "$payment_method",
+                    "_id": {"$ifNull": ["$payment_method", "$method"]},
                     "total": {"$sum": "$amount"},
                     "count": {"$sum": 1},
                 }
