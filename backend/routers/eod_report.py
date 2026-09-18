@@ -3,6 +3,7 @@ Tek-tik Gun Sonu Raporu — PDF + Email gonderimi.
 """
 
 from datetime import UTC, datetime, timedelta
+from html import escape
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -85,13 +86,34 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
         }
     )
 
-    # Gelir — odeme + extra_charges toplamlari
+    # Tahsilatlar, front desk tarafinda ``processed_at`` ile; eski kayitlarda
+    # ise ``payment_date``/``date`` ile tutulur. Bir gun sonu raporu bu
+    # alanlardan yalniz birine bagli olmamali.
     pay_pipeline = [
-        {"$match": {"tenant_id": tenant_id, "payment_date": business_date}},
-        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "status": {"$ne": "voided"},
+                "$or": [
+                    {"payment_date": business_date},
+                    {"date": business_date},
+                    {"processed_at": {"$regex": f"^{business_date}"}},
+                ],
+            }
+        },
+        {
+            "$group": {
+                "_id": {"$ifNull": ["$payment_method", "$method"]},
+                "total": {"$sum": "$amount"},
+            }
+        },
     ]
-    pay = await db.folio_payments.aggregate(pay_pipeline).to_list(1)
-    payments_total = float(pay[0]["total"]) if pay else 0.0
+    pay = await db.payments.aggregate(pay_pipeline).to_list(100)
+    payments_by_method = {
+        str(row.get("_id") or "other"): round(float(row.get("total") or 0), 2)
+        for row in pay
+    }
+    payments_total = sum(payments_by_method.values())
 
     extra_pipeline = [
         {"$match": {"tenant_id": tenant_id, "created_at": {"$regex": f"^{business_date}"}}},
@@ -134,6 +156,8 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
         "no_shows": no_shows,
         "cancels": cancels,
         "payments_total": round(payments_total, 2),
+        "payments_by_method": payments_by_method,
+        "cash_total": round(payments_by_method.get("cash", 0.0), 2),
         "extras_total": round(extras_total, 2),
         "revenue_total": round(payments_total + extras_total, 2),
         "open_folios": open_folios,
@@ -166,6 +190,16 @@ th {{ background:#f3f4f6; font-weight:600; }}
     <div style="font-size:12px;color:#6b7280;margin-top:4px;">{data["occupied"]} / {data["rooms_total"]} oda</div></div>
   <div class="card"><div class="label">Toplam Gelir</div><div class="value">{data["revenue_total"]:,.2f} TL</div>
     <div style="font-size:12px;color:#6b7280;margin-top:4px;">Ödeme: {data["payments_total"]:,.2f} · Ekstra: {data["extras_total"]:,.2f}</div></div>
+</div>
+
+<div class="section">
+  <h3>Kasa Tahsilat Özeti</h3>
+  <table>
+    <tr><th>Ödeme Yöntemi</th><th>Tutar</th></tr>
+    {''.join(f'<tr><td>{escape(str(method))}</td><td>{amount:,.2f} TL</td></tr>' for method, amount in sorted(data["payments_by_method"].items())) or '<tr><td colspan="2">Tahsilat bulunmuyor</td></tr>'}
+    <tr><th>Nakit Tahsilat</th><th>{data["cash_total"]:,.2f} TL</th></tr>
+    <tr><th>Toplam Tahsilat</th><th>{data["payments_total"]:,.2f} TL</th></tr>
+  </table>
 </div>
 
 <div class="section">

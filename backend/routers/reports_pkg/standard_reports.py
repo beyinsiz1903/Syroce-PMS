@@ -141,7 +141,14 @@ async def get_revenue_report(
     days = (end - start).days + 1
     total_available_room_nights = total_rooms * days
     rev_par = (total_revenue / total_available_room_nights) if total_available_room_nights > 0 else 0
-    folio_charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}, {"_id": 0}).to_list(1000)
+    folio_charges = await db.folio_charges.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "business_date": {"$gte": start_date, "$lte": end_date},
+            "voided": {"$ne": True},
+        },
+        {"_id": 0},
+    ).to_list(1000)
     revenue_by_type = {}
     for charge in folio_charges:
         charge_type = charge.get("charge_type") or "unknown"
@@ -174,7 +181,7 @@ async def get_daily_summary(
     departures = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "check_out": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}})
     inhouse = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": "checked_in"})
     total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
-    payments = await db.payments.find({"tenant_id": current_user.tenant_id, "status": "paid", "processed_at": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}}, {"_id": 0}).to_list(
+    payments = await db.payments.find({"tenant_id": current_user.tenant_id, "status": "paid", "$or": [{"processed_at": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}}, {"payment_date": target_date.isoformat()}, {"date": target_date.isoformat()}]}, {"_id": 0}).to_list(
         1000
     )
     daily_revenue = sum(p["amount"] for p in payments)

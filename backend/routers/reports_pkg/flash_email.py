@@ -380,8 +380,10 @@ async def get_daily_flash_report(
 
     # Note: Revenue is calculated from folio charges, not bookings directly
 
-    # Calculate revenue from folio charges posted today
-    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}, "voided": False}).to_list(10000)
+    # Night-audit charges are posted after the business day closes.  Their
+    # timestamp therefore belongs to the next calendar day; report by the
+    # accounting business date instead.
+    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "business_date": target_date.isoformat(), "voided": {"$ne": True}}).to_list(10000)
 
     total_revenue = sum(c["total"] for c in charges)
 

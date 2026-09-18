@@ -51,6 +51,16 @@ export default function ReportTab(props) {
               {finLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <BarChart3 className="w-4 h-4 mr-1" />}
               {t('cm.components_nightaudit_tabs_ReportTab.rapor_olustur')}
             </Button>
+            <Button
+              data-testid="print-eod-cash-report-btn"
+              size="sm"
+              variant="outline"
+              disabled={!reportDates.end}
+              onClick={() => window.open(`/api/pms/eod-report/pdf?business_date=${encodeURIComponent(reportDates.end)}`, '_blank', 'noopener,noreferrer')}
+            >
+              <FileText className="w-4 h-4 mr-1" />
+              Kasa Raporunu Yazdır
+            </Button>
           </div>
 
           {financialReport ? (
