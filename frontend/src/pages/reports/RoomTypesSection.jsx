@@ -13,10 +13,7 @@ const RoomTypesSection = ({
           <CardHeader className="pb-2"><CardTitle className="text-sm">Oda Tipi Dağılımı</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
-              <PieChart><Pie data={roomTypeData} cx="50%" cy="50%" outerRadius={90} dataKey="total" label={({
-                name,
-                total
-              }) => name + ': ' + total}>
+              <PieChart><Pie data={roomTypeData} cx="50%" cy="50%" outerRadius={80} dataKey="total" label={({ percent }) => (percent * 100 > 3 ? `${(percent * 100).toFixed(0)}%` : "")}>
                 {roomTypeData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
               </Pie><Tooltip /></PieChart>
             </ResponsiveContainer>

@@ -175,9 +175,7 @@ const RevenueSection = ({
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={roomTypeData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{
-              fontSize: 10
-            }} />
+              <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
               <YAxis tick={{
               fontSize: 10
             }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
