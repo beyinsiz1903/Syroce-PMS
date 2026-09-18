@@ -1,0 +1,23 @@
+name: Remote Diagnostics
+on:
+  workflow_dispatch:
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: root
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            echo "--- DOCKER PS ---"
+            docker ps -a
+            echo "--- DOCKER STATS ---"
+            docker stats --no-stream
+            echo "--- NGINX LOGS ---"
+            docker logs syroce-pms-nginx-1 --tail 50
+            echo "--- FRONTEND LOGS ---"
+            docker logs syroce-pms-frontend-1 --tail 50
+            echo "--- BACKEND LOGS ---"
+            docker logs syroce-pms-backend-1 --tail 50
