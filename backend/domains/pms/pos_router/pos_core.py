@@ -66,11 +66,14 @@ async def _query_pos_transactions(
             legacy_q["transaction_date"] = rng
             order_q["business_date"] = dict(rng)
 
+    tx_q = dict(legacy_q)
+    tx_q["$or"] = [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]
+
     try:
         source_rows = await asyncio.gather(
             db.pos_orders.find(order_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
             db.pos_menu_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-            db.transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+            db.transactions.find(tx_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
         )
         merged: list[dict] = []
         seen_ids: set[str] = set()

@@ -316,7 +316,7 @@ const KitchenDisplay = () => {
           {/* Left: brand */}
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/pos')}
               className="p-2 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
             >
               <Home className="w-5 h-5" />
