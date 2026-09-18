@@ -6,6 +6,7 @@ plus legacy schedule management and financial reporting.
 
 import logging
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -89,7 +90,8 @@ async def run_night_audit(
     from core.night_audit_hardened import start_night_audit
 
     authoritative_bd = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
-    if request.business_date and request.business_date != authoritative_bd and not request.force_rerun:
+    requested_bd = request.business_date or authoritative_bd
+    if requested_bd != authoritative_bd:
         raise HTTPException(
             status_code=409,
             detail={
@@ -98,6 +100,47 @@ async def run_night_audit(
                 "error": (f"İstenen iş günü {request.business_date}, otelin açık iş günü {authoritative_bd} ile eşleşmiyor. Yenileyip tekrar deneyin."),
                 "requested_business_date": request.business_date,
                 "current_business_date": authoritative_bd,
+            },
+        )
+
+    # A bypass must never turn an incomplete or same-day close into a financial
+    # posting/date-roll operation.  Preview is the safe operational tool; a
+    # blocked final close must be resolved or resumed through its run record.
+    if request.skip_validations and not request.dry_run:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "success": False,
+                "code": "UNSAFE_VALIDATION_BYPASS",
+                "error": "Doğrulamalar yalnızca simülasyonda atlanabilir. Canlı gün sonu için engeller çözülmelidir.",
+            },
+        )
+    if request.force_rerun and not request.dry_run:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "success": False,
+                "code": "UNSAFE_RERUN",
+                "error": "Tamamlanmış gün sonu tekrar çalıştırılamaz. Gerekliyse ilgili denetim kaydından kontrollü kurtarma işlemi başlatın.",
+            },
+        )
+
+    # A final close is only valid after the property's local calendar has
+    # moved past the open business date.  Closing today's date would advance
+    # the PMS date prematurely, even when all validations were skipped.
+    local_today = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
+    if not request.dry_run and authoritative_bd >= local_today:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "success": False,
+                "code": "BUSINESS_DATE_NOT_READY",
+                "error": (
+                    f"Açık iş günü {authoritative_bd}. Bugünün günü kapanmadan canlı denetim çalıştırılamaz; "
+                    "önce simülasyon kullanın veya yerel tarih bir sonraki güne geçtiğinde tekrar deneyin."
+                ),
+                "current_business_date": authoritative_bd,
+                "local_calendar_date": local_today,
             },
         )
 
@@ -331,6 +374,11 @@ async def update_schedule(
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     _admin_guard(current_user)
+    if request.skip_validations:
+        raise HTTPException(
+            status_code=422,
+            detail="Zamanlanmış gün sonu doğrulamaları atlayamaz; bu ayarı kapatın.",
+        )
     from domains.pms.night_audit.service import night_audit_core_service
 
     ctx = OperationContext.from_user(current_user)

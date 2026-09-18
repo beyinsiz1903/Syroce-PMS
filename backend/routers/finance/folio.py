@@ -166,7 +166,7 @@ async def get_folio_dashboard_stats(
     try:
         # v95 — Parallel queries + server-side $sum (was to_list(1000) + Python sum, sequential)
         tid = current_user.tenant_id
-        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
 
         open_folios_pipeline = [
             {"$match": {"tenant_id": tid, "status": "open"}},
@@ -179,8 +179,8 @@ async def get_folio_dashboard_stats(
             },
         ]
         open_folios_q = db.folios.aggregate(open_folios_pipeline).to_list(1)
-        charges_q = db.folio_charges.count_documents({"tenant_id": tid, "date": {"$gte": yesterday}, "voided": False})
-        payments_q = db.payments.count_documents({"tenant_id": tid, "date": {"$gte": yesterday}})
+        charges_q = db.folio_charges.count_documents({"tenant_id": tid, "business_date": {"$gte": yesterday}, "voided": {"$ne": True}})
+        payments_q = db.payments.count_documents({"tenant_id": tid, "$or": [{"processed_at": {"$gte": yesterday}}, {"payment_date": {"$gte": yesterday}}, {"date": {"$gte": yesterday}}]})
         open_agg, recent_charges, recent_payments = await asyncio.gather(open_folios_q, charges_q, payments_q)
 
         total_open = open_agg[0]["count"] if open_agg else 0
@@ -588,7 +588,7 @@ async def export_folio_excel(
     total_payments = 0
     for payment in payments:
         ws.cell(row=row, column=1, value=payment.get("processed_at", "")[:10])
-        ws.cell(row=row, column=2, value=payment.get("payment_method", "").title())
+        ws.cell(row=row, column=2, value=str(payment.get("payment_method") or payment.get("method") or "").title())
         ws.cell(row=row, column=3, value=payment.get("payment_type", "").title())
         ws.cell(row=row, column=4, value=f"${payment.get('amount', 0):,.2f}")
         total_payments += payment.get("amount", 0)

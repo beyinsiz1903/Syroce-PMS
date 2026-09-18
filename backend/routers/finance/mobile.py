@@ -61,20 +61,18 @@ async def get_daily_collections_mobile(
     else:
         target_date = datetime.now(UTC)
 
-    start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-
     # Get payments for the day
     total_collected = 0.0
     payment_count = 0
     payment_methods = {}
 
-    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_of_day, "$lte": end_of_day}}):
+    business_day = target_date.date().isoformat()
+    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$regex": f"^{business_day}"}}, {"payment_date": business_day}, {"date": business_day}]}):
         amount = payment.get("amount", 0)
         total_collected += amount
         payment_count += 1
 
-        method = payment.get("payment_method", "unknown")
+        method = payment.get("payment_method") or payment.get("method") or "unknown"
         payment_methods[method] = payment_methods.get(method, 0) + amount
 
     return {
@@ -113,11 +111,11 @@ async def get_monthly_collections_mobile(
     total_collected = 0.0
     payments_by_method = {}
 
-    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}}):
+    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}}, {"created_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}}]}):
         amount = payment.get("amount", 0)
         total_collected += amount
 
-        method = payment.get("payment_method", "unknown")
+        method = payment.get("payment_method") or payment.get("method") or "unknown"
         payments_by_method[method] = payments_by_method.get(method, 0) + amount
 
     return {"total_collected": round(total_collected, 2), "month": target_month, "year": target_year, "payments_by_method": {k: round(v, 2) for k, v in payments_by_method.items()}, "currency": "TRY"}
@@ -167,10 +165,8 @@ async def get_cashier_shift_report(
     else:
         target_date = datetime.now(UTC)
 
-    start_of_day = target_date.replace(hour=0, minute=0, second=0)
-    end_of_day = target_date.replace(hour=23, minute=59, second=59)
-
-    query = {"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_of_day, "$lte": end_of_day}}
+    business_day = target_date.date().isoformat()
+    query = {"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$regex": f"^{business_day}"}}, {"payment_date": business_day}, {"date": business_day}]}
 
     if cashier_name:
         query["created_by"] = cashier_name
@@ -184,7 +180,7 @@ async def get_cashier_shift_report(
 
     async for payment in db.payments.find(query):
         amount = payment.get("amount", 0)
-        method = payment.get("payment_method", "cash")
+        method = payment.get("payment_method") or payment.get("method") or "cash"
 
         if method == "cash":
             total_cash += amount
@@ -460,7 +456,7 @@ async def get_cash_flow_summary_mobile(
     # Today's cash inflow (payments received)
     today_inflow = 0.0
     inflow_count = 0
-    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_of_day, "$lte": end_of_day}}):
+    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$regex": f"^{today.isoformat()}"}}, {"payment_date": today.isoformat()}, {"date": today.isoformat()}]}):
         today_inflow += payment.get("amount", 0)
         inflow_count += 1
 
@@ -1016,7 +1012,7 @@ async def get_folio_full_extract_mobile(
                 "id": payment.get("id"),
                 "date": payment.get("created_at").isoformat() if payment.get("created_at") else None,
                 "amount": payment_amount,
-                "payment_method": payment.get("payment_method"),
+                "payment_method": payment.get("payment_method") or payment.get("method"),
                 "payment_type": payment.get("payment_type"),
                 "notes": payment.get("notes"),
                 "posted_by": payment.get("created_by"),

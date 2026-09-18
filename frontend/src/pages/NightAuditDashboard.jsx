@@ -422,11 +422,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const lastRun = history.length > 0 ? history[0] : null;
   const todayCompleted = lastRun?.business_date === businessDate && lastRun?.status?.startsWith("completed");
 
-  // Engelleyici sorun varken ve "Doğrulamaları Atla" seçili değilken
-  // backend hem gerçek çalıştırmayı hem de simülasyonu (doğrulama kapısı
-  // simülasyondan önce çalışır) BLOCKED ile reddeder. Buton bu durumda
-  // görsel olarak da kilitli olmalı.
-  const runBlocked = (previewData?.blockers?.length > 0) && !runOptions.skip_validations;
+  // Final close never bypasses blockers. A dry run remains available so the
+  // operator can inspect the result without posting or advancing the date.
+  const runBlocked = (previewData?.blockers?.length > 0) && !runOptions.dry_run;
 
   const ctx = {
     t,
@@ -757,30 +755,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   </div>
                 )}
 
-                <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">Doğrulamaları Atla</p>
-                      <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır</p>
-                    </div>
-                  </div>
-                  <Switch
-                    data-testid="schedule-skip-validations-switch"
-                    checked={schedule.skip_validations}
-                    onCheckedChange={(checked) => setSchedule({ ...schedule, skip_validations: checked })}
-                  />
-                </label>
               </div>
-
-              {schedule.skip_validations && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-red-700">
-                    Otomatik çalıştırmada doğrulama atlama veri tutarsızlıklarına yol açabilir.
-                  </p>
-                </div>
-              )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setShowScheduleDialog(false)} disabled={scheduleLoading}>
@@ -843,7 +818,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   <div className="text-xs text-rose-800">
                     <p className="font-medium">{previewData.blockers.length} engelleyici sorun var</p>
                     <p className="mt-0.5">
-                      Hazırlık sekmesinden çözmeden başlatma engellenecek. Acil durumda &quot;Doğrulamaları Atla&quot; seçeneğini kullanabilirsiniz.
+                      Hazırlık sekmesinden çözmeden canlı gün sonu başlatılamaz. Etki yaratmadan incelemek için simülasyon kullanın.
                     </p>
                     <button
                       type="button"
@@ -872,34 +847,6 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <input
-                    data-testid="force-rerun-checkbox"
-                    type="checkbox"
-                    checked={runOptions.force_rerun}
-                    onChange={(e) => setRunOptions({ ...runOptions, force_rerun: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-amber-600"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">Tekrar Çalıştır</p>
-                    <p className="text-xs text-gray-500">Daha önce tamamlanmış olsa bile tekrar çalıştır</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <input
-                    data-testid="skip-validations-checkbox"
-                    type="checkbox"
-                    checked={runOptions.skip_validations}
-                    onChange={(e) => setRunOptions({ ...runOptions, skip_validations: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-red-600"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">Doğrulamaları Atla</p>
-                    <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır (dikkatli kullanın)</p>
-                  </div>
-                </label>
-
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Açıklama (opsiyonel)</label>
                   <input
@@ -913,18 +860,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </div>
               </div>
 
-              {runOptions.skip_validations && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-red-700">
-                    Doğrulama atlama sadece acil durumlarda kullanılmalıdır. Ön kontrolsüz denetim veri tutarsızlıklarına neden olabilir.
-                  </p>
-                </div>
-              )}
-
               {runBlocked && (
                 <p className="text-xs text-rose-700 pt-1" data-testid="run-blocked-hint">
-                  Engelleyici sorunlar çözülmeden denetim başlatılamaz. Hazırlık sekmesinden çözün veya &quot;Doğrulamaları Atla&quot; seçeneğini işaretleyin.
+                  Engelleyici sorunlar çözülmeden canlı gün sonu başlatılamaz. Hazırlık sekmesinden çözün veya yalnızca simülasyon çalıştırın.
                 </p>
               )}
 
@@ -936,7 +874,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   data-testid="confirm-run-btn"
                   onClick={handleRunAudit}
                   disabled={running || runBlocked}
-                  title={runBlocked ? 'Engelleyici sorunlar var. Önce Hazırlık sekmesinden çözün ya da "Doğrulamaları Atla" seçeneğini işaretleyin.' : undefined}
+                  title={runBlocked ? 'Engelleyici sorunlar var. Önce Hazırlık sekmesinden çözün veya simülasyon çalıştırın.' : undefined}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
                   {running ? (

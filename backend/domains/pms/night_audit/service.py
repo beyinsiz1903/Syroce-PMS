@@ -687,6 +687,42 @@ class NightAuditCoreService:
         )
         async for run in cursor:
             runs.append(run)
+        # Hardened audit runs use operational counters and may not include the
+        # legacy financial fields consumed by the dashboard. Derive those from
+        # authoritative business-date charges rather than displaying 0.00 TL.
+        missing_financial_dates = [
+            run.get("business_date")
+            for run in runs
+            if run.get("business_date")
+            and ("total_room_revenue" not in run or "total_tax_amount" not in run)
+        ]
+        if missing_financial_dates:
+            try:
+                totals = await self._db.folio_charges.aggregate(
+                    [
+                        {
+                            "$match": {
+                                "tenant_id": ctx.tenant_id,
+                                "business_date": {"$in": missing_financial_dates},
+                                "voided": {"$ne": True},
+                            }
+                        },
+                        {
+                            "$group": {
+                                "_id": "$business_date",
+                                "revenue": {"$sum": "$amount"},
+                                "tax": {"$sum": "$tax_amount"},
+                            }
+                        },
+                    ]
+                ).to_list(None)
+                totals_by_date = {row["_id"]: row for row in totals}
+                for run in runs:
+                    snapshot = totals_by_date.get(run.get("business_date"), {})
+                    run.setdefault("total_room_revenue", round(float(snapshot.get("revenue") or 0), 2))
+                    run.setdefault("total_tax_amount", round(float(snapshot.get("tax") or 0), 2))
+            except Exception as exc:  # noqa: BLE001 — history remains available
+                logger.warning("Night audit history financial enrichment failed: %s", exc)
         total = await self._db.night_audit_runs.count_documents({"tenant_id": ctx.tenant_id})
         return ServiceResult.success({"runs": runs, "total": total, "limit": limit, "skip": skip})
 
@@ -740,7 +776,8 @@ class NightAuditCoreService:
             "scheduled_hour": schedule_data.get("scheduled_hour", 0),
             "scheduled_minute": schedule_data.get("scheduled_minute", 0),
             "timezone": schedule_data.get("timezone", "Europe/Istanbul"),
-            "skip_validations": schedule_data.get("skip_validations", False),
+            # Scheduled final close is never permitted to bypass readiness.
+            "skip_validations": False,
             "auto_retry": schedule_data.get("auto_retry", True),
             "max_retries": schedule_data.get("max_retries", 2),
             "notify_on_complete": schedule_data.get("notify_on_complete", True),

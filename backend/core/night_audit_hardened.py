@@ -20,6 +20,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pymongo import ReadPreference
 from pymongo.errors import DuplicateKeyError
@@ -317,6 +318,37 @@ async def start_night_audit(
         bd = business_date
     else:
         bd = (await ensure_business_date_initialized(db, tenant_id))["business_date"]
+
+    # This guard lives in the engine (rather than only in the HTTP router) so
+    # manual requests and Celery's scheduled path have identical date-close
+    # safety. A final close of the local calendar's current day would advance
+    # the PMS date early; a dry run is the only safe same-day operation.
+    if not dry_run:
+        schedule_collection = getattr(db, "night_audit_schedules", None)
+        schedule = (
+            await schedule_collection.find_one(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "timezone": 1},
+            )
+            if schedule_collection is not None
+            else None
+        )
+        timezone_name = (schedule or {}).get("timezone") or "Europe/Istanbul"
+        try:
+            local_today = datetime.now(ZoneInfo(timezone_name)).date().isoformat()
+        except Exception:  # invalid legacy timezone must not make a close unsafe
+            local_today = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
+        if bd >= local_today:
+            return {
+                "success": False,
+                "code": "BUSINESS_DATE_NOT_READY",
+                "error": (
+                    f"Açık iş günü {bd}. Bugünün günü kapanmadan canlı denetim çalıştırılamaz; "
+                    "simülasyon kullanın veya yerel tarih bir sonraki güne geçtiğinde tekrar deneyin."
+                ),
+                "current_business_date": bd,
+                "local_calendar_date": local_today,
+            }
     actor = actor or {}
     run_id = str(uuid.uuid4())
     now = _now_iso()
