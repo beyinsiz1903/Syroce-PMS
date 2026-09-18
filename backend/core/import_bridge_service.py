@@ -13,6 +13,8 @@ Key guarantees:
 """
 
 import logging
+import re
+import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -106,6 +108,68 @@ PERMANENT_KEYWORDS = [
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _normalized_guest_name(value: str | None) -> str:
+    """Normalize display names before using them as an identity safeguard."""
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_name = decomposed.encode("ascii", "ignore").decode().casefold()
+    return re.sub(r"[^a-z0-9]", "", ascii_name)
+
+
+def _guest_identity_matches(candidate: dict[str, Any], incoming_name: str) -> bool:
+    """PII can be an OTA/agency contact; it is never sufficient on its own."""
+    candidate_name = candidate.get("name") or " ".join(
+        part for part in (candidate.get("first_name"), candidate.get("last_name")) if part
+    )
+    return bool(
+        _normalized_guest_name(candidate_name)
+        and _normalized_guest_name(candidate_name) == _normalized_guest_name(incoming_name)
+    )
+
+
+async def _find_existing_guest_for_import(
+    *,
+    tenant_id: str,
+    guest_name: str,
+    guest_first: str,
+    guest_last: str,
+    guest_email: str,
+    guest_phone: str,
+) -> dict[str, Any] | None:
+    """Find only a guest whose identity agrees with the incoming reservation.
+
+    Channel partners commonly provide a shared agency email address and phone
+    number for different travellers.  Treating either value as a unique guest
+    identity caused reservations to be attached to the wrong person.
+    """
+    from security.encrypted_lookup import build_guest_pii_query
+
+    queries: list[dict[str, Any]] = []
+    if guest_email:
+        queries.append(build_guest_pii_query("email", guest_email))
+    if guest_phone:
+        queries.append(build_guest_pii_query("phone", guest_phone))
+    if guest_first or guest_last:
+        queries.append({"first_name": guest_first, "last_name": guest_last})
+
+    seen_ids: set[str] = set()
+    for identity_query in queries:
+        cursor = db.guests.find(
+            {"tenant_id": tenant_id, **identity_query},
+            {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
+        )
+        async for candidate in cursor:
+            candidate_id = str(candidate.get("id") or "")
+            if not candidate_id or candidate_id in seen_ids:
+                continue
+            seen_ids.add(candidate_id)
+            if _guest_identity_matches(candidate, guest_name):
+                return candidate
+            logger.warning(
+                "[IMPORT-BRIDGE] Refusing guest link: OTA contact matched a different name"
+            )
+    return None
 
 
 def _is_retryable(error_msg: str) -> bool:
@@ -657,22 +721,14 @@ async def auto_import_reservation_to_pms(
         guest_phone = record.get("guest_phone", "")
 
         if guest_name:
-            # Try to find existing guest by email or phone
-            # Dual-read: the insert below encrypts PII, so a plaintext-equality
-            # lookup would never match an encrypted row → a duplicate guest record
-            # on every repeated OTA sync. Match _hash_<field> OR legacy plaintext.
-            from security.encrypted_lookup import build_guest_pii_query
-
-            guest_query = {"tenant_id": tenant_id}
-            if guest_email:
-                guest_query.update(build_guest_pii_query("email", guest_email))
-            elif guest_phone:
-                guest_query.update(build_guest_pii_query("phone", guest_phone))
-            else:
-                guest_query["first_name"] = guest_first
-                guest_query["last_name"] = guest_last
-
-            existing_guest = await db.guests.find_one(guest_query, {"_id": 0, "id": 1})
+            existing_guest = await _find_existing_guest_for_import(
+                tenant_id=tenant_id,
+                guest_name=guest_name,
+                guest_first=guest_first,
+                guest_last=guest_last,
+                guest_email=guest_email,
+                guest_phone=guest_phone,
+            )
             if existing_guest:
                 booking_doc["guest_id"] = existing_guest["id"]
             else:
@@ -680,6 +736,7 @@ async def auto_import_reservation_to_pms(
                 guest_doc = {
                     "id": guest_id,
                     "tenant_id": tenant_id,
+                    "name": guest_name,
                     "first_name": guest_first,
                     "last_name": guest_last,
                     "email": guest_email,
@@ -996,8 +1053,16 @@ async def _handle_import_failure(
 ) -> None:
     """Handle import failure — retry or mark as permanently failed."""
     now = _utc_now()
-    retry_count = record.get("retry_count", 0) + 1
-    max_retries = record.get("max_retries", DEFAULT_MAX_RETRIES)
+    # A worker can receive a pre-claimed document, while another flow may have
+    # already updated its retry metadata.  Always use the persisted value for
+    # the retry decision so an exhausted import cannot remain ``processing``.
+    persisted_retry_state = await db[COLL_IMPORTED].find_one(
+        {"id": record["id"]},
+        {"_id": 0, "retry_count": 1, "max_retries": 1},
+    )
+    retry_state = persisted_retry_state or record
+    retry_count = retry_state.get("retry_count", 0) + 1
+    max_retries = retry_state.get("max_retries", DEFAULT_MAX_RETRIES)
     retryable = _is_retryable(error_msg)
 
     if not retryable or retry_count >= max_retries:
