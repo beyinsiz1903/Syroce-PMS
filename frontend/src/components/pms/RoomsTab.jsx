@@ -132,7 +132,6 @@ const RoomsTab = ({
           paid_amount: b.paid_amount || 0,
           balance: Math.round(balance * 100) / 100,
           currency: b.currency || "TL",
-          currency: b.currency || "TL",
           isCheckInToday: ci === today,
           isCheckOutToday: co === today,
           category,
