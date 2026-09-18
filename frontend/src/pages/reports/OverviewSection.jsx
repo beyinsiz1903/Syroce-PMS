@@ -79,7 +79,7 @@ const OverviewSection = ({
         <CardHeader className="pb-1"><CardTitle className="text-xs text-gray-500">Oda Durumu</CardTitle></CardHeader>
         <CardContent className="pb-3">
           {roomStatusData.length > 0 ? <ResponsiveContainer width="100%" height={160}>
-              <PieChart><Pie data={roomStatusData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={3}>
+              <PieChart><Pie data={roomStatusData} cx="50%" cy="50%" innerRadius={40} outerRadius={80} dataKey="value" paddingAngle={3}>
                 {roomStatusData.map((e, i) => <Cell key={e.id || i} fill={e.color} />)}
               </Pie><Tooltip /><Legend iconSize={8} wrapperStyle={{
                 fontSize: '10px'

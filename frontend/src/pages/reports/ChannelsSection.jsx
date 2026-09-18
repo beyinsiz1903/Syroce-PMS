@@ -12,10 +12,7 @@ export const ChannelsSection = ({
         <CardHeader className="pb-2"><CardTitle className="text-sm">Kaynak Dağılımı</CardTitle></CardHeader>
         <CardContent>
           {sourceData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
-              <PieChart><Pie data={sourceData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="count" paddingAngle={3} label={({
-              name,
-              count
-            }) => name + ': ' + count}>
+              <PieChart><Pie data={sourceData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="count" paddingAngle={3} label={({ percent }) => (percent * 100 > 3 ? `${(percent * 100).toFixed(0)}%` : "")}>
                 {sourceData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
               </Pie><Tooltip /><Legend iconSize={10} wrapperStyle={{
               fontSize: 11
@@ -29,9 +26,7 @@ export const ChannelsSection = ({
           {sourceData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
               <BarChart data={sourceData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="name" tick={{
-              fontSize: 10
-            }} />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
                 <YAxis tick={{
               fontSize: 10
             }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
@@ -86,9 +81,7 @@ export const SourcesSection = ({
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={sourceData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="name" tick={{
-              fontSize: 10
-            }} />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
                 <YAxis tick={{
               fontSize: 10
             }} />

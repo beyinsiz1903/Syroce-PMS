@@ -18,10 +18,7 @@ const NationalitySection = ({
           <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_NationalitySection.milliyet_dagilimi_f8dc7')}</CardTitle></CardHeader>
           <CardContent>
             {countryData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
-                <PieChart><Pie data={countryData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="count" paddingAngle={3} label={({
-                name,
-                count
-              }) => name + ': ' + count}>
+                <PieChart><Pie data={countryData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="count" paddingAngle={3} label={({ percent }) => (percent * 100 > 3 ? `${(percent * 100).toFixed(0)}%` : "")}>
                   {countryData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie><Tooltip /><Legend iconSize={10} wrapperStyle={{
                 fontSize: 11
