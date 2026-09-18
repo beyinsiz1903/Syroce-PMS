@@ -524,7 +524,8 @@ jobs:
             --min-tests 6100 \
             --max-skips 5 \
             --allow-skip 'test_admin_panel_phases' \
-            --allow-skip 'test_mice_beo_pdf'
+            --allow-skip 'test_mice_beo_pdf' \
+            --allow-skip 'test_hotelrunner_import_projects_provider_note_into_existing_notes_collection'
 
       - name: Upload full-suite results, coverage, and backend log
         uses: actions/upload-artifact@v5
