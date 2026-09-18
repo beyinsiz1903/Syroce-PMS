@@ -33,3 +33,4 @@ jobs:
             
             # Start containers
             docker compose -f docker-compose.prod.yml up -d
+            docker restart syroce-pms-nginx-1
