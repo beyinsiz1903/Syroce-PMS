@@ -1018,7 +1018,7 @@ async def get_folio_full_extract_mobile(
                 "id": payment.get("id"),
                 "date": payment.get("created_at").isoformat() if payment.get("created_at") else None,
                 "amount": payment_amount,
-                "payment_method": payment.get("payment_method"),
+                "payment_method": payment.get("payment_method") or payment.get("method"),
                 "payment_type": payment.get("payment_type"),
                 "notes": payment.get("notes"),
                 "posted_by": payment.get("created_by"),

@@ -588,7 +588,7 @@ async def export_folio_excel(
     total_payments = 0
     for payment in payments:
         ws.cell(row=row, column=1, value=payment.get("processed_at", "")[:10])
-        ws.cell(row=row, column=2, value=payment.get("payment_method", "").title())
+        ws.cell(row=row, column=2, value=str(payment.get("payment_method") or payment.get("method") or "").title())
         ws.cell(row=row, column=3, value=payment.get("payment_type", "").title())
         ws.cell(row=row, column=4, value=f"${payment.get('amount', 0):,.2f}")
         total_payments += payment.get("amount", 0)
