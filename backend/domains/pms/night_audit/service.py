@@ -776,7 +776,8 @@ class NightAuditCoreService:
             "scheduled_hour": schedule_data.get("scheduled_hour", 0),
             "scheduled_minute": schedule_data.get("scheduled_minute", 0),
             "timezone": schedule_data.get("timezone", "Europe/Istanbul"),
-            "skip_validations": schedule_data.get("skip_validations", False),
+            # Scheduled final close is never permitted to bypass readiness.
+            "skip_validations": False,
             "auto_retry": schedule_data.get("auto_retry", True),
             "max_retries": schedule_data.get("max_retries", 2),
             "notify_on_complete": schedule_data.get("notify_on_complete", True),
