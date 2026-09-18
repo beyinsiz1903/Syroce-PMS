@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -8,6 +8,10 @@ import {
   CreditCard, ArrowRightLeft, Building2, DollarSign, ArrowDownUp,
   Plus, Receipt, FileText, Loader2, Split
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, fmtTL, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import {
@@ -36,6 +40,23 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
   const [reconcilingRoomCharge, setReconcilingRoomCharge] = useState(false);
+  // Currency Converter state
+  const [useCurrencyConverter, setUseCurrencyConverter] = useState(false);
+  const [foreignCurrency, setForeignCurrency] = useState('TL');
+  const [foreignAmount, setForeignAmount] = useState('');
+  const [exchangeRate, setExchangeRate] = useState('');
+  const [tcmbRates, setTcmbRates] = useState({});
+
+  const fetchExchangeRates = async () => {
+    try {
+      const res = await axios.get('/pms/reservations/exchange-rates');
+      if (res.data?.rates) setTcmbRates(res.data.rates);
+    } catch (e) { console.error('Failed to fetch exchange rates', e); }
+  };
+
+  useEffect(() => {
+    if (useCurrencyConverter && Object.keys(tcmbRates).length === 0) fetchExchangeRates();
+  }, [useCurrencyConverter, tcmbRates]);
 
   const folioList = useMemo(() => (Array.isArray(folios) ? folios : []), [folios]);
 
@@ -201,15 +222,82 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               ...payForm,
               amount,
               payment_type: classifyGuestPayment(amount, summary?.balance),
+              ...(useCurrencyConverter && foreignAmount && exchangeRate ? {
+                notes: `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`
+              } : {}),
             });
             toast.success('Ödeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', reference: '' });
+            setUseCurrencyConverter(false);
+            setForeignAmount('');
+            setExchangeRate('');
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Tutar (TL)" type="number" value={payForm.amount} onChange={v => setPayForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="number" value={payForm.amount} onChange={v => { setPayForm(p => ({ ...p, amount: v })); if (useCurrencyConverter && exchangeRate && !isNaN(parseFloat(v))) setForeignAmount((parseFloat(v) * parseFloat(exchangeRate)).toFixed(2)); else setForeignAmount(""); }} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
           </div>
           <FormField label={payForm.method === 'discount' ? 'İndirim Sebebi / Not' : 'Referans'} value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder={payForm.method === 'discount' ? 'İndirimin nedeni (Zorunlu)' : 'Fis/Dekont No'} />
+          {/* Currency Converter */}
+          <div className="mt-4 border-t pt-3 border-slate-100">
+            <div className="flex items-center space-x-2">
+              <Checkbox id="useConverter" checked={useCurrencyConverter} onCheckedChange={(checked) => {
+                setUseCurrencyConverter(checked);
+                if (checked && foreignCurrency && tcmbRates[foreignCurrency]) {
+                  const newRate = exchangeRate || tcmbRates[foreignCurrency].toFixed(4);
+                  if (!exchangeRate) setExchangeRate(newRate);
+                  const baseAmt = parseFloat(payForm.amount) || summary?.balance || 0;
+                  if (baseAmt > 0) setForeignAmount((baseAmt * parseFloat(newRate)).toFixed(2));
+                }
+              }} />
+              <Label htmlFor="useConverter" className="text-sm font-medium text-slate-700 cursor-pointer">
+                Farklı Döviz ile Hesapla (Kur Çevirici)
+              </Label>
+            </div>
+            {useCurrencyConverter && (
+              <div className="bg-slate-50 border border-slate-200 rounded p-3 mt-3 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Alınan Döviz Cinsi</Label>
+                    <UiSelect value={foreignCurrency} onValueChange={(val) => {
+                      setForeignCurrency(val);
+                      if (val === "TL") { setExchangeRate("1"); setForeignAmount(payForm.amount); return; }
+                      const rate = tcmbRates[val];
+                      if (rate) {
+                        const rateStr = rate.toFixed(4);
+                        setExchangeRate(rateStr);
+                        const baseAmt = parseFloat(payForm.amount);
+                        if (!isNaN(baseAmt)) setForeignAmount((baseAmt * parseFloat(rateStr)).toFixed(2));
+                      }
+                    }}>
+                      <SelectTrigger className="h-8 mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="TL">TL (Türk Lirası)</SelectItem>
+                        {Object.keys(tcmbRates).sort().map(cur => <SelectItem key={cur} value={cur}>{cur}</SelectItem>)}
+                      </SelectContent>
+                    </UiSelect>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Uygulanan Kur ({currency} Karşılığı)</Label>
+                    <Input type="number" step="0.0001" className="h-8 mt-1" value={exchangeRate} onChange={e => {
+                      setExchangeRate(e.target.value);
+                      const rate = parseFloat(e.target.value);
+                      const baseAmt = parseFloat(payForm.amount);
+                      if (!isNaN(rate) && !isNaN(baseAmt)) setForeignAmount((baseAmt * rate).toFixed(2));
+                    }} />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Misafirden Alınacak Tutar ({foreignCurrency})</Label>
+                  <Input type="number" step="0.01" className="h-8 mt-1 font-semibold text-emerald-600" value={foreignAmount} onChange={e => {
+                    setForeignAmount(e.target.value);
+                    const fAmt = parseFloat(e.target.value);
+                    const rate = parseFloat(exchangeRate);
+                    if (!isNaN(fAmt) && !isNaN(rate) && rate > 0) setPayForm(p => ({...p, amount: (fAmt / rate).toFixed(2)}));
+                  }} />
+                </div>
+              </div>
+            )}
+          </div>
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
             <div className="font-medium">{guestPaymentClassificationLabel(payForm.amount, summary?.balance)}</div>
             <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>
@@ -224,7 +312,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             toast.success('Cariye aktarildi'); setShowCari(false); setCariForm({ amount: '', cari_account_id: '', description: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Tutar (TL)" type="number" value={cariForm.amount} onChange={v => setCariForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="number" value={cariForm.amount} onChange={v => setCariForm(p => ({ ...p, amount: v }))} />
             <SelectField label="Cari Hesap" value={cariForm.cari_account_id} onChange={v => setCariForm(p => ({ ...p, cari_account_id: v }))}
               options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
           </div>
@@ -239,7 +327,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             toast.success('Acente ödemesi kaydedildi'); setShowAgency(false); setAgencyForm({ amount: '', agency_name: '', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Tutar (TL)" type="number" value={agencyForm.amount} onChange={v => setAgencyForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="number" value={agencyForm.amount} onChange={v => setAgencyForm(p => ({ ...p, amount: v }))} />
             <FormField label="Acente Adi" value={agencyForm.agency_name} onChange={v => setAgencyForm(p => ({ ...p, agency_name: v }))} />
           </div>
           <FormField label="Referans" value={agencyForm.reference} onChange={v => setAgencyForm(p => ({ ...p, reference: v }))} placeholder="Voucher No" />
@@ -270,7 +358,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Tutar (TL)" type="number" value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="number" value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
             <FormField label="Açıklama" value={cariTransferForm.description} onChange={v => setCariTransferForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
           </div>
         </FormPanel>
@@ -324,7 +412,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <div className="grid grid-cols-2 gap-3">
             <SelectField label="Cari Hesap" value={reconcileForm.cari_account_id} onChange={v => setReconcileForm(p => ({ ...p, cari_account_id: v }))}
               options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
-            <FormField label="Tutar (TL)" type="number" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="number" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
           </div>
           <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma açıklaması" />
         </FormPanel>
