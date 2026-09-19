@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 class ConnectorProvider(str, Enum):
     HOTELRUNNER = "hotelrunner"
+    EXELY = "exely"
     SITEMINDER = "siteminder"
     CHANNEX = "channex"
 
