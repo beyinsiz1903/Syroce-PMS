@@ -55,7 +55,11 @@ class CreateRoomBlockService:
 
             start_date = datetime.fromisoformat(block_data.start_date).date()
             end_date = datetime.fromisoformat(block_data.end_date).date() if block_data.end_date else None
-            if end_date and end_date < start_date:
+            # ``end_date`` is exclusive, like a reservation checkout.  An
+            # equal range contains no room-night and must not create a block
+            # document that appears blocked in the UI but leaves inventory
+            # sellable in the atomic lock table.
+            if end_date and end_date <= start_date:
                 raise HTTPException(status_code=400, detail="End date must be after start date")
 
             conflicting_bookings = await self.repository.list_conflicting_bookings(

@@ -40,6 +40,7 @@ import {
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
+import RoomBlockDialog from '@/components/pms/RoomBlockDialog';
 
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
@@ -223,6 +224,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [bookingConflict, setBookingConflict] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showNewBookingDialog, setShowNewBookingDialog] = useState(false);
+  const [showRoomBlockDialog, setShowRoomBlockDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showFindRoomDialog, setShowFindRoomDialog] = useState(false);
   const [showMoveReasonDialog, setShowMoveReasonDialog] = useState(false);
@@ -1364,6 +1366,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             setNewBooking(newBookingDraft());
             setShowNewBookingDialog(true);
           }}
+          onShowRoomBlockDialog={() => setShowRoomBlockDialog(true)}
           onShowUnassigned={() => setShowUnassignedPanel(true)}
           onShowConflicts={() => setShowConflictsModal(true)}
           viewPreferences={viewPreferences}
@@ -1468,6 +1471,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         occupancyPricingRules={occupancyPricingRules}
         onSubmit={handleCreateBooking}
         minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate < t ? hotelBusinessDate : t; })()}
+      />
+      <RoomBlockDialog
+        open={showRoomBlockDialog}
+        onOpenChange={setShowRoomBlockDialog}
+        rooms={rooms}
+        businessDate={hotelBusinessDate || toDateStringUTC(currentDate)}
+        onChanged={loadCalendarData}
       />
 
       <Dialog open={showConflictsModal} onOpenChange={setShowConflictsModal}>

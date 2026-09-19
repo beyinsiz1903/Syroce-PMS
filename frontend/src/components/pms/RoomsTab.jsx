@@ -10,8 +10,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2 } from 'lucide-react';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2, Wrench } from 'lucide-react';
 import BookingConflictDialog from '@/components/pms/BookingConflictDialog';
+import RoomBlockDialog from '@/components/pms/RoomBlockDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { classifyGuestPayment } from '@/utils/paymentClassification';
 import { deduplicateGuestSearchResults, maskGuestDocument } from '@/pages/calendar/guestIdentity';
@@ -89,6 +90,8 @@ const RoomsTab = ({
   });
   const [quickResLoading, setQuickResLoading] = useState(false);
   const [markingCleanRoomId, setMarkingCleanRoomId] = useState(null);
+  const [roomBlockDialog, setRoomBlockDialog] = useState(false);
+  const [roomToBlock, setRoomToBlock] = useState(null);
 
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
@@ -742,12 +745,31 @@ const RoomsTab = ({
                       Rezervasyon Yap
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full mt-2 h-8 text-xs border-rose-200 text-rose-700 hover:bg-rose-50"
+                    onClick={(e) => { e.stopPropagation(); setRoomToBlock(room); setRoomBlockDialog(true); }}
+                    data-testid={`room-block-btn-${room.room_number}`}
+                  >
+                    <Wrench className="w-3.5 h-3.5 mr-1" />
+                    Arıza / Blokla
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           );
         })}
       </div>
+
+      <RoomBlockDialog
+        open={roomBlockDialog}
+        onOpenChange={setRoomBlockDialog}
+        rooms={rooms}
+        defaultRoomId={roomToBlock?.id || ''}
+        businessDate={today}
+        onChanged={onDataRefresh}
+      />
 
       {/* Checkout Balance Warning Dialog */}
       <Dialog open={checkoutDialog} onOpenChange={(o) => !o && setCheckoutDialog(false)}>

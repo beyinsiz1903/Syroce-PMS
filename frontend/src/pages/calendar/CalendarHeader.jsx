@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight,
-  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal, MoreHorizontal
+  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal, MoreHorizontal, Wrench
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -30,6 +30,7 @@ const CalendarHeader = ({
   onSyncReservations,
   onShowFindRoomDialog,
   onShowNewBookingDialog,
+  onShowRoomBlockDialog,
   onShowUnassigned,
   onShowConflicts,
   viewPreferences,
@@ -149,6 +150,9 @@ const CalendarHeader = ({
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={onShowFindRoomDialog}>
                 <SlidersHorizontal /> {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onShowRoomBlockDialog} data-testid="mobile-calendar-room-block">
+                <Wrench /> Odayı blokla / arıza bildir
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={onSyncReservations} disabled={syncing}>
                 {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
@@ -368,6 +372,16 @@ const CalendarHeader = ({
           data-testid="find-room-btn"
         >
           {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onShowRoomBlockDialog}
+          className="h-8 border-rose-200 text-xs text-rose-700 hover:bg-rose-50"
+          data-testid="calendar-room-block-button"
+        >
+          <Wrench className="mr-1 h-3.5 w-3.5" />
+          <span className={compactMode ? 'hidden 2xl:inline' : ''}>Odayı Blokla</span>
         </Button>
 
         <div className="flex items-center gap-1.5">
