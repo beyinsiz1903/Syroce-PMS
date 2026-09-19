@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from "react";
-import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
+import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight, Wrench, ExternalLink } from "lucide-react";
 import {
   toDateStringUTC, checkoutAfterCalendarNight, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
@@ -59,11 +59,13 @@ const CalendarGrid = ({
   onDrop,
   onDragEnd,
   onBookingDoubleClick,
+  onOpenRoomBlock,
   showOccupancyBand = false,
   dailyRates = {},
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
+  const [contextMenu, setContextMenu] = useState(null);
   const [, setPointerResize] = useState(null);
   const pointerResizeRef = useRef(null);
 
@@ -71,6 +73,23 @@ const CalendarGrid = ({
     const target = document.elementFromPoint?.(event.clientX, event.clientY);
     const cell = target?.closest?.('[data-calendar-date]');
     return cell?.dataset.calendarDate || '';
+  };
+
+  useEffect(() => {
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, []);
+
+  const openContextMenu = (event, payload) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      ...payload,
+      x: Math.min(event.clientX, window.innerWidth - 220),
+      y: Math.min(event.clientY, window.innerHeight - 180),
+    });
   };
 
   const completePointerResize = (event) => {
@@ -532,6 +551,7 @@ const CalendarGrid = ({
                                 }`}
                                 style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible' }}
                                 onClick={() => !covered && !roomBlock && onCellClick(room.id, date)}
+                                onContextMenu={(event) => openContextMenu(event, { kind: 'cell', room, date, covered, roomBlock })}
                                 onMouseDown={canCreate ? (e) => { if (e.button === 0) { e.preventDefault(); onCellMouseDown?.(room.id, date); } } : undefined}
                                 onMouseEnter={canCreate ? () => onCellMouseEnter?.(room.id, date) : undefined}
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
@@ -651,6 +671,7 @@ const CalendarGrid = ({
                                   onDrop(e, room.id, dateRange[startIdx], booking.id);
                                 }}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
+                                onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging || isResizing
@@ -734,6 +755,81 @@ const CalendarGrid = ({
           )}
         </div>
       </div>
+      {contextMenu && (
+        <div
+          role="menu"
+          aria-label="Takvim hızlı işlemleri"
+          className="fixed z-[100] w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {contextMenu.kind === 'cell' ? (
+            <>
+              <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                <span className="font-semibold text-slate-700">Oda {contextMenu.room.room_number}</span>
+                <span className="block">{formatDateWithDay(contextMenu.date).dayNum} {formatDateWithDay(contextMenu.date).dayName}</span>
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={contextMenu.covered || contextMenu.roomBlock || isPastDate(contextMenu.date)}
+                onClick={() => {
+                  onCellClick(contextMenu.room.id, contextMenu.date);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                <Plus className="h-4 w-4 text-amber-600" /> Rezervasyon oluştur
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onOpenRoomBlock?.(contextMenu.room);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Wrench className="h-4 w-4 text-rose-600" /> Odayı blokla / arıza bildir
+              </button>
+              {contextMenu.roomBlock && (
+                <div className="mx-3 mb-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                  Aktif blok: {contextMenu.roomBlock.reason || contextMenu.roomBlock.type}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                <span className="block font-semibold text-slate-700">{formatGuestName(contextMenu.booking.guest_name) || 'Misafir'}</span>
+                Oda {contextMenu.room.room_number}
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onBookingDoubleClick(contextMenu.booking);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <ExternalLink className="h-4 w-4 text-blue-600" /> Rezervasyonu aç
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onOpenRoomBlock?.(contextMenu.room);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Wrench className="h-4 w-4 text-rose-600" /> Bu odayı blokla / arıza bildir
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

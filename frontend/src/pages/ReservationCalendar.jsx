@@ -225,6 +225,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showSidebar, setShowSidebar] = useState(false);
   const [showNewBookingDialog, setShowNewBookingDialog] = useState(false);
   const [showRoomBlockDialog, setShowRoomBlockDialog] = useState(false);
+  const [roomToBlock, setRoomToBlock] = useState(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showFindRoomDialog, setShowFindRoomDialog] = useState(false);
   const [showMoveReasonDialog, setShowMoveReasonDialog] = useState(false);
@@ -1366,7 +1367,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             setNewBooking(newBookingDraft());
             setShowNewBookingDialog(true);
           }}
-          onShowRoomBlockDialog={() => setShowRoomBlockDialog(true)}
+          onShowRoomBlockDialog={() => {
+            setRoomToBlock(null);
+            setShowRoomBlockDialog(true);
+          }}
           onShowUnassigned={() => setShowUnassignedPanel(true)}
           onShowConflicts={() => setShowConflictsModal(true)}
           viewPreferences={viewPreferences}
@@ -1444,6 +1448,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDrop={handleDrop}
           onDragEnd={handleDragEnd}
           onBookingDoubleClick={handleBookingDoubleClick}
+          onOpenRoomBlock={(room) => {
+            setRoomToBlock(room);
+            setShowRoomBlockDialog(true);
+          }}
           showOccupancyBand={viewPreferences.showOccupancy && !viewPreferences.operationMode}
           dailyRates={calendarRates}
         />
@@ -1476,6 +1484,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         open={showRoomBlockDialog}
         onOpenChange={setShowRoomBlockDialog}
         rooms={rooms}
+        defaultRoomId={roomToBlock?.id || ''}
         businessDate={hotelBusinessDate || toDateStringUTC(currentDate)}
         onChanged={loadCalendarData}
       />
