@@ -49,7 +49,9 @@ async def list_ops_events(
 ):
     """Operasyonel event'leri listele (son N kayit)."""
     tenant_id = _get_tenant(current_user)
-    query = {"tenant_id": tenant_id}
+    query = {}
+    if current_user.role != "super_admin":
+        query["tenant_id"] = tenant_id
 
     if severity:
         query["severity"] = severity
@@ -70,7 +72,7 @@ async def list_ops_events(
     severity_counts = dict.fromkeys(("info", "warning", "critical", "success"), 0)
     async for r in db.ops_events.aggregate(
         [
-            {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": since_24h}, "severity": {"$in": list(severity_counts.keys())}}},
+            {"$match": ({"tenant_id": tenant_id, "created_at": {"$gte": since_24h}, "severity": {"$in": list(severity_counts.keys())}} if current_user.role != "super_admin" else {"created_at": {"$gte": since_24h}, "severity": {"$in": list(severity_counts.keys())}})},
             {"$group": {"_id": "$severity", "n": {"$sum": 1}}},
         ]
     ):
@@ -100,17 +102,20 @@ async def list_webhook_deliveries(
     sysdb = get_system_db()
 
     tenant_id = _get_tenant(current_user)
-    query = {"tenant_id": tenant_id}
+    query = {}
+    if current_user.role != "super_admin":
+        query["tenant_id"] = tenant_id
     if status:
         query["status"] = status
 
     deliveries = await sysdb.webhook_deliveries.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
     # Summary counts
-    total = await sysdb.webhook_deliveries.count_documents({"tenant_id": tenant_id})
-    succeeded = await sysdb.webhook_deliveries.count_documents({"tenant_id": tenant_id, "status": "succeeded"})
-    failed = await sysdb.webhook_deliveries.count_documents({"tenant_id": tenant_id, "status": {"$in": ["failed", "dlq"]}})
-    retrying = await sysdb.webhook_deliveries.count_documents({"tenant_id": tenant_id, "status": "retrying"})
+    base_match = {"tenant_id": tenant_id} if current_user.role != "super_admin" else {}
+    total = await sysdb.webhook_deliveries.count_documents(base_match)
+    succeeded = await sysdb.webhook_deliveries.count_documents({**base_match, "status": "succeeded"})
+    failed = await sysdb.webhook_deliveries.count_documents({**base_match, "status": {"$in": ["failed", "dlq"]}})
+    retrying = await sysdb.webhook_deliveries.count_documents({**base_match, "status": "retrying"})
 
     return {
         "deliveries": deliveries,
@@ -142,7 +147,9 @@ async def list_webhook_dlq(
     sysdb = get_system_db()
 
     tenant_id = _get_tenant(current_user)
-    query = {"tenant_id": tenant_id}
+    query = {}
+    if current_user.role != "super_admin":
+        query["tenant_id"] = tenant_id
     if status:
         query["status"] = status
 

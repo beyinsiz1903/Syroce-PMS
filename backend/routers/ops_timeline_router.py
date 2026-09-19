@@ -242,9 +242,10 @@ async def get_prioritized_incidents(
     sysdb = get_system_db()
     tenant_id = _get_tenant(current_user)
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+    base_match = {"tenant_id": tenant_id} if current_user.role != "super_admin" else {}
 
     # Priority 1: Terminal DLQ items (pending)
-    dlq_pending = await sysdb.webhook_dlq.find({"tenant_id": tenant_id, "status": "pending"}, {"_id": 0}).sort("created_at", -1).limit(20).to_list(20)
+    dlq_pending = await sysdb.webhook_dlq.find({**base_match, "status": "pending"}, {"_id": 0}).sort("created_at", -1).limit(20).to_list(20)
 
     # Priority 2: Active rate limit / throttle events
     throttle_events = (
