@@ -1,3 +1,5 @@
+import { ModuleGuardedRoute } from "@/routes/ProtectedRoute";
+import React from "react";
 import {
   DisplacementAnalysis, GelirYonetimiPage, AIZekaPage, AnalitikRaporlarPage,
   RevenueEngineDashboard, DataIntelligenceDashboard, MessagingDashboard,
