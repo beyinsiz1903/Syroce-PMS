@@ -251,6 +251,15 @@ async def get_entity_audit_trail(
 
 
 @router.get("/summary")
+def _merge_severity(severity_data: list[dict]) -> dict:
+    merged = {"info": 0, "warning": 0, "critical": 0}
+    for d in severity_data:
+        k = d.get("_id") or "info"
+        merged[k] = merged.get(k, 0) + d.get("count", 0)
+    return merged
+
+
+@router.get("/summary")
 async def get_audit_summary(
     period: str = Query(default="24h", pattern="^(1h|6h|24h|7d|30d)$"),
     current_user: User = Depends(get_current_user),
@@ -299,7 +308,7 @@ async def get_audit_summary(
         "period": period,
         "since": since,
         "total_events": total,
-        "by_severity": {d["_id"]: d["count"] for d in data.get("by_severity", []) if d["_id"]},
+        "by_severity": _merge_severity(data.get("by_severity", [])),
         "by_operation": {d["_id"]: d["count"] for d in data.get("by_operation", []) if d["_id"]},
         "by_actor": {d["_id"]: d["count"] for d in data.get("by_actor", []) if d["_id"]},
         "by_result": {d["_id"]: d["count"] for d in data.get("by_result", []) if d["_id"]},
