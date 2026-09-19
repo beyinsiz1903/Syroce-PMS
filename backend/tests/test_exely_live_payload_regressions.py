@@ -73,3 +73,35 @@ def test_numeric_ota_guest_counts_remain_supported_and_accumulate():
     </OTA_ResRetrieveRS></s:Body></s:Envelope>'''
     room = parse_read_rs(xml)['reservations'][0]['rooms'][0]
     assert (room['adults'], room['children']) == (3, 3)
+
+
+def test_global_contact_and_payment_comments_remain_separate():
+    xml = b'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body><OTA_ResRetrieveRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/>
+    <ReservationsList><HotelReservation><UniqueID Type="14" ID="test-contact"/>
+    <ResGuests><ResGuest ResGuestRPH="1"><Profiles><ProfileInfo><Profile><Customer>
+      <PersonName><GivenName>Room</GivenName><Surname>Guest</Surname></PersonName>
+    </Customer></Profile></ProfileInfo></Profiles></ResGuest></ResGuests>
+    <ResGlobalInfo><Comments><Comment><Text>Guest test note</Text></Comment>
+      <Comment><Text>Second note</Text></Comment></Comments>
+    <Guarantee><Comments><Comment Name="PaymentMethodName"><Text>PayOnArrival</Text></Comment>
+      <Comment Name="PaymentSystemTitle"><Text>At check-in</Text></Comment></Comments></Guarantee>
+    <Profiles><ProfileInfo><Profile><Customer><PersonName><GivenName>Contact</GivenName>
+      <Surname>Person</Surname></PersonName><Telephone PhoneNumber="447700900124"/>
+      <Email>test@example.com</Email></Customer></Profile></ProfileInfo></Profiles>
+    </ResGlobalInfo></HotelReservation></ReservationsList></OTA_ResRetrieveRS></s:Body></s:Envelope>'''
+    raw = parse_read_rs(xml)['reservations'][0]
+    assert raw['notes'] == 'Guest test note\nSecond note'
+    assert raw['guest_name'] == 'Contact Person'
+    assert raw['guest_phone'] == '447700900124'
+    assert raw['guest_email'] == 'test@example.com'
+    canonical = normalize_reservation(raw)
+    assert canonical['financial']['payment_method'] == 'PayOnArrival'
+    assert canonical['guest']['phone'] == '447700900124'
+    booking = _booking_fields(
+        tenant_id='test', property_id='test',
+        reservation={**raw, 'external_id': 'test-contact', 'note': canonical['notes']},
+        version_doc={'provider_version_key': 'test-version'}, room={},
+        mapping={'pms_room_type': 'Standard'}, slot=0, guest_id='test-guest', booking_id='test-booking')
+    assert booking['payment_method'] == 'PayOnArrival'
+    assert booking['special_requests'] == 'Guest test note\nSecond note'
