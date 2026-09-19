@@ -268,7 +268,7 @@ export default function EncryptionManagementPage({
             </Button>
             <Button onClick={() => setShowJobDialog(true)} variant="outline" className="border-gray-200" data-testid="create-job-btn">
               <RefreshCw className="h-4 w-4 mr-2" />
-              Re-encryption Job
+              Yeniden Şifreleme İşlemi
             </Button>
           </div>
         </div>

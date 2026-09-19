@@ -55,7 +55,7 @@ export default function SustainabilityReport() {
           period_start: formStart,
           period_end: formEnd,
           amount: parseFloat(formAmount),
-          evidence_url: "http://example.com/mock_invoice.pdf"
+          
         })
       });
       // Clear form & refresh
@@ -255,7 +255,7 @@ export default function SustainabilityReport() {
                 <div className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer">
                   <Upload className="w-8 h-8 mb-2 text-slate-400" />
                   <p className="text-sm">Fatura PDF veya Görselini sürükleyip bırakın</p>
-                  <p className="text-xs mt-1">Sadece demonstrasyon amaçlı mock yükleme mevcuttur.</p>
+                  <p className="text-xs mt-1">(Geçerli altyapı kurulumu bekleniyor, geçici olarak devre dışıdır)</p>
                 </div>
               </div>
 
