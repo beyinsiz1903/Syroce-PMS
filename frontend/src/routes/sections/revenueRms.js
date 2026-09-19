@@ -14,7 +14,7 @@ export function revenueRmsRoutes({ p }) {
     { path: "/app/displacement-analysis", type: "redirect", to: "/app/rms" },
     {
       path: "/app/analitik",
-      element: <ModuleGuardedRoute module="advanced_analytics" element={<AnalitikRaporlarPage />} />,
+      element: React.createElement(ModuleGuardedRoute, { module: "advanced_analytics", element: React.createElement(AnalitikRaporlarPage) }),
     },
     { path: "/app/gelir-yonetimi", type: "redirect", to: "/app/rms" },
     { path: "/app/ai-zeka", type: "redirect", to: "/app/ai" },
