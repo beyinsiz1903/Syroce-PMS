@@ -29,6 +29,20 @@ REASON_PROPERTY_MISMATCH = "property_scope_mismatch"
 REASON_CANCELLED = "reservation_cancelled"
 
 
+def rate_code_belongs_to_room(rate_plan_code: str, room_type_code: str) -> bool:
+    """Return whether a provider rate code is explicitly scoped to a room code.
+
+    HotelRunner emits derived plans in the form ``<plan-id>:<inventory-code>``.
+    A new derived plan must not prevent a reservation from entering PMS when
+    the inventory code itself has an active, unambiguous room mapping.  This
+    is deliberately structural rather than fuzzy name matching: unrelated
+    rate plans remain review-required.
+    """
+    rate = str(rate_plan_code or "").strip()
+    room = str(room_type_code or "").strip()
+    return bool(room and rate and (rate == room or rate.endswith(f":{room}")))
+
+
 def classify_for_import(
     lineage: dict[str, Any],
     room_mapping: dict[str, Any] | None,
@@ -65,9 +79,15 @@ def classify_for_import(
     if room_type_code and not room_mapping:
         return "review_required", REASON_UNMAPPED_ROOM
 
-    # Rate plan mapping
+    # Rate plan mapping.  A derived provider plan that explicitly embeds the
+    # already-mapped inventory code is safe for reservation intake: the source
+    # reservation price is retained and the missing plan is flagged on the
+    # booking for later commercial mapping.  Do not apply this fallback to an
+    # arbitrary or ambiguous plan code.
     rate_plan_code = lineage.get("rate_plan_code", "")
-    if rate_plan_code and not rate_mapping:
+    if rate_plan_code and not rate_mapping and not (
+        room_mapping and rate_code_belongs_to_room(rate_plan_code, room_type_code)
+    ):
         return "review_required", REASON_UNMAPPED_RATE
 
     return "pending_auto_import", None
