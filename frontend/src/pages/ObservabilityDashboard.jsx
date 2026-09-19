@@ -90,7 +90,7 @@ function MetricCard({ icon: Icon, label, value, description, tone = "default", t
   );
 }
 
-export default function ObservabilityDashboard() {
+export default function ObservabilityDashboard({ tenant }) {
   const [dashMetrics, setDashMetrics] = useState(null);
   const [traces, setTraces] = useState(null);
   const [errorSummary, setErrorSummary] = useState(null);
@@ -166,7 +166,7 @@ export default function ObservabilityDashboard() {
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-blue-600 p-2.5 text-white shadow-sm"><Activity className="h-5 w-5" aria-hidden="true" /></div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-950">Sistem Sağlığı</h1>
+              <h1 className="text-2xl font-bold text-slate-950 flex items-center gap-3">Sistem Sağlığı {tenant && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}</h1>
               <p className="mt-1 text-sm text-slate-600">Teknik servislerin durumu, hatalar ve yanıt süreleri. Otomatik yenileme kapalı; güncel veriler için “Verileri yenile” düğmesini kullanın.</p>
             </div>
           </div>

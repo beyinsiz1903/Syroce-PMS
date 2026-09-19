@@ -203,7 +203,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
       <PageHeader
         icon={Inbox}
-        title="Outbox & Webhook Admin"
+        title={<span className="flex items-center gap-3">Outbox &amp; Webhook Admin {tenant && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}</span>}
         subtitle={t('cm.pages_WebhookOutboxAdmin.olay_kuyrugu_webhook_teslimatlari_ve_dlq')}
         actions={
           <Button onClick={loadAll} disabled={loading} variant="outline" size="sm">
