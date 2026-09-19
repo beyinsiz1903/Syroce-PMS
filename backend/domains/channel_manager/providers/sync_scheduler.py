@@ -17,6 +17,7 @@ from domains.channel_manager.providers.hotelrunner.credentials import (
     resolve_hotelrunner_credentials,
 )
 from domains.channel_manager.providers.hotelrunner.production_safety import (
+    reservation_reconciliation_disabled,
     reservation_sync_block_reason,
 )
 from domains.channel_manager.providers.sync_engine import (
@@ -300,7 +301,12 @@ class ReservationPullScheduler:
         if all_reservations or total_pages > 1:
             self._consecutive_rate_limits = 0
 
-        mod_processed = await run_phase_a5(tenant_id, provider, safety_window_minutes)
+        reconciliation_disabled = reservation_reconciliation_disabled()
+        if reconciliation_disabled:
+            logger.info("[PULL] Existing reservation reconciliation disabled; processing new deliveries only")
+            mod_processed = 0
+        else:
+            mod_processed = await run_phase_a5(tenant_id, provider, safety_window_minutes)
 
         individual_updated = 0
         if mod_processed > 0:
@@ -314,7 +320,9 @@ class ReservationPullScheduler:
 
         catchup_imported = 0
         catchup_updated = 0
-        if self._consecutive_rate_limits > 0:
+        if reconciliation_disabled:
+            run_b = False
+        elif self._consecutive_rate_limits > 0:
             run_b = False
             logger.info("[PULL] Skipping Phase B — rate limit backoff active (consecutive: %d)", self._consecutive_rate_limits)
         else:

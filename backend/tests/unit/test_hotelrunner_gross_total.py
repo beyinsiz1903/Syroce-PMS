@@ -80,6 +80,98 @@ def _collection(**methods):
 
 
 @pytest.mark.asyncio
+async def test_pull_sync_does_not_treat_datetime_formatting_as_a_date_change(monkeypatch):
+    """A provider datetime and a PMS date can represent the same stay."""
+    booking = {
+        "id": "booking-1",
+        "external_reservation_id": "R-DATE-FORMAT",
+        "guest_name": "Guest",
+        "check_in": "2026-08-22",
+        "check_out": "2026-08-23",
+        "status": "confirmed",
+        "total_amount": 6000,
+    }
+    bookings = _collection(find_one=AsyncMock(return_value=booking))
+    notifications = _collection(find_one=AsyncMock(return_value=None))
+    fake_db = SimpleNamespace(
+        bookings=bookings,
+        imported_reservations=_collection(),
+        room_mappings=_collection(),
+        guests=_collection(),
+        notifications=notifications,
+    )
+    monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-01"}),
+    )
+    monkeypatch.setattr(sync_engine, "publish_booking_change", AsyncMock(return_value=True))
+    monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
+
+    updated = await sync_engine.sync_reservation_update(
+        "tenant-a",
+        "R-DATE-FORMAT",
+        {
+            "firstname": "Guest",
+            "checkin_date": "2026-08-22T00:00:00+03:00",
+            "checkout_date": "2026-08-23T00:00:00+03:00",
+            "total": 6000,
+        },
+        "confirmed",
+        "2026-09-19T20:16:00Z",
+    )
+
+    assert updated is True
+    booking_set = bookings.update_one.await_args.args[1]["$set"]
+    assert "check_in" not in booking_set
+    assert "check_out" not in booking_set
+    notifications.find_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pull_sync_blocks_date_changes_for_historical_reservations(monkeypatch):
+    booking = {
+        "id": "booking-closed",
+        "external_reservation_id": "R-HISTORICAL",
+        "guest_name": "Guest",
+        "check_in": "2026-08-22",
+        "check_out": "2026-08-23",
+        "status": "checked_out",
+        "total_amount": 6000,
+    }
+    bookings = _collection(find_one=AsyncMock(return_value=booking))
+    fake_db = SimpleNamespace(
+        bookings=bookings,
+        imported_reservations=_collection(),
+        room_mappings=_collection(),
+        guests=_collection(),
+        notifications=_collection(find_one=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-09-19"}),
+    )
+    monkeypatch.setattr(sync_engine, "publish_booking_change", AsyncMock(return_value=True))
+    monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
+
+    updated = await sync_engine.sync_reservation_update(
+        "tenant-a",
+        "R-HISTORICAL",
+        {"checkin_date": "2026-08-24", "checkout_date": "2026-08-25", "total": 6000},
+        "confirmed",
+        "2026-09-19T20:16:00Z",
+    )
+
+    assert updated is True
+    booking_set = bookings.update_one.await_args.args[1]["$set"]
+    assert "check_in" not in booking_set
+    assert "check_out" not in booking_set
+
+
+@pytest.mark.asyncio
 async def test_pull_sync_repairs_exact_legacy_net_import_even_when_timestamp_is_stale(monkeypatch):
     booking = {
         "id": "booking-1",
@@ -99,6 +191,11 @@ async def test_pull_sync_repairs_exact_legacy_net_import_even_when_timestamp_is_
         notifications=_collection(),
     )
     monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-01"}),
+    )
     monkeypatch.setattr(sync_engine, "publish_booking_change", AsyncMock(return_value=True))
     monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
 
@@ -211,6 +308,11 @@ async def test_current_single_room_pull_prefers_reservation_grand_total(monkeypa
         notifications=_collection(),
     )
     monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-01"}),
+    )
     monkeypatch.setattr(sync_engine, "publish_booking_change", AsyncMock(return_value=True))
     monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
 

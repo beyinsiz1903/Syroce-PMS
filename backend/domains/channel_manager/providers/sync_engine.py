@@ -13,10 +13,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.booking_realtime import publish_booking_change
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
+from core.reservation_mutability import reservation_is_historical
 from domains.channel_manager.ingest.hotelrunner_pricing import (
     hotelrunner_guest_total,
     matches_legacy_before_tax_total,
+)
+from domains.channel_manager.providers.hotelrunner.production_safety import (
+    reservation_reconciliation_disabled,
 )
 from domains.channel_manager.providers.hotelrunner_notes import (
     extract_hotelrunner_note,
@@ -34,6 +39,25 @@ logger = logging.getLogger(__name__)
 _PMS_DURABLE = "durable"
 _PMS_PENDING = "pending"
 _PMS_FAILED = "failed"
+
+
+def _calendar_date(value: Any) -> str:
+    """Return a provider/PMS date value in the canonical ``YYYY-MM-DD`` form.
+
+    HotelRunner can return either a date or an ISO datetime for the same stay.
+    PMS bookings intentionally store date-only values, so comparing raw strings
+    turns a formatting difference into a false reservation modification.
+    """
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if not isinstance(value, str):
+        return ""
+    candidate = value.strip()[:10]
+    try:
+        datetime.strptime(candidate, "%Y-%m-%d")
+    except ValueError:
+        return value.strip()
+    return candidate
 
 
 def _classify_provider_pull_failure(error: Any) -> str:
@@ -270,13 +294,14 @@ async def _ensure_durable_pms_result(
 
     if booking:
         hr_state = "cancelled" if is_cancellation else (payload.get("state") or "confirmed")
-        await sync_reservation_update(
-            tenant_id,
-            external_id,
-            payload,
-            hr_state,
-            str(payload.get("updated_at") or ""),
-        )
+        if not reservation_reconciliation_disabled():
+            await sync_reservation_update(
+                tenant_id,
+                external_id,
+                payload,
+                hr_state,
+                str(payload.get("updated_at") or ""),
+            )
         if not is_cancellation:
             from domains.channel_manager.providers.unmatched_hold import (
                 release_unmatched_reservation_hold,
@@ -673,6 +698,16 @@ async def sync_reservation_update(
         logger.debug("[PULL-SYNC] Provider update already applied or superseded")
         return True
 
+    historical_operational_lock = False
+    if not provider_update_is_stale:
+        business_date = await ensure_business_date_initialized(db, tenant_id)
+        historical_operational_lock = reservation_is_historical(booking, business_date["business_date"])
+        if historical_operational_lock:
+            logger.warning(
+                "[PULL-SYNC] Historical reservation provider mutation blocked external_reservation_id=%s",
+                ext_reservation_id,
+            )
+
     rooms = hr_payload.get("rooms") or []
     room = rooms[0] if rooms else {}
 
@@ -681,17 +716,22 @@ async def sync_reservation_update(
     if not guest_name_hr:
         guest_name_hr = hr_payload.get("guest", "")
 
-    if not provider_update_is_stale and guest_name_hr and guest_name_hr != booking.get("guest_name", ""):
+    if not provider_update_is_stale and not historical_operational_lock and guest_name_hr and guest_name_hr != booking.get("guest_name", ""):
         updates["guest_name"] = guest_name_hr
 
-    checkin = hr_payload.get("checkin_date") or (room.get("checkin_date") if room else "")
-    checkout = hr_payload.get("checkout_date") or (room.get("checkout_date") if room else "")
-    if not provider_update_is_stale and checkin and checkin != booking.get("check_in", ""):
-        updates["check_in"] = checkin
-    if not provider_update_is_stale and checkout and checkout != booking.get("check_out", ""):
-        updates["check_out"] = checkout
+    checkin = _calendar_date(hr_payload.get("checkin_date") or (room.get("checkin_date") if room else ""))
+    checkout = _calendar_date(hr_payload.get("checkout_date") or (room.get("checkout_date") if room else ""))
+    incoming_dates_differ = (
+        (checkin and checkin != _calendar_date(booking.get("check_in", "")))
+        or (checkout and checkout != _calendar_date(booking.get("check_out", "")))
+    )
+    if not provider_update_is_stale and not historical_operational_lock and incoming_dates_differ:
+        if checkin and checkin != _calendar_date(booking.get("check_in", "")):
+            updates["check_in"] = checkin
+        if checkout and checkout != _calendar_date(booking.get("check_out", "")):
+            updates["check_out"] = checkout
 
-    if room and not provider_update_is_stale:
+    if room and not provider_update_is_stale and not historical_operational_lock:
         hr_room_code = room.get("inv_code") or room.get("code") or ""
         if hr_room_code:
             room_mapping = await db.room_mappings.find_one(
@@ -710,7 +750,7 @@ async def sync_reservation_update(
                 updates["room_type"] = new_room_type
                 updates["room_type_id"] = new_room_type_id
 
-    if total is not None and abs(total - float(booking.get("total_amount", 0))) > 0.01:
+    if not historical_operational_lock and total is not None and abs(total - float(booking.get("total_amount", 0))) > 0.01:
         updates["total_amount"] = total
         updates["provider_total_amount"] = total
         updates["pricing_tax_inclusive"] = True
@@ -727,7 +767,7 @@ async def sync_reservation_update(
         "no_show": "no_show",
     }
     mapped_status = hr_status_map.get(hr_state, hr_state)
-    if not provider_update_is_stale and mapped_status != booking.get("status", ""):
+    if not provider_update_is_stale and not historical_operational_lock and mapped_status != booking.get("status", ""):
         updates["status"] = mapped_status
         if mapped_status == "cancelled":
             updates["cancelled_at"] = datetime.now(UTC).isoformat()

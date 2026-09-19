@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.connector_account import ConnectorProvider
 from ..domain.models.sync import SyncType
 from ..infrastructure.repository import ChannelManagerRepository
 
@@ -43,6 +44,12 @@ EVENT_SYNC_MAP = {
     "rate_changed": SyncType.RATES,
     "restriction_changed": SyncType.INVENTORY,
 }
+
+# Exely is served by the established provider-specific ARI pipeline.  The v2
+# event dispatcher currently has a HotelRunner-only transport, so it must not
+# queue Exely work that it cannot deliver.  Keeping the provider in the shared
+# account model is nevertheless required for dashboard and health reads.
+EVENT_SYNC_DISPATCH_PROVIDERS = {ConnectorProvider.HOTELRUNNER.value}
 
 
 class EventSyncService:
@@ -79,6 +86,22 @@ class EventSyncService:
 
         for connector in connectors:
             connector_id = connector.get("id", "")
+
+            provider = str(connector.get("provider") or "").casefold()
+            if provider not in EVENT_SYNC_DISPATCH_PROVIDERS:
+                logger.info(
+                    "Event sync skipped for connector %s provider=%s; provider-specific pipeline owns delivery",
+                    connector_id,
+                    provider or "unknown",
+                )
+                jobs_created.append(
+                    {
+                        "connector_id": connector_id,
+                        "status": "skipped",
+                        "reason": "provider_specific_pipeline",
+                    }
+                )
+                continue
 
             # Determine date range from event
             date_start, date_end = self._extract_date_range(event_type, event_payload)
