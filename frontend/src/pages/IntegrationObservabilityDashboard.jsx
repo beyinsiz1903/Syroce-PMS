@@ -16,7 +16,7 @@ const StatusBadge = ({
     return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20"><CheckCircle className="w-3 h-3 mr-1" /> Success {code ? `(${code})` : ''}</Badge>;
   }
   if (status === 'noop') {
-    return <Badge className="bg-zinc-500/10 text-zinc-400 border-zinc-500/20"><AlertTriangle className="w-3 h-3 mr-1" /> No Data</Badge>;
+    return <Badge className="bg-slate-100 text-slate-500 border-slate-200"><AlertTriangle className="w-3 h-3 mr-1" /> No Data</Badge>;
   }
   return <Badge className="bg-red-500/10 text-red-500 border-red-500/20"><XCircle className="w-3 h-3 mr-1" /> Failed {code ? `(${code})` : ''}</Badge>;
 };
@@ -92,7 +92,7 @@ export default function IntegrationObservabilityDashboard() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Integration Observability</h1>
-          <p className="text-zinc-400 mt-1">Monitor operational logs and drift states across Finance and Channel connectors.</p>
+          <p className="text-slate-500 mt-1">Monitor operational logs and drift states across Finance and Channel connectors.</p>
         </div>
         <Button onClick={refreshAll} variant="outline" className="gap-2">
           <RefreshCw className="w-4 h-4" />
@@ -129,10 +129,10 @@ export default function IntegrationObservabilityDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              {financeLoading ? <div className="flex justify-center p-8"><RefreshCw className="w-6 h-6 animate-spin text-zinc-500" /></div> : <>
-                  <div className="rounded-md border border-zinc-800 overflow-x-auto">
+              {financeLoading ? <div className="flex justify-center p-8"><RefreshCw className="w-6 h-6 animate-spin text-slate-400" /></div> : <>
+                  <div className="rounded-md border border-slate-200 overflow-x-auto">
                     <table className="w-full text-sm text-left whitespace-nowrap">
-                      <thead className="bg-zinc-900/50 text-zinc-400">
+                      <thead className="bg-slate-50 text-slate-500">
                         <tr>
                           <th className="px-4 py-3 font-medium">Timestamp</th>
                           <th className="px-4 py-3 font-medium">Provider</th>
@@ -143,11 +143,11 @@ export default function IntegrationObservabilityDashboard() {
                           <th className="px-4 py-3 font-medium">Error Details</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-zinc-800">
-                        {financeLogs.length === 0 ? <tr><td colSpan="7" className="px-4 py-8 text-center text-zinc-500">No sync logs found.</td></tr> : financeLogs.map((log, i) => {
+                      <tbody className="divide-y divide-slate-200">
+                        {financeLogs.length === 0 ? <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-400">No sync logs found.</td></tr> : financeLogs.map((log, i) => {
                       const statusDict = log.provider_response_status || {};
                       return <tr key={log.id || i} className="hover:bg-zinc-800/20 transition-colors">
-                              <td className="px-4 py-3 text-zinc-300">
+                              <td className="px-4 py-3 text-slate-700">
                                 {format(new Date(log.synced_at || log.created_at), 'MMM dd, HH:mm:ss')}
                               </td>
                               <td className="px-4 py-3">
@@ -157,10 +157,10 @@ export default function IntegrationObservabilityDashboard() {
                                 <StatusBadge status={log.status} />
                               </td>
                               <td className="px-4 py-3">
-                                {log.synced_invoices > 0 ? <span className="text-emerald-400 font-medium">{log.synced_invoices}</span> : <span className="text-zinc-600">0</span>}
+                                {log.synced_invoices > 0 ? <span className="text-emerald-400 font-medium">{log.synced_invoices}</span> : <span className="text-slate-500">0</span>}
                               </td>
                               <td className="px-4 py-3">
-                                {log.synced_payments > 0 ? <span className="text-emerald-400 font-medium">{log.synced_payments}</span> : <span className="text-zinc-600">0</span>}
+                                {log.synced_payments > 0 ? <span className="text-emerald-400 font-medium">{log.synced_payments}</span> : <span className="text-slate-500">0</span>}
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex flex-col gap-1 text-xs">
@@ -170,7 +170,7 @@ export default function IntegrationObservabilityDashboard() {
                                     </> : <span>{statusDict}</span>}
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-zinc-400 max-w-[200px] truncate" title={log.error_type || log.details}>
+                              <td className="px-4 py-3 text-slate-500 max-w-[200px] truncate" title={log.error_type || log.details}>
                                 {log.error_type ? <span className="text-red-400">{log.error_type}</span> : log.details}
                               </td>
                             </tr>;
@@ -181,7 +181,7 @@ export default function IntegrationObservabilityDashboard() {
                   
                   {/* Pagination */}
                   <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm text-zinc-500">Page {financePage} of {financeTotalPages}</span>
+                    <span className="text-sm text-slate-400">Page {financePage} of {financeTotalPages}</span>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={() => fetchFinanceLogs(Math.max(1, financePage - 1), financeProviderFilter)} disabled={financePage <= 1}>
                         <ChevronLeft className="w-4 h-4" />
@@ -204,9 +204,9 @@ export default function IntegrationObservabilityDashboard() {
                 <CardDescription>Discrepancies detected between PMS truth and Provider snapshot.</CardDescription>
               </CardHeader>
               <CardContent>
-                {driftLoading ? <div className="flex justify-center p-8"><RefreshCw className="w-6 h-6 animate-spin text-zinc-500" /></div> : <div className="rounded-md border border-zinc-800 overflow-x-auto">
+                {driftLoading ? <div className="flex justify-center p-8"><RefreshCw className="w-6 h-6 animate-spin text-slate-400" /></div> : <div className="rounded-md border border-slate-200 overflow-x-auto">
                     <table className="w-full text-sm text-left">
-                      <thead className="bg-zinc-900/50 text-zinc-400">
+                      <thead className="bg-slate-50 text-slate-500">
                         <tr>
                           <th className="px-4 py-2">Provider</th>
                           <th className="px-4 py-2">Date</th>
@@ -214,14 +214,14 @@ export default function IntegrationObservabilityDashboard() {
                           <th className="px-4 py-2">Diff</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-zinc-800">
-                        {driftStates.length === 0 ? <tr><td colSpan="4" className="px-4 py-8 text-center text-zinc-500">No drift detected. System in sync.</td></tr> : driftStates.map((drift, i) => <tr key={drift.id || i}>
+                      <tbody className="divide-y divide-slate-200">
+                        {driftStates.length === 0 ? <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">No drift detected. System in sync.</td></tr> : driftStates.map((drift, i) => <tr key={drift.id || i}>
                             <td className="px-4 py-2 capitalize">{drift.provider}</td>
                             <td className="px-4 py-2 whitespace-nowrap">{drift.date || drift.date_from || '-'}</td>
                             <td className="px-4 py-2">
                               {drift.drift_type === "credentials_missing" ? <Badge className="bg-red-500/10 text-red-500">Credentials Missing</Badge> : drift.drift_type === "provider_unavailable" ? <Badge className="bg-amber-500/10 text-amber-500">Provider Down</Badge> : drift.drift_detected ? <Badge className="bg-amber-500/10 text-amber-500">Drifted</Badge> : <Badge className="bg-emerald-500/10 text-emerald-500">Synced</Badge>}
                             </td>
-                            <td className="px-4 py-2 text-xs font-mono text-zinc-400">
+                            <td className="px-4 py-2 text-xs font-mono text-slate-500">
                               {drift.drift_type === "credentials_missing" ? "Check Credential Vault" : drift.drift_type === "provider_unavailable" ? "API connection failed" : drift.drift_detected && drift.drift_fields ? JSON.stringify(drift.drift_fields).substring(0, 50) + '...' : '-'}
                             </td>
                           </tr>)}
@@ -237,9 +237,9 @@ export default function IntegrationObservabilityDashboard() {
                 <CardDescription>Recent push attempts from PMS to Channel Providers.</CardDescription>
               </CardHeader>
               <CardContent>
-                {outboundLoading ? <div className="flex justify-center p-8"><RefreshCw className="w-6 h-6 animate-spin text-zinc-500" /></div> : <div className="rounded-md border border-zinc-800 overflow-x-auto">
+                {outboundLoading ? <div className="flex justify-center p-8"><RefreshCw className="w-6 h-6 animate-spin text-slate-400" /></div> : <div className="rounded-md border border-slate-200 overflow-x-auto">
                     <table className="w-full text-sm text-left">
-                      <thead className="bg-zinc-900/50 text-zinc-400">
+                      <thead className="bg-slate-50 text-slate-500">
                         <tr>
                           <th className="px-4 py-2">Timestamp</th>
                           <th className="px-4 py-2">Provider</th>
@@ -247,9 +247,9 @@ export default function IntegrationObservabilityDashboard() {
                           <th className="px-4 py-2">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-zinc-800">
-                        {outboundLogs.length === 0 ? <tr><td colSpan="4" className="px-4 py-8 text-center text-zinc-500">No outbound logs.</td></tr> : outboundLogs.map((log, i) => <tr key={log.id || i}>
-                            <td className="px-4 py-2 whitespace-nowrap text-zinc-300">
+                      <tbody className="divide-y divide-slate-200">
+                        {outboundLogs.length === 0 ? <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">No outbound logs.</td></tr> : outboundLogs.map((log, i) => <tr key={log.id || i}>
+                            <td className="px-4 py-2 whitespace-nowrap text-slate-700">
                               {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
                             </td>
                             <td className="px-4 py-2 capitalize">{log.provider}</td>

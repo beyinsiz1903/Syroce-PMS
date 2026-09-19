@@ -4,76 +4,76 @@ import { Shield, Activity, Server, Database, Radio, Bell, Rocket, RefreshCw, Che
 const API = "";
 const READINESS_COLORS = {
   READY: {
-    bg: "bg-emerald-500/10",
-    border: "border-emerald-500/40",
-    text: "text-emerald-400",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
     ring: "ring-emerald-500/30",
     gradient: "from-emerald-500/20 to-emerald-500/5"
   },
   DEGRADED: {
-    bg: "bg-amber-500/10",
-    border: "border-amber-500/40",
-    text: "text-amber-400",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    text: "text-amber-700",
     ring: "ring-amber-500/30",
     gradient: "from-amber-500/20 to-amber-500/5"
   },
   NOT_READY: {
-    bg: "bg-red-500/10",
-    border: "border-red-500/40",
-    text: "text-red-400",
+    bg: "bg-rose-50",
+    border: "border-rose-200",
+    text: "text-red-700",
     ring: "ring-red-500/30",
     gradient: "from-red-500/20 to-red-500/5"
   }
 };
 const LAUNCH_COLORS = {
   GO_LIVE_READY: {
-    bg: "bg-emerald-500/10",
-    text: "text-emerald-400",
+    bg: "bg-emerald-50",
+    text: "text-emerald-700",
     icon: CheckCircle2
   },
   CONDITIONALLY_READY: {
-    bg: "bg-amber-500/10",
-    text: "text-amber-400",
+    bg: "bg-amber-50",
+    text: "text-amber-700",
     icon: AlertTriangle
   },
   NOT_READY: {
-    bg: "bg-red-500/10",
-    text: "text-red-400",
+    bg: "bg-rose-50",
+    text: "text-red-700",
     icon: XCircle
   }
 };
 const STATUS_CLS = s => {
   const m = {
-    healthy: "text-emerald-400",
-    connected: "text-emerald-400",
-    active: "text-emerald-400",
-    pass: "text-emerald-400",
-    PASS: "text-emerald-400",
-    READY: "text-emerald-400",
-    success: "text-emerald-400",
-    production: "text-emerald-400",
-    enabled: "text-emerald-400",
-    operational: "text-emerald-400",
-    GO_LIVE_READY: "text-emerald-400",
-    CLEAR: "text-emerald-400",
-    degraded: "text-amber-400",
-    DEGRADED: "text-amber-400",
-    PARTIAL: "text-amber-400",
-    warning: "text-amber-400",
-    partial: "text-amber-400",
-    standalone: "text-amber-400",
-    CONDITIONALLY_READY: "text-amber-400",
-    WARNING: "text-amber-400",
-    BLOCKED: "text-red-400",
+    healthy: "text-emerald-700",
+    connected: "text-emerald-700",
+    active: "text-emerald-700",
+    pass: "text-emerald-700",
+    PASS: "text-emerald-700",
+    READY: "text-emerald-700",
+    success: "text-emerald-700",
+    production: "text-emerald-700",
+    enabled: "text-emerald-700",
+    operational: "text-emerald-700",
+    GO_LIVE_READY: "text-emerald-700",
+    CLEAR: "text-emerald-700",
+    degraded: "text-amber-700",
+    DEGRADED: "text-amber-700",
+    PARTIAL: "text-amber-700",
+    warning: "text-amber-700",
+    partial: "text-amber-700",
+    standalone: "text-amber-700",
+    CONDITIONALLY_READY: "text-amber-700",
+    WARNING: "text-amber-700",
+    BLOCKED: "text-red-700",
     disconnected: "text-gray-600",
     disabled: "text-gray-600",
     inactive: "text-gray-600",
     not_configured: "text-gray-600",
-    NOT_READY: "text-red-400",
-    FAIL: "text-red-400",
-    error: "text-red-400",
-    fail: "text-red-400",
-    failed: "text-red-400"
+    NOT_READY: "text-red-700",
+    FAIL: "text-red-700",
+    error: "text-red-700",
+    fail: "text-red-700",
+    failed: "text-red-700"
   };
   return m[s] || "text-gray-600";
 };
@@ -83,9 +83,9 @@ const Badge = ({
 }) => {
   const color = STATUS_CLS(status);
   const bgMap = {
-    "text-emerald-400": "bg-emerald-500/15 border-emerald-500/30",
-    "text-amber-400": "bg-amber-500/15 border-amber-500/30",
-    "text-red-400": "bg-red-500/15 border-red-500/30",
+    "text-emerald-700": "bg-emerald-50 border-emerald-200",
+    "text-amber-700": "bg-amber-50 border-amber-200",
+    "text-red-700": "bg-rose-50 border-rose-200",
     "text-gray-600": "bg-gray-50 border-gray-200"
   };
   return <span data-testid={testId} className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${bgMap[color] || "bg-gray-50 border-gray-200"} ${color} uppercase tracking-wider`}>{status}</span>;
@@ -131,9 +131,9 @@ const StepRow = ({
     skipped: Clock
   };
   const colors = {
-    pass: "text-emerald-400",
-    fail: "text-red-400",
-    warning: "text-amber-400",
+    pass: "text-emerald-700",
+    fail: "text-red-700",
+    warning: "text-amber-700",
     skipped: "text-gray-600"
   };
   const Icon = icons[step.status] || Clock;
@@ -315,7 +315,7 @@ export default function ProductionGoLiveDashboard({
     if (activeTab === "deployment") fetchDeployment();
   }, [activeTab, fetchDeployment]);
   if (loading) return <><div data-testid="golive-loading" className="flex items-center justify-center min-h-[60vh]"><div className="text-gray-600 animate-pulse text-lg">Production Go-Live kontrol ediliyor...</div></div></>;
-  if (error) return <><div data-testid="golive-error" className="flex items-center justify-center min-h-[60vh]"><div className="text-red-400">Hata: {error}</div></div></>;
+  if (error) return <><div data-testid="golive-error" className="flex items-center justify-center min-h-[60vh]"><div className="text-red-700">Hata: {error}</div></div></>;
   const readiness = data?.readiness || {};
   const config = data?.configuration || {};
   const configAct = data?.config_activation || {};
@@ -452,7 +452,7 @@ export default function ProductionGoLiveDashboard({
                     <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">Risk Factors</div>
                     {deploymentData.risk.risks.map((r, i) => <div key={r.id || i} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
                         <div className="flex items-center gap-2.5">
-                          <AlertTriangle size={12} className="text-amber-400" />
+                          <AlertTriangle size={12} className="text-amber-700" />
                           <span className="text-sm text-gray-700">{r.description}</span>
                         </div>
                         <span className="text-xs text-amber-400 font-bold tabular-nums">-{r.weight}pts</span>
@@ -763,7 +763,7 @@ export default function ProductionGoLiveDashboard({
             <Panel title="Security Go-Live Checklist" status={security.overall_status} testId="panel-security" icon={Shield}>
               <div className="flex items-center gap-6 mb-4">
                 <div>
-                  <span className={`text-3xl font-black tabular-nums ${security.score >= 80 ? "text-emerald-400" : security.score >= 50 ? "text-amber-400" : "text-red-400"}`}>{security.score || 0}%</span>
+                  <span className={`text-3xl font-black tabular-nums ${security.score >= 80 ? "text-emerald-700" : security.score >= 50 ? "text-amber-700" : "text-red-700"}`}>{security.score || 0}%</span>
                   <span className="text-[11px] text-gray-600 ml-1">Score</span>
                 </div>
                 <div className="text-sm text-gray-600">{security.passed || 0}/{security.total || 0} checks passed</div>
@@ -772,7 +772,7 @@ export default function ProductionGoLiveDashboard({
                   <span className="text-sm text-gray-700">{check.check?.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) || `Check ${i + 1}`}</span>
                   <div className="flex items-center gap-2">
                     {(check.note || check.error) && <span className="text-[11px] text-gray-600">{check.note || check.error}</span>}
-                    <span className={`text-xs font-bold ${check.pass ? "text-emerald-400" : "text-red-400"}`}>{check.pass ? "PASS" : "FAIL"}</span>
+                    <span className={`text-xs font-bold ${check.pass ? "text-emerald-700" : "text-red-700"}`}>{check.pass ? "PASS" : "FAIL"}</span>
                   </div>
                 </div>)}
               {security.failed_checks?.length > 0 && <div className="mt-3 bg-red-500/5 border border-red-500/20 rounded-lg p-3">
