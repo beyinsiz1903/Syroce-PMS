@@ -134,6 +134,7 @@ export default function IntegrationObservabilityDashboard() {
                     <table className="w-full text-sm text-left whitespace-nowrap">
                       <thead className="bg-slate-50 text-slate-500">
                         <tr>
+                          <th className="px-4 py-3 font-medium">Otel (Tenant)</th>
                           <th className="px-4 py-3 font-medium">Timestamp</th>
                           <th className="px-4 py-3 font-medium">Provider</th>
                           <th className="px-4 py-3 font-medium">Status</th>
@@ -208,6 +209,7 @@ export default function IntegrationObservabilityDashboard() {
                     <table className="w-full text-sm text-left">
                       <thead className="bg-slate-50 text-slate-500">
                         <tr>
+                          <th className="px-4 py-2">Otel (Tenant)</th>
                           <th className="px-4 py-2">Provider</th>
                           <th className="px-4 py-2">Date</th>
                           <th className="px-4 py-2">Status</th>
@@ -215,7 +217,8 @@ export default function IntegrationObservabilityDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {driftStates.length === 0 ? <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">No drift detected. System in sync.</td></tr> : driftStates.map((drift, i) => <tr key={drift.id || i}>
+                        {driftStates.length === 0 ? <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-400">No drift detected. System in sync.</td></tr> : driftStates.map((drift, i) => <tr key={drift.id || i}>
+                            <td className="px-4 py-2 font-medium text-slate-900">{drift.tenant_name || "Genel"}</td>
                             <td className="px-4 py-2 capitalize">{drift.provider}</td>
                             <td className="px-4 py-2 whitespace-nowrap">{drift.date || drift.date_from || '-'}</td>
                             <td className="px-4 py-2">
@@ -241,7 +244,9 @@ export default function IntegrationObservabilityDashboard() {
                     <table className="w-full text-sm text-left">
                       <thead className="bg-slate-50 text-slate-500">
                         <tr>
+                          <th className="px-4 py-2">Otel (Tenant)</th>
                           <th className="px-4 py-2">Timestamp</th>
+                          <th className="px-4 py-2">Otel (Tenant)</th>
                           <th className="px-4 py-2">Provider</th>
                           <th className="px-4 py-2">Trigger</th>
                           <th className="px-4 py-2">Status</th>

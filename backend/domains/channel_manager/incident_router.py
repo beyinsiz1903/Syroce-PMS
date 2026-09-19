@@ -58,8 +58,9 @@ async def list_incidents(
     current_user: User = Depends(get_current_user),
 ):
     """List operational incidents with filters."""
-    tenant_id = current_user.tenant_id
-    query = {"tenant_id": tenant_id}
+    query = {}
+    if current_user.role != "super_admin":
+        query["tenant_id"] = current_user.tenant_id
 
     if status:
         query["status"] = status
@@ -117,10 +118,12 @@ async def get_incident_detail(
     current_user: User = Depends(get_current_user),
 ):
     """Get full incident details with related data."""
-    tenant_id = current_user.tenant_id
+    query = {"id": incident_id}
+    if current_user.role != "super_admin":
+        query["tenant_id"] = current_user.tenant_id
 
     incident = await db[COLL_RECONCILIATION_CASES].find_one(
-        {"tenant_id": tenant_id, "id": incident_id},
+        query,
         _NO_ID,
     )
     if not incident:
@@ -270,10 +273,12 @@ async def incident_summary(
     current_user: User = Depends(get_current_user),
 ):
     """Dashboard-level incident summary."""
-    tenant_id = current_user.tenant_id
+    match_stage = {}
+    if current_user.role != "super_admin":
+        match_stage["tenant_id"] = current_user.tenant_id
 
     pipeline = [
-        {"$match": {"tenant_id": tenant_id}},
+        {"$match": match_stage},
         {
             "$group": {
                 "_id": {"status": "$status", "severity": {"$ifNull": ["$severity", "medium"]}},

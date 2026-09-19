@@ -120,7 +120,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
       <PageHeader
         icon={Compass}
-        title={t('cm.pages_ModuleDiscovery.modul_kesfi')}
+        title={<span className="flex items-center gap-3">{t('cm.pages_ModuleDiscovery.modul_kesfi')} {tenant && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}</span>}
         subtitle={t('cm.pages_ModuleDiscovery.tanimli_tum_rotalar_ve_sidebar_gorunurlu')}
       />
 
