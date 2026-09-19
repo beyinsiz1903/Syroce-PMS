@@ -27,7 +27,12 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
                 "daily_rates": room.get("daily_rates", []),
                 "check_in": room.get("check_in", raw.get("checkin_date", "")),
                 "check_out": room.get("check_out", raw.get("checkout_date", "")),
-                "guest_name": raw.get("guest_name", ""),
+                "guest_name": room.get("guest_name") or raw.get("guest_name", ""),
+                "guest_firstname": room.get("guest_firstname") or raw.get("guest_firstname", ""),
+                "guest_lastname": room.get("guest_lastname") or raw.get("guest_lastname", ""),
+                "guest_email": room.get("guest_email") or raw.get("guest_email", ""),
+                "guest_phone": room.get("guest_phone") or raw.get("guest_phone", ""),
+                "guest_country": room.get("guest_country") or raw.get("guest_country", ""),
             }
         )
 
