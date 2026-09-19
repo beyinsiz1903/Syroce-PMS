@@ -39,6 +39,14 @@ No Canyon production hotel data was changed. This is a partial test record, not 
 
 No code hot-patching, manual ACK, live-hotel mutation or certification-complete claim was made.
 
+## Follow-up after PR 712 deployment
+
+- Deployed merge `16f86b9b9`: at 13:08 UTC a new guest modification was automatically ingested. Existing booking IDs were preserved, Standard/Deluxe adults are 2/3, currency USD, nightly rates 100/120, totals 200/240. Durable update preceded successful OTA_NotifReportRQ. This supersedes the first pending item above, not the whole certification plan.
+- Contact modification to the reserved fictional UK test number ending 0124 was saved in Exely. A read-only Undelivered response for the controlled booking proved contact data is in `ResGlobalInfo/Profiles/ProfileInfo/Profile/Customer`. Current deployed parser ignored that location; the stored reservation phone remained empty after automatic ingest at 13:32 UTC.
+- Same real response: reservation note is under direct `ResGlobalInfo/Comments`; `Guarantee/Comments` holds PaymentMethodName=PayOnArrival and PaymentSystemTitle=At check-in. Recursive comment parsing incorrectly replaced the guest note with the payment title. Payment method also remained empty.
+- Follow-up fix reads the global contact, keeps direct reservation comments separately, parses PaymentMethodName, and preserves payment_method in PMS booking fields. Focused parser/lifecycle/pilot tests: 117 passed. Live retest requires deployment and a new provider version; no manual ACK or database rewrite used.
+- Date-extension test initiated in QA for the same controlled booking: Nov 10-13, Standard 300 USD + Deluxe 360 USD = 660 USD. Provider confirmation and automatic PMS/availability results still need verification.
+
 ## Local verification
 
 - Focused parser, lifecycle and pilot-contract suites: **116 passed**.

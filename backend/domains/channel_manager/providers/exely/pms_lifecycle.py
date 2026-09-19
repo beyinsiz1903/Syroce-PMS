@@ -372,6 +372,7 @@ def _booking_fields(
         "daily_rates": list(room.get("daily_rates") or []),
         "base_rate": room_total / nights,
         "paid_amount": 0.0,
+        "payment_method": str(reservation.get("payment_method") or ""),
         "status": "confirmed",
         "channel": "exely",
         "source_channel": "exely",
