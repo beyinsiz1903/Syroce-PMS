@@ -445,6 +445,33 @@ async def test_multiroom_create_modify_partial_cancel_and_full_cancel_are_idempo
 
 
 @pytest.mark.asyncio
+async def test_room_guests_stay_separate_and_update_without_duplicate_bookings(fake_db):
+    await _add_mapping(fake_db, "STD", "BAR", "Standard")
+    await _add_mapping(fake_db, "DLX", "FLEX", "Deluxe")
+    first = {**_room("0"), "guest_name": "First Guest", "guest_firstname": "First", "guest_lastname": "Guest"}
+    second = {**_room("1", "DLX", "FLEX", 240), "guest_name": "Second Guest", "guest_firstname": "Second", "guest_lastname": "Guest", "adults": 3}
+    _, current = await _persist(fake_db, _canonical(rooms=[first, second]))
+    result = await pms_lifecycle.process_reservation_version("tenant", current)
+    assert result["success"]
+    bookings = fake_db.bookings.documents
+    assert [row["guest_name"] for row in bookings] == ["First Guest", "Second Guest"]
+    guest_ids = [row["guest_id"] for row in bookings]
+    assert len(set(guest_ids)) == 2
+    second["guest_name"] = "Changed Guest"
+    second["guest_firstname"] = "Changed"
+    _, modified = await _persist(fake_db, _canonical("2030-01-01T11:00:00Z", [first, second], "modified"), payload_hash="guest-change", event_type="modification")
+    updated = await pms_lifecycle.process_reservation_version("tenant", modified)
+    assert updated["success"]
+    assert updated["pms_booking_ids"] == result["pms_booking_ids"]
+    assert len(fake_db.guests.documents) == 2
+    assert [row["guest_id"] for row in bookings] == guest_ids
+    assert bookings[0]["guest_name"] == "First Guest"
+    assert bookings[1]["guest_name"] == "Changed Guest"
+    guest = await fake_db.guests.find_one({"id": guest_ids[1]})
+    assert guest["name"] == "Changed Guest"
+
+
+@pytest.mark.asyncio
 async def test_concurrent_modify_cancel_race_keeps_newest_cancelled_state(fake_db):
     await _add_mapping(fake_db)
     _, created_current = await _persist(fake_db, _canonical(), payload_hash="create")

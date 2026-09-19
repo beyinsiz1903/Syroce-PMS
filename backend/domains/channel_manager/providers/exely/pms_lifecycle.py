@@ -283,10 +283,11 @@ def _assign_slots(
     return assigned, removed
 
 
-async def _ensure_guest(tenant_id: str, property_id: str, reservation: dict[str, Any]) -> str:
-    guest_id = _stable_id("guest", tenant_id, property_id, reservation["external_id"])
-    if await db.guests.find_one({"tenant_id": tenant_id, "id": guest_id}, {"_id": 0, "id": 1}):
-        return guest_id
+async def _ensure_guest(tenant_id: str, property_id: str, reservation: dict[str, Any], slot: int = 0) -> str:
+    # Preserve the original primary guest ID; additional rooms must not share it.
+    identity = reservation["external_id"] if slot == 0 else _slot_external_id(reservation["external_id"], slot)
+    guest_id = _stable_id("guest", tenant_id, property_id, identity)
+    existing = await db.guests.find_one({"tenant_id": tenant_id, "id": guest_id}, {"_id": 0})
 
     guest_name = str(reservation.get("guest_name") or "")
     first_name = str(reservation.get("guest_firstname") or "") or (guest_name.split()[0] if guest_name else "Misafir")
@@ -307,7 +308,16 @@ async def _ensure_guest(tenant_id: str, property_id: str, reservation: dict[str,
         "notes": "Exely kanal rezervasyonu",
         "created_at": _now(),
     }
-    from security.guest_write import encrypt_guest_insert
+    from security.guest_write import encrypt_guest_insert, encrypt_guest_update
+
+    if existing:
+        fields = {key: guest[key] for key in ("first_name", "last_name", "name", "email", "phone", "nationality")}
+        fields["updated_at"] = _now()
+        await db.guests.update_one(
+            {"tenant_id": tenant_id, "id": guest_id},
+            {"$set": encrypt_guest_update(fields, existing=existing)},
+        )
+        return guest_id
 
     try:
         await db.guests.insert_one(encrypt_guest_insert(guest))
@@ -347,7 +357,7 @@ def _booking_fields(
         "tenant_id": tenant_id,
         "property_id": property_id,
         "guest_id": guest_id,
-        "guest_name": str(reservation.get("guest_name") or ""),
+        "guest_name": str(room.get("guest_name") or reservation.get("guest_name") or ""),
         "room_id": None,
         "room_number": None,
         "room_type": mapping["pms_room_type"],
@@ -358,6 +368,8 @@ def _booking_fields(
         "children_ages": [],
         "guests_count": adults + children,
         "total_amount": room_total,
+        "currency": str(reservation.get("currency") or ""),
+        "daily_rates": list(room.get("daily_rates") or []),
         "base_rate": room_total / nights,
         "paid_amount": 0.0,
         "status": "confirmed",
@@ -680,16 +692,17 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                     raise RuntimeError("ROOM_RATE_MAPPING_MISSING")
                 mappings.append(mapping)
 
-            guest_id = await _run_claimed(
-                _ensure_guest(tenant_id, property_id, current),
-                claim,
-                claim_lost,
-            )
             assigned, removed = _assign_slots(previous_lineage, rooms)
             assigned_slots = {int(row["slot_ordinal"]) for row in assigned}
             new_lineage = [{**row, "active": False} for row in previous_lineage if int(row.get("slot_ordinal", 0)) not in assigned_slots]
             for row, mapping in zip(assigned, mappings, strict=True):
                 slot = int(row["slot_ordinal"])
+                room_guest = {**current, **{key: value for key, value in row["room"].items() if key.startswith("guest_")}}
+                guest_id = await _run_claimed(
+                    _ensure_guest(tenant_id, property_id, room_guest, slot),
+                    claim,
+                    claim_lost,
+                )
                 booking_id = str(row.get("pms_booking_id") or _stable_id("booking", tenant_id, property_id, external_id, slot))
                 booking_doc = _booking_fields(
                     tenant_id=tenant_id,

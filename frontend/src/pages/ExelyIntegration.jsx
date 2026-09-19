@@ -819,15 +819,15 @@ const ExelyIntegration = ({
                     </select>
                   </div>
                   <div>
-                    <Label htmlFor="manual-exely-room">Exely ARI oda tipi ID</Label>
+                    <Label htmlFor="manual-exely-room">Exely oda eşleştirme kodu</Label>
                     <Input id="manual-exely-room" data-testid="manual-exely-room" list="exely-room-code-options" value={manualMap.exely_room_code} onChange={event => setManualMap(previous => ({ ...previous, exely_room_code: event.target.value }))} placeholder="Keşfedilen odayı seçin veya kodu yazın" className="mt-1" />
                     <datalist id="exely-room-code-options">
                       {(mappingStatus?.provider_room_types || []).map(room => <option key={room.code} value={room.code}>{room.name}</option>)}
                     </datalist>
-                    <p className="mt-1 text-xs text-slate-500">Exely oda tipi sayfasındaki ID; PMS için Exely API kodundan farklı olabilir.</p>
+                    <p className="mt-1 text-xs text-slate-500">Güncel kodu Odalar → Keşfet veya Exely → PMS envanteri üzerinden doğrulayın. Panel adresindeki ID, PMS API anahtarıyla aynı olmayabilir.</p>
                   </div>
                   <div>
-                    <Label htmlFor="manual-exely-rate">Exely ARI fiyat planı ID</Label>
+                    <Label htmlFor="manual-exely-rate">Exely fiyat planı eşleştirme kodu</Label>
                     <Input id="manual-exely-rate" data-testid="manual-exely-rate" list="exely-rate-code-options" value={manualMap.exely_rate_plan_code} onChange={event => setManualMap(previous => ({ ...previous, exely_rate_plan_code: event.target.value }))} placeholder="Keşfedilen planı seçin veya kodu yazın" className="mt-1" />
                     <datalist id="exely-rate-code-options">
                       {(mappingStatus?.provider_rate_plans || []).map(plan => <option key={plan.code} value={plan.code}>{plan.name || plan.code}</option>)}
@@ -843,7 +843,7 @@ const ExelyIntegration = ({
                       <Input id="manual-pms-api-rate" data-testid="manual-pms-api-rate" value={manualMap.pms_api_rate_plan_code || ''} onChange={event => setManualMap(previous => ({ ...previous, pms_api_rate_plan_code: event.target.value }))} className="mt-1" />
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500">ARI ID’leri dışarı stok/fiyat gönderiminde, PMS API kodları Exely rezervasyonlarını içeri eşleştirmede kullanılır.</p>
+                  <p className="text-xs text-slate-500">PMS API oda ve fiyat kodları birlikte girilmişse fiyat, müsaitlik ve kısıtlama gönderiminde bu kodlar kullanılır. İkisi de boşsa üstteki eşleştirme kodları kullanılır. Rezervasyonlar her iki kod çiftiyle eşleştirilebilir; eski keşif sonuçlarını güncellemeden kodları değiştirmeyin.</p>
                   <div className="rounded-md border p-3 space-y-3">
                     <p className="text-sm font-medium">Senkronize edilecek bilgiler</p>
                     {[
@@ -855,7 +855,7 @@ const ExelyIntegration = ({
                         <Switch id={`manual-${field}`} data-testid={`manual-${field}`} checked={manualMap[field]} onCheckedChange={checked => setManualMap(previous => ({ ...previous, [field]: checked }))} />
                       </div>)}
                   </div>
-                  <p className="text-xs text-slate-500">Her PMS oda tipi için yalnızca bir fiyat planında Müsaitlik (A) açık olmalıdır. Diğer planlarda sadece Fiyat/Kısıtlama seçin. Suite gibi henüz stok gönderilmeyecek odalarda Müsaitlik kapalı kalmalıdır.</p>
+                  <p className="text-xs text-slate-500">Her PMS oda tipi için yalnızca bir fiyat planında Müsaitlik (A) açık olmalıdır. Diğer planlarda sadece Fiyat/Kısıtlama seçin. Stok gönderilmeyecek oda tiplerinde Müsaitlik kapalı kalmalıdır.</p>
                   <Button className="w-full" onClick={handleCreateMapping} disabled={manualMapSaving} data-testid="manual-map-save">
                     {manualMapSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />} {editingMappingId ? 'Değişiklikleri Kaydet' : 'Eşlemeyi Kaydet'}
                   </Button>

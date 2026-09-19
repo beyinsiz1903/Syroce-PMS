@@ -207,25 +207,32 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         elif uid_type == "16":
             res["booking_source_id"] = uid_id
 
-    # Guest info from ResGuest -> Profiles
+    # Keep room guests keyed by RPH; the last guest is not the booking contact.
+    guests_by_rph = {}
     for guest in hr_el.iter(_ns("ResGuest")):
+        guest_info = {}
         for profile in guest.iter(_ns("Profile")):
             pname = profile.find(f".//{_ns('PersonName')}")
             if pname is not None:
-                res["guest_firstname"] = _text(pname.find(_ns("GivenName")))
-                res["guest_lastname"] = _text(pname.find(_ns("Surname")))
-                res["guest_name"] = f"{res.get('guest_firstname', '')} {res.get('guest_lastname', '')}".strip()
+                guest_info["guest_firstname"] = _text(pname.find(_ns("GivenName")))
+                guest_info["guest_lastname"] = _text(pname.find(_ns("Surname")))
+                guest_info["guest_name"] = f"{guest_info.get('guest_firstname', '')} {guest_info.get('guest_lastname', '')}".strip()
 
             email_el = profile.find(f".//{_ns('Email')}")
-            res["guest_email"] = _text(email_el)
+            guest_info["guest_email"] = _text(email_el)
 
             phone_el = profile.find(f".//{_ns('Telephone')}")
-            res["guest_phone"] = _attr(phone_el, "PhoneNumber")
+            guest_info["guest_phone"] = _attr(phone_el, "PhoneNumber")
 
             address_el = profile.find(f".//{_ns('Address')}")
             if address_el is not None:
-                res["guest_country"] = _text(address_el.find(_ns("CountryName")))
-                res["guest_city"] = _text(address_el.find(_ns("CityName")))
+                guest_info["guest_country"] = _text(address_el.find(_ns("CountryName")))
+                guest_info["guest_city"] = _text(address_el.find(_ns("CityName")))
+        rph = _attr(guest, "ResGuestRPH")
+        if rph:
+            guests_by_rph[rph] = guest_info
+        if "guest_name" not in res or _attr(guest, "PrimaryIndicator").lower() == "true":
+            res.update(guest_info)
 
     # Room stays
     rooms = []
@@ -248,11 +255,20 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             room["room_type_code"] = room.get("room_type_code") or _attr(rr, "RoomTypeCode")
             room["rate_plan_code"] = room.get("rate_plan_code") or _attr(rr, "RatePlanCode")
 
-            for rate in rr.iter(_ns("Rate")):
+            rates = list(rr.iter(_ns("Rate")))
+            # PMSConnect sends dated RoomRate/Total, without nested Rate nodes.
+            if not rates and rr.find(_ns("Total")) is not None:
+                rates = [rr]
+            for rate in rates:
+                amount_node = rate.find(_ns("Total"))
+                if amount_node is None:
+                    amount_node = rate.find(_ns("Base"))
+                if amount_node is None:
+                    amount_node = rate
                 daily_rates.append(
                     {
-                        "date": _attr(rate, "EffectiveDate", ""),
-                        "amount": _safe_float(_attr(rate, "AmountAfterTax", _attr(rate, "AmountBeforeTax", "0"))),
+                        "date": _attr(rate, "EffectiveDate", _attr(rr, "EffectiveDate", "")),
+                        "amount": _safe_float(_attr(amount_node, "AmountAfterTax", _attr(amount_node, "AmountBeforeTax", "0"))),
                     }
                 )
 
@@ -266,15 +282,18 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             raw_count = _attr(gc, "Count", "0")
             count = int(raw_count) if raw_count.strip() and raw_count.strip().isdigit() else 0
 
-            if age_code == "10":
-                adults = count
+            if age_code in {"10", "AdultBed"}:
+                adults += count
             elif age_code == "8":
-                children = count
+                children += count
+            guest_info = guests_by_rph.get(_attr(gc, "ResGuestRPH"))
+            if guest_info and not room.get("guest_name"):
+                room.update(guest_info)
         room["adults"] = adults
         room["children"] = children
 
         # Total
-        for total_el in room_stay.iter(_ns("Total")):
+        for total_el in room_stay.findall(_ns("Total")):
             room["amount"] = _safe_float(_attr(total_el, "AmountAfterTax", "0"))
             room["currency"] = _attr(total_el, "CurrencyCode", "TRY")
 
