@@ -719,8 +719,10 @@ async def agency_portal_availability(
                 "tenant_id": tenant_id,
                 "room_id": {"$in": rt_data["room_ids"]},
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": check_out + "T23:59:59"},
-                "check_out": {"$gt": check_in + "T00:00:00"},
+                # Hotel nights are [check_in, check_out): a departure date is
+                # immediately sellable for a new arrival.
+                "check_in": {"$lt": check_out + "T00:00:00"},
+                "check_out": {"$gt": check_in + "T23:59:59.999999"},
             }
         )
         rt_data["booked_rooms"] = booked_count
@@ -759,8 +761,8 @@ async def agency_portal_create_reservation(
                 "tenant_id": tenant_id,
                 "room_id": room["id"],
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": data.check_out + "T23:59:59"},
-                "check_out": {"$gt": data.check_in + "T00:00:00"},
+                "check_in": {"$lt": data.check_out + "T00:00:00"},
+                "check_out": {"$gt": data.check_in + "T23:59:59.999999"},
             }
         )
         if conflict == 0:

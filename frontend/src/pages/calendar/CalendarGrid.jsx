@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from "react";
-import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
+import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight, Wrench, ExternalLink } from "lucide-react";
 import {
   toDateStringUTC, checkoutAfterCalendarNight, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
@@ -59,11 +59,13 @@ const CalendarGrid = ({
   onDrop,
   onDragEnd,
   onBookingDoubleClick,
+  onOpenRoomBlock,
   showOccupancyBand = false,
   dailyRates = {},
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
+  const [contextMenu, setContextMenu] = useState(null);
   const [, setPointerResize] = useState(null);
   const pointerResizeRef = useRef(null);
 
@@ -71,6 +73,23 @@ const CalendarGrid = ({
     const target = document.elementFromPoint?.(event.clientX, event.clientY);
     const cell = target?.closest?.('[data-calendar-date]');
     return cell?.dataset.calendarDate || '';
+  };
+
+  useEffect(() => {
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, []);
+
+  const openContextMenu = (event, payload) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      ...payload,
+      x: Math.min(event.clientX, window.innerWidth - 220),
+      y: Math.min(event.clientY, window.innerHeight - 180),
+    });
   };
 
   const completePointerResize = (event) => {
@@ -209,7 +228,7 @@ const CalendarGrid = ({
 
   return (
     <div
-      className="bg-white border-y border-slate-200 relative flex flex-col h-full overflow-hidden select-none"
+      className="bg-white border-y border-slate-300 relative flex flex-col h-full overflow-hidden select-none"
       data-testid="calendar-grid"
       onPointerDown={clearCalendarTextSelection}
       onPointerMove={updatePointerResize}
@@ -228,15 +247,15 @@ const CalendarGrid = ({
               roomsCount={Array.isArray(rooms) ? rooms.length : 0}
             />
           )}
-          <div className="sticky top-0 z-40 bg-white border-b border-gray-300">
+          <div className="sticky top-0 z-40 bg-white border-b border-slate-300">
           <div className="flex">
-            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 border-r border-slate-200 bg-slate-50`}></div>
+            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 border-r border-slate-300 bg-slate-50`}></div>
             <div className="flex-1 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 py-1.5 bg-slate-50">
               {dateRange.length > 0 && dateRange[Math.floor(dateRange.length / 2)].toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
             </div>
           </div>
           <div className="flex bg-white shadow-[0_2px_6px_rgba(15,23,42,0.06)]">
-            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 px-3 py-2 border-r border-slate-200 bg-white text-[11px] text-slate-500 font-semibold flex items-end`}>
+            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 px-3 py-2 border-r border-slate-300 bg-white text-[11px] text-slate-500 font-semibold flex items-end`}>
               <button
                 type="button"
                 onClick={() => {
@@ -268,7 +287,7 @@ const CalendarGrid = ({
                 <div
                   key={idx}
                   className={`${CELL_CLS} flex-shrink-0 py-1.5 border-r text-center ${
-                    today ? 'bg-blue-50 border-blue-300 shadow-[inset_0_3px_0_#2563eb]' : past || weekend ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'
+                    today ? 'bg-blue-50 border-blue-400 shadow-[inset_0_3px_0_#2563eb]' : past || weekend ? 'bg-slate-50 border-slate-300' : 'bg-white border-slate-300'
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
@@ -303,9 +322,9 @@ const CalendarGrid = ({
               return (
                 <div key={roomType}>
                   {/* Room Type Header */}
-                  <div className="bg-slate-50 border-y border-slate-200" data-testid="room-type-row">
+                  <div className="bg-slate-50 border-y border-slate-300" data-testid="room-type-row">
                     <div className="flex">
-                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1.5 border-r border-slate-200 bg-slate-50 flex items-center`}>
+                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1.5 border-r border-slate-300 bg-slate-50 flex items-center`}>
                         <button
                           type="button"
                           onClick={() => toggleType(roomType)}
@@ -352,7 +371,7 @@ const CalendarGrid = ({
                           <div
                             key={idx}
                           className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1 border-r text-center text-[9px] ${
-                              past || weekend ? 'bg-slate-100 border-slate-200' : 'bg-slate-50 border-slate-200'
+                              past || weekend ? 'bg-slate-100 border-slate-300' : 'bg-slate-50 border-slate-300'
                             }`}
                           >
                             <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
@@ -376,8 +395,8 @@ const CalendarGrid = ({
                     const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
                     const rowHeight = (maxLane + 1) * LANE_H + 6;
                     return (
-                      <div className="flex border-b border-slate-200 bg-slate-50/30" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-gray-200 bg-slate-50/80`} style={{ height: `${rowHeight}px` }}>
+                      <div className="flex border-b border-slate-300 bg-slate-50/30" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-slate-300 bg-slate-50/80`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
                             <div className="font-bold text-[9px] text-slate-700">{t('cm.pages_calendar_CalendarGrid.atanmamis')}</div>
@@ -393,7 +412,7 @@ const CalendarGrid = ({
                               <div
                                 key={idx}
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-b relative ${
-                                  weekend ? 'bg-blue-50/30 border-blue-100' : 'bg-blue-50/10 border-blue-100'
+                                  weekend ? 'bg-blue-50/30 border-blue-200' : 'bg-blue-50/10 border-blue-200'
                                 } ${isToday(date) ? 'bg-blue-50/40' : ''}`}
                                 style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px` }}
                               />
@@ -477,8 +496,8 @@ const CalendarGrid = ({
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
                     const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
-                      <div key={room.id} className={`flex border-b border-slate-200 ${draggingBooking ? '' : 'hover:bg-slate-50/70 transition-colors'}`} data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-4 py-1 border-r border-slate-200 bg-white flex items-center`} style={{ height: `${rowHeight}px` }}>
+                      <div key={room.id} className={`flex border-b border-slate-300 ${draggingBooking ? '' : 'hover:bg-slate-50/70 transition-colors'}`} data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-4 py-1 border-r border-slate-300 bg-white flex items-center`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-2">
                             <div
                               className={`w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm ${roomDotColor}`}
@@ -523,7 +542,7 @@ const CalendarGrid = ({
                             return (
                               <div
                                 key={idx}
-                                className={`${CELL_CLS} flex-shrink-0 border-r border-slate-200 relative transition-colors group/cell select-none ${
+                                className={`${CELL_CLS} flex-shrink-0 border-r border-slate-300 relative transition-colors group/cell select-none ${
                                   canCreate ? 'cursor-pointer' : 'cursor-default'
                                 } ${
                                   past ? 'bg-slate-50' : isToday(date) ? 'bg-blue-50/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-slate-50 dark:bg-slate-900/40' : draggingBooking ? 'bg-white' : 'bg-white hover:bg-slate-50/70'
@@ -532,6 +551,7 @@ const CalendarGrid = ({
                                 }`}
                                 style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible' }}
                                 onClick={() => !covered && !roomBlock && onCellClick(room.id, date)}
+                                onContextMenu={(event) => openContextMenu(event, { kind: 'cell', room, date, covered, roomBlock })}
                                 onMouseDown={canCreate ? (e) => { if (e.button === 0) { e.preventDefault(); onCellMouseDown?.(room.id, date); } } : undefined}
                                 onMouseEnter={canCreate ? () => onCellMouseEnter?.(room.id, date) : undefined}
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
@@ -651,6 +671,7 @@ const CalendarGrid = ({
                                   onDrop(e, room.id, dateRange[startIdx], booking.id);
                                 }}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
+                                onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging || isResizing
@@ -734,6 +755,81 @@ const CalendarGrid = ({
           )}
         </div>
       </div>
+      {contextMenu && (
+        <div
+          role="menu"
+          aria-label="Takvim hızlı işlemleri"
+          className="fixed z-[100] w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {contextMenu.kind === 'cell' ? (
+            <>
+              <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                <span className="font-semibold text-slate-700">Oda {contextMenu.room.room_number}</span>
+                <span className="block">{formatDateWithDay(contextMenu.date).dayNum} {formatDateWithDay(contextMenu.date).dayName}</span>
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={contextMenu.covered || contextMenu.roomBlock || isPastDate(contextMenu.date)}
+                onClick={() => {
+                  onCellClick(contextMenu.room.id, contextMenu.date);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                <Plus className="h-4 w-4 text-amber-600" /> Rezervasyon oluştur
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onOpenRoomBlock?.(contextMenu.room);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Wrench className="h-4 w-4 text-rose-600" /> Odayı blokla / arıza bildir
+              </button>
+              {contextMenu.roomBlock && (
+                <div className="mx-3 mb-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                  Aktif blok: {contextMenu.roomBlock.reason || contextMenu.roomBlock.type}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                <span className="block font-semibold text-slate-700">{formatGuestName(contextMenu.booking.guest_name) || 'Misafir'}</span>
+                Oda {contextMenu.room.room_number}
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onBookingDoubleClick(contextMenu.booking);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <ExternalLink className="h-4 w-4 text-blue-600" /> Rezervasyonu aç
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onOpenRoomBlock?.(contextMenu.room);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Wrench className="h-4 w-4 text-rose-600" /> Bu odayı blokla / arıza bildir
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

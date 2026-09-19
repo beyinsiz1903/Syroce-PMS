@@ -560,8 +560,10 @@ async def agency_search(
                         "tenant_id": tenant_id,
                         "room_id": {"$in": rt_data["_room_ids"]},
                         "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                        "check_in": {"$lt": req.check_out + "T23:59:59"},
-                        "check_out": {"$gt": req.check_in + "T00:00:00"},
+                        # Half-open hotel-night overlap. A same-day departure
+                        # must not consume the arriving guest's room-night.
+                        "check_in": {"$lt": req.check_out + "T00:00:00"},
+                        "check_out": {"$gt": req.check_in + "T23:59:59.999999"},
                     }
                 )
                 rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
@@ -661,8 +663,8 @@ async def agency_hotel_availability(
                     "tenant_id": tenant_id,
                     "room_id": {"$in": rt_data["_room_ids"]},
                     "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                    "check_in": {"$lt": check_out + "T23:59:59"},
-                    "check_out": {"$gt": check_in + "T00:00:00"},
+                    "check_in": {"$lt": check_out + "T00:00:00"},
+                    "check_out": {"$gt": check_in + "T23:59:59.999999"},
                 }
             )
             rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
@@ -759,8 +761,8 @@ async def agency_create_reservation(
                     "tenant_id": data.tenant_id,
                     "room_id": room["id"],
                     "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                    "check_in": {"$lt": data.check_out + "T23:59:59"},
-                    "check_out": {"$gt": data.check_in + "T00:00:00"},
+                    "check_in": {"$lt": data.check_out + "T00:00:00"},
+                    "check_out": {"$gt": data.check_in + "T23:59:59.999999"},
                 }
             )
             if conflict == 0:

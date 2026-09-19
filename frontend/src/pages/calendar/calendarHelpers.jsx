@@ -240,7 +240,10 @@ export const getRoomBlockForDate = (roomId, date, roomBlocks) => {
     if (block.room_id !== roomId || block.status !== 'active') return false;
     const blockStart = toDateStringUTC(block.start_date);
     const blockEnd = block.end_date ? toDateStringUTC(block.end_date) : '9999-12-31';
-    return dayStr >= blockStart && dayStr <= blockEnd;
+    // Room blocks use the same half-open date interval as bookings and
+    // room-night locks: [start_date, end_date).  This keeps a block released
+    // for the date selected as "tekrar satışa açılma" in the UI.
+    return dayStr >= blockStart && dayStr < blockEnd;
   });
 };
 
