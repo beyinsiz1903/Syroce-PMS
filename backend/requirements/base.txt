@@ -5,7 +5,7 @@
 # Do not put framework-specific or heavy ML/PDF packages here.
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anyio==4.11.0
+anyio==4.14.2
 async-timeout==5.0.1
 attrs==25.4.0
 babel==2.18.0

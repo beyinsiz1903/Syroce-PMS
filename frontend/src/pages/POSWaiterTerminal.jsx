@@ -311,7 +311,23 @@ const POSWaiterTerminal = () => {
       {step === STEPS.OUTLET && <div>
           <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
             <Store className="w-5 h-5 text-amber-600" />{t("cm.pages_POSWaiterTerminal.satis_noktasi")}</h2>
-          {outlets.length === 0 ? <Card><CardContent className="p-8 text-center text-gray-500">{t("cm.pages_POSWaiterTerminal.aktif_satis_noktasi_yok")}</CardContent></Card> : <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {outlets.length === 0 ? (
+            <Card className="border-dashed border-2 bg-gray-50">
+              <CardContent className="p-12 text-center flex flex-col items-center justify-center">
+                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                  <Store className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Satış Noktası Bulunamadı</h3>
+                <p className="text-gray-500 max-w-sm mx-auto mb-6">
+                  Garson terminalini kullanabilmek için öncelikle POS Paneli üzerinden en az bir satış noktası (Örn: Restoran, Bar) eklemeniz gerekmektedir.
+                </p>
+                <Button onClick={() => navigate('/pos')} variant="outline" className="gap-2">
+                  <ArrowLeft className="w-4 h-4" />
+                  POS Paneline Dön
+                </Button>
+              </CardContent>
+            </Card>
+          ) : <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {outlets.map(o => <Card key={o.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => pickOutlet(o)} data-testid={`outlet-${o.id}`}>
                   <CardContent className="p-5 text-center">
                     <Store className="w-8 h-8 mx-auto mb-2 text-amber-600" />
