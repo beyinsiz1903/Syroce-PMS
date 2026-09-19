@@ -13,7 +13,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.booking_realtime import publish_booking_change
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
+from core.reservation_mutability import reservation_is_historical
 from domains.channel_manager.ingest.hotelrunner_pricing import (
     hotelrunner_guest_total,
     matches_legacy_before_tax_total,
@@ -705,10 +707,25 @@ async def sync_reservation_update(
 
     checkin = _calendar_date(hr_payload.get("checkin_date") or (room.get("checkin_date") if room else ""))
     checkout = _calendar_date(hr_payload.get("checkout_date") or (room.get("checkout_date") if room else ""))
-    if not provider_update_is_stale and checkin and checkin != _calendar_date(booking.get("check_in", "")):
-        updates["check_in"] = checkin
-    if not provider_update_is_stale and checkout and checkout != _calendar_date(booking.get("check_out", "")):
-        updates["check_out"] = checkout
+    incoming_dates_differ = (
+        (checkin and checkin != _calendar_date(booking.get("check_in", "")))
+        or (checkout and checkout != _calendar_date(booking.get("check_out", "")))
+    )
+    if not provider_update_is_stale and incoming_dates_differ:
+        business_date = await ensure_business_date_initialized(db, tenant_id)
+        if reservation_is_historical(booking, business_date["business_date"]):
+            # Provider callbacks must never reopen or rewrite an operationally
+            # closed stay. Keep the source event auditable, but fail closed for
+            # critical reservation dates.
+            logger.warning(
+                "[PULL-SYNC] Historical reservation date update blocked external_reservation_id=%s",
+                ext_reservation_id,
+            )
+        else:
+            if checkin and checkin != _calendar_date(booking.get("check_in", "")):
+                updates["check_in"] = checkin
+            if checkout and checkout != _calendar_date(booking.get("check_out", "")):
+                updates["check_out"] = checkout
 
     if room and not provider_update_is_stale:
         hr_room_code = room.get("inv_code") or room.get("code") or ""
