@@ -324,8 +324,9 @@ export default function RuntimeCockpitPage({
               {h.is_production_ready ? <ShieldCheck data-testid="cockpit-ready-icon" className="w-6 h-6 text-emerald-400" /> : <ShieldAlert data-testid="cockpit-not-ready-icon" className="w-6 h-6 text-red-400" />}
             </div>
             <div>
-              <h1 data-testid="cockpit-title" className="text-xl font-bold text-slate-900">
+              <h1 data-testid="cockpit-title" className="text-xl font-bold text-slate-900 flex items-center gap-3">
                 Runtime Cockpit
+                {tenant && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}
               </h1>
               <p className="text-xs text-slate-500">{t('cm.pages_RuntimeCockpitPage.operasyonel_ucus_paneli')}</p>
             </div>

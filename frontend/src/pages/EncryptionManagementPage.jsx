@@ -255,6 +255,7 @@ export default function EncryptionManagementPage({
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
               <Key className="h-6 w-6 text-emerald-400" />
               Şifreleme Yönetimi
+              {tenant && <span className="ml-3 px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}
             </h1>
             <p className="text-gray-600 mt-1">
               Anahtar yaşam döngüsü, rotasyon ve yeniden sifreleme işlemleri

@@ -369,7 +369,7 @@ export default function ProductionGoLiveDashboard({
         <div className={`bg-gradient-to-r ${rColors.gradient} ${rColors.border} border rounded-2xl p-6 ring-1 ${rColors.ring}`}>
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
-              <h1 data-testid="golive-title" className="text-2xl font-bold text-gray-900 tracking-tight">{t("techDashboards.productionGoLive")}</h1>
+              <h1 data-testid="golive-title" className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-3">{t("techDashboards.productionGoLive")} {tenant && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}</h1>
               <p className="text-sm text-gray-600 mt-1">Sistem hazırlık durumu ve production doğrulama</p>
             </div>
             <div className="flex items-center gap-5">
