@@ -18,7 +18,7 @@ Models:
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -141,10 +141,22 @@ async def check_double_booking_conflicts(date: str | None = None, current_user: 
     - Room assignment overlaps
     """
     target_date = date or datetime.now().date().isoformat()
+    target_end = f"{target_date}T23:59:59.999999"
+    target_end_exclusive = (datetime.fromisoformat(target_date[:10]) + timedelta(days=1)).date().isoformat()
 
     # v95 — Projection: only fields needed for conflict detection (was full-doc fetch)
     bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}, "check_in": {"$lte": target_date}, "check_out": {"$gte": target_date}},
+        # A stay occupies hotel nights in the half-open interval
+        # [check_in_date, check_out_date).  A departure on ``target_date`` is
+        # therefore not a conflict with another guest arriving that day.
+        # Use the full calendar-day bounds because booking timestamps may carry
+        # an arrival/departure time while older records are date-only strings.
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            "check_in": {"$lt": target_end_exclusive},
+            "check_out": {"$gt": target_end},
+        },
         {"_id": 0, "id": 1, "room_id": 1, "guest_id": 1, "check_in": 1, "check_out": 1, "status": 1},
     ).to_list(length=None)
 
@@ -575,4 +587,3 @@ async def get_exchange_rates(current_user=Depends(get_current_user)):
             if _tcmb_cache["rates"]:
                 return {"ok": True, "source": "TCMB (fallback)", "rates": _tcmb_cache["rates"]}
             raise HTTPException(status_code=503, detail=f"Failed to fetch exchange rates: {str(e)}")
-
