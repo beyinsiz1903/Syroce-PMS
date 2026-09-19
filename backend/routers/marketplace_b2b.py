@@ -772,7 +772,8 @@ async def agency_create_reservation(
 
         # Komisyon: sözleşmede otelin onayladığı oran (override edilmiş olabilir) kullanılır
         commission_pct = float(contract.get("commission_pct", _commission_for(agency, listing)))
-        nights = (co - ci).days
+        # Calendar nights must not lose a night to 14:00/11:00 stay times.
+        nights = (co.date() - ci.date()).days
         # Server-side "ground truth" fiyat — istemcinin gönderdiği total_amount'a güvenme.
         server_total = float(available_room.get("base_price", 0)) * max(nights, 1)
         if data.total_amount and data.total_amount > 0:

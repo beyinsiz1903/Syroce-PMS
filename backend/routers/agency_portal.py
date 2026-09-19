@@ -798,7 +798,9 @@ async def agency_portal_create_reservation(
     # Create booking directly in PMS
     booking_id = _uuid()
     confirmation_code = f"AGN-{booking_id[:8].upper()}"
-    nights = (co - ci).days
+    # Bill calendar nights: 14:00 check-in / 11:00 check-out must not
+    # truncate a two-night stay to one night.
+    nights = (co.date() - ci.date()).days
     total = data.total_amount if data.total_amount > 0 else available_room.get("base_price", 0) * max(nights, 1)
     commission_amount = round(total * commission_rate / 100, 2)
 

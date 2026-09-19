@@ -693,7 +693,8 @@ async def _b2b_create_reservation_impl(
 
     booking_id = _uuid()
     confirmation_code = f"B2B-{booking_id[:8].upper()}"
-    nights = (co - ci).days
+    # Calendar nights must not lose a night to 14:00/11:00 stay times.
+    nights = (co.date() - ci.date()).days
     total = data.total_amount if data.total_amount > 0 else available_room.get("base_price", 0) * max(nights, 1)
     commission_amount = round(total * commission_rate / 100, 2)
 
