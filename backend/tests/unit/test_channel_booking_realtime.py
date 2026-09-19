@@ -75,6 +75,11 @@ async def test_hotelrunner_pull_cancellation_publishes_calendar_invalidation(mon
     )
     publish = AsyncMock(return_value=True)
     monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-01-01"}),
+    )
     monkeypatch.setattr(sync_engine, "publish_booking_change", publish)
     monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
 

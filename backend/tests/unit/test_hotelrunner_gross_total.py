@@ -101,6 +101,11 @@ async def test_pull_sync_does_not_treat_datetime_formatting_as_a_date_change(mon
         notifications=notifications,
     )
     monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-01"}),
+    )
     monkeypatch.setattr(sync_engine, "publish_booking_change", AsyncMock(return_value=True))
     monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
 
@@ -186,6 +191,11 @@ async def test_pull_sync_repairs_exact_legacy_net_import_even_when_timestamp_is_
         notifications=_collection(),
     )
     monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-01"}),
+    )
     monkeypatch.setattr(sync_engine, "publish_booking_change", AsyncMock(return_value=True))
     monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
 
@@ -298,6 +308,11 @@ async def test_current_single_room_pull_prefers_reservation_grand_total(monkeypa
         notifications=_collection(),
     )
     monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(
+        sync_engine,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-01"}),
+    )
     monkeypatch.setattr(sync_engine, "publish_booking_change", AsyncMock(return_value=True))
     monkeypatch.setattr(sync_engine, "_timeline_append", AsyncMock())
 
