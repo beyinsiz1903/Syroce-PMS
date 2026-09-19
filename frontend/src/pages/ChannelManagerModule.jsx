@@ -643,13 +643,20 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                             <p className="text-sm text-gray-600">
                               Type: {conn.channel_type.replace('_', '.')}
                             </p>
+                            {conn.is_legacy_connection && (
+                              <p className="text-xs text-amber-700 mt-1">
+                                Mevcut HotelRunner entegrasyonu · Salt okunur
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center space-x-4">
                           {getStatusBadge(conn.status)}
-                          <Button variant="outline" size="sm">
-                            <Settings className="w-4 h-4" />
-                          </Button>
+                          {!conn.is_read_only && (
+                            <Button variant="outline" size="sm">
+                              <Settings className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
