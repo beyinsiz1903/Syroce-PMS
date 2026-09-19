@@ -475,6 +475,50 @@ async def ensure_performance_indexes():
             "ux_agency_booking_external_active",
             {"unique": True, "partialFilterExpression": {"agency_external_active": {"$type": "string"}}},
         ),
+
+        # HR Indexes
+        ("attendance_records", [("tenant_id", 1), ("clock_in", -1)], "idx_hr_attendance_clockin", {}),
+        ("leave_requests", [("tenant_id", 1), ("created_at", -1)], "idx_hr_leave_created", {}),
+        ("payroll_runs", [("tenant_id", 1), ("created_at", -1)], "idx_hr_payroll_created", {}),
+        ("payroll_runs", [("tenant_id", 1), ("period_month", -1)], "idx_hr_payroll_period", {}),
+        
+        # SPA Indexes
+        ("spa_appointments", [("tenant_id", 1), ("starts_at", 1)], "idx_spa_appointments_start", {}),
+        ("spa_waitlist", [("tenant_id", 1), ("created_at", 1)], "idx_spa_waitlist_created", {}),
+
+        # Accounting / Finance Indexes
+        ("gl_journal_entries", [("tenant_id", 1), ("date", 1), ("posting_sequence", 1)], "idx_gl_journal_date_seq", {}),
+        ("expenses", [("tenant_id", 1), ("date", -1)], "idx_accounting_expenses_date", {}),
+        ("accounting_invoices", [("tenant_id", 1), ("issue_date", -1)], "idx_accounting_invoices_issue", {}),
+        ("cash_flow", [("tenant_id", 1), ("date", -1)], "idx_accounting_cashflow_date", {}),
+
+        # Core / POS / Transactions (Cross-module)
+        ("transactions", [("tenant_id", 1), ("created_at", -1)], "idx_transactions_tenant_created", {}),
+        ("transactions", [("tenant_id", 1), ("category", 1), ("transaction_date", -1)], "idx_transactions_category_date", {}),
+
+        # POS Transactions date indexes for GL router
+        ("pos_transactions", [("tenant_id", 1), ("transaction_date", 1)], "idx_pos_txn_trans_date", {}),
+        ("pos_transactions", [("tenant_id", 1), ("closed_at", 1)], "idx_pos_txn_closed_at", {}),
+        ("pos_transactions", [("tenant_id", 1), ("created_at", 1)], "idx_pos_txn_created_at", {}),
+
+        ("shift_schedules", [("tenant_id", 1), ("shift_date", 1)], "idx_hr_shift_date", {}),
+        ("performance_reviews", [("tenant_id", 1), ("reviewed_at", -1)], "idx_hr_perf_review", {}),
+
+        # Channel Manager & Revenue Indexes
+        ("channel_rates", [("tenant_id", 1), ("date", 1)], "idx_channel_rates_date", {}),
+        ("bookings", [("tenant_id", 1), ("check_in", 1)], "idx_booking_tenant_checkin", {}),
+        ("bookings", [("tenant_id", 1), ("check_out", 1)], "idx_booking_tenant_checkout", {}),
+        ("rate_campaigns", [("tenant_id", 1), ("starts_on", -1)], "idx_rate_campaigns_starts", {}),
+        ("discount_codes", [("tenant_id", 1), ("code", 1)], "idx_discount_codes_code", {}),
+        ("promotional_rates", [("tenant_id", 1), ("starts_on", -1)], "idx_promotional_rates_starts", {}),
+
+        # Guest & Loyalty Indexes
+        ("loyalty_transactions", [("tenant_id", 1), ("guest_id", 1), ("created_at", -1)], "idx_loyalty_tx_guest_created", {}),
+        ("room_service_orders", [("tenant_id", 1), ("ordered_at", -1)], "idx_rso_ordered_at", {}),
+
+        # Kitchen & F&B Reports Indexes
+        ("kitchen_orders", [("tenant_id", 1), ("order_number", -1)], "idx_ko_tenant_orderno", {}),
+        ("kitchen_orders", [("tenant_id", 1), ("status", 1), ("priority", -1), ("ordered_at", 1)], "idx_ko_status_prio", {}),
     ]
     # ── Migration Cleanup for contact_center_calls ──
     try:
