@@ -321,10 +321,26 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             res["total"] = _safe_float(_attr(total_el, "AmountAfterTax", "0"))
             res["currency"] = _attr(total_el, "CurrencyCode", res.get("currency", "TRY"))
 
-        # Special requests / comments
-        for comment in global_info.iter(_ns("Comment")):
-            text_el = comment.find(_ns("Text"))
-            res["notes"] = _text(text_el)
+        # Reservation comments must not be overwritten by Guarantee/Comments.
+        comments = global_info.findall(f"{_ns('Comments')}/{_ns('Comment')}")
+        res["notes"] = "\n".join(
+            text for comment in comments
+            if (text := _text(comment.find(_ns("Text"))))
+        )
+        for comment in global_info.findall(f"{_ns('Guarantee')}/{_ns('Comments')}/{_ns('Comment')}"):
+            if _attr(comment, "Name") == "PaymentMethodName":
+                res["payment_method"] = _text(comment.find(_ns("Text")))
+
+        # PMSConnect supplies the booking contact separately from room guests.
+        customer = global_info.find(f"{_ns('Profiles')}/{_ns('ProfileInfo')}/{_ns('Profile')}/{_ns('Customer')}")
+        if customer is not None:
+            pname = customer.find(_ns("PersonName"))
+            if pname is not None:
+                res["guest_firstname"] = _text(pname.find(_ns("GivenName")))
+                res["guest_lastname"] = _text(pname.find(_ns("Surname")))
+                res["guest_name"] = f"{res['guest_firstname']} {res['guest_lastname']}".strip()
+            res["guest_phone"] = _attr(customer.find(_ns("Telephone")), "PhoneNumber")
+            res["guest_email"] = _text(customer.find(_ns("Email")))
 
     # Channel from Source
     for source in hr_el.iter(_ns("Source")):
