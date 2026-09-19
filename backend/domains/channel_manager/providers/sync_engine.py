@@ -36,6 +36,25 @@ _PMS_PENDING = "pending"
 _PMS_FAILED = "failed"
 
 
+def _calendar_date(value: Any) -> str:
+    """Return a provider/PMS date value in the canonical ``YYYY-MM-DD`` form.
+
+    HotelRunner can return either a date or an ISO datetime for the same stay.
+    PMS bookings intentionally store date-only values, so comparing raw strings
+    turns a formatting difference into a false reservation modification.
+    """
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if not isinstance(value, str):
+        return ""
+    candidate = value.strip()[:10]
+    try:
+        datetime.strptime(candidate, "%Y-%m-%d")
+    except ValueError:
+        return value.strip()
+    return candidate
+
+
 def _classify_provider_pull_failure(error: Any) -> str:
     """Return a bounded provider failure class without logging response details."""
     message = str(error or "").lower()
@@ -684,11 +703,11 @@ async def sync_reservation_update(
     if not provider_update_is_stale and guest_name_hr and guest_name_hr != booking.get("guest_name", ""):
         updates["guest_name"] = guest_name_hr
 
-    checkin = hr_payload.get("checkin_date") or (room.get("checkin_date") if room else "")
-    checkout = hr_payload.get("checkout_date") or (room.get("checkout_date") if room else "")
-    if not provider_update_is_stale and checkin and checkin != booking.get("check_in", ""):
+    checkin = _calendar_date(hr_payload.get("checkin_date") or (room.get("checkin_date") if room else ""))
+    checkout = _calendar_date(hr_payload.get("checkout_date") or (room.get("checkout_date") if room else ""))
+    if not provider_update_is_stale and checkin and checkin != _calendar_date(booking.get("check_in", "")):
         updates["check_in"] = checkin
-    if not provider_update_is_stale and checkout and checkout != booking.get("check_out", ""):
+    if not provider_update_is_stale and checkout and checkout != _calendar_date(booking.get("check_out", "")):
         updates["check_out"] = checkout
 
     if room and not provider_update_is_stale:
