@@ -64,7 +64,7 @@ const STATUS_INTENT = {
     icon: RotateCcw
   },
   mock: {
-    label: "Mock (SMTP yok)",
+    label: "Simülasyon (E-posta Testi)",
     intent: "neutral",
     icon: Info
   }
@@ -446,7 +446,7 @@ export default function ReportScheduler() {
                 <SelectItem value="sent">{t('cm.pages_ReportScheduler.gonderildi_ed666')}</SelectItem>
                 <SelectItem value="failed">{t('cm.pages_ReportScheduler.basarisiz_3260d')}</SelectItem>
                 <SelectItem value="partial">{t('cm.pages_ReportScheduler.kismi')}</SelectItem>
-                <SelectItem value="mock">Mock (SMTP yok)</SelectItem>
+                <SelectItem value="mock">Simülasyon (E-posta Testi)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -656,7 +656,7 @@ export default function ReportScheduler() {
               {detailEntry.delivery_details && <div className="bg-slate-50 rounded p-3 text-xs space-y-1">
                   <div>{t('cm.pages_ReportScheduler.gonderilen_08803')} {detailEntry.delivery_details.sent_count || 0}</div>
                   <div>{t('cm.pages_ReportScheduler.basarisiz_bda18')} {detailEntry.delivery_details.failed_count || 0}</div>
-                  {detailEntry.delivery_details.mock_count > 0 && <div className="text-slate-600">Mock (SMTP yok): {detailEntry.delivery_details.mock_count}</div>}
+                  {detailEntry.delivery_details.mock_count > 0 && <div className="text-slate-600">Simülasyon (E-posta Testi): {detailEntry.delivery_details.mock_count}</div>}
                   {detailEntry.delivery_details.attachment_count > 0 && <div>{t('cm.pages_ReportScheduler.ek_dosya_sayisi')} {detailEntry.delivery_details.attachment_count}</div>}
                   {(detailEntry.delivery_details.failed_recipients || []).length > 0 && <div className="text-rose-600 break-all">
                       {t('cm.pages_ReportScheduler.basarisiz_alicilar')} {detailEntry.delivery_details.failed_recipients.join(", ")}

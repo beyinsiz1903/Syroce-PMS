@@ -10,9 +10,12 @@ export function revenueRmsRoutes({ p }) {
     // ── Revenue & Analytics (Consolidated) ───────────
     { path: "/displacement-analysis", type: "redirect", to: "/app/rms" },
     { path: "/app/displacement-analysis", type: "redirect", to: "/app/rms" },
+    {
+      path: "/app/analitik",
+      element: <ModuleGuardedRoute module="advanced_analytics" element={<AnalitikRaporlarPage />} />,
+    },
     { path: "/app/gelir-yonetimi", type: "redirect", to: "/app/rms" },
     { path: "/app/ai-zeka", type: "redirect", to: "/app/ai" },
-    { path: "/app/analitik", type: "redirect", to: "/app/raporlar" },
 
     // ── Revenue & Analytics (Legacy routes — backward compat) ──
     { path: "/revenue-engine", ...p(RevenueEngineDashboard), wrapLayout: true, layoutModule: "rms" },
