@@ -481,7 +481,7 @@ async def ensure_performance_indexes():
         ("leave_requests", [("tenant_id", 1), ("created_at", -1)], "idx_hr_leave_created", {}),
         ("payroll_runs", [("tenant_id", 1), ("created_at", -1)], "idx_hr_payroll_created", {}),
         ("payroll_runs", [("tenant_id", 1), ("period_month", -1)], "idx_hr_payroll_period", {}),
-        
+
         # SPA Indexes
         ("spa_appointments", [("tenant_id", 1), ("starts_at", 1)], "idx_spa_appointments_start", {}),
         ("spa_waitlist", [("tenant_id", 1), ("created_at", 1)], "idx_spa_waitlist_created", {}),
