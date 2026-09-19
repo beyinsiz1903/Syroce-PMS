@@ -28,6 +28,7 @@ from core.database import db
 from core.import_decision import (
     COLL_IMPORTED,
     check_booking_source_exists,
+    rate_code_belongs_to_room,
 )
 from core.room_auto_assignment import create_booking_with_auto_assignment
 
@@ -430,7 +431,10 @@ async def replay_reviewed_mapping_import(
             {"_id": 0, "pms_rate_plan_id": 1},
         )
 
-    if (room_code and not room_mapping) or (rate_code and not rate_mapping):
+    safe_derived_rate = bool(
+        room_mapping and rate_code_belongs_to_room(rate_code, room_code)
+    )
+    if (room_code and not room_mapping) or (rate_code and not rate_mapping and not safe_derived_rate):
         return {"status": "failed"}
 
     claimed = await db[COLL_IMPORTED].find_one_and_update(
@@ -648,6 +652,7 @@ async def auto_import_reservation_to_pms(
 
         # ── 4. Resolve rate plan mapping ─────────────────────────
         rate_plan_id = None
+        rate_plan_mapping_status = "mapped"
         rate_code = record.get("rate_plan_code", "")
         if rate_code:
             rate_mapping = await db.rate_plan_mappings.find_one(
@@ -662,6 +667,16 @@ async def auto_import_reservation_to_pms(
             )
             if rate_mapping:
                 rate_plan_id = rate_mapping.get("pms_rate_plan_id")
+            elif room_id and rate_code_belongs_to_room(rate_code, room_type):
+                # HotelRunner derived rates encode their inventory code in the
+                # rate code (for example ``1362167:HR:704308``).  The room
+                # mapping is already authoritative, so retain the provider
+                # plan as metadata instead of blocking a real reservation.
+                # We intentionally do not auto-create an ARI mapping here:
+                # commercial rate synchronisation still requires an operator
+                # to approve the new plan.
+                rate_plan_id = rate_code
+                rate_plan_mapping_status = "inferred_from_room"
             else:
                 await _park_as_unmatched_hold(
                     "unmapped_rate_plan",
@@ -687,6 +702,7 @@ async def auto_import_reservation_to_pms(
             "preferred_room_number": record.get("provider_room_number", ""),
             "rate_plan_id": rate_plan_id,
             "rate_plan_code": rate_code,
+            "rate_plan_mapping_status": rate_plan_mapping_status,
             "adults": record.get("adults", 1),
             "children": record.get("children", 0),
             "total_amount": record.get("total_amount", 0.0),

@@ -144,6 +144,28 @@ async def test_decision_review_unmapped_rate():
 
 
 @pytest.mark.asyncio
+async def test_decision_allows_unmapped_derived_rate_for_mapped_room():
+    """A new HotelRunner derivative must not block its known inventory."""
+    from core.import_decision import classify_for_import
+
+    lineage = _make_lineage(room_type_code="HR:704308", rate_plan_code="1362167:HR:704308")
+    status, reason = classify_for_import(lineage, {"pms_room_type_id": "tree-house"}, None)
+    assert status == "pending_auto_import"
+    assert reason is None
+
+
+@pytest.mark.asyncio
+async def test_decision_keeps_unrelated_unmapped_rate_in_review():
+    """The fallback is structural, never fuzzy or cross-room."""
+    from core.import_decision import classify_for_import
+
+    lineage = _make_lineage(room_type_code="HR:704308", rate_plan_code="1362167:HR:704309")
+    status, reason = classify_for_import(lineage, {"pms_room_type_id": "tree-house"}, None)
+    assert status == "review_required"
+    assert reason == "unmapped_rate_plan"
+
+
+@pytest.mark.asyncio
 async def test_decision_review_cancelled():
     from core.import_decision import classify_for_import
     lineage = _make_lineage(status="cancelled")
