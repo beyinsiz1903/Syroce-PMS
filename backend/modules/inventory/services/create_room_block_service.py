@@ -62,6 +62,29 @@ class CreateRoomBlockService:
             if end_date and end_date <= start_date:
                 raise HTTPException(status_code=400, detail="End date must be after start date")
 
+            # The dialog used to remain open after a successful request. Each
+            # later click had a fresh transport idempotency key, so transport
+            # idempotency alone could not stop duplicate business records.
+            # Treat the same active room/range/type/reason as one operation.
+            existing_block = await self.repository.find_matching_active_room_block(
+                tenant_id=tenant_context.tenant_id,
+                room_id=block_data.room_id,
+                block_type=block_data.type.value,
+                reason=block_data.reason,
+                start_date=block_data.start_date,
+                end_date=block_data.end_date,
+                allow_sell=block_data.allow_sell,
+            )
+            if existing_block:
+                response = {
+                    "message": "Matching room block is already active",
+                    "block": existing_block,
+                    "room_number": room["room_number"],
+                    "warnings": [],
+                }
+                await self.repository.complete_idempotency_lock(lock["lock_id"], existing_block["id"], response)
+                return response
+
             conflicting_bookings = await self.repository.list_conflicting_bookings(
                 tenant_id=tenant_context.tenant_id,
                 room_id=block_data.room_id,

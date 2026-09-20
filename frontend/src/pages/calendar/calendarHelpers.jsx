@@ -15,6 +15,13 @@ export const toDateStringUTC = (value) => {
   return `${year}-${month}-${day}`;
 };
 
+// The room-block endpoint deliberately returns a JSON array.  Older callers
+// also accepted a { blocks: [...] } envelope, so keep one normalization point
+// for both shapes instead of silently replacing a valid array with [].
+export const normalizeRoomBlocksResponse = (data) => (
+  Array.isArray(data) ? data : data?.blocks || []
+);
+
 // A resize handle is dropped on the final occupied night. Checkout remains
 // exclusive, so the persisted checkout date is the following calendar day.
 export const checkoutAfterCalendarNight = (value) => {

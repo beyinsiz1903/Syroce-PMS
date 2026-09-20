@@ -218,6 +218,11 @@ code {
     background-color: hsl(var(--muted));
 }
 
+/* Dated room-block cards retain the same muted surface at their 70% tint. */
+.dark .bg-slate-100\/70 {
+    background-color: hsl(var(--muted) / 0.7);
+}
+
 /* --- Biraz daha belirgin notr arka planlar -> secondary --- */
 .dark .bg-gray-200,
 .dark .bg-slate-200,

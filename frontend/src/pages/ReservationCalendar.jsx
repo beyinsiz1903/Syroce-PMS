@@ -37,6 +37,7 @@ import {
   roomOccupancyStatus,
   buildCalendarRateLookup,
   validateStayResize,
+  normalizeRoomBlocksResponse,
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
@@ -389,7 +390,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setBookings(bookingsRes.data || []);
       setGuests(guestsRes.data || []);
       setCompanies(companiesRes.data || []);
-      setRoomBlocks(blocksRes.data.blocks || []);
+      setRoomBlocks(normalizeRoomBlocksResponse(blocksRes.data));
       setOccupancyPricingRules(pricingRes.data?.rules || {});
       setCalendarRates(buildCalendarRateLookup(rateGridRes.data?.grid || []));
 

@@ -31,16 +31,12 @@ COPY requirements/ ./requirements/
 #   the API surface. The runtime stage below installs the WeasyPrint NATIVE
 #   libs (pango/cairo/gdk-pixbuf/glib) so `from weasyprint import HTML` can
 #   dlopen them (server.py eager-preloads the renderer at startup).
-# - litellm override below stays IDENTICAL to the all.txt setup: forced
-#   `>=1.84.0 --no-deps`. The >=1.84.0 floor clears CVE-2026-49468 (auth
-#   bypass) and the earlier CVE-2026-35029/35030 (first fixed in 1.83.2);
-#   --no-deps keeps openai at the pinned 1.99.9 (litellm>=1.83.0 would
-#   otherwise force openai>=2.30.0) and avoids litellm's incompatible
-#   httpx/openai upper pins we resolve via api.txt/integrations.txt directly.
+# - integrations.txt pins a tested LiteLLM/OpenAI pair.  Keeping dependency
+#   resolution in that file prevents the CI-only import mismatch caused by the
+#   former `--no-deps` LiteLLM override.
 # - See docs/backend_refactors/requirements-split-plan.md §4.5 and run.md
 #   Phase 6.0 (API AST scan) + Phase 6.1 (this swap).
-RUN python -m pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/api-runtime.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
-    PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.84.0" --no-deps
+RUN python -m pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/api-runtime.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 
 # Stage 2: Runtime
 FROM python:3.11-slim AS runtime

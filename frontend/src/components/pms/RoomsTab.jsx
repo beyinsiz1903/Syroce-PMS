@@ -16,6 +16,7 @@ import RoomBlockDialog from '@/components/pms/RoomBlockDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { classifyGuestPayment } from '@/utils/paymentClassification';
 import { deduplicateGuestSearchResults, maskGuestDocument } from '@/pages/calendar/guestIdentity';
+import { getRoomBlockForDate, normalizeRoomBlocksResponse } from '@/pages/calendar/calendarHelpers';
 
 const RoomsTab = ({
   rooms,
@@ -92,6 +93,7 @@ const RoomsTab = ({
   const [markingCleanRoomId, setMarkingCleanRoomId] = useState(null);
   const [roomBlockDialog, setRoomBlockDialog] = useState(false);
   const [roomToBlock, setRoomToBlock] = useState(null);
+  const [roomBlocks, setRoomBlocks] = useState([]);
 
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
@@ -108,6 +110,28 @@ const RoomsTab = ({
     d.setUTCDate(d.getUTCDate() + 1);
     return d.toISOString().split('T')[0];
   }, [today]);
+
+  const loadRoomBlocks = useCallback(async () => {
+    try {
+      const response = await axios.get('/pms/room-blocks?status=active');
+      setRoomBlocks(normalizeRoomBlocksResponse(response.data));
+    } catch {
+      // A temporary block-read failure must not make an operational room card
+      // look blocked indefinitely; the next refresh retries the request.
+      setRoomBlocks([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRoomBlocks();
+  }, [loadRoomBlocks]);
+
+  const handleRoomBlockChanged = useCallback(async () => {
+    await Promise.all([
+      loadRoomBlocks(),
+      Promise.resolve(onDataRefresh?.()),
+    ]);
+  }, [loadRoomBlocks, onDataRefresh]);
 
   // Build a map of room_number -> current guest info from active bookings
   const roomGuestMap = useMemo(() => {
@@ -533,18 +557,19 @@ const RoomsTab = ({
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {filteredRooms.map(room => {
           const guestInfo = roomGuestMap[String(room.room_number)];
+          const roomBlock = getRoomBlockForDate(room.id, today, roomBlocks);
           const showCheckIn = guestInfo && guestInfo.isCheckInToday && (guestInfo.status === 'confirmed' || guestInfo.status === 'guaranteed');
           const showCheckOut = guestInfo && guestInfo.isCheckOutToday && guestInfo.status === 'checked_in';
           const hasBalance = guestInfo && guestInfo.balance > 0.01;
           const isOccupied = guestInfo && guestInfo.status === 'checked_in';
           const cat = guestInfo?.category;
-          const cardExtra = cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-amber-400' : '';
+          const cardExtra = roomBlock ? 'border-l-4 border-l-slate-500 bg-slate-100/70' : cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-amber-400' : '';
           const catLabel = cat ? categoryLabels[cat] : null;
           const guestBg = cat ? guestSectionStyles[cat] : 'bg-slate-50 border-slate-200';
           const gText = cat ? guestTextStyles[cat] : { icon: 'text-slate-600', name: 'text-slate-800', date: 'text-slate-500', link: 'text-slate-400', hoverBg: 'hover:bg-slate-100' };
           // Kirli/temizleniyor olması gelecekteki rezervasyonu engellemez;
           // yalnızca check-in sırasında oda hazır olmalıdır.
-          const canCreateReservation = !guestInfo && ['available', 'inspected', 'dirty', 'cleaning'].includes(room.status);
+          const canCreateReservation = !guestInfo && !roomBlock && ['available', 'inspected', 'dirty', 'cleaning'].includes(room.status);
 
           const statusColors = {
             available: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -570,6 +595,7 @@ const RoomsTab = ({
                 <div className="flex justify-between items-start mb-2 gap-2">
                   <span className="text-lg font-bold shrink-0 leading-none" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
                   <div className="flex flex-wrap justify-end gap-1">
+                    {roomBlock && <Badge className="text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border bg-slate-200 text-slate-800 border-slate-300">Satışa kapalı</Badge>}
                     {catLabel && <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${catLabel.cls}`}>{catLabel.text}</Badge>}
                     {room.status === 'dirty' ? <button
                       type="button"
@@ -768,7 +794,7 @@ const RoomsTab = ({
         rooms={rooms}
         defaultRoomId={roomToBlock?.id || ''}
         businessDate={today}
-        onChanged={onDataRefresh}
+        onChanged={handleRoomBlockChanged}
       />
 
       {/* Checkout Balance Warning Dialog */}
