@@ -766,9 +766,13 @@ async def assign_housekeeping_task(
 
 # rbac-allow: cache-rbac — room blocks operasyonel listesi tüm rolelere açık (maintenance/group koordinasyon)
 @router.get("/pms/room-blocks")
-@cached(ttl=300, key_prefix="pms_room_blocks")  # Cache for 5 min
 async def get_room_blocks(room_id: str | None = None, status: str | None = None, from_date: str | None = None, to_date: str | None = None, current_user: User = Depends(get_current_user)):
-    """Get room blocks with optional filters"""
+    """Get room blocks with optional filters.
+
+    Room blocks are sellability data.  They intentionally must not be served
+    from a TTL cache: a stale response can make a newly OOS/OOO room appear
+    bookable to another employee (or another application worker).
+    """
     query = {"tenant_id": current_user.tenant_id}
 
     if room_id:
@@ -810,7 +814,7 @@ async def create_room_block(
     block_data: RoomBlockCreate,
     request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_op("update_room_status")),
 ):
     return await create_room_block_service.create(block_data, current_user, request)
 
@@ -820,7 +824,7 @@ async def update_room_block(
     block_id: str,
     block_data: RoomBlockUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_op("update_room_status")),
 ):
     """Update an existing room block"""
     block = await db.room_blocks.find_one({"id": block_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -862,6 +866,16 @@ async def update_room_block(
     # Update block
     await db.room_blocks.update_one({"id": block_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
 
+    # Availability is cached separately.  Never leave a changed OOS/OOO block
+    # behind in a cached sellability response.
+    try:
+        from cache_manager import cache
+
+        cache.safe_invalidate(current_user.tenant_id, "rooms_availability")
+        cache.safe_invalidate(current_user.tenant_id, "pms_room_blocks")
+    except Exception:
+        logger.warning("Could not invalidate room-block inventory caches", exc_info=True)
+
     # Create audit log
     await db.audit_logs.insert_one(
         {
@@ -890,7 +904,7 @@ async def cancel_room_block(
     request: Request,
     reason: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_op("update_room_status")),
 ):
     """Release a room block through the semantic inventory service."""
     return await release_room_block_service.release(block_id, current_user, request, reason=reason)

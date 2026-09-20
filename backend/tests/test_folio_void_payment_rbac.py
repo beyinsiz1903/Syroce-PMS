@@ -18,7 +18,6 @@ from fastapi import HTTPException
 from models.enums import UserRole
 from modules.pms_core.role_permission_service import RolePermissionService
 
-
 svc = RolePermissionService()
 
 
@@ -58,5 +57,5 @@ def test_void_payment_route_source_uses_void_permission():
     from routers.finance.folio import void_payment
 
     src = inspect.getsource(void_payment)
-    assert 'enforce_permission(current_user.role, "void_payment")' in src
-    assert 'enforce_permission(current_user.role, "post_payment")' not in src
+    assert 'enforce_user_permission(current_user, "void_payment")' in src
+    assert 'enforce_user_permission(current_user, "post_payment")' not in src

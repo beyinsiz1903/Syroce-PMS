@@ -264,7 +264,7 @@ async def create_rate_override_with_panel(
     # Role / permission enforcement (Bug CP fix)
     from modules.pms_core.role_permission_service import RolePermissionService
 
-    RolePermissionService().enforce_permission(current_user.role, "override_rate")
+    RolePermissionService().enforce_user_permission(current_user, "override_rate")
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
 

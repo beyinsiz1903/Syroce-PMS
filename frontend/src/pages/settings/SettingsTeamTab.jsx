@@ -19,11 +19,13 @@ import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
 import { confirmDialog } from '@/lib/dialogs';
+import { Link } from 'react-router-dom';
 
 export default function SettingsTeamTab({ Users, team, UserCheck, teamMeta, Shield, Crown, setActiveTab, setNewMember, setShowAddModal, teamLoading, getRoleLabel, isSameUser, handleUpdateRole, handleRemoveMember, isAdmin, grLoading, grSettings, toggleGuestRequestRole, saveGuestRequestSettings, grSaving }) {
     const { t } = useTranslation();
     return (
         <TabsContent value="team" className="space-y-6">
+            {isAdmin && <Button asChild variant="outline"><Link to="/admin/otel-kullanicilari">Kullanıcıya özel modül ve sayfa yetkilerini düzenle</Link></Button>}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <KpiCard icon={Users} label="Toplam Üye" value={team.length} intent="default" className="shadow-sm rounded-xl border-slate-200" />
               <KpiCard icon={UserCheck} label="Max Kullanıcı" value={teamMeta.max_users === 999 ? '∞' : teamMeta.max_users} intent="info" className="shadow-sm rounded-xl border-slate-200" />

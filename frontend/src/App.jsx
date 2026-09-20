@@ -8,6 +8,7 @@ import PlanRouteGuard from "@/components/PlanRouteGuard";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import usePushNotifications from "@/hooks/usePushNotifications";
+import useUserAccessRefresh from "@/hooks/useUserAccessRefresh";
 import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationContext";
 import InternalChatWidget from "@/components/InternalChatWidget";
 import CommunicationCenter from "@/components/CommunicationCenter";
@@ -95,6 +96,12 @@ function clearAuthStorage() {
   notifyServiceWorkerAuthChanged();
 }
 
+function clearAccessCaches() {
+  clearAxiosCache();
+  queryClient.clear();
+  notifyServiceWorkerAuthChanged();
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
@@ -103,6 +110,7 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   usePushNotifications(isAuthenticated ? user : null);
+  useUserAccessRefresh(isAuthenticated ? user : null, setUser, clearAccessCaches);
 
   useEffect(() => {
     const hasAuthCookieSession = localStorage.getItem("token_ts") !== null;

@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 def _enforce_perm(role: str, op: str) -> None:
-    _rps.enforce_permission(role, op)
+    _rps.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 def _cari_balance(account: dict) -> float:
@@ -1171,7 +1171,7 @@ async def repair_channel_pricing(
     double-tax signature can be corrected. The before value is retained on the
     charge and in both reservation and tamper-evident audit streams.
     """
-    _enforce_perm(current_user.role, "void_charge")
+    _enforce_perm(current_user, "void_charge")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1428,7 +1428,7 @@ async def repair_automatic_accommodation_tax(
     trace remain in the database for audit; the row is voided rather than
     deleted.  An issued invoice is never altered automatically.
     """
-    _enforce_perm(current_user.role, "void_charge")
+    _enforce_perm(current_user, "void_charge")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1618,7 +1618,7 @@ async def record_payment(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a payment on the reservation's folio."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
+    _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1788,7 +1788,7 @@ async def complete_pending_room_charge(
     limited to an already checked-out reservation so it cannot be used as a
     substitute for nightly posting on an active stay.
     """
-    _enforce_perm(current_user.role, "checkout")
+    _enforce_perm(current_user, "checkout")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
@@ -1830,7 +1830,7 @@ async def diagnose_cari_transfer_resolution(
     _perm=Depends(require_op("post_payment")),
 ):
     """Read-only check for the identities required by a cari transfer."""
-    _enforce_perm(current_user.role, "post_payment")
+    _enforce_perm(current_user, "post_payment")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1861,7 +1861,7 @@ async def transfer_to_cari(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Transfer an amount from reservation folio to a cari (account receivable) account."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
+    _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2115,7 +2115,7 @@ async def record_agency_payment(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a payment made by an agency."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
+    _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2195,7 +2195,7 @@ async def split_charge(
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     """Split a charge from one folio to another (e.g., transfer part of a meal to another room)."""
-    _enforce_perm(current_user.role, "split_folio")  # Bug CP fix
+    _enforce_perm(current_user, "split_folio")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2328,7 +2328,7 @@ async def ensure_folio(
     motoru tarafından talep üzerine (yalnızca seçilenler) hedef folioya
     normalize edilip taşınır (bkz. FolioHardeningService.split_folio).
     """
-    _enforce_perm(current_user.role, "split_folio")  # Bug CP fix
+    _enforce_perm(current_user, "split_folio")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2453,7 +2453,7 @@ async def room_change(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Change the room for a reservation with full audit trail."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2544,7 +2544,7 @@ async def early_checkin(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Process early check-in with optional extra charge — atomic transaction."""
-    _enforce_perm(current_user.role, "checkin")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkin")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2624,7 +2624,7 @@ async def late_checkout(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Process late check-out with optional extra charge."""
-    _enforce_perm(current_user.role, "checkout")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkout")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2693,7 +2693,7 @@ async def mark_noshow(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Mark a reservation as no-show."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2745,7 +2745,7 @@ async def update_vip_status(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Toggle VIP status for the guest of a reservation."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2773,7 +2773,7 @@ async def record_deposit(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a deposit payment."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-3
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-3
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2861,7 +2861,7 @@ async def add_extra_charge_detail(
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     """Add an extra charge to a reservation."""
-    _enforce_perm(current_user.role, "post_charge")  # Bug CP fix
+    _enforce_perm(current_user, "post_charge")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2935,7 +2935,7 @@ async def mark_reservation_complimentary(
     the *open* daily rates consumed by Night Audit.  Once financial documents
     exist, finance must issue an explicit adjustment instead of rewriting them.
     """
-    _enforce_perm(current_user.role, "override_rate")
+    _enforce_perm(current_user, "override_rate")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -3176,7 +3176,7 @@ async def reconcile_complimentary_total(
     This does not alter posted financial history. If accommodation has been
     posted, paid, or invoiced, the operator must use a financial adjustment.
     """
-    _enforce_perm(current_user.role, "override_rate")
+    _enforce_perm(current_user, "override_rate")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
@@ -3342,7 +3342,7 @@ async def update_daily_rates(
     _perm=Depends(require_op("override_rate")),  # v97 DW
 ):
     """Update daily rates for a reservation. Requires override_rate permission."""
-    _enforce_perm(current_user.role, "override_rate")  # Bug CP Round-3 — mirror rate-override-panel gate
+    _enforce_perm(current_user, "override_rate")  # Bug CP Round-3 — mirror rate-override-panel gate
     _ensure_hotel_context(current_user)
 
     tid = current_user.tenant_id
@@ -3664,7 +3664,7 @@ async def update_reservation_guest(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Update guest information for a reservation."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -3817,7 +3817,7 @@ async def create_cari_account(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Create a new cari account."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4 — financial setup
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-4 — financial setup
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -3874,7 +3874,7 @@ async def reconcile_cari_account(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Reconcile (mahsuplaştır) a cari account - record a payment/offset."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -3922,7 +3922,7 @@ async def transfer_cari_to_agency(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Transfer cari balance to an agency cari account."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -4067,7 +4067,7 @@ async def create_group_booking(
          placeholder e-posta ile açılır, sonra standart rezervasyon
          servisi (`CreateReservationService`) çağrılır.
     """
-    _enforce_perm(current_user.role, "create_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "create_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -4303,7 +4303,7 @@ async def add_room_to_group(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Add a booking/room to a group."""
-    _enforce_perm(current_user.role, "create_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "create_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -4339,7 +4339,7 @@ async def group_check_in_all(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-in all reservations in a group — each via atomic transaction."""
-    _enforce_perm(current_user.role, "checkin")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkin")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -4389,7 +4389,7 @@ async def group_check_out_all(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-out all reservations in a group — each via atomic transaction."""
-    _enforce_perm(current_user.role, "checkout")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkout")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -4519,7 +4519,7 @@ async def refund_deposit(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Refund a deposit."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-3 — refund treated as payment-class mutation
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-3 — refund treated as payment-class mutation
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -4802,7 +4802,7 @@ async def add_reservation_guest(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),
 ):
-    _enforce_perm(current_user.role, "edit_booking")
+    _enforce_perm(current_user, "edit_booking")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -4879,7 +4879,7 @@ async def unlink_reservation_guest(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),
 ):
-    _enforce_perm(current_user.role, "edit_booking")
+    _enforce_perm(current_user, "edit_booking")
     tid = current_user.tenant_id
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:

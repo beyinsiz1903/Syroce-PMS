@@ -295,6 +295,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [newBooking, setNewBooking] = useState(newBookingDraft);
   const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
   const [calendarRates, setCalendarRates] = useState({});
+  const [calendarSafetyError, setCalendarSafetyError] = useState(null);
+  const [calendarRateError, setCalendarRateError] = useState(null);
 
   // Find room
   const [findRoomCriteria, setFindRoomCriteria] = useState({
@@ -366,14 +368,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const endDate = new Date(currentDate);
       endDate.setDate(endDate.getDate() + daysToShow + 7);
 
-      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, pricingRes, rateGridRes] = await Promise.all([
+      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, calendarRatesRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
         axios.get('/pms/guests').catch(() => ({ data: [] })),
         axios.get('/companies').catch(() => ({ data: [] })),
-        axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } })),
-        axios.get('/channel-manager/unified-rate-manager/pricing-settings').catch(() => ({ data: { rules: {} } })),
-        axios.get(`/channel-manager/unified-rate-manager/grid?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`).catch(() => ({ data: { grid: [] } }))
+        // Blok verisi satılabilirliği belirler. Bir hata asla "blok yok"
+        // anlamına gelmemeli; bu istek özellikle kritik tutulur.
+        axios.get('/pms/room-blocks?status=active'),
+        axios.get(`/pms/calendar/rates?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`)
+          .then((response) => ({ ...response, rateLoadError: null }))
+          .catch((error) => ({ data: null, rateLoadError: error }))
       ]);
 
       // Race guard: bu fetch tamamlanırken kullanıcı yeni navigasyon yaptıysa
@@ -391,8 +396,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setGuests(guestsRes.data || []);
       setCompanies(companiesRes.data || []);
       setRoomBlocks(normalizeRoomBlocksResponse(blocksRes.data));
-      setOccupancyPricingRules(pricingRes.data?.rules || {});
-      setCalendarRates(buildCalendarRateLookup(rateGridRes.data?.grid || []));
+      setCalendarSafetyError(null);
+      if (calendarRatesRes.rateLoadError) {
+        setCalendarRateError('Güncel takvim fiyatları yüklenemedi. Fiyat hücreleri doğrulanana kadar işlem yapmayın.');
+      } else {
+        setCalendarRateError(null);
+        setOccupancyPricingRules(calendarRatesRes.data?.rules || {});
+        setCalendarRates(buildCalendarRateLookup(calendarRatesRes.data?.grid || []));
+      }
 
       // Build group bookings summary
       const rawBookings = bookingsRes.data || [];
@@ -416,7 +427,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setGroupBookings(groupSummary);
     } catch (error) {
       console.error('Takvim verileri yüklenemedi:', error);
-      toast.error('Takvim verileri yüklenemedi');
+      setCalendarSafetyError('Oda blokları veya takvim verileri yüklenemedi. Müsaitlik güvenilir değildir; yeniden deneyin.');
+      toast.error('Takvim verileri yüklenemedi; müsaitlik gösterimi güvenli değil');
     } finally {
       setLoading(false);
     }
@@ -1341,6 +1353,20 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     );
   }
 
+  if (calendarSafetyError && rooms.length === 0) {
+    return (
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
+        <div className="flex min-h-[60vh] items-center justify-center p-6">
+          <div className="max-w-xl rounded-lg border border-red-300 bg-red-50 p-6 text-red-900 shadow-sm" role="alert">
+            <h2 className="text-lg font-semibold">Takvim güvenli olarak yüklenemedi</h2>
+            <p className="mt-2 text-sm">{calendarSafetyError}</p>
+            <Button className="mt-4" variant="destructive" onClick={() => loadCalendarData()}>Yeniden dene</Button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
@@ -1364,11 +1390,19 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onSyncReservations={handleSyncReservations}
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
           onShowNewBookingDialog={() => {
+            if (calendarSafetyError) {
+              toast.error('Oda blokları doğrulanmadan rezervasyon oluşturulamaz. Önce takvimi yenileyin.');
+              return;
+            }
             setSelectedRoom(null);
             setNewBooking(newBookingDraft());
             setShowNewBookingDialog(true);
           }}
           onShowRoomBlockDialog={() => {
+            if (calendarSafetyError) {
+              toast.error('Takvim verisi doğrulanmadan oda bloğu değiştirilemez. Önce takvimi yenileyin.');
+              return;
+            }
             setRoomToBlock(null);
             setShowRoomBlockDialog(true);
           }}
@@ -1380,6 +1414,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0">
+        {(calendarSafetyError || calendarRateError) && (
+          <div className="flex-none border-b border-red-200 bg-red-50 px-5 py-2 text-sm text-red-800" role="alert">
+            {calendarSafetyError || calendarRateError}
+          </div>
+        )}
         {/* Compact Legend */}
         <div
           className={`flex-none border-b border-slate-200 bg-white ${viewPreferences.compactMode ? 'px-5 py-1.5' : 'px-5 py-2'}`}
@@ -1419,7 +1458,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className={`flex-1 min-h-0 overflow-hidden ${calendarSafetyError ? 'pointer-events-none opacity-60' : ''}`} aria-disabled={Boolean(calendarSafetyError)}>
         <CalendarGrid
           rooms={rooms}
           bookings={bookings}

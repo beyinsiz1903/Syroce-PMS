@@ -34,7 +34,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 try:
@@ -264,7 +264,7 @@ async def get_available_rooms_for_booking(
 @router.post("/bookings/walk-in-quick")
 async def create_walk_in_booking(data: dict, http_request: Request, current_user: User = Depends(get_current_user)):
     """Quick walk-in booking creation"""
-    _enforce(current_user.role, "walk_in")  # Bug CU
+    _enforce(current_user, "walk_in")  # Bug CU
 
     # Idempotency-Key request-replay (additive: no-op without the header).
     guard, replay = await begin_idempotency(

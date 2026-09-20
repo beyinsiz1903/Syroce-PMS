@@ -197,7 +197,7 @@ async def run_night_audit(
 @router.get("/status")
 async def get_audit_status(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """Get current night audit status for this tenant."""
     from core.night_audit_hardened import get_run_status
@@ -208,7 +208,7 @@ async def get_audit_status(
 @router.get("/preview")
 async def preview_night_audit(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),
+    _perm=Depends(require_op("view_night_audit")),
 ):
     """Gece denetimi Hazirlik ozeti — engelleyiciler, uyarilar, oda/misafir durumu."""
     from core.night_audit_hardened import build_audit_preview
@@ -222,7 +222,7 @@ async def list_runs(
     skip: int = Query(0, ge=0),
     status: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """List night audit runs."""
     from core.night_audit_hardened import get_runs
@@ -234,7 +234,7 @@ async def list_runs(
 async def get_run(
     run_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """Get a specific run by ID."""
     from core.night_audit_hardened import get_run_detail
@@ -252,7 +252,7 @@ async def get_items(
     skip: int = Query(0, ge=0),
     status: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """List items for a specific run."""
     from core.night_audit_hardened import get_run_items
@@ -332,7 +332,7 @@ async def get_audit_history(
     limit: int = 20,
     skip: int = 0,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get night audit run history."""
@@ -347,7 +347,7 @@ async def get_audit_history(
 async def get_audit_exceptions(
     audit_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     from domains.pms.night_audit.service import night_audit_core_service
 
@@ -360,7 +360,7 @@ async def get_audit_exceptions(
 @cached(ttl=60, key_prefix="na_business_date")
 async def get_business_date(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_business_date")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
@@ -374,7 +374,7 @@ async def get_business_date(
 @cached(ttl=300, key_prefix="na_schedule")
 async def get_schedule(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
@@ -413,7 +413,7 @@ async def update_schedule(
 @cached(ttl=30, key_prefix="na_schedule_status")
 async def get_schedule_status(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
@@ -427,7 +427,7 @@ async def get_schedule_status(
 async def get_financial_summary(
     date: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service
@@ -452,7 +452,7 @@ async def get_financial_summary(
 async def get_payment_reconciliation(
     date: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service
@@ -478,7 +478,7 @@ async def get_financial_report(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     # Tur 3: defaults — last 30 days when omitted
     from datetime import date as _d
@@ -501,7 +501,7 @@ async def get_financial_report(
 async def get_integrity_check(
     date: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service

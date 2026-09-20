@@ -111,7 +111,7 @@ async def create_folio(
     """Create a new folio for a booking"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "post_charge")
+    RolePermissionService().enforce_user_permission(current_user, "post_charge")
     return await open_folio_service.create(folio_data, current_user, request)
 
 
@@ -617,7 +617,7 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
     # Role / permission enforcement (Bug CP fix)
     from modules.pms_core.role_permission_service import RolePermissionService
 
-    RolePermissionService().enforce_permission(current_user.role, "post_charge")
+    RolePermissionService().enforce_user_permission(current_user, "post_charge")
 
     # Optional Idempotency-Key replay protection (cashier double-click / retry).
     idem_key = get_idempotency_key(request)
@@ -754,7 +754,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
     # Role / permission enforcement (Bug CP fix)
     from modules.pms_core.role_permission_service import RolePermissionService
 
-    RolePermissionService().enforce_permission(current_user.role, "post_payment")
+    RolePermissionService().enforce_user_permission(current_user, "post_payment")
 
     # Optional Idempotency-Key replay protection (cashier double-click / retry).
     idem_key = get_idempotency_key(request)
@@ -1009,7 +1009,7 @@ async def transfer_charges(operation_data: FolioOperationCreate, current_user: U
     """Transfer charges from one folio to another"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "transfer_folio")
+    RolePermissionService().enforce_user_permission(current_user, "transfer_folio")
     if operation_data.operation_type != FolioOperationType.TRANSFER:
         raise HTTPException(status_code=400, detail="Invalid operation type")
 
@@ -1077,7 +1077,7 @@ async def void_charge(folio_id: str, charge_id: str, void_reason: str, current_u
     """Void a charge"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "void_charge")
+    RolePermissionService().enforce_user_permission(current_user, "void_charge")
     charge = await db.folio_charges.find_one({"id": charge_id, "folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": False})
 
     if not charge:
@@ -1159,7 +1159,7 @@ async def void_payment(
     # (POST_PAYMENT). pms_hardening.py's void-payment route already uses the
     # correct op; this aligns the legacy finance route to the same contract so a
     # role that can only POST payments cannot also VOID them.
-    RolePermissionService().enforce_permission(current_user.role, "void_payment")
+    RolePermissionService().enforce_user_permission(current_user, "void_payment")
 
     reason = (body or {}).get("reason", "").strip()
     if not reason:
@@ -1320,7 +1320,7 @@ async def close_folio(folio_id: str, current_user: User = Depends(get_current_us
     """Close a folio"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "close_folio")
+    RolePermissionService().enforce_user_permission(current_user, "close_folio")
     folio = await db.folios.find_one({"id": folio_id, "tenant_id": current_user.tenant_id, "status": "open"})
 
     if not folio:

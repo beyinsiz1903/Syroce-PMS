@@ -1,3 +1,4 @@
+import accessCatalog from '@/config/userAccessCatalog.json';
 // Canonical top-level module access helper.
 //
 // Explicit `module_scopes` is authoritative. When the field is absent we use
@@ -19,6 +20,8 @@ export const MODULE_SCOPES = Object.freeze([
   'sales',
   'stock',
   'tasks',
+  'night_audit',
+  'contact_center',
 ]);
 
 const MODULE_SCOPE_SET = new Set(MODULE_SCOPES);
@@ -27,15 +30,16 @@ const LEGACY_UNSCOPED_SURFACE = '__legacy_unscoped_surface__';
 const ROLE_DEFAULT_MODULE_SCOPES = Object.freeze({
   admin: MODULE_SCOPES,
   supervisor: MODULE_SCOPES,
-  front_desk: ['frontdesk'],
+  front_desk: ['frontdesk', 'cashier', 'night_audit', 'contact_center'],
   housekeeping: ['housekeeping', 'tasks'],
   sales: ['sales', 'reports'],
   // Finance consumes finalized payroll and its accounting export. Backend
   // already grants VIEW_HR (read-only); keep the route gate aligned so the
   // payroll screen is reachable while manage_hr mutations remain forbidden.
-  finance: ['cashier', 'finance', 'hr', 'invoice', 'reports'],
+  finance: ['cashier', 'finance', 'hr', 'invoice', 'reports', 'night_audit'],
   procurement: ['procurement', 'stock'],
   staff: [],
+  call_center_agent: ['contact_center'],
 });
 
 const COMMON_ROUTE_PATHS = new Set([
@@ -263,7 +267,7 @@ function hasSuperAdminRole(user) {
 }
 
 export function hasExplicitModuleScopes(user) {
-  return !!user && Object.prototype.hasOwnProperty.call(user, 'module_scopes');
+  return !!user && user.module_scopes != null;
 }
 
 export function normalizeModuleScope(scope) {
@@ -298,14 +302,17 @@ export function hasModuleAccess(user, scope) {
 export function hasAnyModuleAccess(user, scopes) {
   if (!Array.isArray(scopes) || scopes.length === 0) return true;
   if (scopes.includes(LEGACY_UNSCOPED_SURFACE)) {
-    return hasSuperAdminRole(user) || !hasExplicitModuleScopes(user);
+    return hasSuperAdminRole(user) || (roleValue(user) === 'admin' && !hasExplicitModuleScopes(user));
   }
   return scopes.some((scope) => hasModuleAccess(user, scope));
 }
 
 export function moduleScopesForPath(path) {
   if (typeof path !== 'string' || !path) return [LEGACY_UNSCOPED_SURFACE];
+  const page = accessPageForPath(path);
+  if (page) return [page.module];
   const pathname = path.split('?')[0].split('#')[0];
+  if (['/pms', '/app/pms'].includes(pathname)) return [...new Set(Object.values(PMS_TAB_SCOPES).flat())];
   if (COMMON_ROUTE_PATHS.has(pathname)) return [];
   if (EXACT_ROUTE_SCOPES[pathname]) return [...EXACT_ROUTE_SCOPES[pathname]];
 
@@ -347,4 +354,51 @@ export function moduleScopesForPmsTab(tabKey) {
 
 export function supplementalModuleNavItems(user) {
   return SUPPLEMENTAL_MODULE_NAV_ITEMS.filter((item) => hasAnyModuleAccess(user, item.moduleScopes));
+}
+
+export function accessPageForPath(path = '') {
+  const url = new URL(path, 'https://pms.invalid');
+  const pathname = url.pathname.replace(/^\/app\/pms$/, '/pms');
+  const tab = url.searchParams.get('tab') || url.hash.slice(1);
+  const canonical = pathname === '/pms' && tab ? `/pms?tab=${tab}` : pathname;
+  return accessCatalog.pages
+    .flatMap(page => page.paths.map(route => ({ page, route })))
+    .filter(({ route }) => canonical === route || (!route.includes('?') && canonical.startsWith(route + '/')))
+    .sort((a, b) => b.route.length - a.route.length)[0]?.page;
+}
+
+export function canAccessPage(user, page) {
+  if (hasSuperAdminRole(user)) return true;
+  if (!page || !hasModuleAccess(user, page.module) || user?.page_access?.[page.key] === false) return false;
+  if (roleValue(user) === 'admin') return true;
+  // /auth/me supplies the effective, server-derived permission set.
+  // An unhydrated user must not gain access merely by possessing a scope.
+  return page.permissions.every(permission => user?.effective_permissions?.includes(permission))
+    && (!page.any_permissions?.length || page.any_permissions.some(permission => user?.effective_permissions?.includes(permission)));
+}
+
+export function canAccessPath(user, path) {
+  if (!user) return false;
+  if (hasSuperAdminRole(user)) return true;
+  const pathname = path.split('?')[0].split('#')[0];
+  if (['/admin/otel-kullanicilari', '/app/settings', '/settings'].includes(pathname)) {
+    return roleValue(user) === 'admin';
+  }
+  const page = accessPageForPath(path);
+  if (page) return canAccessPage(user, page);
+  return hasAnyModuleAccess(user, moduleScopesForPath(path));
+}
+
+export function canAccessNavItem(user, item) {
+  if (!item || item.hidden) return false;
+  if (hasSuperAdminRole(user)) return true;
+  if (item.requireSuperAdmin) return false;
+  if (item.allowedRoles?.length && !item.allowedRoles.includes(roleValue(user))) return false;
+  return canAccessPath(user, item.path || '')
+    && hasAnyModuleAccess(user, moduleScopesForNavItem(item));
+}
+
+export function canAccessPmsTab(user, tab) {
+  const page = accessPageForPath(`/pms?tab=${tab}`);
+  return page ? canAccessPage(user, page) : hasAnyModuleAccess(user, moduleScopesForPmsTab(tab));
 }

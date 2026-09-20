@@ -52,13 +52,13 @@ function applyUserModuleScope(routeConfig) {
     return routeConfig;
   }
   const scopes = moduleScopesForRoute(routeConfig);
-  if (!scopes.length || routeConfig.type === "public" || routeConfig.type === "redirect") {
+  if (routeConfig.type === "public" || routeConfig.type === "redirect") {
     return routeConfig;
   }
 
   const OriginalComponent = routeConfig.component;
   const ScopedComponent = (props) => (
-    <ModuleScopeBoundary user={props.user} scopes={scopes}>
+    <ModuleScopeBoundary user={props.user} scopes={scopes} path={routeConfig.path}>
       <OriginalComponent {...props} />
     </ModuleScopeBoundary>
   );

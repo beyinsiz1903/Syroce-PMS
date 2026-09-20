@@ -22,7 +22,6 @@ from pymongo.errors import DuplicateKeyError
 
 from routers.finance import folio as folio_router
 
-
 # ---------------------------------------------------------------------------
 # In-memory fakes
 # ---------------------------------------------------------------------------
@@ -36,7 +35,7 @@ class _Coll:
     async def find_one(self, flt, proj=None):
         for d in self.docs:
             if all(d.get(k) == v for k, v in flt.items()):
-                return {k: v for k, v in d.items()}
+                return dict(d)
         return None
 
     async def insert_one(self, doc):
@@ -116,6 +115,9 @@ def _patch(monkeypatch):
         def enforce_permission(self, *a, **kw):
             return None
 
+        def enforce_user_permission(self, *a, **kw):
+            return None
+
     monkeypatch.setattr(rps_mod, "RolePermissionService", _NoopRPS)
 
     # Calculate balance helper hits Mongo — stub it.
@@ -162,8 +164,8 @@ def _patch(monkeypatch):
 
 
 def _charge_payload(amount=100.0):
-    from models.schemas import ChargeCreate
     from models.enums import ChargeCategory
+    from models.schemas import ChargeCreate
 
     return ChargeCreate(
         charge_category=ChargeCategory.FOOD,
@@ -174,8 +176,8 @@ def _charge_payload(amount=100.0):
 
 
 def _payment_payload(amount=100.0):
-    from models.schemas import PaymentCreate
     from models.enums import PaymentMethod, PaymentType
+    from models.schemas import PaymentCreate
 
     return PaymentCreate(
         amount=amount,
@@ -268,14 +270,14 @@ async def test_payment_replay_with_same_key_returns_same_row(_patch, fake_user):
 
 
 async def test_payment_no_key_short_window_dedup(_patch, fake_user):
-    r1 = await folio_router.post_payment_to_folio(
+    await folio_router.post_payment_to_folio(
         folio_id="F1",
         payment_data=_payment_payload(),
         request=_FakeRequest(),
         current_user=fake_user,
     )
     with pytest.raises(HTTPException) as exc:
-        r2 = await folio_router.post_payment_to_folio(
+        await folio_router.post_payment_to_folio(
             folio_id="F1",
             payment_data=_payment_payload(),
             request=_FakeRequest(),

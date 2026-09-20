@@ -38,6 +38,8 @@ MODULE_SCOPES = frozenset(
         "sales",
         "stock",
         "tasks",
+        "night_audit",
+        "contact_center",
     }
 )
 
@@ -46,14 +48,15 @@ MODULE_SCOPES = frozenset(
 ROLE_DEFAULT_MODULE_SCOPES: dict[str, frozenset[str]] = {
     "admin": MODULE_SCOPES,
     "supervisor": MODULE_SCOPES,
-    "front_desk": frozenset({"frontdesk"}),
+    "front_desk": frozenset({"frontdesk", "cashier", "night_audit", "contact_center"}),
     "housekeeping": frozenset({"housekeeping", "tasks"}),
     "sales": frozenset({"sales", "reports"}),
     # Finance consumes finalized payroll and its accounting export. HR write
     # operations remain protected independently by manage_hr.
-    "finance": frozenset({"cashier", "finance", "hr", "invoice", "reports"}),
+    "finance": frozenset({"cashier", "finance", "hr", "invoice", "reports", "night_audit"}),
     "procurement": frozenset({"procurement", "stock"}),
     "staff": frozenset(),
+    "call_center_agent": frozenset({"contact_center"}),
 }
 
 _SCOPE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,63}$")

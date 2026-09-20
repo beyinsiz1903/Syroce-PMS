@@ -39,6 +39,8 @@ import ReconciliationTab from '@/components/night-audit/tabs/ReconciliationTab';
 import IntegrityTab from '@/components/night-audit/tabs/IntegrityTab';
 import ReportTab from '@/components/night-audit/tabs/ReportTab';
 const NightAuditDashboard = ({ user, tenant, onLogout }) => {
+  const canManageSchedule = ['admin', 'super_admin'].includes(user?.role);
+  const canRunAudit = user?.role === 'super_admin' || (user?.effective_permissions || []).includes('run_night_audit');
   const { t, i18n } = useTranslation();
   const [businessDate, setBusinessDate] = useState(null);
   const [previousDate, setPreviousDate] = useState(null);
@@ -439,7 +441,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     fetchBusinessDate, fetchHistory, fetchExceptions, fetchSchedule, fetchScheduleStatus,
     fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck, fetchFinancialReport,
     handleRunAudit, handleSaveSchedule, handleQuickToggleSchedule,
-    handleResumeRun, handleAbortRun, runActionId,
+    handleResumeRun, handleAbortRun, runActionId, canRunAudit, canManageSchedule,
     onOpenRun: async (runId) => {
       setActiveTab("overview");
       setExpandedRun(runId);
@@ -471,7 +473,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
                 Yenile
               </Button>
-              <Button
+              {canRunAudit && <Button
                 data-testid="run-audit-btn"
                 size="sm"
                 onClick={() => setShowRunDialog(true)}
@@ -479,7 +481,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               >
                 <Play className="w-4 h-4 mr-1.5" />
                 Denetim Başlat
-              </Button>
+              </Button>}
             </>
           }
         />
@@ -503,7 +505,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     </p>
                   )}
                 </div>
-                {blockedRunDetail.runId && (
+                {canRunAudit && blockedRunDetail.runId && (
                   <div className="flex gap-2 shrink-0">
                     {!blockedRunDetail.isDryRun && (
                       <Button
@@ -617,6 +619,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           {/* ═══ Preparation Tab ═══ */}
           <TabsContent value="preparation" className="space-y-4 mt-4">
             <PreparationTab
+              canRunAudit={canRunAudit}
               onStartRun={() => setShowRunDialog(true)}
               onPreviewLoaded={handlePreviewLoaded}
               onOpenRun={ctx.onOpenRun}
@@ -651,7 +654,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         </Tabs>
 
         {/* Schedule Settings Dialog */}
-        <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+        <Dialog open={canManageSchedule && showScheduleDialog} onOpenChange={setShowScheduleDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -785,7 +788,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Run Audit Dialog */}
-        <Dialog open={showRunDialog} onOpenChange={setShowRunDialog}>
+        <Dialog open={canRunAudit && showRunDialog} onOpenChange={setShowRunDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">

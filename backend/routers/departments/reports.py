@@ -34,7 +34,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 try:
@@ -324,7 +324,7 @@ async def get_company_aging_report(
     _perm: None = Depends(require_op("view_finance_reports")),
 ):
     """Company Accounts Receivable Aging Report"""
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     try:
         return await _compute_company_aging(current_user.tenant_id)
     except HTTPException:
@@ -347,7 +347,7 @@ async def export_company_aging_excel(
     _perm: None = Depends(require_op("view_finance_reports")),
 ):
     """Export Company Aging Report to Excel"""
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     try:
         # Use shared pure helper instead of calling cached route handler directly
         # (Task #246 — `@cached` decorated route handler MUST NOT be invoked
@@ -427,7 +427,7 @@ async def get_finance_snapshot(
     Finance Snapshot for GM Dashboard
     Returns: Total Pending AR, Overdue Invoices (categorized), Today's Collections
     """
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     today = datetime.now(UTC).date()
     today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
     today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
@@ -516,7 +516,7 @@ async def export_revenue_detail_excel(
 
     NOTE: Uses bookings collection and groups by date, room_type and rate_code-like fields.
     """
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
 
@@ -580,7 +580,7 @@ async def export_forecast_detail_excel(
 
     NOTE: This uses get_forecast endpoint internally if available.
     """
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     # Reuse get_forecast if defined (lazy-loaded to avoid circular imports)
     try:
         from routers.reports import get_forecast as _get_forecast
@@ -697,7 +697,7 @@ async def export_channel_distribution_excel(
     if not start_date:
         start_date = (datetime.now(UTC) - timedelta(days=30)).date().isoformat()
     """Sales channel distribution report (OTA, Direct, Corporate, etc.)."""
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
 
@@ -777,7 +777,7 @@ async def get_cost_summary(
     Cost Summary Report for GM Dashboard
     Returns: MTD costs by category, top cost categories, per-room cost, cost vs RevPAR
     """
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     today = datetime.now(UTC).date()
     month_start = today.replace(day=1)
     month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
@@ -797,7 +797,7 @@ async def get_mtd_cost_summary(
     _perm: None = Depends(require_op("view_finance_reports")),
 ):
     """Month-to-date cost summary by category with per-room metrics."""
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     today = datetime.now(UTC).date()
     month_start = today.replace(day=1)
     month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)

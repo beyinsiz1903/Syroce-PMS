@@ -1,0 +1,338 @@
+{
+  "modules": {
+    "frontdesk": "Ön büro",
+    "cashier": "Kasa ve folyolar",
+    "night_audit": "Gece denetimi",
+    "housekeeping": "Kat hizmetleri",
+    "invoice": "Faturalar",
+    "finance": "Muhasebe",
+    "reports": "Raporlar",
+    "sales": "Satış",
+    "channel_manager": "Kanal yönetimi",
+    "procurement": "Satınalma",
+    "stock": "Stok",
+    "hr": "İnsan kaynakları",
+    "maintenance": "Teknik servis",
+    "pos": "POS",
+    "tasks": "Görevler",
+    "contact_center": "İletişim merkezi"
+  },
+  "pages": [
+    {
+      "key": "calendar",
+      "label": "Rezervasyon takvimi",
+      "module": "frontdesk",
+      "paths": [
+        "/app/reservation-calendar",
+        "/reservation-calendar"
+      ],
+      "api_prefixes": [
+        "/api/calendar"
+      ],
+      "permissions": [
+        "view_bookings"
+      ]
+    },
+    {
+      "key": "frontdesk",
+      "label": "Ön büro",
+      "module": "frontdesk",
+      "paths": [
+        "/pms?tab=frontdesk",
+        "/pms-operations"
+      ],
+      "api_prefixes": [
+        "/api/frontdesk"
+      ],
+      "permissions": [
+        "view_bookings"
+      ]
+    },
+    {
+      "key": "rooms",
+      "label": "Odalar",
+      "module": "frontdesk",
+      "paths": [
+        "/pms?tab=rooms",
+        "/room-map"
+      ],
+      "api_prefixes": [],
+      "permissions": [
+        "view_bookings"
+      ]
+    },
+    {
+      "key": "bookings",
+      "label": "Rezervasyonlar",
+      "module": "frontdesk",
+      "paths": [
+        "/pms?tab=bookings",
+        "/walkin"
+      ],
+      "api_prefixes": [],
+      "permissions": [
+        "view_bookings"
+      ]
+    },
+    {
+      "key": "guests",
+      "label": "Misafirler",
+      "module": "frontdesk",
+      "paths": [
+        "/pms?tab=guests"
+      ],
+      "api_prefixes": [],
+      "permissions": [
+        "view_bookings"
+      ]
+    },
+    {
+      "key": "cashier",
+      "label": "Kasa",
+      "module": "cashier",
+      "paths": [
+        "/app/cashier",
+        "/pms?tab=cashier",
+        "/folio-detail",
+        "/group-folio"
+      ],
+      "api_prefixes": [
+        "/api/cashier",
+        "/api/cashiering"
+      ],
+      "permissions": [
+        "view_folio"
+      ]
+    },
+    {
+      "key": "night_audit",
+      "label": "Gece denetimi",
+      "module": "night_audit",
+      "paths": [
+        "/night-audit",
+        "/eod-report",
+        "/frontdesk/audit-checklist"
+      ],
+      "api_prefixes": [
+        "/api/night-audit",
+        "/api/pms-core/night-audit"
+      ],
+      "permissions": [],
+      "any_permissions": ["run_night_audit", "view_financial_reports"]
+    },
+    {
+      "key": "housekeeping",
+      "label": "Kat hizmetleri",
+      "module": "housekeeping",
+      "paths": [
+        "/housekeeping",
+        "/housekeeping-status",
+        "/pms?tab=housekeeping",
+        "/pms?tab=laundry"
+      ],
+      "api_prefixes": [
+        "/api/housekeeping"
+      ],
+      "permissions": [
+        "view_hk_board"
+      ]
+    },
+    {
+      "key": "reports",
+      "label": "Operasyon raporları",
+      "module": "reports",
+      "paths": [
+        "/reports",
+        "/app/reports",
+        "/app/raporlar",
+        "/pms?tab=reports",
+        "/pms?tab=flash"
+      ],
+      "api_prefixes": [
+        "/api/reports"
+      ],
+      "permissions": [
+        "view_reports"
+      ]
+    },
+    {
+      "key": "finance",
+      "label": "Finansal raporlar",
+      "module": "finance",
+      "paths": [
+        "/app/general-ledger",
+        "/app/bank-reconciliation",
+        "/city-ledger",
+        "/pending-ar",
+        "/pms?tab=manager_report",
+        "/pms?tab=revenue"
+      ],
+      "api_prefixes": [
+        "/api/accounting",
+        "/api/gl",
+        "/api/finance"
+      ],
+      "permissions": [
+        "view_financial_reports"
+      ]
+    },
+    {
+      "key": "invoice",
+      "label": "Faturalar",
+      "module": "invoice",
+      "paths": [
+        "/invoices",
+        "/app/invoices",
+        "/efatura",
+        "/app/konaklama-vergisi"
+      ],
+      "api_prefixes": [
+        "/api/invoices",
+        "/api/einvoice"
+      ],
+      "permissions": [
+        "view_folio"
+      ]
+    },
+    {
+      "key": "sales",
+      "label": "Satış ve şirketler",
+      "module": "sales",
+      "paths": [
+        "/sales",
+        "/sales-crm",
+        "/group-sales",
+        "/pms?tab=upsell",
+        "/pms?tab=feedback"
+      ],
+      "api_prefixes": [
+        "/api/sales"
+      ],
+      "permissions": [
+        "view_companies"
+      ]
+    },
+    {
+      "key": "procurement",
+      "label": "Satınalma",
+      "module": "procurement",
+      "paths": [
+        "/app/procurement",
+        "/app/supplies-market"
+      ],
+      "api_prefixes": [
+        "/api/procurement"
+      ],
+      "permissions": [
+        "view_procurement"
+      ]
+    },
+    {
+      "key": "stock",
+      "label": "Stok",
+      "module": "stock",
+      "paths": [
+        "/hotel-inventory",
+        "/app/stock-rehber"
+      ],
+      "api_prefixes": [
+        "/api/inventory"
+      ],
+      "permissions": []
+    },
+    {
+      "key": "hr",
+      "label": "İnsan kaynakları",
+      "module": "hr",
+      "paths": [
+        "/hr",
+        "/app/hr",
+        "/staff-management"
+      ],
+      "api_prefixes": [
+        "/api/hr"
+      ],
+      "permissions": [
+        "view_hr"
+      ]
+    },
+    {
+      "key": "maintenance",
+      "label": "Teknik servis",
+      "module": "maintenance",
+      "paths": [
+        "/maintenance"
+      ],
+      "api_prefixes": [
+        "/api/maintenance"
+      ],
+      "permissions": []
+    },
+    {
+      "key": "pos",
+      "label": "POS",
+      "module": "pos",
+      "paths": [
+        "/pos",
+        "/pos/terminal",
+        "/pos-extensions",
+        "/pms?tab=pos"
+      ],
+      "api_prefixes": [
+        "/api/pos"
+      ],
+      "permissions": []
+    },
+    {
+      "key": "tasks",
+      "label": "Görevler",
+      "module": "tasks",
+      "paths": [
+        "/app/tasks",
+        "/pms?tab=tasks"
+      ],
+      "api_prefixes": [
+        "/api/tasks"
+      ],
+      "permissions": []
+    },
+    {
+      "key": "channel_manager",
+      "label": "Kanal yönetimi",
+      "module": "channel_manager",
+      "paths": [
+        "/channel-manager",
+        "/app/channel-manager",
+        "/channels",
+        "/app/channels",
+        "/cm-dashboard",
+        "/mapping-manager",
+        "/unified-rate-manager",
+        "/channel-connections"
+      ],
+      "api_prefixes": [
+        "/api/channel-manager",
+        "/api/channel-connections",
+        "/api/unified-rate-manager"
+      ],
+      "permissions": [
+        "system_settings"
+      ]
+    },
+    {
+      "key": "contact_center",
+      "label": "İletişim merkezi",
+      "module": "contact_center",
+      "paths": [
+        "/contact-center",
+        "/app/contact-center"
+      ],
+      "api_prefixes": [
+        "/api/contact-center"
+      ],
+      "permissions": [
+        "view_contact_center"
+      ]
+    }
+  ]
+}

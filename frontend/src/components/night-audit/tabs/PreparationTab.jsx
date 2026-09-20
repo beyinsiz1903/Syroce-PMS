@@ -51,7 +51,7 @@ function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
   );
 }
 
-export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun, refreshKey = 0 }) {
+export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun, refreshKey = 0, canRunAudit = false }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -153,7 +153,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
               {t('cm.components_nightaudit_tabs_PreparationTab.yenile')}
             </Button>
-            <Button
+            {canRunAudit && <Button
               size="sm"
               onClick={onStartRun}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -161,7 +161,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
             >
               <Play className="w-4 h-4 mr-1" />
               {t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
-            </Button>
+            </Button>}
           </div>
         </CardContent>
       </Card>
