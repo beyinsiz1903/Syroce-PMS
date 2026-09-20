@@ -108,6 +108,36 @@ class AgencyUserCreate(BaseModel):
     role: str = "agency_agent"  # agency_admin or agency_agent
 
 
+from typing import Literal
+
+
+class SeasonRate(BaseModel):
+    season_start: str
+    season_end: str
+    room_type_id: str
+    price: float
+
+
+class AgencyContractCreate(BaseModel):
+    contract_name: str
+    start_date: str
+    end_date: str
+    is_active: bool = True
+    contract_type: Literal["net_rate", "commission"]
+    commission_rate: float | None = None
+    credit_limit: float | None = None
+    season_rates: list[SeasonRate] | None = None
+
+
+class AgencyAllotmentCreate(BaseModel):
+    contract_id: str
+    room_type_id: str
+    start_date: str
+    end_date: str
+    allotment_count: int
+    release_days: int
+
+
 class AgencyLoginRequest(BaseModel):
     email: str
     password: str
@@ -489,6 +519,78 @@ async def list_agency_reservations(agency_id: str | None = None, current_user: U
 
 
 @router.post("/agency-portal/auth/login")
+# ─── B2B Extranet (Phase 1) ──────────────────────────────────────
+
+@router.post("/agencies/{agency_id}/contracts")
+async def create_agency_contract(agency_id: str, data: AgencyContractCreate, current_user: User = Depends(get_current_user)):
+    _require_hotel_staff(current_user)
+
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": current_user.tenant_id})
+    if not agency:
+        raise HTTPException(status_code=404, detail="Acente bulunamadı")
+
+    contract_id = str(uuid.uuid4())
+    contract_doc = {
+        "id": contract_id,
+        "tenant_id": current_user.tenant_id,
+        "agency_id": agency_id,
+        "contract_name": data.contract_name,
+        "start_date": data.start_date,
+        "end_date": data.end_date,
+        "is_active": data.is_active,
+        "contract_type": data.contract_type,
+        "commission_rate": data.commission_rate,
+        "credit_limit": data.credit_limit,
+        "season_rates": [r.model_dump() for r in data.season_rates] if data.season_rates else [],
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
+    }
+
+    await db.agency_contracts.insert_one(contract_doc)
+    return {"message": "Sözleşme başarıyla oluşturuldu", "contract_id": contract_id}
+
+
+@router.get("/agencies/{agency_id}/contracts")
+async def list_agency_contracts(agency_id: str, current_user: User = Depends(get_current_user)):
+    _require_hotel_staff(current_user)
+    contracts = await db.agency_contracts.find({"agency_id": agency_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
+    return {"contracts": contracts}
+
+
+@router.post("/agencies/{agency_id}/allotments")
+async def create_agency_allotment(agency_id: str, data: AgencyAllotmentCreate, current_user: User = Depends(get_current_user)):
+    _require_hotel_staff(current_user)
+
+    contract = await db.agency_contracts.find_one({"id": data.contract_id, "agency_id": agency_id, "tenant_id": current_user.tenant_id})
+    if not contract:
+        raise HTTPException(status_code=404, detail="Sözleşme bulunamadı veya bu acenteye ait değil")
+
+    allotment_id = str(uuid.uuid4())
+    allotment_doc = {
+        "id": allotment_id,
+        "tenant_id": current_user.tenant_id,
+        "agency_id": agency_id,
+        "contract_id": data.contract_id,
+        "room_type_id": data.room_type_id,
+        "start_date": data.start_date,
+        "end_date": data.end_date,
+        "allotment_count": data.allotment_count,
+        "release_days": data.release_days,
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
+    }
+
+    await db.agency_allotments.insert_one(allotment_doc)
+    return {"message": "Kontenjan başarıyla tanımlandı", "allotment_id": allotment_id}
+
+
+@router.get("/agencies/{agency_id}/allotments")
+async def list_agency_allotments(agency_id: str, current_user: User = Depends(get_current_user)):
+    _require_hotel_staff(current_user)
+    allotments = await db.agency_allotments.find({"agency_id": agency_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
+    return {"allotments": allotments}
+
+
 async def agency_login(request: Request, data: AgencyLoginRequest):
     """Acente giris."""
     # Task-135 (P0 drain fix) — Throttle wiring uses a **verify-first,
