@@ -35,10 +35,12 @@ services:
     environment:
       <<: *backend-env
       INSTANCE_ID: backend-${HOSTNAME:-1}
-      # The 4 GB Droplet runs a single API container.  Keep two Uvicorn
-      # workers for concurrency without multiplying the application's
-      # in-memory caches and import clients across multiple containers.
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      # This node has 4 GB for the OS, Docker and every service.  A Uvicorn
+      # worker imports the full PMS application (reports, OCR and provider
+      # clients), so two workers plus prefork Celery children can exhaust RAM
+      # and make the kernel kill Python processes.  Start with one process;
+      # scale the Droplet before increasing either concurrency value.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
     env_file:
       - ./backend/.env
     deploy:
@@ -56,7 +58,7 @@ services:
       resources:
         limits:
           cpus: "2.0"
-          memory: 2G
+          memory: 1200M
         reservations:
           cpus: "0.5"
           memory: 512M
@@ -95,7 +97,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 256M
+          memory: 128M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/"]
       interval: 30s
@@ -114,9 +116,11 @@ services:
       INSTANCE_ID: worker-${HOSTNAME:-1}
     env_file:
       - ./backend/.env
-    # Four prefork children are excessive for the 4 GB single-node profile
-    # and compete with the API during OTA sync and night audit workloads.
-    command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-2}", "-Q", "default,ml,analytics,messaging,pipeline,backup,pricing"]
+    # The worker imports the ML/reporting stack.  On the 4 GB profile one
+    # prefork child is the safe ceiling; queue latency must be addressed by
+    # resizing the Droplet rather than allowing the kernel OOM killer to
+    # terminate API or worker processes.
+    command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=${WORKER_CONCURRENCY:-1}", "-Q", "default,ml,analytics,messaging,pipeline,backup,pricing"]
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
       update_config:
@@ -132,10 +136,10 @@ services:
       resources:
         limits:
           cpus: "2.0"
-          memory: 2G
+          memory: 1200M
         reservations:
           cpus: "0.25"
-          memory: 256M
+          memory: 192M
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -168,7 +172,7 @@ services:
       resources:
         limits:
           cpus: "0.25"
-          memory: 256M
+          memory: 160M
     logging: *default-logging
 
   # ── Load Balancer ──
@@ -188,7 +192,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 128M
+          memory: 96M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 15s

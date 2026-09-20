@@ -25,6 +25,14 @@ jobs:
             # Stash any local changes and pull the latest code
             git reset --hard HEAD
             git pull origin main
+
+            # Fail before disrupting the running stack when the production
+            # Exely webhook trust boundary is invalid.  The compose service
+            # supplies backend/.env without echoing its secrets; the verifier
+            # logs only redacted configuration summaries.  This prevents a
+            # forgotten dev bypass from silently reaching a later deployment.
+            docker compose -f docker-compose.prod.yml run --rm --no-deps backend \
+              python scripts/verify_exely_whitelist.py --env production
             
             # Fix Docker naming conflicts by taking down stuck containers
             docker compose -f docker-compose.prod.yml down || true

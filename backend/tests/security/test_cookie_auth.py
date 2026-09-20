@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from models.schemas import User
 
 def test_login_cookie_attributes():
-    from routers.auth import _build_token_response
+    from routers.auth import COOKIE_SECURE, _build_token_response
     from fastapi import Response
     
     user = User(id="user123", tenant_id="tenantA", email="a@b.com", name="Test", role="admin", is_active=True)
@@ -20,11 +20,11 @@ def test_login_cookie_attributes():
     refresh_cookie_args = [args[1] for args in call_args_list if args[1].get("key") == "refresh_token"][0]
     
     assert access_cookie_args["httponly"] is True
-    assert access_cookie_args["samesite"] == "lax"
+    assert access_cookie_args["samesite"] == ("none" if COOKIE_SECURE else "lax")
     assert access_cookie_args["path"] == "/"
     
     assert refresh_cookie_args["httponly"] is True
-    assert refresh_cookie_args["samesite"] == "lax"
+    assert refresh_cookie_args["samesite"] == ("none" if COOKIE_SECURE else "lax")
     assert refresh_cookie_args["path"] == "/api/auth/refresh-token"
 
 @pytest.mark.asyncio
@@ -147,5 +147,4 @@ async def test_refresh_token_missing_tenant_id():
     
     # Assert tenant context remains unset
     assert get_current_tenant_id() is None
-
 

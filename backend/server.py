@@ -812,6 +812,13 @@ from startup import on_shutdown, on_startup  # noqa: E402
 
 @register_startup
 async def _startup():
+    # Atlas' async resolver may yield an EAI_AGAIN Future during a transient
+    # DNS flap.  The database driver retries it, but asyncio otherwise emits an
+    # unowned ERROR-level event for each attempt.  Preserve every non-DNS error
+    # and escalate a sustained resolver outage; only one-off retries are demoted.
+    from core.asyncio_exception_guard import TransientAsyncioDnsGuard
+
+    TransientAsyncioDnsGuard().install()
     await on_startup(app)
     try:
         from routers.integration_credentials import load_credentials_to_env

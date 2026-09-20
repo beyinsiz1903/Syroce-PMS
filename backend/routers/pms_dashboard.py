@@ -4,13 +4,16 @@ Dashboard overview, operational alerts, room alternatives.
 """
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
+from typing import NoReturn
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
+from core.transient_db_guard import is_transient_db_error
 from models.schemas import User
 
 try:
@@ -25,6 +28,26 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api", tags=["pms"])
+logger = logging.getLogger(__name__)
+
+
+def _raise_transient_database_unavailable(exc: BaseException) -> NoReturn:
+    """Return an explicit retryable response instead of an unhandled 500.
+
+    Dashboard cards are derived state, so serving stale or fabricated numbers
+    during an Atlas primary election would be worse than asking the client to
+    retry.  The exception stays chained for server diagnostics, while FastAPI
+    treats the outage as a handled 503 rather than a new application defect.
+    """
+    logger.warning("PMS dashboard temporarily unavailable due to database failover: %s", type(exc).__name__)
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "DATABASE_TRANSIENT_UNAVAILABLE",
+            "message": "Veritabanı bağlantısı kısa süreli olarak yenileniyor. Lütfen birkaç saniye sonra tekrar deneyin.",
+        },
+        headers={"Retry-After": "3"},
+    ) from exc
 
 
 # rbac-allow: cache-rbac — operasyonel KPI (occupancy/check-in/guest count) tüm rolelere açık
@@ -62,20 +85,30 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         {"$group": {"_id": None, "total_rooms": {"$sum": 1}, "occupied_rooms": {"$sum": {"$cond": [{"$eq": ["$status", "occupied"]}, 1, 0]}}}},
     ]
 
-    room_stats = await db.rooms.aggregate(pipeline).to_list(1)
+    try:
+        room_stats = await db.rooms.aggregate(pipeline).to_list(1)
+    except Exception as exc:
+        if is_transient_db_error(exc):
+            _raise_transient_database_unavailable(exc)
+        raise
     total_rooms = room_stats[0]["total_rooms"] if room_stats else 0
     physically_occupied = room_stats[0]["occupied_rooms"] if room_stats else 0
 
     # Count bookings overlapping today using date-only comparison (matches AI briefing).
     # This avoids tz/format inconsistencies and uses the same logic everywhere.
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    bookings_today = await db.bookings.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        },
-        {"_id": 0, "check_in": 1, "check_out": 1, "status": 1},
-    ).to_list(5000)
+    try:
+        bookings_today = await db.bookings.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            },
+            {"_id": 0, "check_in": 1, "check_out": 1, "status": 1},
+        ).to_list(5000)
+    except Exception as exc:
+        if is_transient_db_error(exc):
+            _raise_transient_database_unavailable(exc)
+        raise
 
     booking_occupied = 0
     today_checkins = 0
@@ -102,7 +135,12 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
             booking_occupied,
         )
 
-    currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
+    try:
+        currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
+    except Exception as exc:
+        if is_transient_db_error(exc):
+            _raise_transient_database_unavailable(exc)
+        raise
 
     # Ultra-fast response
     result = {
