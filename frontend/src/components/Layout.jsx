@@ -40,6 +40,8 @@ import { UpgradeBanner } from '@/components/UpgradeBanner';
 import SimulationOverlay from '@/components/academy/SimulationOverlay';
 import {
   hasAnyModuleAccess,
+  canAccessNavItem,
+  canAccessPmsTab,
   moduleScopesForNavItem,
   supplementalModuleNavItems,
 } from '@/utils/moduleAccess';
@@ -236,7 +238,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     ].filter(Boolean).map((role) => String(role).toLowerCase()));
 
     navCandidates.forEach((item) => {
-      if (item.hidden) return;
+      if (!canAccessNavItem(user, item)) return;
       if (!isSuperAdmin && hiddenNavItems.has(item.key)) return;
       if (!isSuperAdmin && item.navGroup && hiddenNavGroups.has(item.navGroup)) return;
       if (item.requireSuperAdmin) {
@@ -544,7 +546,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
               <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
               {/* Odalar kısayolu — PMS'in rooms sekmesine direkt bağlantı */}
-              {visibleNav.some((item) => item.key === 'pms') && (() => {
+              {visibleNav.some((item) => item.key === 'pms') && canAccessPmsTab(user, 'rooms') && (() => {
                 const roomsPath = '/app/pms#rooms';
                 const isRoomsActive = location.pathname === '/app/pms' && location.hash === '#rooms';
                 return (

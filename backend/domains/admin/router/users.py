@@ -347,6 +347,9 @@ async def list_tenant_users(
                 "role": decoded.get("role") or u.get("role"),
                 "tenant_id": decoded.get("tenant_id") or u.get("tenant_id"),
                 "granted_permissions": (decoded.get("granted_permissions") or u.get("granted_permissions") or []),
+                "module_scopes": decoded.get("module_scopes"),
+                "page_access": decoded.get("page_access", {}),
+                "access_revision": decoded.get("access_revision", 0),
             }
         )
     items.sort(key=lambda x: (x.get("name") or x.get("email") or "").lower())
@@ -773,3 +776,81 @@ async def provision_user(
     else:
         resp["email_sent"] = email_sent
     return resp
+
+
+class UpdateUserAccessRequest(BaseModel):
+    module_scopes: list[str]
+    page_access: dict[str, bool]
+    granted_permissions: list[str]
+    revision: int
+    reset_to_role: bool = False
+
+
+@router.get("/admin/user-access-catalog")
+async def user_access_catalog(current_user: User = Depends(get_current_user)):
+    _require_admin_for_target_user(current_user, current_user.tenant_id)
+    from modules.pms_core.user_access_policy import CATALOG, DELEGABLE_PERMISSIONS, role_access_matrix
+
+    return {**CATALOG, "permissions": sorted(DELEGABLE_PERMISSIONS), "roles": role_access_matrix()}
+
+
+@router.patch("/admin/users/{user_id}/access")
+async def update_user_access(
+    user_id: str, payload: UpdateUserAccessRequest,
+    current_user: User = Depends(get_current_user),
+):
+    from core.security import invalidate_user_doc_cache
+    from modules.pms_core.module_scope_service import MODULE_SCOPES
+    from modules.pms_core.user_access_policy import DELEGABLE_PERMISSIONS, PAGES
+
+    _require_admin_for_target_user(current_user, current_user.tenant_id)
+    # Even platform admins use their current hotel context here, never an
+    # arbitrary tenant supplied by the client.
+    if not current_user.tenant_id:
+        raise HTTPException(403, "Hotel context required")
+    query = {"id": user_id, "tenant_id": current_user.tenant_id}
+    target = await db.users.find_one(query)
+    if not target:
+        raise HTTPException(404, "User not found")
+    protected = {"admin", "super_admin", "guest", "agency_admin", "agency_agent"}
+    if user_id == current_user.id or target.get("role") in protected or "super_admin" in (target.get("roles") or []):
+        raise HTTPException(403, "Yönetici, kendi hesabınız ve portal hesapları bu ekrandan değiştirilemez.")
+    if set(payload.module_scopes) - MODULE_SCOPES:
+        raise HTTPException(400, "Unknown module")
+    if set(payload.page_access) - PAGES.keys():
+        raise HTTPException(400, "Unknown page")
+    if set(payload.granted_permissions) - DELEGABLE_PERMISSIONS:
+        raise HTTPException(400, "Permission cannot be delegated")
+    if payload.revision != target.get("access_revision", 0):
+        raise HTTPException(409, "Yetkiler başka bir yönetici tarafından değiştirildi. Yenileyin.")
+    fields = {
+        "module_scopes": sorted(set(payload.module_scopes)),
+        "page_access": payload.page_access,
+        # Retain permissions outside this editor instead of silently deleting
+        # grants administered by other trusted flows.
+        "granted_permissions": sorted(set(payload.granted_permissions)
+                                      | (set(target.get("granted_permissions") or []) - DELEGABLE_PERMISSIONS)),
+    }
+    if payload.reset_to_role:
+        fields = {"page_access": {}, "granted_permissions": sorted(
+            set(target.get("granted_permissions") or []) - DELEGABLE_PERMISSIONS)}
+    cas_query = {**query, "$or": [{"access_revision": payload.revision}]}
+    if payload.revision == 0:
+        cas_query["$or"].append({"access_revision": {"$exists": False}})
+    update = {"$set": fields, "$inc": {"access_revision": 1}}
+    if payload.reset_to_role:
+        update["$unset"] = {"module_scopes": ""}
+    # Log the requested change before writing. A failed audit must not produce
+    # an unrecorded permission mutation. CAS prevents stale administrator edits.
+    await log_audit_event(
+        tenant_id=current_user.tenant_id, user_id=current_user.id,
+        action="admin.user.access_change_requested", entity_type="user", entity_id=user_id,
+        details={"before": {key: target.get(key) for key in fields}, "requested": fields,
+                 "reset_to_role": payload.reset_to_role, "expected_revision": payload.revision},
+        severity="warning", db=db,
+    )
+    result = await db.users.update_one(cas_query, update)
+    if result.matched_count != 1:
+        raise HTTPException(409, "Yetkiler değişti. Yenileyip tekrar deneyin.")
+    invalidate_user_doc_cache(user_id)
+    return {"success": True, "revision": payload.revision + 1}

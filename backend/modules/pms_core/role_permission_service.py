@@ -35,6 +35,7 @@ OPERATION_PERMISSIONS = {
     # It contains no financial totals, so reception may read it without access
     # to financial reports or the ability to run night audit.
     "view_business_date": [Permission.VIEW_BOOKINGS],
+    "view_night_audit": [Permission.RUN_NIGHT_AUDIT],
     "run_night_audit": [Permission.RUN_NIGHT_AUDIT],
     # Admin
     "manage_users": [Permission.MANAGE_USERS],
@@ -264,6 +265,11 @@ class RolePermissionService:
         # Task #28: kullanıcı-özel olarak verilen izinleri de havuza ekle.
         if granted_permissions:
             owned_values.update(str(g) for g in granted_permissions if g)
+        if operation == "view_night_audit":
+            return bool(owned_values & {Permission.RUN_NIGHT_AUDIT.value, Permission.VIEW_FINANCIAL_REPORTS.value})
+        if operation == "view_business_date":
+            return bool(owned_values & {Permission.VIEW_BOOKINGS.value, Permission.RUN_NIGHT_AUDIT.value,
+                                       Permission.VIEW_FINANCIAL_REPORTS.value})
         # User needs ALL required permissions
         return all(perm.value in owned_values for perm in required_perms)
 
@@ -279,6 +285,10 @@ class RolePermissionService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions for operation: {operation}. Required role/permissions not met.",
             )
+
+    def enforce_user_permission(self, user, operation: str):
+        """Use stored user grants consistently, including legacy body guards."""
+        self.enforce_permission(user.role, operation, getattr(user, "granted_permissions", None))
 
     def is_supervisor_override_required(self, user_role: str, operation: str) -> bool:
         """Check if the operation requires supervisor override for this user role."""

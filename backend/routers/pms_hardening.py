@@ -208,7 +208,7 @@ async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_cur
     """
     from core.atomic_checkin_checkout import CheckInError
 
-    perm_svc.enforce_permission(current_user.role, "check_in")
+    perm_svc.enforce_user_permission(current_user, "check_in")
     # STRICT_TENANT_MODE requires tenant context to be set before any
     # tenant-scoped collection access inside the atomic transaction.
     # The context is already set by TenantContextMiddleware.
@@ -259,7 +259,7 @@ async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_cu
     """
     from core.atomic_checkin_checkout import CheckOutError
 
-    perm_svc.enforce_permission(current_user.role, "checkout")
+    perm_svc.enforce_user_permission(current_user, "checkout")
     # Set tenant context required by STRICT_TENANT_MODE before atomic transaction.
     tenant_id = get_current_tenant_id()
     if not tenant_id:
@@ -309,7 +309,7 @@ async def api_checkout_preview(booking_id: str, current_user: User = Depends(get
 @router.post("/room-move", tags=["front-desk"])
 async def api_room_move(req: RoomMoveRequest, current_user: User = Depends(get_current_user)):
     """Move a checked-in guest to a different room."""
-    perm_svc.enforce_permission(current_user.role, "room_move")
+    perm_svc.enforce_user_permission(current_user, "room_move")
     result = await front_desk.room_move(current_user.tenant_id, req.booking_id, req.new_room_id, req.reason, current_user.id, current_user.name)
     if not result["success"]:
         raise HTTPException(status_code=409 if result.get("conflict") else 400, detail=result)
@@ -327,7 +327,7 @@ async def api_room_move(req: RoomMoveRequest, current_user: User = Depends(get_c
 @router.post("/room-upgrade", tags=["front-desk"])
 async def api_room_upgrade(req: RoomUpgradeRequest, current_user: User = Depends(get_current_user)):
     """Upgrade a guest's room."""
-    perm_svc.enforce_permission(current_user.role, "room_upgrade")
+    perm_svc.enforce_user_permission(current_user, "room_upgrade")
     result = await front_desk.room_upgrade(current_user.tenant_id, req.booking_id, req.new_room_id, req.reason, req.rate_adjustment, current_user.id, current_user.name)
     if not result["success"]:
         raise HTTPException(status_code=409 if result.get("conflict") else 400, detail=result)
@@ -347,7 +347,7 @@ async def api_walk_in(req: WalkInRequest, http_request: Request, current_user: U
     """Create a walk-in reservation with immediate check-in."""
     from shared_kernel.idempotency import begin_idempotency
 
-    perm_svc.enforce_permission(current_user.role, "walk_in")
+    perm_svc.enforce_user_permission(current_user, "walk_in")
     # Idempotency-Key request-replay (additive: no-op without the header).
     guard, replay = await begin_idempotency(
         db,
@@ -378,7 +378,7 @@ async def api_walk_in(req: WalkInRequest, http_request: Request, current_user: U
 @router.post("/walk-in/batch", tags=["front-desk"])
 async def api_walk_in_batch(req: WalkInBatchRequest, current_user: User = Depends(get_current_user)):
     """Create a batch of walk-in reservations concurrently."""
-    perm_svc.enforce_permission(current_user.role, "walk_in")
+    perm_svc.enforce_user_permission(current_user, "walk_in")
     requests_data = []
     for r in req.requests:
         guest_data = {
@@ -406,7 +406,7 @@ async def api_walk_in_batch(req: WalkInBatchRequest, current_user: User = Depend
 @router.post("/cancel", tags=["reservation"])
 async def api_cancel_booking(req: CancellationRequest, current_user: User = Depends(get_current_user)):
     """Cancel a reservation with state machine validation."""
-    perm_svc.enforce_permission(current_user.role, "cancel_booking")
+    perm_svc.enforce_user_permission(current_user, "cancel_booking")
     booking = await db.bookings.find_one({"id": req.booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -437,7 +437,7 @@ async def api_cancel_booking(req: CancellationRequest, current_user: User = Depe
 @router.post("/no-show", tags=["reservation"])
 async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_current_user)):
     """Mark a reservation as no-show."""
-    perm_svc.enforce_permission(current_user.role, "edit_booking")
+    perm_svc.enforce_user_permission(current_user, "edit_booking")
     booking = await db.bookings.find_one({"id": req.booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -528,7 +528,7 @@ async def api_overbooking_check(room_id: str, check_in: str, check_out: str, exc
 @router.post("/folio/charge", tags=["folio"])
 async def api_post_charge(req: ChargePostRequest, current_user: User = Depends(get_current_user)):
     """Post a charge to a folio."""
-    perm_svc.enforce_permission(current_user.role, "post_charge")
+    perm_svc.enforce_user_permission(current_user, "post_charge")
     result = await folio_svc.post_charge(current_user.tenant_id, req.folio_id, req.booking_id, req.model_dump(), current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
@@ -541,7 +541,7 @@ async def api_post_charge(req: ChargePostRequest, current_user: User = Depends(g
 @router.post("/folio/payment", tags=["folio"])
 async def api_post_payment(req: PaymentPostRequest, current_user: User = Depends(get_current_user)):
     """Post a payment to a folio."""
-    perm_svc.enforce_permission(current_user.role, "post_payment")
+    perm_svc.enforce_user_permission(current_user, "post_payment")
     result = await folio_svc.post_payment(current_user.tenant_id, req.folio_id, req.booking_id, req.model_dump(), current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
@@ -554,7 +554,7 @@ async def api_post_payment(req: PaymentPostRequest, current_user: User = Depends
 @router.post("/folio/refund", tags=["folio"])
 async def api_post_refund(req: RefundRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Post a refund."""
-    perm_svc.enforce_permission(current_user.role, "void_charge")
+    perm_svc.enforce_user_permission(current_user, "void_charge")
 
     # Idempotency-Key replay protection — task #80 (mirrors charge/payment).
     idem_key = get_idempotency_key(request)
@@ -604,7 +604,7 @@ async def api_post_refund(req: RefundRequest, request: Request, current_user: Us
 @router.post("/folio/void-charge", tags=["folio"])
 async def api_void_charge(req: VoidRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Void a charge."""
-    perm_svc.enforce_permission(current_user.role, "void_charge")
+    perm_svc.enforce_user_permission(current_user, "void_charge")
     if not req.charge_id:
         raise HTTPException(status_code=400, detail="charge_id required")
 
@@ -655,7 +655,7 @@ async def api_void_charge(req: VoidRequest, request: Request, current_user: User
 @router.post("/folio/void-payment", tags=["folio"])
 async def api_void_payment(req: VoidRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Void a payment."""
-    perm_svc.enforce_permission(current_user.role, "void_payment")
+    perm_svc.enforce_user_permission(current_user, "void_payment")
     if not req.payment_id:
         raise HTTPException(status_code=400, detail="payment_id required")
 
@@ -705,7 +705,7 @@ async def api_void_payment(req: VoidRequest, request: Request, current_user: Use
 @router.post("/folio/split", tags=["folio"])
 async def api_split_folio(req: SplitFolioRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Split charges from one folio to a new one."""
-    perm_svc.enforce_permission(current_user.role, "split_folio")
+    perm_svc.enforce_user_permission(current_user, "split_folio")
 
     # Idempotency-Key replay protection — task #102. Scoped per source folio so
     # a double-tap on Split cannot produce two ghost folios from the same click.
@@ -751,7 +751,7 @@ async def api_split_folio(req: SplitFolioRequest, request: Request, current_user
 @router.post("/folio/split-by-amount", tags=["folio"])
 async def api_split_folio_by_amount(req: SplitFolioByAmountRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Split a folio by transferring monetary amounts (even or custom)."""
-    perm_svc.enforce_permission(current_user.role, "split_folio")
+    perm_svc.enforce_user_permission(current_user, "split_folio")
 
     # Idempotency-Key replay protection — task #102. Per-source-folio scope
     # prevents a double-tap from creating two sets of target folios and
@@ -805,7 +805,7 @@ async def api_tax_breakdown(folio_id: str, current_user: User = Depends(get_curr
 @router.post("/folio/city-ledger-transfer", tags=["folio"])
 async def api_city_ledger_transfer(req: CityLedgerTransferRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Transfer folio balance to city ledger."""
-    perm_svc.enforce_permission(current_user.role, "close_folio")
+    perm_svc.enforce_user_permission(current_user, "close_folio")
 
     # Idempotency-Key replay protection — task #102. Per-source-folio scope so
     # a double-tap cannot transfer the same balance twice (which would also
@@ -863,7 +863,7 @@ async def api_folio_audit(folio_id: str, current_user: User = Depends(get_curren
 @router.post("/housekeeping/room-status", tags=["housekeeping"])
 async def api_update_room_status(req: RoomStatusUpdateRequest, current_user: User = Depends(get_current_user)):
     """Update room status with state machine validation."""
-    perm_svc.enforce_permission(current_user.role, "update_room_status")
+    perm_svc.enforce_user_permission(current_user, "update_room_status")
     result = await hk_svc.update_room_status(current_user.tenant_id, req.room_id, req.new_status, current_user.id, req.notes, req.force)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
@@ -909,7 +909,7 @@ async def api_maintenance_impact(room_id: str, start_date: str, end_date: str, c
 @router.post("/night-audit/run", tags=["night-audit"])
 async def api_run_night_audit(req: NightAuditRequest, current_user: User = Depends(get_current_user)):
     """Run night audit for the current or specified business date."""
-    perm_svc.enforce_permission(current_user.role, "run_night_audit")
+    perm_svc.enforce_user_permission(current_user, "run_night_audit")
     business_date = req.business_date or await night_audit.get_business_date(current_user.tenant_id)
     result = await night_audit.run_night_audit(current_user.tenant_id, business_date, current_user.id)
     # Concurrency guard: a second simultaneous run for the same business date is

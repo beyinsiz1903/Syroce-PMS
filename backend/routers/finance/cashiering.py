@@ -28,7 +28,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CT (v59) — Cashiering/AR endpoint'leri için RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 from models.schemas import (
@@ -191,7 +191,7 @@ async def _city_ledger_booking_items(tenant_id: str, account_id: str) -> tuple[l
 async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Create a new city ledger account for direct billing"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "manage_city_ledger")  # Bug CT
+    _enforce(current_user, "manage_city_ledger")  # Bug CT
 
     account_name = str(account_data.get("account_name") or "").strip()
     company_name = str(account_data.get("company_name") or "").strip()
@@ -244,7 +244,7 @@ async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthor
 async def get_city_ledger_accounts(is_active: bool = True, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get all city ledger accounts"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_city_ledger")  # Bug CT
+    _enforce(current_user, "view_city_ledger")  # Bug CT
 
     query = {"tenant_id": current_user.tenant_id}
     if is_active is not None:
@@ -259,7 +259,7 @@ async def get_city_ledger_accounts(is_active: bool = True, credentials: HTTPAuth
 async def process_split_payment(booking_id: str, payments: list[dict], credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Process split payment (multiple payment methods for one bill)"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_payment")  # Bug CT
+    _enforce(current_user, "post_payment")  # Bug CT
 
     # Get booking
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
@@ -299,7 +299,7 @@ async def process_split_payment(booking_id: str, payments: list[dict], credentia
 async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get Accounts Receivable aging report (30/60/90 days)"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_ar_aging")  # Bug CT
+    _enforce(current_user, "view_ar_aging")  # Bug CT
 
     today = datetime.now(UTC)
 
@@ -354,7 +354,7 @@ async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depend
 async def set_credit_limit(account_id: str, credit_limit: float, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Set credit limit for city ledger account"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "manage_credit_limit")  # Bug CT
+    _enforce(current_user, "manage_credit_limit")  # Bug CT
 
     result = await db.city_ledger_accounts.update_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"$set": {"credit_limit": credit_limit}})
 
@@ -368,7 +368,7 @@ async def set_credit_limit(account_id: str, credit_limit: float, credentials: HT
 async def get_credit_limit(account_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get credit limit and current balance for account"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_credit_limit")  # Bug CT
+    _enforce(current_user, "view_credit_limit")  # Bug CT
 
     account = await db.city_ledger_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
@@ -398,7 +398,7 @@ async def post_to_city_ledger(
 ):
     """Post charge to city ledger (direct billing)"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_direct_bill")  # Bug CT
+    _enforce(current_user, "post_direct_bill")  # Bug CT
 
     if not math.isfinite(amount) or amount <= 0:
         raise HTTPException(status_code=400, detail="Direct bill amount must be a finite positive amount")
@@ -520,7 +520,7 @@ async def post_to_city_ledger(
 async def get_outstanding_balances(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get all city ledger accounts with outstanding balances"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_outstanding_balance")  # Bug CT
+    _enforce(current_user, "view_outstanding_balance")  # Bug CT
 
     accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).sort("current_balance", -1).to_list(1000)
 
@@ -542,7 +542,7 @@ async def get_city_ledger_open_items(
     them to a room.
     """
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_city_ledger_transactions")
+    _enforce(current_user, "view_city_ledger_transactions")
 
     account = await db.city_ledger_accounts.find_one(
         {"id": account_id, "tenant_id": current_user.tenant_id},
@@ -585,7 +585,7 @@ async def post_city_ledger_payment(
 ):
     """Post a general or reservation-allocated payment to a city ledger account."""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_city_ledger_payment")  # Bug CT
+    _enforce(current_user, "post_city_ledger_payment")  # Bug CT
 
     if not math.isfinite(amount) or amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be a finite positive amount")
@@ -715,7 +715,7 @@ async def post_city_ledger_payment(
 async def get_city_ledger_transactions(account_id: str, limit: int = 100, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get transaction history for city ledger account"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_city_ledger_transactions")  # Bug CT
+    _enforce(current_user, "view_city_ledger_transactions")  # Bug CT
 
     transactions = await db.city_ledger_transactions.find({"account_id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("transaction_date", -1).limit(limit).to_list(limit)
 
@@ -747,7 +747,7 @@ async def post_city_ledger_adjustment(
       - other        : diğer
     """
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_city_ledger_payment")  # same permission as payment
+    _enforce(current_user, "post_city_ledger_payment")  # same permission as payment
 
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Ayarlama tutarı sıfırdan büyük olmalıdır")

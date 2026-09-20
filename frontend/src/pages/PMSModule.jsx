@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { lazyWithPreload as lazy } from '@/routes/lazyWithPreload';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
+import { canAccessPmsTab } from '@/utils/moduleAccess';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
 // Tur 5: Bundle code-split — tab içerikleri ve büyük dialog'lar lazy.
 // İlk yüklemede sadece varsayılan 'frontdesk' tab'ı indirilir; kullanıcı
@@ -216,19 +217,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const visibleTabs = useMemo(() => {
     const base = isLite ? ALL_TABS.filter((tab) => LITE_TABS.has(tab.key)) : ALL_TABS;
-    return base.filter((tab) => isPmsSubTabEnabled(tab.key));
+    return base.filter((tab) => isPmsSubTabEnabled(tab.key) && canAccessPmsTab(user, tab.key));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- ALL_TABS / LITE_TABS modül scope sabitleri
-  }, [isLite, isPmsSubTabEnabled]);
+  }, [isLite, isPmsSubTabEnabled, user]);
 
   const validTabKeys = useMemo(() => new Set(visibleTabs.map((t) => t.key)), [visibleTabs]);
 
   const [activeTab, setActiveTab] = useState(() => {
-    const hash = window.location.hash.replace('#', '');
-    const validKeys = isLite
-      ? new Set(ALL_TABS.filter((t) => LITE_TABS.has(t.key)).map((t) => t.key))
-      : new Set(ALL_TABS.map((t) => t.key));
-    if (hash && validKeys.has(hash)) return hash;
-    return 'frontdesk';
+    const requested = new URLSearchParams(window.location.search).get('tab') || window.location.hash.replace('#', '');
+    return validTabKeys.has(requested) ? requested : visibleTabs[0]?.key || '';
   });
 
   // Active-only mount (perf fix): önceki sticky-lazy `visitedTabs` modeli
@@ -244,23 +241,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '');
       if (hash && !validTabKeys.has(hash)) {
-        setActiveTab('frontdesk');
-        window.location.hash = 'frontdesk';
+        setActiveTab(visibleTabs[0]?.key || '');
         return;
       }
-      setActiveTab(hash || 'frontdesk');
+      setActiveTab(hash || visibleTabs[0]?.key || '');
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [validTabKeys]);
+  }, [validTabKeys, visibleTabs]);
 
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
-    if (hash && !validTabKeys.has(hash)) {
-      setActiveTab('frontdesk');
-      window.location.hash = 'frontdesk';
+    if (!validTabKeys.has(activeTab)) {
+      setActiveTab(visibleTabs[0]?.key || '');
     }
-  }, [validTabKeys]);
+  }, [validTabKeys, visibleTabs, activeTab]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
@@ -492,6 +487,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   }, [hasLoadedFrontdesk, hasLoadedHousekeeping]);
 
   useEffect(() => {
+    if (!validTabKeys.has(activeTab)) return;
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
     else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
@@ -500,7 +496,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const loadData = async (businessDateOverride = null) => {
     try {
       let operationalDate = businessDateOverride || businessDate;
-      if (!operationalDate) {
+      if (!operationalDate && (user?.effective_permissions || []).includes('view_bookings')) {
         const businessDateResponse = await axios.get('/night-audit/business-date', { timeout: 15000 });
         operationalDate = businessDateResponse?.data?.business_date;
         if (operationalDate) setBusinessDate(operationalDate);
@@ -940,7 +936,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600">{t('pms.subtitle')}</p>
           </div>
           <div className="w-96">
-            <GlobalSearch onSelectResult={(result) => {
+            <GlobalSearch user={user} onSelectResult={(result) => {
               if (result.type === 'page' && result.data?.path) {
                 navigate(result.data.path);
                 toast.info(result.data.label || result.data.path);
@@ -964,18 +960,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                     {t('pms.quickActions', 'Hızlı İşlemler')}
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
+                    {validTabKeys.has('bookings') && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
                       <Plus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newBooking', 'Yeni Rezervasyon')}
-                    </Button>
-                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
+                    </Button>}
+                    {validTabKeys.has('guests') && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
                       <UserPlus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newGuest', 'Yeni Misafir')}
-                    </Button>
-                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={async () => {
+                    </Button>}
+                    {validTabKeys.has('reports') && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={async () => {
                       try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
                       } catch (error) { toast.error('Rapor oluşturulamadı'); }
                     }}>
                       <FileText className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.flashReport', 'Flash Rapor')}
-                    </Button>
+                    </Button>}
                     <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => loadData()}>
                       <RefreshCw className="w-4 h-4 mr-2.5 text-slate-500" />{t('common.refresh', 'Yenile')}
                     </Button>
@@ -1016,7 +1012,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               re-mount sırasında anında geri hidrate eder. Önceki "sticky-mount
               + forceMount" modeli ziyaret edilmiş tüm panelleri arka planda
               canlı tuttuğu için tab geçişi yavaşlıyordu. */}
-          <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
+          {validTabKeys.has(activeTab) && <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
           {activeTab === 'frontdesk' && (
             <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
           )}
@@ -1051,7 +1047,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
           {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
           {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
-          </Suspense>
+          </Suspense>}
             </div>
           </div>
         </Tabs>

@@ -29,7 +29,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 try:
@@ -101,7 +101,7 @@ async def update_pos_auto_post_settings(settings_data: dict, current_user: User 
     """
     Update POS auto-post settings
     """
-    _enforce(current_user.role, "manage_pos_settings")  # Bug CU
+    _enforce(current_user, "manage_pos_settings")  # Bug CU
     await db.pos_settings.update_one(
         {"tenant_id": current_user.tenant_id, "type": "auto_post"},
         {
@@ -174,7 +174,7 @@ async def manual_pos_post(post_data: dict, current_user: User = Depends(get_curr
     """
     Manual post of POS charge via QR/barcode (fallback when integration fails)
     """
-    _enforce(current_user.role, "post_charge")  # Bug CU
+    _enforce(current_user, "post_charge")  # Bug CU
     charge_id = post_data.get("charge_id")
     folio_id = post_data.get("folio_id")
     method = post_data.get("method", "manual")

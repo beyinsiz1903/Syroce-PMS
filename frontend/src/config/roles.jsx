@@ -1,11 +1,12 @@
 // Role options per subscription tier
-// Basic: Only admin (owner does everything)
+// Basic: Admin plus explicitly authorized staff
 // Professional: Department-level roles
 // Enterprise: Full granular roles
 
 export const ROLES_BY_TIER = {
   basic: [
     { value: "admin", label: "Yönetici", description: "Tüm yetkilere sahip otel sahibi/yöneticisi" },
+    { value: "staff", label: "Personel", description: "Yönetici tarafından verilen modül ve sayfa izinleri" },
   ],
   professional: [
     { value: "admin", label: "Yönetici", description: "Tam yetki - otel yöneticisi" },
@@ -14,6 +15,7 @@ export const ROLES_BY_TIER = {
     { value: "housekeeping", label: "Kat Hizmetleri", description: "Oda durumları, temizlik görevleri" },
     { value: "finance", label: "Muhasebe", description: "Fatura, ödeme, finansal raporlar" },
     { value: "procurement", label: "Satınalma", description: "Tedarikçi, satınalma talebi/siparişi, mal kabul" },
+    { value: "staff", label: "Personel", description: "Kullanıcıya özel erişim" },
   ],
   enterprise: [
     { value: "admin", label: "Yönetici", description: "Tam yetki - genel müdür" },
@@ -23,12 +25,7 @@ export const ROLES_BY_TIER = {
     { value: "finance", label: "Muhasebe", description: "Fatura, ödeme, raporlar" },
     { value: "procurement", label: "Satınalma", description: "Tedarikçi, satınalma talebi/siparişi, mal kabul" },
     { value: "sales", label: "Satış", description: "Kurumsal satış, grup rezervasyon" },
-    { value: "revenue", label: "Revenue Manager", description: "Fiyatlandırma, gelir yönetimi" },
-    { value: "maintenance", label: "Teknik", description: "Bakım, onarım işleri" },
-    { value: "fnb", label: "F&B", description: "Restoran, bar yönetimi" },
-    { value: "spa", label: "Spa & Wellness", description: "Spa randevuları, tedaviler" },
-    { value: "concierge", label: "Concierge", description: "Misafir hizmetleri" },
-    { value: "night_auditor", label: "Gece Denetçisi", description: "Gece audit işlemleri" },
+    { value: "staff", label: "Personel", description: "Teknik, restoran, spa vb. departmanlar için kullanıcıya özel erişim" },
   ],
 };
 

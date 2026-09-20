@@ -178,4 +178,4 @@ def test_money_endpoints_enforce_distinct_permissions():
         "void_payment",
         "split_folio",
     ):
-        assert f'enforce_permission(current_user.role, "{perm}")' in src
+        assert f'enforce_user_permission(current_user, "{perm}")' in src

@@ -7,6 +7,7 @@ import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
 
 export default function OverviewTab(props) {
+  const { canRunAudit = false, canManageSchedule = false } = props;
   const { SeverityBadge, StatusBadge, exceptions, expandedRun, handleAbortRun, handleQuickToggleSchedule, handleResumeRun, history, historyTotal, lastRun, loading, runActionId, schedule, scheduleStatus, setShowScheduleDialog, t, toggleExpand } = props;
   return (
     <TabsContent value="overview" className="space-y-4 mt-4">
@@ -20,16 +21,16 @@ export default function OverviewTab(props) {
             </CardTitle>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <Switch
+                {canManageSchedule && <Switch
                   data-testid="schedule-toggle"
                   checked={schedule.enabled}
                   onCheckedChange={handleQuickToggleSchedule}
-                />
+                />}
                 <span className={`text-xs font-medium ${schedule.enabled ? "text-emerald-600" : "text-gray-400"}`}>
                   {schedule.enabled ? "Aktif" : "Devre Dışı"}
                 </span>
               </div>
-              <Button
+              {canManageSchedule && <Button
                 data-testid="schedule-settings-btn"
                 variant="outline"
                 size="sm"
@@ -37,7 +38,7 @@ export default function OverviewTab(props) {
               >
                 <Settings2 className="w-3.5 h-3.5 mr-1" />
                 Ayarlar
-              </Button>
+              </Button>}
             </div>
           </div>
         </CardHeader>
@@ -309,7 +310,7 @@ export default function OverviewTab(props) {
                         ) : (
                           <p className="text-xs text-gray-400">{t('cm.components_nightaudit_tabs_OverviewTab.istisnalar_yukleniyor')}</p>
                         )}
-                        {['blocked', 'failed', 'partial_recovery_required'].includes(run.status) && (
+                        {canRunAudit && ['blocked', 'failed', 'partial_recovery_required'].includes(run.status) && (
                           <div className="flex justify-end gap-2 border-t pt-3">
                             {!run.is_dry_run && (
                               <Button

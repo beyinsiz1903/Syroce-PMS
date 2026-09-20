@@ -72,6 +72,9 @@ class User(BaseModel):
     # operasyon-seviyesi izinler (ör. "send_urgent_message"). Boş liste
     # default — geriye dönük uyumlu, yalnız adminler doldurur.
     granted_permissions: list[str] = Field(default_factory=list)
+    module_scopes: list[str] | None = None
+    page_access: dict[str, bool] = Field(default_factory=dict)
+    effective_permissions: list[str] = Field(default_factory=list)
     # Süperadminin kendi hesabından çıkmadan belirli bir otelin çalışma
     # alanına geçebilmesi için sunucu tarafından türetilen, salt-okunur oturum
     # bağlamı. Bu alanlar kullanıcı belgesine yazılmaz; yalnızca imzalı kısa

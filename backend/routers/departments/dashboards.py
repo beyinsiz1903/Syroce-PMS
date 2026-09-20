@@ -29,7 +29,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 try:
@@ -300,7 +300,7 @@ async def get_finance_dashboard(
 ):
     """Finance Manager Dashboard with real-time AR and integrations"""
 
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    _enforce(current_user, "view_finance_reports")  # Bug CU
     # AR Summary
     pending_ar = await db.invoices.count_documents({"tenant_id": current_user.tenant_id, "payment_status": {"$in": ["pending", "partial"]}})
 
@@ -343,7 +343,7 @@ async def get_corporate_accounts(
 ):
     """Sales & Marketing - Corporate accounts with profiles"""
 
-    _enforce(current_user.role, "view_corporate_accounts")  # Bug CU
+    _enforce(current_user, "view_corporate_accounts")  # Bug CU
     # Aggregate corporate bookings
     corporate_bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "booking_source": {"$in": ["corporate", "company_direct"]}}).to_list(10000)
 
@@ -399,7 +399,7 @@ async def get_it_system_info(
     _perm: None = Depends(require_op("view_it_system")),
 ):
     """IT Manager - System architecture and performance info"""
-    _enforce(current_user.role, "view_it_system")  # Bug CU
+    _enforce(current_user, "view_it_system")  # Bug CU
     return {
         "api_architecture": {"type": "REST", "protocol": "HTTP/HTTPS", "websocket_support": False, "sse_support": False, "polling": "client-side (30s interval)"},
         "widget_architecture": {"type": "modular", "independent_apis": True, "lazy_loading": True, "caching": "browser + redis"},
@@ -425,7 +425,7 @@ async def get_vip_notes(
 ):
     """Guest Relations - VIP notes and review integrations"""
 
-    _enforce(current_user.role, "view_vip_notes")  # Bug CU
+    _enforce(current_user, "view_vip_notes")  # Bug CU
     # Get VIP guests with notes
     from security.encrypted_lookup import decrypt_guest_doc
 

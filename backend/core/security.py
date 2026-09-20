@@ -554,7 +554,13 @@ async def get_current_user(
         if "user_id" not in user_doc:
             user_doc["user_id"] = user_doc.get("id", user_id)
 
-        return User(**user_doc)
+        current_user = User(**user_doc)
+        from modules.pms_core.user_access_policy import effective_permissions, enforce_request_access
+
+        current_user.effective_permissions = effective_permissions(current_user)
+        if request is not None:
+            enforce_request_access(current_user, request.url.path, request.method)
+        return current_user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired - please login again")
     except jwt.InvalidTokenError:

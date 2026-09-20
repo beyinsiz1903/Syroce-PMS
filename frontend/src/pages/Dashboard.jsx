@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
+import { canAccessPath } from '@/utils/moduleAccess';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -474,10 +475,11 @@ const Dashboard = ({
   // Backend modül yetkilerine göre kartları filtrele
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
   const filteredModules = useMemo(() => {
-    if (!modules) return visibleModules;
+    const accessibleModules = visibleModules.filter(m => canAccessPath(user, m.path));
+    if (!modules) return accessibleModules;
     // Super admin: tüm modülleri (add-on'lar dahil) göster.
     if (isSuperAdmin) return visibleModules;
-    return visibleModules.filter(m => {
+    return accessibleModules.filter(m => {
       // PMS & mobil
       if (m.path === '/pms') return modules.pms !== false;
       if (m.path === '/mobile' || m.path?.startsWith('/mobile/')) return modules.pms_mobile !== false;
@@ -508,7 +510,7 @@ const Dashboard = ({
       // Diğer modüller şimdilik her zaman görünür
       return true;
     });
-  }, [visibleModules, modules, isSuperAdmin]);
+  }, [visibleModules, modules, isSuperAdmin, user]);
 
   // Kategorilere göre modülleri grupla
   const categorizedModules = useMemo(() => {

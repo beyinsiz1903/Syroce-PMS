@@ -34,7 +34,7 @@ async def cancel_reservation(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
-    _role_permissions.enforce_permission(current_user.role, "edit_booking")
+    _role_permissions.enforce_user_permission(current_user, "edit_booking")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
