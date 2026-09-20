@@ -11,6 +11,8 @@ import uuid
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger("observability.tracing")
 
 
@@ -29,6 +31,10 @@ class TracingService:
         # made recent traces disappear immediately after a flush.
         self._recent_traces: deque[dict] = deque(maxlen=self._max_buffer)
         self._flush_lock = asyncio.Lock()
+        # Trace persistence is telemetry, not request correctness.  A brief
+        # Atlas election should retain the buffer and retry quietly; a sustained
+        # outage must still be escalated to Sentry after the configured streak.
+        self._flush_failures = TransientFailureTracker("trace-flush")
         self._total_requests = 0
         self._total_errors = 0
         self._total_slow = 0
@@ -198,9 +204,15 @@ class TracingService:
                     timeout=5,
                 )
                 logger.debug("Flushed %d traces to MongoDB", len(docs))
+                self._flush_failures.reset(TransientFailureTracker.OUTER_LOOP_KEY)
                 return len(docs)
             except Exception as exc:
-                logger.error("Trace flush failed: %s", exc)
+                self._flush_failures.log_exception(
+                    logger,
+                    exc,
+                    TransientFailureTracker.OUTER_LOOP_KEY,
+                    context="persist",
+                )
                 self._completed_traces.extend(to_flush)
                 return 0
 
