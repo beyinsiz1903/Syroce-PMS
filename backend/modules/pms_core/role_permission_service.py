@@ -35,7 +35,7 @@ OPERATION_PERMISSIONS = {
     # It contains no financial totals, so reception may read it without access
     # to financial reports or the ability to run night audit.
     "view_business_date": [Permission.VIEW_BOOKINGS],
-    "run_night_audit": [Permission.SYSTEM_SETTINGS],
+    "run_night_audit": [Permission.RUN_NIGHT_AUDIT],
     # Admin
     "manage_users": [Permission.MANAGE_USERS],
     # PCI / VCC card operations (Bug CS — v58)

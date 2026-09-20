@@ -17,7 +17,7 @@ from core.database import db
 from core.security import get_current_user
 from domains.pms.night_audit.schemas import NightAuditScheduleRequest, RunNightAuditRequest
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v101 DW
+from modules.pms_core.role_permission_service import RolePermissionService, require_op  # v101 DW
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +64,30 @@ def invalidate_finance_cache(tenant_id: str) -> None:
 _invalidate_finance_cache = invalidate_finance_cache
 
 
+def _night_audit_operator_guard(user: User):
+    """Enforce the narrowly scoped day-end operator permission.
+
+    This guard remains inside handlers so direct service calls cannot bypass
+    the route dependency.  It deliberately does not grant system settings or
+    financial-report access to a night-shift receptionist.
+    """
+    if RolePermissionService().check_permission(
+        user.role,
+        "run_night_audit",
+        granted_permissions=getattr(user, "granted_permissions", None),
+    ):
+        return
+    raise HTTPException(status_code=403, detail="Night audit operator permission required")
+
+
 def _admin_guard(user: User):
+    """Keep schedule configuration restricted to administrators."""
     from core.security import _is_super_admin
 
     if _is_super_admin(user):
         return
     if user.role not in ("super_admin", "admin"):
-        raise HTTPException(status_code=403, detail="Only admins can manage night audit")
+        raise HTTPException(status_code=403, detail="Only admins can manage night audit schedule")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -85,7 +102,7 @@ async def run_night_audit(
     _perm=Depends(require_op("run_night_audit")),  # v101 DW
 ):
     """Start a hardened night audit run."""
-    _admin_guard(current_user)
+    _night_audit_operator_guard(current_user)
     from core.business_date_service import ensure_business_date_initialized
     from core.night_audit_hardened import start_night_audit
 
@@ -250,7 +267,7 @@ async def resume_run(
     _perm=Depends(require_op("run_night_audit")),  # v101 DW
 ):
     """Resume a failed/blocked/partial run."""
-    _admin_guard(current_user)
+    _night_audit_operator_guard(current_user)
     from core.night_audit_hardened import resume_night_audit
 
     result = await resume_night_audit(
@@ -284,7 +301,7 @@ async def abort_run(
     _perm=Depends(require_op("run_night_audit")),  # v101 DW
 ):
     """Abort a running/blocked/partial run."""
-    _admin_guard(current_user)
+    _night_audit_operator_guard(current_user)
     from core.night_audit_hardened import abort_night_audit
 
     result = await abort_night_audit(
