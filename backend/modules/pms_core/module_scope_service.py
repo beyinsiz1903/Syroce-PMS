@@ -32,6 +32,7 @@ MODULE_SCOPES = frozenset(
         "hr",
         "invoice",
         "maintenance",
+        "multi_property",
         "pos",
         "procurement",
         "reports",

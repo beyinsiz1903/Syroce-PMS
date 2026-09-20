@@ -65,30 +65,20 @@ async def upsell_products(
 # CENTRAL OFFICE (multi-property HQ view)
 # ─────────────────────────────────────────────────────────────────────
 async def _central_chain_properties(current_user) -> list[dict]:
-    tenant_id = current_user.tenant_id
-    own = await _system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "is_chain_headquarters": 1},
+    from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
+
+    _own, tenants = await resolve_chain_properties(
+        current_user,
+        require_headquarters=True,
+        system_db=_system_db,
     )
-    chain_id = (own or {}).get("chain_id")
-    if chain_id:
-        role = getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None))
-        is_hq = bool(getattr(current_user, "is_chain_headquarters", False) or (own or {}).get("is_chain_headquarters"))
-        if role != "super_admin" and not is_hq:
-            raise HTTPException(403, "Zincir geneli merkezi ofis görünümü yalnız merkez tesis kullanıcılarına açıktır")
-        tenants = await _system_db.tenants.find(
-            {"chain_id": chain_id},
-            {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
-        ).to_list(500)
-    else:
-        tenants = [own or {"id": tenant_id, "name": tenant_id}]
     return [
         {
-            "tenant_id": tenant.get("tenant_id") or tenant.get("id"),
-            "property_name": tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
+            "tenant_id": tenant_id_from_document(tenant),
+            "property_name": tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name") or tenant_id_from_document(tenant),
         }
         for tenant in tenants
-        if tenant.get("tenant_id") or tenant.get("id")
+        if tenant_id_from_document(tenant)
     ]
 
 

@@ -94,6 +94,7 @@ const RoomsTab = ({
   const [roomBlockDialog, setRoomBlockDialog] = useState(false);
   const [roomToBlock, setRoomToBlock] = useState(null);
   const [roomBlocks, setRoomBlocks] = useState([]);
+  const [roomContextMenu, setRoomContextMenu] = useState(null);
 
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
@@ -125,6 +126,18 @@ const RoomsTab = ({
   useEffect(() => {
     loadRoomBlocks();
   }, [loadRoomBlocks]);
+
+  // Odalar ekranındaki kartlar da takvimdeki gibi operasyonel hızlı işlemler
+  // sunar. Scroll veya sayfa tıklaması menüyü güvenle kapatır.
+  useEffect(() => {
+    const close = () => setRoomContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, []);
 
   const handleRoomBlockChanged = useCallback(async () => {
     await Promise.all([
@@ -590,6 +603,17 @@ const RoomsTab = ({
               key={room.id}
               className={`hover:shadow-md transition-all h-full flex flex-col ${cardExtra}`}
               data-testid={`room-card-${room.room_number}`}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setRoomContextMenu({
+                  room,
+                  roomBlock,
+                  canCreateReservation,
+                  x: Math.min(event.clientX, window.innerWidth - 224),
+                  y: Math.min(event.clientY, window.innerHeight - 180),
+                });
+              }}
             >
               <CardContent className="p-3 flex flex-col flex-1">
                 <div className="flex justify-between items-start mb-2 gap-2">
@@ -787,6 +811,53 @@ const RoomsTab = ({
           );
         })}
       </div>
+
+      {roomContextMenu && (
+        <div
+          role="menu"
+          aria-label="Oda hızlı işlemleri"
+          className="fixed z-[100] w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+          style={{ left: `${roomContextMenu.x}px`, top: `${roomContextMenu.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+            <span className="block font-semibold text-slate-700">Oda {roomContextMenu.room.room_number}</span>
+            {roomContextMenu.room.room_type}
+          </div>
+          {roomContextMenu.canCreateReservation && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setRoomContextMenu(null);
+                setQuickResRoom(roomContextMenu.room);
+                setQuickResDialog(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Plus className="h-4 w-4 text-amber-600" /> Rezervasyon oluştur
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const selectedRoom = roomContextMenu.room;
+              setRoomContextMenu(null);
+              setRoomToBlock(selectedRoom);
+              setRoomBlockDialog(true);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <Wrench className="h-4 w-4 text-rose-600" /> Odayı blokla / arıza bildir
+          </button>
+          {roomContextMenu.roomBlock && (
+            <div className="mx-3 mb-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              Aktif blok: {roomContextMenu.roomBlock.reason || roomContextMenu.roomBlock.type}
+            </div>
+          )}
+        </div>
+      )}
 
       <RoomBlockDialog
         open={roomBlockDialog}

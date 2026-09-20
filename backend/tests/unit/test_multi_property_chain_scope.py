@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from domains.pms.enterprise_router import _chain_scope, _safe_decimal
+from modules.pms_core.chain_access import resolve_chain_properties
 
 
 class _Cursor:
@@ -24,19 +25,20 @@ class _Tenants:
         self.members = members
 
     async def find_one(self, query, _projection):
-        return self.own if query.get("id") == self.own.get("id") else None
+        candidates = query.get("$or", [{"id": query.get("id")}])
+        return self.own if any(value in {self.own.get("id"), self.own.get("tenant_id")} for item in candidates for value in item.values()) else None
 
     def find(self, query, _projection):
-        assert query == {"chain_id": self.own["chain_id"]}
+        assert query == {"chain_id": self.own["chain_id"], "subscription_status": {"$ne": "archived"}}
         return _Cursor(self.members)
 
 
 @pytest.mark.asyncio
 async def test_chain_scope_uses_explicit_chain_id(monkeypatch):
-    own = {"id": "hotel-a", "property_name": "A", "chain_id": "chain-1"}
+    own = {"id": "hotel-a", "property_name": "A", "chain_id": "chain-1", "is_chain_headquarters": True}
     members = [own, {"id": "hotel-b", "property_name": "B", "chain_id": "chain-1"}]
     database = SimpleNamespace(tenants=_Tenants(own, members))
-    monkeypatch.setattr("core.tenant_db.get_system_db", lambda: database)
+    monkeypatch.setattr("modules.pms_core.chain_access.get_system_db", lambda: database)
 
     resolved_own, resolved_members = await _chain_scope(SimpleNamespace(role="manager", tenant_id="hotel-a"))
 
@@ -48,11 +50,27 @@ async def test_chain_scope_uses_explicit_chain_id(monkeypatch):
 async def test_unchained_manager_sees_only_own_hotel(monkeypatch):
     own = {"id": "hotel-a", "property_name": "A", "chain_id": None}
     database = SimpleNamespace(tenants=_Tenants(own, []))
-    monkeypatch.setattr("core.tenant_db.get_system_db", lambda: database)
+    monkeypatch.setattr("modules.pms_core.chain_access.get_system_db", lambda: database)
 
     _, members = await _chain_scope(SimpleNamespace(role="manager", tenant_id="hotel-a"))
 
     assert members == [own]
+
+
+@pytest.mark.asyncio
+async def test_chain_member_cannot_read_sibling_properties(monkeypatch):
+    own = {"id": "hotel-b", "property_name": "B", "chain_id": "chain-1", "is_chain_headquarters": False}
+    members = [
+        {"id": "hotel-a", "property_name": "A", "chain_id": "chain-1", "is_chain_headquarters": True},
+        own,
+    ]
+    database = SimpleNamespace(tenants=_Tenants(own, members))
+    monkeypatch.setattr("modules.pms_core.chain_access.get_system_db", lambda: database)
+
+    with pytest.raises(HTTPException) as exc:
+        await resolve_chain_properties(SimpleNamespace(role="manager", tenant_id="hotel-b"), require_headquarters=True)
+
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio

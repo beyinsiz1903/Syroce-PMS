@@ -71,6 +71,16 @@ export const NAV_ITEMS = [
     navSection: "governance",
     allowedRoles: ["admin", "super_admin"],
   },
+  {
+    key: "multi_property",
+    label: "Zincir Otel Yönetimi",
+    path: "/app/multi-property",
+    moduleKey: "multi_property",
+    tier: "enterprise",
+    group: "enterprise",
+    navGroup: "admin",
+    navSection: "properties",
+  },
   // ──── STANDALONE (shown as direct buttons) ─────────
   {
     key: "dashboard",

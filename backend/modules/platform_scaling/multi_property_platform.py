@@ -8,29 +8,32 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from core.database import db
+from models.schemas import User
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
+
+
+async def _properties_for_central_user(current_user: User) -> tuple[str, list[dict]]:
+    """Resolve a chain once; legacy ``parent_tenant_id`` is never authority."""
+    own, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    tenant_id = tenant_id_from_document(own)
+    if not tenant_id:  # pragma: no cover - resolver guarantees an identifier
+        raise ValueError("Tenant document has no identifier")
+    return tenant_id, properties
 
 
 class CentralReservationService:
     """Central reservation management across multiple properties."""
 
-    async def get_portfolio_overview(self, tenant_id: str) -> dict[str, Any]:
+    async def get_portfolio_overview(self, current_user: User) -> dict[str, Any]:
         """Get portfolio-wide reservation overview across all properties."""
-        properties = await db.tenants.find(
-            {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
-            {"_id": 0, "id": 1, "name": 1, "hotel_name": 1},
-        ).to_list(100)
-
-        if not properties:
-            # Fallback: get tenant name from tenants collection
-            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
-            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
-            properties = [{"id": tenant_id, "name": t_name, "hotel_name": t_name}]
+        tenant_id, properties = await _properties_for_central_user(current_user)
 
         today = date.today().isoformat()
         portfolio_data = []
 
         # N+1 fix: tum property'ler icin tek aggregation
-        pids = [p["id"] for p in properties]
+        pids = [tenant_id_from_document(p) for p in properties]
+        pids = [pid for pid in pids if pid]
         rooms_total_map: dict = {}
         booked_map: dict = {}
         arrivals_map: dict = {}
@@ -66,7 +69,7 @@ class CentralReservationService:
                 departures_map[r["_id"]] = r["n"]
 
         for prop in properties:
-            pid = prop["id"]
+            pid = tenant_id_from_document(prop) or tenant_id
             total_rooms = rooms_total_map.get(pid, 0) or 1
             today_booked = booked_map.get(pid, 0)
             arrivals = arrivals_map.get(pid, 0)
@@ -100,21 +103,15 @@ class CentralReservationService:
             "properties": portfolio_data,
         }
 
-    async def search_availability_cross_property(self, tenant_id: str, check_in: str, check_out: str, room_type: str | None = None, guests: int = 2) -> dict[str, Any]:
+    async def search_availability_cross_property(self, current_user: User, check_in: str, check_out: str, room_type: str | None = None, guests: int = 2) -> dict[str, Any]:
         """Search availability across all properties in the portfolio."""
-        properties = await db.tenants.find(
-            {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
-            {"_id": 0, "id": 1, "name": 1, "hotel_name": 1},
-        ).to_list(100)
-
-        if not properties:
-            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
-            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
-            properties = [{"id": tenant_id, "name": t_name, "hotel_name": t_name}]
+        _, properties = await _properties_for_central_user(current_user)
 
         results = []
         for prop in properties:
-            pid = prop["id"]
+            pid = tenant_id_from_document(prop)
+            if not pid:
+                continue
             room_query = {
                 "tenant_id": pid,
                 "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
@@ -162,8 +159,14 @@ class CentralReservationService:
             "properties": results,
         }
 
-    async def transfer_reservation(self, tenant_id: str, booking_id: str, target_property_id: str, user_id: str, reason: str | None = None) -> dict[str, Any]:
+    async def transfer_reservation(self, current_user: User, booking_id: str, target_property_id: str, reason: str | None = None) -> dict[str, Any]:
         """Transfer a reservation between properties."""
+        tenant_id, properties = await _properties_for_central_user(current_user)
+        allowed_tenants = {tenant_id_from_document(prop) for prop in properties}
+        if target_property_id not in allowed_tenants:
+            return {"success": False, "error": "Target property is outside the active chain"}
+        if target_property_id == tenant_id:
+            return {"success": False, "error": "Source and target properties must differ"}
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
             return {"success": False, "error": "Booking not found"}
@@ -174,7 +177,7 @@ class CentralReservationService:
             "source_property": tenant_id,
             "target_property": target_property_id,
             "reason": reason,
-            "transferred_by": user_id,
+            "transferred_by": current_user.id,
             "transferred_at": datetime.now(UTC).isoformat(),
             "original_booking": {k: v for k, v in booking.items() if k != "_id"},
         }
@@ -182,7 +185,7 @@ class CentralReservationService:
 
         # Update booking tenant_id
         await db.bookings.update_one(
-            {"id": booking_id},
+            {"id": booking_id, "tenant_id": tenant_id},
             {
                 "$set": {
                     "tenant_id": target_property_id,
@@ -199,23 +202,16 @@ class CentralReservationService:
 class CentralRevenueManagement:
     """Central revenue management across the portfolio."""
 
-    async def get_portfolio_revenue(self, tenant_id: str, days: int = 30) -> dict[str, Any]:
+    async def get_portfolio_revenue(self, current_user: User, days: int = 30) -> dict[str, Any]:
         """Get portfolio-wide revenue metrics."""
-        properties = await db.tenants.find(
-            {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
-            {"_id": 0, "id": 1, "name": 1, "hotel_name": 1},
-        ).to_list(100)
-
-        if not properties:
-            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
-            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
-            properties = [{"id": tenant_id, "name": t_name, "hotel_name": t_name}]
+        tenant_id, properties = await _properties_for_central_user(current_user)
 
         cutoff = (date.today() - timedelta(days=days)).isoformat()
         portfolio_revenue = []
 
         # N+1 fix: charges/rooms/bookings tek aggregation
-        rev_pids = [p["id"] for p in properties]
+        rev_pids = [tenant_id_from_document(p) for p in properties]
+        rev_pids = [pid for pid in rev_pids if pid]
         rev_charges_map: dict = {}
         rev_rooms_map: dict = {}
         rev_nights_map: dict = {}
@@ -250,7 +246,7 @@ class CentralRevenueManagement:
                 rev_nights_map[r["_id"]] = r["n"]
 
         for prop in properties:
-            pid = prop["id"]
+            pid = tenant_id_from_document(prop) or tenant_id
             ch = rev_charges_map.get(pid, {})
             total_rev = ch.get("total", 0)
             room_rev = ch.get("room", 0)
@@ -284,19 +280,15 @@ class CentralRevenueManagement:
             "properties": portfolio_revenue,
         }
 
-    async def apply_global_rate_adjustment(self, tenant_id: str, adjustment_pct: float, room_type: str | None = None, user_id: str = "") -> dict[str, Any]:
+    async def apply_global_rate_adjustment(self, current_user: User, adjustment_pct: float, room_type: str | None = None) -> dict[str, Any]:
         """Apply a rate adjustment across all properties."""
-        properties = await db.tenants.find(
-            {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
-            {"_id": 0, "id": 1},
-        ).to_list(100)
-
-        if not properties:
-            properties = [{"id": tenant_id}]
+        tenant_id, properties = await _properties_for_central_user(current_user)
 
         adjustments = []
         for prop in properties:
-            pid = prop["id"]
+            pid = tenant_id_from_document(prop)
+            if not pid:
+                continue
             room_query = {"tenant_id": pid}
             if room_type:
                 room_query["room_type"] = room_type
@@ -326,7 +318,7 @@ class CentralRevenueManagement:
                 "tenant_id": tenant_id,
                 "adjustment_pct": adjustment_pct,
                 "room_type": room_type,
-                "applied_by": user_id,
+                "applied_by": current_user.id,
                 "applied_at": datetime.now(UTC).isoformat(),
                 "rooms_affected": len(adjustments),
             }
@@ -338,23 +330,16 @@ class CentralRevenueManagement:
 class GlobalAlertSystem:
     """Global alert system across all properties."""
 
-    async def get_global_alerts(self, tenant_id: str) -> dict[str, Any]:
+    async def get_global_alerts(self, current_user: User) -> dict[str, Any]:
         """Get global alerts across all properties."""
-        properties = await db.tenants.find(
-            {"$or": [{"id": tenant_id}, {"parent_tenant_id": tenant_id}]},
-            {"_id": 0, "id": 1, "hotel_name": 1, "name": 1},
-        ).to_list(100)
-
-        if not properties:
-            tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "hotel_name": 1, "name": 1})
-            t_name = (tenant_doc or {}).get("hotel_name") or (tenant_doc or {}).get("name") or "Ana Otel"
-            properties = [{"id": tenant_id, "hotel_name": t_name}]
+        tenant_id, properties = await _properties_for_central_user(current_user)
 
         today = date.today().isoformat()
         alerts = []
 
         # N+1 fix: rooms / bookings / complaints / housekeeping tek aggregation
-        a_pids = [p["id"] for p in properties]
+        a_pids = [tenant_id_from_document(p) for p in properties]
+        a_pids = [pid for pid in a_pids if pid]
         a_rooms_map: dict = {}
         a_booked_map: dict = {}
         a_complaints_map: dict = {}
@@ -390,7 +375,7 @@ class GlobalAlertSystem:
                 a_overdue_map[r["_id"]] = r["n"]
 
         for prop in properties:
-            pid = prop["id"]
+            pid = tenant_id_from_document(prop) or tenant_id
             prop_name = prop.get("hotel_name") or prop.get("name", pid)
             total_rooms = a_rooms_map.get(pid, 0)
             booked = a_booked_map.get(pid, 0)
@@ -454,14 +439,14 @@ class GlobalAlertSystem:
         alerts.sort(key=lambda x: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(x["priority"], 4))
         return {"tenant_id": tenant_id, "count": len(alerts), "alerts": alerts}
 
-    async def get_multi_property_dashboard(self, tenant_id: str) -> dict[str, Any]:
+    async def get_multi_property_dashboard(self, current_user: User) -> dict[str, Any]:
         """Comprehensive multi-property dashboard."""
         crs = CentralReservationService()
         crm = CentralRevenueManagement()
 
-        portfolio = await crs.get_portfolio_overview(tenant_id)
-        revenue = await crm.get_portfolio_revenue(tenant_id, 30)
-        alerts = await self.get_global_alerts(tenant_id)
+        portfolio = await crs.get_portfolio_overview(current_user)
+        revenue = await crm.get_portfolio_revenue(current_user, 30)
+        alerts = await self.get_global_alerts(current_user)
 
         return {
             "portfolio": portfolio,
