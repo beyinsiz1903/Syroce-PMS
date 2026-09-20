@@ -62,6 +62,9 @@ class Permission(str, Enum):
     MANAGE_USERS = "manage_users"
     MANAGE_ROOMS = "manage_rooms"
     SYSTEM_SETTINGS = "system_settings"
+    # Running day-end is an operational front-desk responsibility, distinct
+    # from broad system configuration access.
+    RUN_NIGHT_AUDIT = "run_night_audit"
 
     # Internal messaging permissions
     SEND_URGENT_MESSAGE = "send_urgent_message"
@@ -519,6 +522,7 @@ ROLE_PERMISSIONS = {
         # v2 HR: supervisor düzeyi HR okuma + master data yönetimi yapabilir.
         Permission.VIEW_HR,
         Permission.MANAGE_HR,
+        Permission.RUN_NIGHT_AUDIT,
         # Contact Center: supervisor konuşmaları görür ve yönetir.
         Permission.VIEW_CONTACT_CENTER,
         Permission.MANAGE_CONTACT_CENTER,
@@ -535,6 +539,7 @@ ROLE_PERMISSIONS = {
         Permission.VIEW_COMPANIES,
         Permission.VIEW_HK_BOARD,
         Permission.VIEW_REPORTS,
+        Permission.RUN_NIGHT_AUDIT,
         # Contact Center: resepsiyon (receptionist) küçük otellerde
         # konuşmaları görür ve yönetir.
         Permission.VIEW_CONTACT_CENTER,
