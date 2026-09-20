@@ -255,6 +255,21 @@ export const getRoomBlockForDate = (roomId, date, roomBlocks) => {
 };
 
 // Check if block starts on this date
+export const isRoomBlockedForSaleOnDate = (room, date, roomBlocks = []) => {
+  const day = toDateStringUTC(date);
+  return isBlockedRoomStatus(room.status) || roomBlocks.some(block => (
+    block.room_id === room.id && block.status === 'active' && !block.allow_sell
+    && day >= toDateStringUTC(block.start_date)
+    && (!block.end_date || day < toDateStringUTC(block.end_date))
+  ));
+};
+
+export const getRoomTypeCapacityForDate = (rooms, date, roomBlocks = []) => {
+  // Count rooms, not block records: overlapping blocks consume one room only.
+  const blocked = rooms.filter(room => isRoomBlockedForSaleOnDate(room, date, roomBlocks)).length;
+  return { total: rooms.length, blocked, sellable: rooms.length - blocked };
+};
+
 export const isBlockStart = (block, date) => {
   return toDateStringUTC(date) === toDateStringUTC(block.start_date);
 };

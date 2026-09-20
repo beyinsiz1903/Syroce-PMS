@@ -59,6 +59,17 @@ const renderGrid = (overrides = {}) => {
 };
 
 describe('CalendarGrid stay resize handle', () => {
+  it('shows sellable capacity and restores it on the block end date', () => {
+    renderGrid({
+      bookings: [],
+      roomBlocks: [{ id: 'block-1', room_id: room.id, status: 'active', type: 'out_of_service', start_date: '2026-09-10', end_date: '2026-09-12' }],
+    });
+    expect(screen.getAllByText('0/0')).toHaveLength(2);
+    expect(screen.getAllByText('0/1')).toHaveLength(3);
+    expect(screen.getAllByText('1 bloklu')).toHaveLength(2);
+    expect(screen.getAllByTitle('0 rezervasyon / 0 satılabilir oda · 1 bloklu · 1 toplam')).toHaveLength(2);
+  });
+
   it('starts resize without starting the whole-booking move gesture', () => {
     const handlers = renderGrid();
     const handle = screen.getByTestId('booking-resize-handle-booking-1');
