@@ -1,4 +1,5 @@
 """Tenant-user workspace policy; never replaces operation/object/plan guards."""
+
 import json
 from pathlib import Path
 
@@ -10,21 +11,37 @@ CATALOG = json.loads(Path(__file__).with_name("user_access_catalog.json").read_t
 PAGES = {page["key"]: page for page in CATALOG["pages"]}
 # Administrative powers and destructive accounting operations cannot be delegated
 # via a page toggle. They retain their dedicated role/operation guards.
-DELEGABLE_PERMISSIONS = frozenset({
-    "view_bookings", "create_booking", "edit_booking", "checkin", "checkout",
-    "view_folio", "post_charge", "post_payment", "view_companies",
-    "view_hk_board", "update_room_status", "assign_task", "view_reports",
-    "view_financial_reports", "run_night_audit", "view_hr", "view_procurement",
-    "view_contact_center", "manage_contact_center", "send_urgent_message",
-})
+DELEGABLE_PERMISSIONS = frozenset(
+    {
+        "view_bookings",
+        "create_booking",
+        "edit_booking",
+        "checkin",
+        "checkout",
+        "view_folio",
+        "post_charge",
+        "post_payment",
+        "view_companies",
+        "view_hk_board",
+        "update_room_status",
+        "assign_task",
+        "view_reports",
+        "view_financial_reports",
+        "run_night_audit",
+        "view_hr",
+        "view_procurement",
+        "view_contact_center",
+        "manage_contact_center",
+        "send_urgent_message",
+    }
+)
 
 
 def effective_permissions(user):
     from modules.pms_core.role_permission_service import RolePermissionService
 
     role = getattr(user.role, "value", user.role)
-    return sorted(set(RolePermissionService().get_user_permissions(role))
-                  | set(user.granted_permissions or []))
+    return sorted(set(RolePermissionService().get_user_permissions(role)) | set(user.granted_permissions or []))
 
 
 def can_access_page(user, key):
@@ -39,8 +56,7 @@ def can_access_page(user, key):
         return False
     # A visibility grant is never an operation-permission bypass.
     permissions = set(effective_permissions(user))
-    return set(page["permissions"]).issubset(permissions) and (
-        not page.get("any_permissions") or bool(permissions.intersection(page["any_permissions"])))
+    return set(page["permissions"]).issubset(permissions) and (not page.get("any_permissions") or bool(permissions.intersection(page["any_permissions"])))
 
 
 def enforce_request_access(user, path, method):
@@ -62,6 +78,7 @@ def enforce_request_access(user, path, method):
         "/api/pms/room-blocks": ("rooms", "calendar", "housekeeping"),
         "/api/pms/bookings": ("bookings", "calendar", "frontdesk", "cashier", "reports"),
         "/api/pms/guests": ("guests", "bookings", "calendar", "frontdesk"),
+        "/api/pms/calendar/rates": ("calendar",),
         "/api/folio": ("cashier", "invoice"),
         "/api/folios": ("cashier", "invoice"),
         "/api/pms/folios": ("cashier", "invoice"),
@@ -71,9 +88,7 @@ def enforce_request_access(user, path, method):
             if not any(can_access_page(user, key) for key in pages):
                 raise HTTPException(403, "PAGE_ACCESS_DENIED")
             return
-    matches = [(prefix, page["key"]) for page in PAGES.values()
-               for prefix in page["api_prefixes"]
-               if path == prefix or path.startswith(prefix + "/")]
+    matches = [(prefix, page["key"]) for page in PAGES.values() for prefix in page["api_prefixes"] if path == prefix or path.startswith(prefix + "/")]
     if matches and not can_access_page(user, max(matches, key=lambda match: len(match[0]))[1]):
         raise HTTPException(403, "PAGE_ACCESS_DENIED")
 
@@ -82,8 +97,11 @@ def role_access_matrix():
     from modules.pms_core.module_scope_service import ROLE_DEFAULT_MODULE_SCOPES
     from modules.pms_core.role_permission_service import RolePermissionService
 
-    return [{
-        "role": role.value,
-        "modules": ["*"] if role == UserRole.SUPER_ADMIN else sorted(ROLE_DEFAULT_MODULE_SCOPES.get(role.value, [])),
-        "permissions": sorted(RolePermissionService().get_user_permissions(role.value)),
-    } for role in UserRole]
+    return [
+        {
+            "role": role.value,
+            "modules": ["*"] if role == UserRole.SUPER_ADMIN else sorted(ROLE_DEFAULT_MODULE_SCOPES.get(role.value, [])),
+            "permissions": sorted(RolePermissionService().get_user_permissions(role.value)),
+        }
+        for role in UserRole
+    ]

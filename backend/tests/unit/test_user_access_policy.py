@@ -81,6 +81,27 @@ def test_shared_resource_is_available_to_other_authorized_consumers():
         enforce_request_access(user(module_scopes=[]), "/api/pms/rooms", "GET")
 
 
+def test_calendar_can_read_shared_rates_without_channel_manager_access():
+    """Reception must render the same rates without gaining rate-management."""
+    reception = user()
+    enforce_request_access(reception, "/api/pms/calendar/rates", "GET")
+    with pytest.raises(HTTPException):
+        enforce_request_access(user(module_scopes=[]), "/api/pms/calendar/rates", "GET")
+
+
+def test_room_blocks_have_one_canonical_router():
+    """Duplicate handlers can return different inventory snapshots by order."""
+    from routers.housekeeping import router as housekeeping_router
+    from routers.pms_availability import router as availability_router
+
+    housekeeping_get_paths = [
+        route.path for route in housekeeping_router.routes if "GET" in route.methods
+    ]
+    availability_paths = [route.path for route in availability_router.routes]
+    assert housekeeping_get_paths.count("/api/pms/room-blocks") == 1
+    assert "/api/pms/room-blocks" not in availability_paths
+
+
 def test_auth_response_keeps_scopes_and_page_denials():
     from routers.auth import _USER_RESPONSE_SAFE
     assert {"module_scopes", "page_access", "effective_permissions"}.issubset(_USER_RESPONSE_SAFE)

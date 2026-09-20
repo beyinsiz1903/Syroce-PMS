@@ -1,23 +1,22 @@
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request, status
 
-from modules.inventory.repository import InventoryRepository
 from domains.pms.room_block_models import BlockStatus, RoomBlock, RoomBlockCreate
+from modules.inventory.repository import InventoryRepository
 from shared_kernel.audit_helper import audit_log
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
 
 
 class CreateRoomBlockService:
-    def __init__(self, repository: Optional[InventoryRepository] = None):
+    def __init__(self, repository: InventoryRepository | None = None):
         self.repository = repository or InventoryRepository()
 
-    async def create(self, block_data: RoomBlockCreate, current_user, request: Request) -> Dict:
+    async def create(self, block_data: RoomBlockCreate, current_user, request: Request) -> dict:
         tenant_context = build_tenant_context(current_user, request)
         property_context = build_property_context(current_user, request)
         self._enforce_property_scope(tenant_context.tenant_id, property_context.property_id)
@@ -102,11 +101,11 @@ class CreateRoomBlockService:
                 end_date=block_data.end_date,
                 allow_sell=block_data.allow_sell,
                 created_by=current_user.id,
-                created_at=datetime.now(timezone.utc).isoformat(),
+                created_at=datetime.now(UTC).isoformat(),
                 status=BlockStatus.ACTIVE,
             )
             block_dict = block.model_dump()
-            block_with_tenant = {**block_dict, 'tenant_id': tenant_context.tenant_id}
+            block_with_tenant = {**block_dict, "tenant_id": tenant_context.tenant_id}
             await self.repository.insert_room_block(block_with_tenant)
 
             # INV-5: Also write to room_night_locks (single source of truth)
@@ -119,6 +118,7 @@ class CreateRoomBlockService:
                 lock_block_type = block_type_map.get(block.type.value, "ooo")
                 try:
                     from core.atomic_booking import apply_room_block as apply_lock
+
                     await apply_lock(
                         tenant_id=tenant_context.tenant_id,
                         room_id=block_data.room_id,
@@ -130,38 +130,52 @@ class CreateRoomBlockService:
                     )
                 except Exception as exc:
                     import logging
-                    logging.getLogger("inventory.create_room_block").warning(
-                        "room_night_locks write failed for block %s: %s", block.id, exc
-                    )
+
+                    logging.getLogger("inventory.create_room_block").warning("room_night_locks write failed for block %s: %s", block.id, exc)
+
+            # A room block changes sellability immediately.  Best-effort cache
+            # invalidation must never turn a successful inventory write into a
+            # failed operation, but any shared cache must be refreshed now.
+            try:
+                from cache_manager import cache
+
+                cache.safe_invalidate(tenant_context.tenant_id, "rooms_availability")
+                cache.safe_invalidate(tenant_context.tenant_id, "pms_room_blocks")
+            except Exception:
+                import logging
+
+                logging.getLogger("inventory.create_room_block").warning("Could not invalidate inventory caches for block %s", block.id, exc_info=True)
 
             if conflicting_bookings and not block_data.allow_sell:
                 for booking in conflicting_bookings:
-                    await self.repository.insert_exception({
-                        'id': str(uuid.uuid4()),
-                        'tenant_id': tenant_context.tenant_id,
-                        'exception_type': 'room_blocked_with_reservation',
-                        'entity_type': 'booking',
-                        'entity_id': booking['id'],
-                        'severity': 'high',
-                        'message': f"Room {room['room_number']} blocked ({block.type}) but has active reservation",
-                        'details': {
-                            'room_id': block_data.room_id,
-                            'room_number': room['room_number'],
-                            'block_id': block.id,
-                            'block_type': block.type.value,
-                            'block_reason': block.reason,
-                            'booking_id': booking['id'],
-                            'guest_name': booking.get('guest_name', 'Unknown'),
-                            'check_in': booking['check_in'],
-                            'check_out': booking['check_out'],
-                        },
-                        'status': 'pending',
-                        'created_at': datetime.now(timezone.utc).isoformat(),
-                    })
+                    await self.repository.insert_exception(
+                        {
+                            "id": str(uuid.uuid4()),
+                            "tenant_id": tenant_context.tenant_id,
+                            "exception_type": "room_blocked_with_reservation",
+                            "entity_type": "booking",
+                            "entity_id": booking["id"],
+                            "severity": "high",
+                            "message": f"Room {room['room_number']} blocked ({block.type}) but has active reservation",
+                            "details": {
+                                "room_id": block_data.room_id,
+                                "room_number": room["room_number"],
+                                "block_id": block.id,
+                                "block_type": block.type.value,
+                                "block_reason": block.reason,
+                                "booking_id": booking["id"],
+                                "guest_name": booking.get("guest_name", "Unknown"),
+                                "check_in": booking["check_in"],
+                                "check_out": booking["check_out"],
+                            },
+                            "status": "pending",
+                            "created_at": datetime.now(UTC).isoformat(),
+                        }
+                    )
 
             # OTA-002: Enqueue outbox event for guaranteed OTA delivery
-            from core.outbox_service import enqueue_outbox_event, INVENTORY_BLOCKED
             from core.database import db as _outbox_db
+            from core.outbox_service import INVENTORY_BLOCKED, enqueue_outbox_event
 
             await enqueue_outbox_event(
                 _outbox_db,
@@ -172,15 +186,15 @@ class CreateRoomBlockService:
                 property_id=property_context.property_id or tenant_context.tenant_id,
                 correlation_id=correlation_id,
                 payload={
-                    'room_block_id': block.id,
-                    'room_id': block.room_id,
-                    'block_type': block.type.value,
-                    'start_date': block.start_date,
-                    'end_date': block.end_date,
-                    'date_start': block.start_date,
-                    'date_end': block.end_date,
-                    'allow_sell': block.allow_sell,
-                    'property_id': property_context.property_id or tenant_context.tenant_id,
+                    "room_block_id": block.id,
+                    "room_id": block.room_id,
+                    "block_type": block.type.value,
+                    "start_date": block.start_date,
+                    "end_date": block.end_date,
+                    "date_start": block.start_date,
+                    "date_end": block.end_date,
+                    "allow_sell": block.allow_sell,
+                    "property_id": property_context.property_id or tenant_context.tenant_id,
                 },
             )
 
@@ -188,50 +202,52 @@ class CreateRoomBlockService:
                 actor_id=current_user.id,
                 tenant_id=tenant_context.tenant_id,
                 property_id=property_context.property_id or tenant_context.tenant_id,
-                entity_type='room_block',
+                entity_type="room_block",
                 entity_id=block.id,
-                action='room_block_created',
+                action="room_block_created",
                 correlation_id=correlation_id,
                 metadata={
-                    'room_id': block.room_id,
-                    'type': block.type.value,
-                    'reason': block.reason,
-                    'start_date': block.start_date,
-                    'end_date': block.end_date,
-                    'allow_sell': block.allow_sell,
+                    "room_id": block.room_id,
+                    "type": block.type.value,
+                    "reason": block.reason,
+                    "start_date": block.start_date,
+                    "end_date": block.end_date,
+                    "allow_sell": block.allow_sell,
                 },
             )
 
             response = {
-                'message': 'Room block created successfully',
-                'block': block_dict,
-                'room_number': room['room_number'],
-                'warnings': [],
+                "message": "Room block created successfully",
+                "block": block_dict,
+                "room_number": room["room_number"],
+                "warnings": [],
             }
             if conflicting_bookings and not block_data.allow_sell:
-                response['warnings'].append({
-                    'type': 'conflicting_reservations',
-                    'count': len(conflicting_bookings),
-                    'message': f"{len(conflicting_bookings)} active reservation(s) conflict with this block. Move or cancel required.",
-                })
+                response["warnings"].append(
+                    {
+                        "type": "conflicting_reservations",
+                        "count": len(conflicting_bookings),
+                        "message": f"{len(conflicting_bookings)} active reservation(s) conflict with this block. Move or cancel required.",
+                    }
+                )
 
-            await self.repository.complete_idempotency_lock(lock['lock_id'], block.id, response)
+            await self.repository.complete_idempotency_lock(lock["lock_id"], block.id, response)
             return response
         except HTTPException as exc:
-            await self.repository.fail_idempotency_lock(lock['lock_id'], exc.detail if isinstance(exc.detail, str) else str(exc.detail))
+            await self.repository.fail_idempotency_lock(lock["lock_id"], exc.detail if isinstance(exc.detail, str) else str(exc.detail))
             raise
         except Exception as exc:
-            await self.repository.fail_idempotency_lock(lock['lock_id'], str(exc))
+            await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
             raise
 
     def _build_request_hash(self, tenant_id: str, block_data: RoomBlockCreate) -> str:
-        payload = block_data.model_dump(mode='json')
-        serialized = json.dumps({'tenant_id': tenant_id, 'payload': payload}, sort_keys=True, default=str)
-        return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+        payload = block_data.model_dump(mode="json")
+        serialized = json.dumps({"tenant_id": tenant_id, "payload": payload}, sort_keys=True, default=str)
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def _enforce_property_scope(self, tenant_id: str, property_id: Optional[str]) -> None:
+    def _enforce_property_scope(self, tenant_id: str, property_id: str | None) -> None:
         if property_id and property_id != tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail='Property scope mismatch',
+                detail="Property scope mismatch",
             )
