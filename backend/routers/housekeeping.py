@@ -814,7 +814,7 @@ async def create_room_block(
     block_data: RoomBlockCreate,
     request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_op("update_room_status")),
 ):
     return await create_room_block_service.create(block_data, current_user, request)
 
@@ -824,7 +824,7 @@ async def update_room_block(
     block_id: str,
     block_data: RoomBlockUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_op("update_room_status")),
 ):
     """Update an existing room block"""
     block = await db.room_blocks.find_one({"id": block_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -904,7 +904,7 @@ async def cancel_room_block(
     request: Request,
     reason: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_op("update_room_status")),
 ):
     """Release a room block through the semantic inventory service."""
     return await release_room_block_service.release(block_id, current_user, request, reason=reason)

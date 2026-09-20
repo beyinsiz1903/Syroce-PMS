@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 # routers that expose public/provider/webhook/service-key endpoints are
 # intentionally absent and are scoped at endpoint/sub-router level instead.
 ROUTER_MODULE_SCOPES: dict[str, str] = {
-    "routers.housekeeping": "housekeeping",
+    # Mixed router: it also owns shared PMS inventory endpoints such as
+    # /api/pms/room-blocks.  Those are guarded by the request/page policy and
+    # their own operation guards; applying a router-wide housekeeping scope
+    # made front-desk users receive an empty, inconsistent calendar.
     "routers.walkin": "frontdesk",
     "routers.room_map": "frontdesk",
     "routers.report_builder": "reports",

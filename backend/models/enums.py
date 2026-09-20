@@ -538,6 +538,10 @@ ROLE_PERMISSIONS = {
         Permission.POST_PAYMENT,
         Permission.VIEW_COMPANIES,
         Permission.VIEW_HK_BOARD,
+        # Front desk owns the sellability decision at reception.  This allows
+        # OOS/OOO block operations while preserving the dedicated operation
+        # guard (and can still be revoked per user by an admin).
+        Permission.UPDATE_ROOM_STATUS,
         Permission.VIEW_REPORTS,
         Permission.RUN_NIGHT_AUDIT,
         # Contact Center: resepsiyon (receptionist) küçük otellerde

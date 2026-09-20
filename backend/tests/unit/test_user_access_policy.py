@@ -40,6 +40,7 @@ def test_reception_can_run_audit_and_use_cashier_not_accounting_or_admin():
     assert not can_access_page(reception, "finance")
     assert not can_access_page(reception, "hr")
     from modules.pms_core.role_permission_service import RolePermissionService
+
     service = RolePermissionService()
     assert service.check_permission(reception.role, "view_night_audit")
     assert service.check_permission(reception.role, "run_night_audit")
@@ -57,6 +58,7 @@ def test_page_denial_cannot_be_overridden_by_permission_grant():
 
 def test_extra_read_permission_does_not_grant_financial_mutation():
     from modules.pms_core.role_permission_service import RolePermissionService
+
     staff = user("staff", module_scopes=["finance"], granted_permissions=["view_financial_reports"])
     assert can_access_page(staff, "finance")
     assert not RolePermissionService().check_permission(staff.role, "post_payment", staff.granted_permissions)
@@ -65,6 +67,7 @@ def test_extra_read_permission_does_not_grant_financial_mutation():
 
 def test_night_audit_grant_includes_metadata_but_not_schedule_management():
     from modules.pms_core.role_permission_service import RolePermissionService
+
     actor = user("staff", module_scopes=["night_audit"], granted_permissions=["run_night_audit"])
     assert can_access_page(actor, "night_audit")
     service = RolePermissionService()
@@ -89,14 +92,21 @@ def test_calendar_can_read_shared_rates_without_channel_manager_access():
         enforce_request_access(user(module_scopes=[]), "/api/pms/calendar/rates", "GET")
 
 
+def test_reception_reads_and_manages_shared_room_blocks():
+    """The PMS inventory belongs to the hotel, not to a user session."""
+    from modules.pms_core.role_permission_service import RolePermissionService
+
+    reception = user()
+    enforce_request_access(reception, "/api/pms/room-blocks", "GET")
+    assert RolePermissionService().check_permission(reception.role, "update_room_status")
+
+
 def test_room_blocks_have_one_canonical_router():
     """Duplicate handlers can return different inventory snapshots by order."""
     from routers.housekeeping import router as housekeeping_router
     from routers.pms_availability import router as availability_router
 
-    housekeeping_get_paths = [
-        route.path for route in housekeeping_router.routes if "GET" in route.methods
-    ]
+    housekeeping_get_paths = [route.path for route in housekeeping_router.routes if "GET" in route.methods]
     availability_paths = [route.path for route in availability_router.routes]
     assert housekeeping_get_paths.count("/api/pms/room-blocks") == 1
     assert "/api/pms/room-blocks" not in availability_paths
@@ -104,6 +114,7 @@ def test_room_blocks_have_one_canonical_router():
 
 def test_auth_response_keeps_scopes_and_page_denials():
     from routers.auth import _USER_RESPONSE_SAFE
+
     assert {"module_scopes", "page_access", "effective_permissions"}.issubset(_USER_RESPONSE_SAFE)
 
 
@@ -113,11 +124,9 @@ def test_real_auth_dependency_checks_page_policy_before_handler(monkeypatch, den
     from fastapi.testclient import TestClient
 
     security = importlib.import_module("core.security")
-    stored = user("staff", module_scopes=["reports"], page_access={"reports": not denied},
-                  granted_permissions=["view_reports"]).model_dump()
+    stored = user("staff", module_scopes=["reports"], page_access={"reports": not denied}, granted_permissions=["view_reports"]).model_dump()
     monkeypatch.setattr(security, "_user_doc_cache_get", lambda _: stored.copy())
-    monkeypatch.setattr(security.jwt, "decode", lambda *args, **kwargs: {
-        "user_id": "actor", "tenant_id": "hotel-a", "type": "access"})
+    monkeypatch.setattr(security.jwt, "decode", lambda *args, **kwargs: {"user_id": "actor", "tenant_id": "hotel-a", "type": "access"})
     monkeypatch.setattr("security.encrypted_lookup.decrypt_user_doc", lambda doc: doc)
     app = FastAPI()
     calls = []
@@ -147,6 +156,7 @@ def test_legacy_body_guard_accepts_user_grants_without_broadening_role():
 @pytest.fixture
 def admin_api(monkeypatch):
     from domains.admin.router import users
+
     database = MagicMock()
     database.users.find_one = AsyncMock(return_value={"id": "target", "tenant_id": "hotel-a", "role": "staff"})
     database.users.update_one = AsyncMock(return_value=SimpleNamespace(matched_count=1))
@@ -158,9 +168,13 @@ def admin_api(monkeypatch):
 
 
 def payload(api, **kwargs):
-    return api.UpdateUserAccessRequest(module_scopes=kwargs.pop("module_scopes", ["reports"]),
-        page_access=kwargs.pop("page_access", {}), granted_permissions=kwargs.pop("granted_permissions", ["view_reports"]),
-        revision=kwargs.pop("revision", 0), **kwargs)
+    return api.UpdateUserAccessRequest(
+        module_scopes=kwargs.pop("module_scopes", ["reports"]),
+        page_access=kwargs.pop("page_access", {}),
+        granted_permissions=kwargs.pop("granted_permissions", ["view_reports"]),
+        revision=kwargs.pop("revision", 0),
+        **kwargs,
+    )
 
 
 @pytest.mark.asyncio
@@ -205,10 +219,15 @@ async def test_privileged_and_portal_accounts_protected(admin_api, role):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changes", [
-    {"module_scopes": ["*"]}, {"page_access": {"invented": True}},
-    {"granted_permissions": ["system_settings"]}, {"granted_permissions": ["manage_users"]},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"module_scopes": ["*"]},
+        {"page_access": {"invented": True}},
+        {"granted_permissions": ["system_settings"]},
+        {"granted_permissions": ["manage_users"]},
+    ],
+)
 async def test_unknown_or_administrative_grants_rejected(admin_api, changes):
     api, db, _ = admin_api
     with pytest.raises(HTTPException) as exc:
