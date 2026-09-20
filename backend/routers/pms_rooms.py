@@ -300,7 +300,7 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> 
 
 @router.get("/pms/rooms")
 async def get_rooms(
-    p: PaginationParams = Depends(paginate(default_limit=100, max_limit=2000)),
+    p: PaginationParams = Depends(paginate(default_limit=500, max_limit=2000)),
     status: str | None = None,
     room_type: str | None = None,
     view: str | None = None,
