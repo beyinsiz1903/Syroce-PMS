@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "exely-pilot.yml"
 INTEGRATIONS_REQUIREMENTS = ROOT / "backend" / "requirements" / "integrations.txt"
 POST_INSTALL = ROOT / "backend" / "scripts" / "post_install.sh"
+API_DOCKERFILE = ROOT / "backend" / "Dockerfile"
+WORKER_DOCKERFILE = ROOT / "worker" / "Dockerfile"
 
 
 def _workflow() -> dict:
@@ -184,7 +186,13 @@ def test_litellm_security_override_declares_and_verifies_settings_dependency():
     post_install = POST_INSTALL.read_text()
 
     assert "pydantic-settings==2.14.2" in requirements
+    assert "litellm==1.84.10" in requirements
+    assert "openai==2.20.0" in requirements
+    assert '"litellm>=1.84.0" --no-deps' not in post_install
+    assert "Version(version('litellm')) >= Version('1.84.10')" in post_install
     assert "import litellm, openai, pydantic_settings" in post_install
+    for dockerfile in (API_DOCKERFILE, WORKER_DOCKERFILE):
+        assert '"litellm>=1.84.0" --no-deps' not in dockerfile.read_text()
 
 
 def test_workflow_scopes_ari_and_ack_secrets_to_mutually_exclusive_steps():
