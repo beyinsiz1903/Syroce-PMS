@@ -21,6 +21,7 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
 from core.database import db
+from core.tenant_db import get_db_for_tenant
 from core.helpers import create_audit_log, require_module
 from core.occupancy_pricing import (
     OccupancyPricingError,
@@ -894,6 +895,12 @@ async def create_multi_room_booking(
     cached response döner; aynı key + farklı payload → 409. Hiç key yoksa
     her istek random group oluşturur (geri uyumlu).
     """
+    # The endpoint is normally called under the request middleware's tenant
+    # context. Use an explicit scoped handle as well: this saga is also called
+    # by trusted internal workflows/tests, where a ContextVar can be absent or
+    # lost across task boundaries. It must never fall back to an unscoped db.
+    tenant_db = get_db_for_tenant(current_user.tenant_id)
+
     # ── Bug Z: Idempotency enforcement ──────────────────────────────────
     idem_key = (request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key") or "").strip()
     payload_hash = None
@@ -904,7 +911,7 @@ async def create_multi_room_booking(
         except Exception:
             payload_hash = None
         deterministic_group = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{current_user.tenant_id}:multiroom:{idem_key}"))
-        existing = await db.bookings.find(
+        existing = await tenant_db.bookings.find(
             {"group_booking_id": deterministic_group, "tenant_id": current_user.tenant_id},
             {"_id": 0},
         ).to_list(length=100)
@@ -926,7 +933,7 @@ async def create_multi_room_booking(
         from security.guest_write import encrypt_guest_insert
 
         guest_dict = encrypt_guest_insert(guest_dict)
-        await db.guests.insert_one(guest_dict)
+        await tenant_db.guests.insert_one(guest_dict)
         guest_id = guest.id
 
     if not guest_id:
@@ -954,7 +961,7 @@ async def create_multi_room_booking(
         if not rid or not isinstance(rid, str):
             raise HTTPException(status_code=400, detail="Her oda icin gecerli room_id gerekli")
         requested_room_ids.append(rid)
-    found_rooms = await db.rooms.find(
+    found_rooms = await tenant_db.rooms.find(
         {"id": {"$in": requested_room_ids}, "tenant_id": current_user.tenant_id},
         {
             "id": 1,
@@ -997,8 +1004,8 @@ async def create_multi_room_booking(
                 continue
             try:
                 # 2) Kilitler bırakıldıktan sonra booking + folio'ları sil.
-                await db.bookings.delete_one({"id": bid, "tenant_id": current_user.tenant_id})
-                await db.folios.delete_many({"booking_id": bid, "tenant_id": current_user.tenant_id})
+                await tenant_db.bookings.delete_one({"id": bid, "tenant_id": current_user.tenant_id})
+                await tenant_db.folios.delete_many({"booking_id": bid, "tenant_id": current_user.tenant_id})
             except Exception as ce:
                 compensation_errors.append(f"booking={bid} delete_failed: {ce}")
         if compensation_errors:
@@ -1028,7 +1035,7 @@ async def create_multi_room_booking(
                 if len(children_ages) != children:
                     raise HTTPException(status_code=400, detail="Her cocuk icin yas bilgisi girilmelidir")
                 pricing_rule = await find_occupancy_rule(
-                    db,
+                    tenant_db,
                     current_user.tenant_id,
                     found_by_id[room_id],
                 )
@@ -1132,7 +1139,7 @@ async def create_multi_room_booking(
                 )
                 folio_dict = folio.model_dump()
                 folio_dict["created_at"] = folio_dict["created_at"].isoformat()
-                await db.folios.insert_one(folio_dict)
+                await tenant_db.folios.insert_one(folio_dict)
             except Exception as e:
                 # Az önceki booking henüz created_bookings'e eklenmedi — onu da temizle.
                 # Task #437: kilitleri ÖNCE bırak, sonra booking'i sil; release patlarsa
@@ -1141,7 +1148,7 @@ async def create_multi_room_booking(
 
                 try:
                     await release_booking_nights(current_user.tenant_id, booking_id, reason="folio_insert_failed")
-                    await db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+                    await tenant_db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
                 except Exception as ce:
                     logger.error("Folio-fail cleanup partial failure booking=%s: %s (booking kilit sahipliği korunarak bırakıldı)", booking_id, ce)
                 await _rollback_group(reason="folio_insert_failed")
