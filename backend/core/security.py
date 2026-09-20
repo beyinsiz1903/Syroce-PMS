@@ -305,6 +305,7 @@ def create_admin_tenant_context_token(
     user_id: str,
     actor_tenant_id: str,
     target_tenant_id: str,
+    chain_id: str | None = None,
 ) -> tuple[str, int]:
     """Mint a short-lived, signed cross-tenant context for a superadmin.
 
@@ -326,6 +327,8 @@ def create_admin_tenant_context_token(
         "exp": exp_ts,
         "type": "access",
     }
+    if chain_id:
+        payload["chain_id"] = chain_id
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), exp_ts
 
 
@@ -473,7 +476,15 @@ async def get_current_user(
             role = getattr(user_doc.get("role"), "value", user_doc.get("role"))
             roles = {getattr(item, "value", item) for item in (user_doc.get("roles") or [])}
             is_stored_super_admin = role == "super_admin" or "super_admin" in roles
-            is_admin_context = payload.get("impersonation") is True and payload.get("purpose") == "admin_tenant_context" and payload.get("actor_tenant_id") == doc_tenant and is_stored_super_admin
+            is_stored_admin = role == "admin" or "admin" in roles
+            jwt_chain_id = payload.get("chain_id")
+
+            is_admin_context = False
+            if payload.get("impersonation") is True and payload.get("purpose") == "admin_tenant_context" and payload.get("actor_tenant_id") == doc_tenant:
+                if is_stored_super_admin:
+                    is_admin_context = True
+                elif is_stored_admin and jwt_chain_id:
+                    is_admin_context = True
 
             if not is_admin_context:
                 logger.warning(f"JWT tenant mismatch: user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}")
@@ -489,7 +500,8 @@ async def get_current_user(
             # target tenant context for downstream tenant-scoped queries.
             from core.tenant_db import get_system_db
 
-            target_tenant = await get_system_db().tenants.find_one(
+            sys_db = get_system_db()
+            target_tenant = await sys_db.tenants.find_one(
                 {"id": jwt_tenant},
                 {
                     "_id": 0,
@@ -497,6 +509,7 @@ async def get_current_user(
                     "property_name": 1,
                     "is_active": 1,
                     "status": 1,
+                    "chain_id": 1,
                 },
             )
             target_status = str((target_tenant or {}).get("status") or "").lower()
@@ -505,6 +518,14 @@ async def get_current_user(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Target hotel is unavailable",
                 )
+
+            # Defense-in-depth: if relying on chain_id, verify origin and target share it
+            if not is_stored_super_admin and is_stored_admin and jwt_chain_id:
+                if target_tenant.get("chain_id") != jwt_chain_id:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chain mismatch on target hotel")
+                origin_tenant = await sys_db.tenants.find_one({"id": doc_tenant}, {"chain_id": 1})
+                if not origin_tenant or origin_tenant.get("chain_id") != jwt_chain_id:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chain mismatch on origin hotel")
 
             # Preserve the real actor identity and role while replacing only
             # the effective tenant scope used by route handlers. No user

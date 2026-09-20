@@ -29,6 +29,7 @@ from core.security import (
     _is_super_admin,
     create_admin_tenant_context_token,
     create_token,
+    get_current_user,
     revoke_jti,
 )
 from core.tenant_db import get_system_db
@@ -786,12 +787,12 @@ async def get_property_type_detail(property_type: str):
 async def enter_tenant_context(
     tenant_id: str,
     response: Response,
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(get_current_user),
 ):
     """Enter a short-lived hotel workspace without sharing hotel passwords.
 
-    Only the effective tenant scope changes. The real superadmin user id and
-    role remain authoritative and are recorded on every enter/exit event.
+    Only the effective tenant scope changes. The real superadmin or chain admin
+    user id and role remain authoritative and are recorded on every enter/exit event.
     """
     if current_user.is_impersonating:
         raise HTTPException(
@@ -803,13 +804,17 @@ async def enter_tenant_context(
     if not actor_tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Süperadmin ana otel bağlamı bulunamadı.",
+            detail="Otel bağlamı bulunamadı.",
         )
     if tenant_id == actor_tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Zaten bu otelin çalışma alanındasınız.",
         )
+
+    role = getattr(current_user.role, "value", current_user.role)
+    roles = {getattr(item, "value", item) for item in (getattr(current_user, "roles", []) or [])}
+    is_super = role == "super_admin" or "super_admin" in roles
 
     sys_db = get_system_db()
     target = await sys_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
@@ -818,12 +823,27 @@ async def enter_tenant_context(
     if not target or target.get("is_active") is False or target_status in {"deleted", "archived"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Otel bulunamadı veya kullanılamıyor.")
     if not origin:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Süperadmin ana oteli bulunamadı.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ana otel bulunamadı.")
+
+    chain_id = None
+    if not is_super:
+        is_admin = role == "admin" or "admin" in roles
+        if not is_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işlem için süperadmin veya otel admin yetkisi gerekir.")
+
+        origin_chain = origin.get("chain_id")
+        target_chain = target.get("chain_id")
+
+        if not origin_chain or not target_chain or origin_chain != target_chain:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sadece aynı zincire bağlı oteller arasında geçiş yapabilirsiniz.")
+
+        chain_id = origin_chain
 
     access_token, expires_at = create_admin_tenant_context_token(
         current_user.id,
         actor_tenant_id,
         tenant_id,
+        chain_id=chain_id,
     )
     _set_access_cookie(response, access_token, max_age=max(1, expires_at - int(datetime.now(UTC).timestamp())))
 
@@ -873,7 +893,7 @@ async def enter_tenant_context(
 async def exit_tenant_context(
     request: Request,
     response: Response,
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(get_current_user),
 ):
     """Revoke the active hotel context and return to the actor's tenant."""
     if not current_user.is_impersonating or not current_user.actor_tenant_id:
@@ -910,7 +930,7 @@ async def exit_tenant_context(
     sys_db = get_system_db()
     origin = await sys_db.tenants.find_one({"id": current_user.actor_tenant_id}, {"_id": 0})
     if not origin:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Süperadmin ana oteli bulunamadı.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ana otel bulunamadı.")
 
     origin_token = create_token(current_user.id, current_user.actor_tenant_id)
     _set_access_cookie(response, origin_token, max_age=JWT_EXPIRATION_MINUTES * 60)
