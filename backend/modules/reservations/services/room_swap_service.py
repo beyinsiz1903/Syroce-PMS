@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from shared_kernel.audit_helper import audit_log
 from datetime import UTC, datetime
 from typing import Any
 
@@ -57,6 +58,8 @@ class RoomSwapService:
         target_booking_id: str,
         reason: str,
         moved_by: str,
+        actor_id: str | None = None,
+        is_impersonating: bool = False,
     ) -> dict[str, Any]:
         if not reason.strip():
             raise RoomSwapError("Oda takası için neden zorunludur.", "REASON_REQUIRED")
@@ -305,7 +308,30 @@ class RoomSwapService:
                     "operation_type": "checked_in_room_swap" if source_checked_in or target_checked_in else "room_swap",
                 },
             ]
+
             await db.room_move_history.insert_many(history_records, session=session)
+
+            try:
+                # Log audit events for timeline
+                await audit_log(
+                    actor_id=actor_id or moved_by,
+                    tenant_id=tenant_id,
+                    entity_type="reservation",
+                    entity_id=booking_id,
+                    action="room_swap",
+                    metadata={"from_room": source_room.get("room_number"), "to_room": target_room.get("room_number"), "swap_with": target_booking_id, "reason": reason, "is_impersonating": is_impersonating, "moved_by_name": moved_by},
+                )
+                await audit_log(
+                    actor_id=actor_id or moved_by,
+                    tenant_id=tenant_id,
+                    entity_type="reservation",
+                    entity_id=target_booking_id,
+                    action="room_swap",
+                    metadata={"from_room": target_room.get("room_number"), "to_room": source_room.get("room_number"), "swap_with": booking_id, "reason": reason, "is_impersonating": is_impersonating, "moved_by_name": moved_by},
+                )
+            except Exception as e:
+                logger.warning(f"Failed to write room swap audit log: {e}")
+
 
             return {
                 "message": "Oda takası tamamlandı.",
