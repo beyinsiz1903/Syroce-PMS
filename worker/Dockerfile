@@ -22,12 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # - Phase 8.2 (May 2026): legacy aggregate `backend/requirements.txt` was
 #   removed; `requirements/all.txt` is the canonical full-surface aggregate
 #   for development installs. See run.md Phase 8.2 for the full surgery log.
-# - litellm override (--no-deps to >=1.84.0): IDENTICAL to backend/Dockerfile.
-#   integrations.txt pins litellm==1.80.0 only for an openai-1.x compatible dep
-#   tree; the override keeps openai at 1.99.9 and clears CVE-2026-49468.
+# - integrations.txt pins a tested LiteLLM/OpenAI pair.  No post-resolution
+#   `--no-deps` override is permitted because it can break LiteLLM imports.
 COPY backend/requirements/ ./requirements/
-RUN pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/worker-runtime.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
-    PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.84.0" --no-deps
+RUN pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/worker-runtime.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 
 FROM python:3.11-slim AS runtime
 
