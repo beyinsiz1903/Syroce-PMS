@@ -171,16 +171,41 @@ async def get_invoice_stats(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
-    invoices = await db.invoices.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
-    total_revenue = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "paid")
-    pending_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") in ["draft", "sent"])
-    overdue_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "overdue")
-    currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
+    tenant_id = current_user.tenant_id
+    pipeline = [
+        {"$match": {"tenant_id": tenant_id}},
+        {"$group": {
+            "_id": "$status",
+            "count": {"$sum": 1},
+            "total_amount": {"$sum": "$total"}
+        }}
+    ]
+    agg_result = await db.invoices.aggregate(pipeline).to_list(100)
+
+    total_invoices = 0
+    total_revenue = 0.0
+    pending_amount = 0.0
+    overdue_amount = 0.0
+
+    for item in agg_result:
+        status = item["_id"]
+        count = item["count"]
+        amount = item["total_amount"]
+
+        total_invoices += count
+        if status == "paid":
+            total_revenue += amount
+        elif status in ["draft", "sent", "pending", "partial"]:
+            pending_amount += amount
+        elif status == "overdue":
+            overdue_amount += amount
+
+    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
     return {
-        "total_invoices": len(invoices),
-        "total_revenue": total_revenue,
-        "pending_amount": pending_amount,
-        "overdue_amount": overdue_amount,
+        "total_invoices": total_invoices,
+        "total_revenue": round(total_revenue, 2),
+        "pending_amount": round(pending_amount, 2),
+        "overdue_amount": round(overdue_amount, 2),
         "currency": currency_code,
         "currency_symbol": currency_symbol,
     }

@@ -23,7 +23,7 @@ from core.database import db
 from core.helpers import create_audit_log
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
-from core.utils import calculate_folio_balance, excel_response
+from core.utils import calculate_folio_balance
 from models.enums import ChargeCategory, FolioOperationType
 from models.schemas import (
     ChargeCreate,
@@ -503,112 +503,139 @@ async def export_folio_excel(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
-    """Export Folio to Excel"""
+    """Export Folio to a Professional Excel Document"""
     folio_data = await _legacy_get_folio_details(current_user.tenant_id, folio_id)
 
     folio = folio_data["folio"]
     charges = folio_data["charges"]
     payments = folio_data["payments"]
-    balance = folio_data["balance"]
+
+    tenant_info = await db.properties.find_one({"tenant_id": current_user.tenant_id}) or {}
+    hotel_name = tenant_info.get("name", "Syroce PMS Hotel")
+
+    if not Workbook:
+        raise HTTPException(status_code=500, detail="Excel export is not available (openpyxl missing)")
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Folio"
+    ws.title = f"Folio_{folio.get('folio_number', folio_id[-6:])}"
 
-    # Folio header
-    ws["A1"] = "GUEST FOLIO"
-    ws["A1"].font = Font(size=16, bold=True)
+    # Styles
+    title_font = Font(size=18, bold=True, color="333333")
+    header_font = Font(size=12, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    border_side = Side(border_style="thin", color="CCCCCC")
+    box_border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_right = Alignment(horizontal="right")
+
+    # Hotel Header
+    ws["A1"] = hotel_name.upper()
+    ws["A1"].font = title_font
     ws.merge_cells("A1:E1")
 
-    ws["A3"] = "Folio Number:"
-    ws["B3"] = folio.get("folio_number", "N/A")
-    ws["A4"] = "Type:"
-    ws["B4"] = folio.get("folio_type", "guest").title()
-    ws["A5"] = "Status:"
-    ws["B5"] = folio.get("status", "open").upper()
-    ws["A6"] = "Created:"
-    ws["B6"] = folio.get("created_at", "")[:10]
+    ws["A2"] = "GUEST FOLIO / HESAP DÖKÜMÜ"
+    ws["A2"].font = Font(size=14, italic=True, color="666666")
+    ws.merge_cells("A2:E2")
 
-    # Charges section
-    ws["A9"] = "CHARGES"
-    ws["A9"].font = Font(size=14, bold=True)
+    # Folio Details
+    details = [
+        ("Folio No", folio.get("folio_number", "N/A")),
+        ("Status", folio.get("status", "open").upper()),
+        ("Guest Name", folio.get("guest_name", "Unknown Guest")),
+        ("Room", folio.get("room_number", "N/A")),
+        ("Print Date", datetime.now(UTC).strftime("%Y-%m-%d %H:%M"))
+    ]
 
-    charge_headers = ["Date", "Description", "Qty", "Subtotal", "Discount", "Net", "VAT %", "VAT", "City Tax", "Total"]
-    for col_num, header in enumerate(charge_headers, 1):
-        cell = ws.cell(row=10, column=col_num)
-        cell.value = header
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        cell.font = Font(bold=True, color="FFFFFF")
+    row_num = 4
+    for k, v in details:
+        ws[f"A{row_num}"] = k + ":"
+        ws[f"A{row_num}"].font = Font(bold=True)
+        ws[f"B{row_num}"] = v
+        row_num += 1
 
-    # Bug AN: charge.description is user-controlled; openpyxl would parse a
-    # leading '=' as a formula. xlsx_safe() prepends apostrophe to neutralize.
-    from core.csv_safe import xlsx_safe
+    # Transactions Header
+    row_num += 2
+    headers = ["Date", "Description", "Type", "Charge (+)", "Payment (-)"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=row_num, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = align_center
+        cell.border = box_border
 
-    row = 11
-    total_charges = 0
-    for charge in charges:
-        if not charge.get("voided", False):
-            net = float(charge.get("amount", 0) or 0)
-            disc = float(charge.get("discount_amount", 0) or 0)
-            sub = float(charge.get("subtotal") or (net + disc))  # geriye uyumlu: eski kayıtlarda subtotal=amount+discount=amount
-            ws.cell(row=row, column=1, value=(charge.get("posted_at") or charge.get("date") or "")[:10])
-            ws.cell(row=row, column=2, value=xlsx_safe(charge.get("description", "")))
-            ws.cell(row=row, column=3, value=charge.get("quantity", 1))
-            ws.cell(row=row, column=4, value=round(sub, 2))
-            ws.cell(row=row, column=5, value=round(disc, 2))
-            ws.cell(row=row, column=6, value=round(net, 2))
-            ws.cell(row=row, column=7, value=round(float(charge.get("vat_rate", 0) or 0), 2))
-            ws.cell(row=row, column=8, value=round(float(charge.get("vat_amount", 0) or 0), 2))
-            ws.cell(row=row, column=9, value=round(float(charge.get("tax_amount", 0) or 0), 2))
-            ws.cell(row=row, column=10, value=round(float(charge.get("total", 0) or 0), 2))
-            total_charges += float(charge.get("total", 0) or 0)
-            row += 1
+    # Adjust Column Widths
+    ws.column_dimensions['A'].width = 15
+    ws.column_dimensions['B'].width = 40
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 15
 
-    ws.cell(row=row, column=9, value="Total Charges:")
-    ws.cell(row=row, column=9).font = Font(bold=True)
-    ws.cell(row=row, column=10, value=round(total_charges, 2))
-    ws.cell(row=row, column=10).font = Font(bold=True)
+    # Transactions Data
+    row_num += 1
+    total_charges = 0.0
+    total_payments = 0.0
 
-    # Payments section
-    row += 2
-    ws.cell(row=row, column=1, value="PAYMENTS")
-    ws.cell(row=row, column=1).font = Font(size=14, bold=True)
-    row += 1
+    transactions = []
+    for c in charges:
+        if c.get("voided"): continue
+        transactions.append({
+            "date": c.get("business_date") or c.get("created_at", "")[:10],
+            "desc": c.get("description", "Charge"),
+            "type": c.get("charge_type", "N/A").title(),
+            "amount": float(c.get("amount", 0)),
+            "is_charge": True
+        })
+    for p in payments:
+        if p.get("voided"): continue
+        transactions.append({
+            "date": p.get("payment_date") or p.get("date") or p.get("created_at", "")[:10],
+            "desc": p.get("description", p.get("method", "Payment").title()),
+            "type": "Payment",
+            "amount": float(p.get("amount", 0)),
+            "is_charge": False
+        })
 
-    payment_headers = ["Date", "Method", "Type", "Amount"]
-    for col_num, header in enumerate(payment_headers, 1):
-        cell = ws.cell(row=row, column=col_num)
-        cell.value = header
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        cell.font = Font(bold=True, color="FFFFFF")
+    transactions.sort(key=lambda x: x["date"])
 
-    row += 1
-    total_payments = 0
-    for payment in payments:
-        ws.cell(row=row, column=1, value=payment.get("processed_at", "")[:10])
-        ws.cell(row=row, column=2, value=str(payment.get("payment_method") or payment.get("method") or "").title())
-        ws.cell(row=row, column=3, value=payment.get("payment_type", "").title())
-        ws.cell(row=row, column=4, value=f"${payment.get('amount', 0):,.2f}")
-        total_payments += payment.get("amount", 0)
-        row += 1
+    for tx in transactions:
+        ws.cell(row=row_num, column=1, value=tx["date"]).border = box_border
+        ws.cell(row=row_num, column=2, value=tx["desc"]).border = box_border
+        ws.cell(row=row_num, column=3, value=tx["type"]).border = box_border
 
-    ws.cell(row=row, column=3, value="Total Payments:")
-    ws.cell(row=row, column=3).font = Font(bold=True)
-    ws.cell(row=row, column=4, value=f"${total_payments:,.2f}")
-    ws.cell(row=row, column=4).font = Font(bold=True)
+        charge_cell = ws.cell(row=row_num, column=4, value=f"{tx['amount']:.2f}" if tx["is_charge"] else "")
+        charge_cell.border = box_border
+        charge_cell.alignment = align_right
+
+        payment_cell = ws.cell(row=row_num, column=5, value=f"{tx['amount']:.2f}" if not tx["is_charge"] else "")
+        payment_cell.border = box_border
+        payment_cell.alignment = align_right
+
+        if tx["is_charge"]: total_charges += tx["amount"]
+        else: total_payments += tx["amount"]
+        row_num += 1
+
+    # Totals
+    row_num += 1
+    ws.cell(row=row_num, column=3, value="TOTALS:").font = Font(bold=True)
+    ws.cell(row=row_num, column=4, value=f"{total_charges:.2f}").font = Font(bold=True)
+    ws.cell(row=row_num, column=5, value=f"{total_payments:.2f}").font = Font(bold=True)
 
     # Balance
-    row += 2
-    ws.cell(row=row, column=5, value="BALANCE DUE:")
-    ws.cell(row=row, column=5).font = Font(size=14, bold=True)
-    ws.cell(row=row, column=6, value=f"${balance:,.2f}")
-    ws.cell(row=row, column=6).font = Font(size=14, bold=True)
-    ws.cell(row=row, column=6).fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    row_num += 2
+    ws.cell(row=row_num, column=4, value="BALANCE DUE:").font = Font(bold=True, size=12)
+    balance_val = total_charges - total_payments
+    bal_cell = ws.cell(row=row_num, column=5, value=f"{balance_val:.2f}")
+    bal_cell.font = Font(bold=True, size=12, color="FF0000" if balance_val > 0 else "0070C0")
 
-    filename = f"folio_{folio.get('folio_number', folio_id)}.xlsx"
-    return excel_response(wb, filename)
+    import os
+    import tempfile
+
+    from fastapi.responses import FileResponse
+    fd, path = tempfile.mkstemp(suffix=".xlsx")
+    os.close(fd)
+    wb.save(path)
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"Folio_{folio.get('folio_number', folio_id)}.xlsx")
 
 
 @router.post("/folio/{folio_id}/charge", response_model=FolioCharge)
