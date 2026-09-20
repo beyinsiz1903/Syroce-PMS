@@ -426,7 +426,7 @@ async def get_arrivals(
 
 @router.get("/pms/bookings")
 async def get_bookings(
-    p: PaginationParams = Depends(paginate(default_limit=30, max_limit=500)),
+    p: PaginationParams = Depends(paginate(default_limit=500, max_limit=1000)),
     start_date: str | None = None,
     end_date: str | None = None,
     status: str | None = None,
