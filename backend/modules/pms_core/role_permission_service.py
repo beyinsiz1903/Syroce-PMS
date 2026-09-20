@@ -31,6 +31,10 @@ OPERATION_PERMISSIONS = {
     "room_upgrade": [Permission.EDIT_BOOKING],
     "walk_in": [Permission.CREATE_BOOKING, Permission.CHECKIN],
     "update_room_status": [Permission.UPDATE_ROOM_STATUS],
+    # The open PMS business date drives the front-desk workday and calendar.
+    # It contains no financial totals, so reception may read it without access
+    # to financial reports or the ability to run night audit.
+    "view_business_date": [Permission.VIEW_BOOKINGS],
     "run_night_audit": [Permission.SYSTEM_SETTINGS],
     # Admin
     "manage_users": [Permission.MANAGE_USERS],

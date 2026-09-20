@@ -922,7 +922,7 @@ async def api_run_night_audit(req: NightAuditRequest, current_user: User = Depen
 @router.get("/night-audit/business-date", tags=["night-audit"])
 async def api_get_business_date(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v103 DX
+    _perm=Depends(require_op("view_business_date")),
 ):
     """Get current business date."""
     bd = await night_audit.get_business_date(current_user.tenant_id)

@@ -320,6 +320,10 @@ class TestRolePermissionService:
     def test_front_desk_can_post_charge(self):
         assert self.rps.check_permission("front_desk", "post_charge") is True
 
+    def test_front_desk_can_view_business_date_without_finance_reports(self):
+        assert self.rps.check_permission("front_desk", "view_business_date") is True
+        assert self.rps.check_permission("front_desk", "view_finance_reports") is False
+
     def test_housekeeping_can_update_room(self):
         assert self.rps.check_permission("housekeeping", "update_room_status") is True
 
