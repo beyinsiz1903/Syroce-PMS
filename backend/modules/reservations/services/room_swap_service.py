@@ -9,9 +9,11 @@ left unassigned and the room-night locks remain authoritative.
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
-from shared_kernel.audit_helper import audit_log
+
+logger = logging.getLogger(__name__)
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +23,7 @@ from pymongo.write_concern import WriteConcern
 
 from core.atomic_booking import TERMINAL_BOOKING_STATUSES, _night_dates
 from core.database import db
+from shared_kernel.audit_helper import audit_log
 
 
 class RoomSwapError(Exception):
@@ -319,7 +322,14 @@ class RoomSwapService:
                     entity_type="reservation",
                     entity_id=booking_id,
                     action="room_swap",
-                    metadata={"from_room": source_room.get("room_number"), "to_room": target_room.get("room_number"), "swap_with": target_booking_id, "reason": reason, "is_impersonating": is_impersonating, "moved_by_name": moved_by},
+                    metadata={
+                        "from_room": source_room.get("room_number"),
+                        "to_room": target_room.get("room_number"),
+                        "swap_with": target_booking_id,
+                        "reason": reason,
+                        "is_impersonating": is_impersonating,
+                        "moved_by_name": moved_by,
+                    },
                 )
                 await audit_log(
                     actor_id=actor_id or moved_by,
@@ -327,11 +337,17 @@ class RoomSwapService:
                     entity_type="reservation",
                     entity_id=target_booking_id,
                     action="room_swap",
-                    metadata={"from_room": target_room.get("room_number"), "to_room": source_room.get("room_number"), "swap_with": booking_id, "reason": reason, "is_impersonating": is_impersonating, "moved_by_name": moved_by},
+                    metadata={
+                        "from_room": target_room.get("room_number"),
+                        "to_room": source_room.get("room_number"),
+                        "swap_with": booking_id,
+                        "reason": reason,
+                        "is_impersonating": is_impersonating,
+                        "moved_by_name": moved_by,
+                    },
                 )
             except Exception as e:
                 logger.warning(f"Failed to write room swap audit log: {e}")
-
 
             return {
                 "message": "Oda takası tamamlandı.",
