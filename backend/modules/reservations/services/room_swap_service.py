@@ -9,8 +9,11 @@ left unassigned and the room-night locks remain authoritative.
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
+
+logger = logging.getLogger(__name__)
 from datetime import UTC, datetime
 from typing import Any
 
