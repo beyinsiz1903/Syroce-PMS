@@ -27,11 +27,11 @@ from pydantic import BaseModel
 
 from cache_manager import cached as _cached
 from core.audit import log_audit_event
-from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from core.security import get_current_user
 from core.spa_mice_authz import require_roles
 from core.tenant_db import get_system_db
 from models.schemas import User, UserRole
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from modules.pms_core.role_permission_service import require_op  # v76 Bug DL
 
 # Cross-property by definition spans tenants — bypass the per-tenant guard
