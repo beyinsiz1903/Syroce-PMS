@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from cache_manager import cached as _cached
 from core.audit import log_audit_event
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from core.security import get_current_user
 from core.spa_mice_authz import require_roles
 from core.tenant_db import get_system_db
@@ -43,42 +44,8 @@ router = APIRouter(prefix="/api/cross-property", tags=["cross-property"])
 
 # ── Chain resolution ─────────────────────────────────────────────
 async def _chain_tenant_ids(current_user: User) -> list[str]:
-    """Return the list of tenant_ids the current user can see across the chain.
-
-    Super admins see every tenant. Regular users see only tenants in the same
-    chain (matching `chain_id` on the tenants doc). If no chain_id is set,
-    they see only their own tenant.
-    """
-
-    # v97 fix — tenants koleksiyonu üyelerin büyük kısmı `id` field'ı
-    # kullanıyor (sadece 1/40 doc'ta `tenant_id` mevcut). İkisini birden
-    # destekle ki super_admin chain view ve chain_id resolution çalışsın.
-    def _tid(t: dict) -> str | None:
-        return t.get("tenant_id") or t.get("id")
-
-    # F8AH P0 fix — even a super_admin must NOT see foreign tenants unless
-    # their OWN tenant explicitly declares a `chain_id`. The previous
-    # behaviour returned every tenant in the system for any super_admin,
-    # collapsing the tenant boundary whenever an ops/pilot user happened
-    # to hold the role (threat_model.md § Information Disclosure /
-    # cross-tenant exposure). Chain scope is now purely chain_id-driven
-    # for everyone; the super_admin role only widens scope WITHIN the
-    # chain (and is otherwise a no-op for unchained tenants).
-    own = await db.tenants.find_one(
-        {"$or": [{"tenant_id": current_user.tenant_id}, {"id": current_user.tenant_id}]},
-        {"_id": 0, "chain_id": 1},
-    )
-    chain_id = (own or {}).get("chain_id")
-    if not chain_id:
-        return [current_user.tenant_id]
-
-    cursor = db.tenants.find(
-        {"chain_id": chain_id},
-        {"_id": 0, "tenant_id": 1, "id": 1},
-    )
-    ids = [_tid(t) async for t in cursor]
-    ids = [x for x in ids if x]
-    return ids or [current_user.tenant_id]
+    _own, tenants = await resolve_chain_properties(current_user, require_headquarters=False, system_db=db)
+    return [tenant_id_from_document(t) for t in tenants if tenant_id_from_document(t)]
 
 
 async def _tenant_name_map(tenant_ids: list[str]) -> dict[str, str]:
