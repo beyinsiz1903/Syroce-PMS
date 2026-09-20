@@ -21,7 +21,6 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
 from core.database import db
-from core.tenant_db import get_db_for_tenant
 from core.helpers import create_audit_log, require_module
 from core.occupancy_pricing import (
     OccupancyPricingError,
@@ -30,6 +29,7 @@ from core.occupancy_pricing import (
 )
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
+from core.tenant_db import get_db_for_tenant
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import require_op  # v82 DR
