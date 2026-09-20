@@ -196,6 +196,46 @@ async def _load_reservation_charge_items(booking_id: str, tenant_id: str) -> lis
     return items
 
 
+def _is_posted_accommodation_charge(charge: dict) -> bool:
+    """Return whether a ledger item is a nightly room posting.
+
+    A reservation's ``total_amount`` is an estimate of the stay.  Once night
+    audit has posted durable room charges, those postings are the authoritative
+    accommodation amounts and must replace (not supplement) that estimate on
+    an invoice.
+    """
+    category = str(charge.get("category") or "").strip().lower()
+    return category == "room"
+
+
+def _synthetic_accommodation_charge(booking: dict) -> dict | None:
+    """Provide an accommodation candidate only before nightly postings exist."""
+    total_amount = float(booking.get("total_amount") or 0)
+    if total_amount <= 0:
+        return None
+    return {
+        "id": "accommodation",
+        "description": "Konaklama",
+        "date": str(booking.get("check_in", ""))[:10],
+        "amount": total_amount,
+        "category": "room",
+    }
+
+
+async def _invoice_charge_candidates(booking: dict, tenant_id: str) -> list[dict]:
+    """Build mutually-exclusive invoice candidates for a reservation.
+
+    Do not combine the booking-level accommodation total with room charges
+    posted by night audit; doing so invoices the same stay twice.
+    """
+    durable_charges = await _load_reservation_charge_items(str(booking["id"]), tenant_id)
+    if any(_is_posted_accommodation_charge(charge) for charge in durable_charges):
+        return durable_charges
+
+    accommodation = _synthetic_accommodation_charge(booking)
+    return ([accommodation] if accommodation else []) + durable_charges
+
+
 @sub_router.get("/reservations/{booking_id}/invoice-pdf")
 async def generate_invoice_pdf(
     booking_id: str,
@@ -579,19 +619,7 @@ async def generate_custom_invoice(
             "invoice_footer": "",
         }
 
-    all_charges = []
-    if booking.get("total_amount", 0) > 0:
-        all_charges.append(
-            {
-                "id": "accommodation",
-                "description": "Konaklama",
-                "date": str(booking.get("check_in", ""))[:10],
-                "amount": booking["total_amount"],
-                "category": "room",
-            }
-        )
-
-    all_charges.extend(await _load_reservation_charge_items(booking_id, tid))
+    all_charges = await _invoice_charge_candidates(booking, tid)
 
     if body.selected_charge_ids:
         requested_ids = set(body.selected_charge_ids)
@@ -747,19 +775,7 @@ async def get_invoice_charges(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    charges = []
-    if booking.get("total_amount", 0) > 0:
-        charges.append(
-            {
-                "id": "accommodation",
-                "description": "Konaklama",
-                "category": "room",
-                "amount": booking["total_amount"],
-                "date": str(booking.get("check_in", ""))[:10],
-            }
-        )
-
-    charges.extend(await _load_reservation_charge_items(booking_id, tid))
+    charges = await _invoice_charge_candidates(booking, tid)
 
     agency_reservation_number = await _resolve_agency_reservation_reference(booking, tid)
     return {
