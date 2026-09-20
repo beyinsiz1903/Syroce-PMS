@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from core.atomic_booking import create_booking_atomic
 from core.database import db
+from core.chain_context import resolve_chain_context
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from modules.pms_core.role_permission_service import require_op
