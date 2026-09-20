@@ -670,6 +670,7 @@ class ExelyProvider:
             message=str(error),
             connection_id=self._connection_id,
             soap_action=soap_action,
+            recoverable=error.recoverable,
         )
         classification = _classify_exception(error, mutation=mutation, provider_write_count=provider_write_count)
         provider_status_class = "WRITE_OUTCOME_UNKNOWN" if classification == AMBIGUOUS else classification
