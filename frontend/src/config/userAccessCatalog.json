@@ -15,7 +15,8 @@
     "maintenance": "Teknik servis",
     "pos": "POS",
     "tasks": "Görevler",
-    "contact_center": "İletişim merkezi"
+    "contact_center": "İletişim merkezi",
+    "multi_property": "Zincir otel yönetimi"
   },
   "pages": [
     {
@@ -333,6 +334,23 @@
       "permissions": [
         "view_contact_center"
       ]
+    },
+    {
+      "key": "multi_property",
+      "label": "Zincir otel yönetimi",
+      "module": "multi_property",
+      "paths": [
+        "/app/multi-property",
+        "/multi-property",
+        "/multi-property-dashboard"
+      ],
+      "api_prefixes": [
+        "/api/platform/multi-property",
+        "/api/pms-core/multi-property",
+        "/api/multi-property",
+        "/api/properties"
+      ],
+      "permissions": []
     }
   ]
 }

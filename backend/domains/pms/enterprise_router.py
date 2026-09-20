@@ -273,21 +273,13 @@ def _safe_decimal(value: object) -> Decimal:
 
 
 async def _chain_scope(current_user: User) -> tuple[dict, list[dict]]:
-    """Resolve the caller's explicit chain. Never widen scope by role alone."""
-    from core.tenant_db import get_system_db
+    """Resolve a central-office chain scope; members never see siblings."""
+    from modules.pms_core.chain_access import resolve_chain_properties
 
     role = getattr(current_user.role, "value", str(current_user.role))
     if role not in {"admin", "manager", "gm", "super_admin", "finance"}:
         raise HTTPException(status_code=403, detail="Zincir görünümü yönetici yetkisi gerektirir")
-    sys_db = get_system_db()
-    own = await sys_db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
-    if not own:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
-    chain_id = own.get("chain_id")
-    if not chain_id:
-        return own, [own]
-    members = await sys_db.tenants.find({"chain_id": chain_id}, {"_id": 0}).sort("property_name", 1).to_list(500)
-    return own, members or [own]
+    return await resolve_chain_properties(current_user, require_headquarters=True)
 
 
 async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorrow_start: str) -> dict:

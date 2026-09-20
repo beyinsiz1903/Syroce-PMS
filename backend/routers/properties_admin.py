@@ -16,8 +16,9 @@ Chain otomasyonu:
 - Mevcut yönetici tenant'ında `chain_id` yoksa, ilk yeni otel eklendiğinde
   yeni UUID üretilir; hem mevcut hem yeni tenant'a yazılır → "ilk grup
   oluşumu". Sonraki eklemelerde aynı chain_id kullanılır.
-- Yetki: `admin` ya da üstü rol (admin/super_admin/owner). Süper-admin tüm
-  sistemde işlem yapabilir.
+- Yetki: `admin` ya da üstü rol (admin/super_admin/owner). Zincirler arası
+  görünürlük yalnızca ilgili zincirin merkez tesisi için açılır; sistem
+  süper-admin işlemleri ayrı `/api/admin/tenants` yüzeyindedir.
 
 Cross-tenant okuma/yazma için `_sys_db` (raw motor) kullanılır; her işlemden önce
 hedef tenant'ın chain üyeliği `_chain_tenant_ids` ile kontrol edilir.
@@ -35,6 +36,7 @@ from core.audit import log_audit_event
 from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 
 router = APIRouter(prefix="/api/properties", tags=["properties-admin"])
 
@@ -86,34 +88,9 @@ def _require_admin(user: User):
 
 
 async def _chain_tenant_ids(current_user: User) -> list[str]:
-    """Kullanıcının chain'indeki tenant_id'leri getir."""
-    own_tid = current_user.tenant_id
-    if _is_super_admin(current_user):
-        cursor = _sys_db.tenants.find({}, {"_id": 0, "tenant_id": 1, "id": 1})
-        ids: list[str] = []
-        async for t in cursor:
-            tid = t.get("tenant_id") or t.get("id")
-            if tid:
-                ids.append(tid)
-        if own_tid and own_tid not in ids:
-            ids.insert(0, own_tid)
-        return ids
-    own = await _sys_db.tenants.find_one(
-        {"$or": [{"tenant_id": own_tid}, {"id": own_tid}]},
-        {"_id": 0, "chain_id": 1},
-    )
-    chain_id = (own or {}).get("chain_id")
-    if not chain_id:
-        return [own_tid]
-    cursor = _sys_db.tenants.find({"chain_id": chain_id}, {"_id": 0, "tenant_id": 1, "id": 1})
-    ids = []
-    async for t in cursor:
-        tid = t.get("tenant_id") or t.get("id")
-        if tid:
-            ids.append(tid)
-    if own_tid and own_tid not in ids:
-        ids.insert(0, own_tid)
-    return ids
+    """Resolve active chain members through the common central-office rule."""
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True, include_archived=True)
+    return [tenant_id for property_doc in properties if (tenant_id := tenant_id_from_document(property_doc))]
 
 
 def _serialize_tenant(doc: dict, current_tid: str) -> dict:
@@ -158,8 +135,8 @@ async def _generate_unique_hotel_id() -> str:
 async def list_chain_properties(current_user: User = Depends(get_current_user)):
     """Kullanıcının zincirindeki tüm otelleri döndür.
 
-    - Süper-admin → sistemdeki tüm oteller
-    - chain_id varsa → kardeş tesisler
+    - zincir merkezi → aktif/arsivli kardeş tesisler
+    - chain_id varsa ancak merkez değilse → 403 (merkezi görünüm yok)
     - chain_id yoksa → sadece kendi tesisi
     """
     tenant_ids = await _chain_tenant_ids(current_user)
@@ -215,6 +192,11 @@ async def create_property(
             "property_name": "Ana Otel",
         }
         await _sys_db.tenants.insert_one({**own, "created_at": datetime.now(UTC).isoformat()})
+
+    # A property admin may create the *first* linked property (which creates a
+    # chain). Once a chain exists, adding siblings is a central-office action.
+    if own.get("chain_id") and not own.get("is_chain_headquarters") and not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Yeni tesis ekleme yalnızca zincir merkezinden yapılabilir")
 
     chain_id = own.get("chain_id")
     new_chain = False

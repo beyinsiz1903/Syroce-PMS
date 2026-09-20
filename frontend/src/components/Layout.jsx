@@ -109,6 +109,7 @@ const ICON_BY_KEY = {
   data_model: Layers,
   hrv2_ops: Server,
   infra_hardening: Shield,
+  multi_property: Building2,
 };
 
 const GROUP_ICONS = {

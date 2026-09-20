@@ -210,7 +210,7 @@ async def api_gateway_stats(current_user: User = Depends(get_current_user)):
 @router.get("/multi-property/portfolio")
 async def api_portfolio_overview(current_user: User = Depends(get_current_user)):
     """Get portfolio-wide overview."""
-    return await crs.get_portfolio_overview(current_user.tenant_id)
+    return await crs.get_portfolio_overview(current_user)
 
 
 @router.post("/multi-property/search-availability")
@@ -220,7 +220,7 @@ async def api_cross_property_search(
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Search availability across all properties."""
-    return await crs.search_availability_cross_property(current_user.tenant_id, req.check_in, req.check_out, req.room_type, req.guests)
+    return await crs.search_availability_cross_property(current_user, req.check_in, req.check_out, req.room_type, req.guests)
 
 
 @router.post("/multi-property/transfer-reservation")
@@ -230,7 +230,7 @@ async def api_transfer_reservation(
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Transfer reservation to another property."""
-    result = await crs.transfer_reservation(current_user.tenant_id, req.booking_id, req.target_property_id, current_user.id, req.reason)
+    result = await crs.transfer_reservation(current_user, req.booking_id, req.target_property_id, req.reason)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
@@ -239,7 +239,7 @@ async def api_transfer_reservation(
 @router.get("/multi-property/revenue")
 async def api_portfolio_revenue(days: int = 30, current_user: User = Depends(get_current_user)):
     """Get portfolio-wide revenue metrics."""
-    return await crm.get_portfolio_revenue(current_user.tenant_id, days)
+    return await crm.get_portfolio_revenue(current_user, days)
 
 
 @router.post("/multi-property/global-rate-adjust")
@@ -249,19 +249,19 @@ async def api_global_rate_adjust(
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Apply global rate adjustment across all properties."""
-    return await crm.apply_global_rate_adjustment(current_user.tenant_id, req.adjustment_pct, req.room_type, current_user.id)
+    return await crm.apply_global_rate_adjustment(current_user, req.adjustment_pct, req.room_type)
 
 
 @router.get("/multi-property/alerts")
 async def api_global_alerts(current_user: User = Depends(get_current_user)):
     """Get global alerts across all properties."""
-    return await alerts.get_global_alerts(current_user.tenant_id)
+    return await alerts.get_global_alerts(current_user)
 
 
 @router.get("/multi-property/dashboard")
 async def api_multi_property_dashboard(current_user: User = Depends(get_current_user)):
     """Get comprehensive multi-property dashboard."""
-    return await alerts.get_multi_property_dashboard(current_user.tenant_id)
+    return await alerts.get_multi_property_dashboard(current_user)
 
 
 # ═══════════════════════════════════════════════════════════

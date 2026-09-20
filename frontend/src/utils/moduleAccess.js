@@ -14,6 +14,7 @@ export const MODULE_SCOPES = Object.freeze([
   'hr',
   'invoice',
   'maintenance',
+  'multi_property',
   'pos',
   'procurement',
   'reports',
@@ -154,6 +155,7 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/minibar': ['pos'],
 
   '/app/tasks': ['tasks'],
+  '/app/multi-property': ['multi_property'],
 });
 
 const PREFIX_ROUTE_SCOPES = Object.freeze([
@@ -198,6 +200,7 @@ const NAV_KEY_SCOPES = Object.freeze({
   agency_content: ['channel_manager'],
   b2b_analytics: ['channel_manager'],
   integration_hub: ['channel_manager', 'invoice'],
+  multi_property: ['multi_property'],
   reports: ['reports'],
   reports_basic: ['reports'],
   report_builder: ['reports'],

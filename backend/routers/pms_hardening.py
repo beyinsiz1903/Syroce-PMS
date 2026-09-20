@@ -1047,27 +1047,39 @@ async def api_dashboard_trends(
 
 
 @router.get("/multi-property/audit-board", tags=["multi-property"])
-async def api_audit_status_board(current_user: User = Depends(get_current_user)):
+async def api_audit_status_board(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_night_audit")),
+):
     """Get multi-property night audit status board."""
-    return await mp_audit_svc.get_audit_status_board(current_user.tenant_id)
+    return await mp_audit_svc.get_audit_status_board(current_user)
 
 
 @router.get("/multi-property/exception-summary", tags=["multi-property"])
-async def api_exception_summary(current_user: User = Depends(get_current_user)):
+async def api_exception_summary(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_night_audit")),
+):
     """Get aggregated exception summary across properties."""
-    return await mp_audit_svc.get_exception_summary(current_user.tenant_id)
+    return await mp_audit_svc.get_exception_summary(current_user)
 
 
 @router.get("/multi-property/unresolved-blockers", tags=["multi-property"])
-async def api_unresolved_blockers(current_user: User = Depends(get_current_user)):
+async def api_unresolved_blockers(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_night_audit")),
+):
     """Get unresolved blockers across properties."""
-    return await mp_audit_svc.get_unresolved_blockers(current_user.tenant_id)
+    return await mp_audit_svc.get_unresolved_blockers(current_user)
 
 
 @router.get("/multi-property/readiness-score", tags=["multi-property"])
-async def api_readiness_score(current_user: User = Depends(get_current_user)):
+async def api_readiness_score(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_night_audit")),
+):
     """Get multi-property audit readiness score."""
-    return await mp_audit_svc.get_readiness_score(current_user.tenant_id)
+    return await mp_audit_svc.get_readiness_score(current_user)
 
 
 class EscalateRequest(BaseModel):
@@ -1082,7 +1094,7 @@ async def api_escalate_exception(
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Escalate an audit exception."""
-    result = await mp_audit_svc.escalate_exception(current_user.tenant_id, req.exception_id, current_user.id, req.note)
+    result = await mp_audit_svc.escalate_exception(current_user, req.exception_id, req.note)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     return result
