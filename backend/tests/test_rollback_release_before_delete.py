@@ -23,7 +23,6 @@ import pytest
 import pytest_asyncio
 
 import core.atomic_booking as atomic_booking
-from core.database import db
 from models.schemas import User
 
 TEST_TENANT = f"test-rollback437-{uuid.uuid4().hex[:8]}"
@@ -31,7 +30,7 @@ CHECK_IN = "2031-05-10"
 CHECK_OUT = "2031-05-12"  # 2 gece: 10, 11
 
 
-from core.tenant_db import clear_tenant_context, get_system_db, set_tenant_context
+from core.tenant_db import get_system_db, tenant_context
 
 
 async def _cleanup():
@@ -46,11 +45,9 @@ async def _cleanup():
 
 @pytest_asyncio.fixture(autouse=True)
 async def _around():
-    set_tenant_context(TEST_TENANT)
     await _cleanup()
     yield
     await _cleanup()
-    clear_tenant_context()
 
 
 class _StubRequest:
@@ -78,14 +75,15 @@ async def test_multiroom_rollback_keeps_booking_when_release_fails(monkeypatch):
 
     room1 = f"room1-{uuid.uuid4().hex[:6]}"
     room2 = f"room2-{uuid.uuid4().hex[:6]}"
-    await db.rooms.insert_many([
+    sys_db = get_system_db()
+    await sys_db.rooms.insert_many([
         {"id": room1, "tenant_id": TEST_TENANT, "room_number": "101"},
         {"id": room2, "tenant_id": TEST_TENANT, "room_number": "102"},
     ])
 
     # room2 için çakışan aktif booking → ikinci create_booking_atomic 409 verir.
     conflicting_id = str(uuid.uuid4())
-    await db.bookings.insert_one({
+    await sys_db.bookings.insert_one({
         "id": conflicting_id,
         "tenant_id": TEST_TENANT,
         "room_id": room2,
@@ -114,21 +112,22 @@ async def test_multiroom_rollback_keeps_booking_when_release_fails(monkeypatch):
 
     from fastapi import HTTPException
 
-    with pytest.raises(HTTPException) as exc:
-        await pms_bookings.create_multi_room_booking(
-            payload=payload, request=_StubRequest(), current_user=_user(), _perm=None
-        )
+    with tenant_context(TEST_TENANT):
+        with pytest.raises(HTTPException) as exc:
+            await pms_bookings.create_multi_room_booking(
+                payload=payload, request=_StubRequest(), current_user=_user(), _perm=None
+            )
     assert exc.value.status_code == 409
 
     # İlk odanın booking'i SİLİNMEMELİ (release patladı → orphan önlenir).
-    room1_bookings = await db.bookings.find(
+    room1_bookings = await sys_db.bookings.find(
         {"tenant_id": TEST_TENANT, "room_id": room1}
     ).to_list(10)
     assert len(room1_bookings) == 1, "release patlayınca booking silinmemeli"
     surviving_id = room1_bookings[0]["id"]
 
     # room1 kilitleri hâlâ sahipli olmalı (sahibi = hayatta kalan booking).
-    locks = await db.room_night_locks.find(
+    locks = await sys_db.room_night_locks.find(
         {"tenant_id": TEST_TENANT, "room_id": room1}
     ).to_list(10)
     assert locks, "room1 kilitleri var olmalı"
@@ -143,12 +142,13 @@ async def test_multiroom_rollback_deletes_booking_when_release_ok(monkeypatch):
 
     room1 = f"room1-{uuid.uuid4().hex[:6]}"
     room2 = f"room2-{uuid.uuid4().hex[:6]}"
-    await db.rooms.insert_many([
+    sys_db = get_system_db()
+    await sys_db.rooms.insert_many([
         {"id": room1, "tenant_id": TEST_TENANT, "room_number": "201"},
         {"id": room2, "tenant_id": TEST_TENANT, "room_number": "202"},
     ])
     conflicting_id = str(uuid.uuid4())
-    await db.bookings.insert_one({
+    await sys_db.bookings.insert_one({
         "id": conflicting_id,
         "tenant_id": TEST_TENANT,
         "room_id": room2,
@@ -171,18 +171,19 @@ async def test_multiroom_rollback_deletes_booking_when_release_ok(monkeypatch):
 
     from fastapi import HTTPException
 
-    with pytest.raises(HTTPException) as exc:
-        await pms_bookings.create_multi_room_booking(
-            payload=payload, request=_StubRequest(), current_user=_user(), _perm=None
-        )
+    with tenant_context(TEST_TENANT):
+        with pytest.raises(HTTPException) as exc:
+            await pms_bookings.create_multi_room_booking(
+                payload=payload, request=_StubRequest(), current_user=_user(), _perm=None
+            )
     assert exc.value.status_code == 409
 
     # release başarılı → ilk oda booking'i temizlendi, kilit kalmadı.
-    room1_bookings = await db.bookings.find(
+    room1_bookings = await sys_db.bookings.find(
         {"tenant_id": TEST_TENANT, "room_id": room1}
     ).to_list(10)
     assert room1_bookings == [], "release başarılıyken booking silinmeli"
-    locks = await db.room_night_locks.find(
+    locks = await sys_db.room_night_locks.find(
         {"tenant_id": TEST_TENANT, "room_id": room1}
     ).to_list(10)
     assert locks == [], "release başarılıyken kilit kalmamalı"
@@ -195,6 +196,7 @@ async def test_unmatched_hold_release_keeps_booking_when_release_fails(monkeypat
     from domains.channel_manager.providers import unmatched_hold
 
     ext = f"EXT-{uuid.uuid4().hex[:10]}"
+    sys_db = get_system_db()
     res = await unmatched_hold.create_unmatched_reservation_hold(
         provider="exely",
         tenant_id=TEST_TENANT,
@@ -223,11 +225,11 @@ async def test_unmatched_hold_release_keeps_booking_when_release_fails(monkeypat
     assert out["released"] is False
 
     # Hold booking SİLİNMEMELİ.
-    still = await db.bookings.find_one({"id": booking_id, "tenant_id": TEST_TENANT})
+    still = await sys_db.bookings.find_one({"id": booking_id, "tenant_id": TEST_TENANT})
     assert still is not None, "release patlayınca hold booking silinmemeli"
 
     # Kilitler hâlâ sahipli (orphan değil).
-    locks = await db.room_night_locks.find(
+    locks = await sys_db.room_night_locks.find(
         {"tenant_id": TEST_TENANT, "booking_id": booking_id}
     ).to_list(10)
     assert locks, "hold kilitleri var olmalı ve sahipli kalmalı"
