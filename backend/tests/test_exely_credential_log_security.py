@@ -11,7 +11,7 @@ import pytest
 from domains.channel_manager.providers import common_ingest
 from domains.channel_manager.providers.exely import exely_webhook_router
 from domains.channel_manager.providers.exely.client import ExelySoapTransport
-from domains.channel_manager.providers.exely.errors import ExelyParseError, ExelyPayloadError, ExelyValidationError
+from domains.channel_manager.providers.exely.errors import ExelyParseError, ExelyPayloadError, ExelyTemporaryError, ExelyValidationError
 from domains.channel_manager.providers.exely.observability import persist_outbound_log
 from domains.channel_manager.providers.exely.response_parser import parse_read_rs
 from domains.channel_manager.providers.exely.security import (
@@ -225,6 +225,26 @@ def test_http_error_does_not_retain_provider_body():
     rendered = str(exc_info.value)
     assert "guest@example.test" not in rendered
     assert "synthetic-provider-password" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_transport_retries_transient_dns_denial_but_keeps_ssrf_denial_permanent(monkeypatch):
+    from integrations.xchange.safety import EgressDenied
+
+    async def _dns_denied(*_args, **_kwargs):
+        raise EgressDenied("dns failure: temporary failure")
+
+    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", _dns_denied)
+    transport = ExelySoapTransport(EXELY_TEST_ENDPOINT_URL)
+    with pytest.raises(ExelyTemporaryError):
+        await transport.send_soap("<OTA/>", "OTA_HotelAvailRQ")
+
+    async def _ssrf_denied(*_args, **_kwargs):
+        raise EgressDenied("egress to private address blocked")
+
+    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", _ssrf_denied)
+    with pytest.raises(ExelyPayloadError):
+        await transport.send_soap("<OTA/>", "OTA_HotelAvailRQ")
 
 
 @pytest.mark.asyncio
