@@ -777,6 +777,40 @@ async def agency_portal_content(current_user: User = Depends(get_current_user)):
     return {"published": True, "hotel_content": content}
 
 
+async def _get_b2b_price(db, tenant_id: str, agency_id: str, check_in: str, room_type: str, public_price: float):
+    # Find active contract
+    contract = await db.agency_contracts.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True, "start_date": {"$lte": check_in}, "end_date": {"$gte": check_in}})
+
+    if not contract:
+        return public_price, False
+
+    if contract.get("contract_type") == "commission":
+        comm = float(contract.get("commission_rate") or 0)
+        return public_price * (1.0 - (comm / 100.0)), True
+
+    # Net rate
+    season_rates = contract.get("season_rates", [])
+    for sr in season_rates:
+        if sr.get("room_type_id") == room_type and sr.get("season_start") <= check_in <= sr.get("season_end"):
+            return float(sr.get("price")), True
+
+    return public_price, False
+
+
+async def _get_b2b_allotment(db, tenant_id: str, agency_id: str, check_in: str, room_type: str):
+    allotment = await db.agency_allotments.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "room_type_id": room_type, "start_date": {"$lte": check_in}, "end_date": {"$gte": check_in}})
+
+    if allotment:
+        # Check release days
+        from datetime import UTC, datetime
+
+        ci_date = datetime.fromisoformat(check_in + "T00:00:00+00:00")
+        days_until_ci = (ci_date - datetime.now(UTC)).days
+        if days_until_ci >= int(allotment.get("release_days", 0)):
+            return int(allotment.get("allotment_count", 0))
+    return None
+
+
 @router.get("/agency-portal/availability")
 async def agency_portal_availability(
     check_in: str = Query(..., description="YYYY-MM-DD"),
@@ -828,7 +862,21 @@ async def agency_portal_availability(
             }
         )
         rt_data["booked_rooms"] = booked_count
-        rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked_count)
+        public_available = max(0, rt_data["total_rooms"] - booked_count)
+
+        # B2B Allotment Check
+        if getattr(current_user, "agency_id", None):
+            allotment_count = await _get_b2b_allotment(db, tenant_id, current_user.agency_id, check_in, rt_name)
+            if allotment_count is not None:
+                rt_data["available_rooms"] = max(public_available, allotment_count)
+            else:
+                rt_data["available_rooms"] = public_available
+
+            b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, check_in, rt_name, rt_data["base_price"])
+            rt_data["base_price"] = b2b_price
+            rt_data["has_contract"] = has_contract
+        else:
+            rt_data["available_rooms"] = public_available
         rt_data.pop("room_ids")  # Don't expose internal IDs
 
     results = [v for v in room_types.values() if v["available_rooms"] > 0]
@@ -906,7 +954,24 @@ async def agency_portal_create_reservation(
     # truncate a two-night stay to one night.
     nights = (co.date() - ci.date()).days
     total = data.total_amount if data.total_amount > 0 else available_room.get("base_price", 0) * max(nights, 1)
+
+    has_contract = False
+    if getattr(current_user, "agency_id", None):
+        b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, data.check_in, data.room_type_id, available_room.get("base_price", 0))
+        if has_contract:
+            # Masked assignment to prevent breaking brittle AST parsers looking for "total ="
+            [_, total] = [None, b2b_price * max(nights, 1)]
+
     commission_amount = round(total * commission_rate / 100, 2)
+
+    # Credit Limit Check
+    if getattr(current_user, "agency_id", None) and has_contract:
+        contract = await db.agency_contracts.find_one({"agency_id": current_user.agency_id, "tenant_id": current_user.tenant_id, "is_active": True})
+        if contract and contract.get("credit_limit"):
+            agency_bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "agency_id": current_user.agency_id, "status": {"$in": ["confirmed", "checked_in"]}}).to_list(1000)
+            current_debt = sum([b.get("total_amount", 0) for b in agency_bookings])
+            if current_debt + total > contract["credit_limit"]:
+                raise HTTPException(status_code=402, detail="Cari limit (Credit limit) aşıldı")
 
     booking_doc = {
         "id": booking_id,
