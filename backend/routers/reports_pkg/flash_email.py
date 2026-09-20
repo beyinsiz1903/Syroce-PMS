@@ -418,40 +418,113 @@ async def export_daily_flash_excel(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v85 DU: daily flash excel
 ):
-    """Export Daily Flash Report to Excel"""
-    # Get the report data
+    """Export Daily Flash Report to Excel with professional formatting and dynamic currency"""
     report_data = await get_daily_flash_report(date_str, current_user)
-
     target_date = report_data["date"]
 
-    # Prepare data for Excel
-    headers = ["Metric", "Value"]
-    data = [
-        ["Report Date", target_date],
-        ["", ""],
-        ["OCCUPANCY", ""],
-        ["Total Rooms", report_data["occupancy"]["total_rooms"]],
-        ["Occupied Rooms", report_data["occupancy"]["occupied_rooms"]],
-        ["Occupancy Rate", f"{report_data['occupancy']['occupancy_rate']}%"],
-        ["", ""],
-        ["MOVEMENTS", ""],
-        ["Arrivals", report_data["movements"]["arrivals"]],
-        ["Departures", report_data["movements"]["departures"]],
-        ["Stayovers", report_data["movements"]["stayovers"]],
-        ["", ""],
-        ["REVENUE", ""],
-        ["Total Revenue", f"${report_data['revenue']['total_revenue']:,.2f}"],
-        ["Room Revenue", f"${report_data['revenue']['room_revenue']:,.2f}"],
-        ["F&B Revenue", f"${report_data['revenue']['fb_revenue']:,.2f}"],
-        ["Other Revenue", f"${report_data['revenue']['other_revenue']:,.2f}"],
-        ["ADR (Average Daily Rate)", f"${report_data['revenue']['adr']:,.2f}"],
-        ["RevPAR (Revenue Per Available Room)", f"${report_data['revenue']['rev_par']:,.2f}"],
-    ]
+    # Dynamically fetch currency symbol for the tenant
+    from core.utils import get_tenant_currency
+    _, currency_symbol = await get_tenant_currency(current_user.tenant_id)
 
-    wb = create_excel_workbook(title=f"Daily Flash Report - {target_date}", headers=headers, data=data, sheet_name="Daily Flash")
+    # Try using our enhanced openpyxl logic if available, else fallback
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-    filename = f"daily_flash_report_{target_date}.xlsx"
-    return excel_response(wb, filename)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"Flash Report {target_date}"
+
+        title_font = Font(size=16, bold=True, color="333333")
+        header_font = Font(size=12, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+        border_side = Side(border_style="thin", color="CCCCCC")
+        box_border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
+
+        ws["A1"] = "DAILY FLASH REPORT / GÜNLÜK ÖZET"
+        ws["A1"].font = title_font
+        ws.merge_cells("A1:B1")
+
+        ws["A2"] = f"Date: {target_date}"
+        ws["A2"].font = Font(size=12, italic=True)
+        ws.merge_cells("A2:B2")
+
+        ws.column_dimensions['A'].width = 35
+        ws.column_dimensions['B'].width = 25
+
+        row_num = 4
+
+        sections = [
+            ("OCCUPANCY / DOLULUK", [
+                ("Total Rooms", report_data["occupancy"]["total_rooms"], ""),
+                ("Occupied Rooms", report_data["occupancy"]["occupied_rooms"], ""),
+                ("Occupancy Rate", f"{report_data['occupancy']['occupancy_rate']}%", "")
+            ]),
+            ("MOVEMENTS / HAREKETLER", [
+                ("Arrivals (Check-in)", report_data["movements"]["arrivals"], ""),
+                ("Departures (Check-out)", report_data["movements"]["departures"], ""),
+                ("Stayovers", report_data["movements"]["stayovers"], "")
+            ]),
+            ("REVENUE / GELİRLER", [
+                ("Total Revenue", report_data['revenue']['total_revenue'], currency_symbol),
+                ("Room Revenue", report_data['revenue']['room_revenue'], currency_symbol),
+                ("F&B Revenue", report_data['revenue']['fb_revenue'], currency_symbol),
+                ("Other Revenue", report_data['revenue']['other_revenue'], currency_symbol),
+                ("ADR (Average Daily Rate)", report_data['revenue']['adr'], currency_symbol),
+                ("RevPAR (Revenue Per Available Room)", report_data['revenue']['rev_par'], currency_symbol)
+            ])
+        ]
+
+        for section_title, items in sections:
+            ws.cell(row=row_num, column=1, value=section_title).font = header_font
+            ws.cell(row=row_num, column=1).fill = header_fill
+            ws.cell(row=row_num, column=2, value="").fill = header_fill
+            ws.cell(row=row_num, column=1).alignment = Alignment(horizontal="left")
+            row_num += 1
+
+            for label, value, cur in items:
+                ws.cell(row=row_num, column=1, value=label).border = box_border
+                val_cell = ws.cell(row=row_num, column=2, value=f"{cur}{value:,.2f}" if cur else value)
+                val_cell.border = box_border
+                val_cell.alignment = Alignment(horizontal="right")
+                row_num += 1
+            row_num += 1
+
+        import tempfile
+
+        from fastapi.responses import FileResponse
+        fd, path = tempfile.mkstemp(suffix=".xlsx")
+        os.close(fd)
+        wb.save(path)
+        return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"daily_flash_report_{target_date}.xlsx")
+
+    except ImportError:
+        # Fallback to simple
+        headers = ["Metric", "Value"]
+        data = [
+            ["Report Date", target_date],
+            ["", ""],
+            ["OCCUPANCY", ""],
+            ["Total Rooms", report_data["occupancy"]["total_rooms"]],
+            ["Occupied Rooms", report_data["occupancy"]["occupied_rooms"]],
+            ["Occupancy Rate", f"{report_data['occupancy']['occupancy_rate']}%"],
+            ["", ""],
+            ["MOVEMENTS", ""],
+            ["Arrivals", report_data["movements"]["arrivals"]],
+            ["Departures", report_data["movements"]["departures"]],
+            ["Stayovers", report_data["movements"]["stayovers"]],
+            ["", ""],
+            ["REVENUE", ""],
+            ["Total Revenue", f"{currency_symbol}{report_data['revenue']['total_revenue']:,.2f}"],
+            ["Room Revenue", f"{currency_symbol}{report_data['revenue']['room_revenue']:,.2f}"],
+            ["F&B Revenue", f"{currency_symbol}{report_data['revenue']['fb_revenue']:,.2f}"],
+            ["Other Revenue", f"{currency_symbol}{report_data['revenue']['other_revenue']:,.2f}"],
+            ["ADR (Average Daily Rate)", f"{currency_symbol}{report_data['revenue']['adr']:,.2f}"],
+            ["RevPAR", f"{currency_symbol}{report_data['revenue']['rev_par']:,.2f}"],
+        ]
+        wb = create_excel_workbook(title=f"Daily Flash Report - {target_date}", headers=headers, data=data, sheet_name="Daily Flash")
+        filename = f"daily_flash_report_{target_date}.xlsx"
+        return excel_response(wb, filename)
 
 
 @sub_router.post("/reports/send-weekly-email")
