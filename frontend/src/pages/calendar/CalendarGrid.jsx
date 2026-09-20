@@ -7,7 +7,7 @@ import {
   getBookingStatusColor, getBookingStatus, getSourceColor,
   getUnassignedBookingsForType, computeUnassignedLanes,
   getUnassignedUrgency,
-  isBlockedRoomStatus, cellOccupancyStatus, getCellOccupancyTint,
+  isRoomBlockedForSaleOnDate, getRoomTypeCapacityForDate, cellOccupancyStatus, getCellOccupancyTint,
 } from "./calendarHelpers";
 import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
@@ -361,7 +361,8 @@ const CalendarGrid = ({
                           return isBookingOnDate(b, date);
                         });
                         const occupiedCount = assignedBookings.length + unassignedOnDate.length;
-                        const totalTypeRooms = typeRooms.length;
+                        const capacity = getRoomTypeCapacityForDate(typeRooms, date, roomBlocks);
+                        const totalTypeRooms = capacity.sellable;
                         const isFull = occupiedCount >= totalTypeRooms;
                         const dayKey = toDateStringUTC(date);
                         const configuredRate = dailyRates[`${roomType}|${dayKey}`];
@@ -377,12 +378,17 @@ const CalendarGrid = ({
                             <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
                               {displayRate > 0 ? `${displayRate.toLocaleString('tr-TR')} TL` : '-'}
                             </div>
-                            <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                            <div className="flex items-center justify-center gap-0.5 mt-0.5"
+                              title={`${occupiedCount} rezervasyon / ${totalTypeRooms} satılabilir oda · ${capacity.blocked} bloklu · ${capacity.total} toplam`}
+                            >
                               <div className={`w-1.5 h-1.5 rounded-full ${isFull ? 'bg-red-500' : occupiedCount > 0 ? 'bg-amber-500' : 'bg-green-500'}`}></div>
                               <span className={`text-[8px] font-bold ${isFull ? 'text-red-600' : occupiedCount > 0 ? 'text-amber-600' : 'text-green-700'}`}>
                                 {occupiedCount}/{totalTypeRooms}
                               </span>
                             </div>
+                            {capacity.blocked > 0 && (
+                              <div className="text-[9px] font-semibold text-slate-600">{capacity.blocked} bloklu</div>
+                            )}
                           </div>
                         );
                       })}
@@ -490,7 +496,7 @@ const CalendarGrid = ({
                     const laneCount = maxLane + 1;
                     const rowHeight = Math.max(CELL_H, laneCount * LANE_BAR_H + 4);
                     const hasBookingToday = roomBookings.some(b => isActiveOn(b, refTodayStr) && b.status !== 'checked_out');
-                    const roomBlockedStatus = isBlockedRoomStatus(room.status);
+                    const roomBlockedStatus = isRoomBlockedForSaleOnDate(room, refTodayStr, roomBlocks);
                     // Satır göstergesi nokta rengi, hücre tinti ile aynı önceliği izler:
                     // OOO/OOS (blocked, gri) > bugün dolu (occupied, kırmızı) > boş (yeşil).
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';

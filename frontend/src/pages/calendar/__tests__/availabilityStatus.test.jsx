@@ -15,6 +15,7 @@ import {
   getActiveBookingsForRoomOnDate,
   getRoomBlockForDate,
   normalizeRoomBlocksResponse,
+  getRoomTypeCapacityForDate,
 } from '../calendarHelpers';
 
 describe('normalizeRoomBlocksResponse', () => {
@@ -38,6 +39,31 @@ describe('room blocks', () => {
   it('başlangıçta bloklar, tekrar satışa açılma gününde engellemez', () => {
     expect(getRoomBlockForDate('room-201', '2026-09-20', blocks)).toEqual(blocks[0]);
     expect(getRoomBlockForDate('room-201', '2026-10-01', blocks)).toBeUndefined();
+  });
+});
+
+describe('sellable room-type capacity', () => {
+  const rooms = Array.from({ length: 7 }, (_, index) => ({ id: `r${index}`, status: 'available' }));
+  const block = { room_id: 'r0', status: 'active', start_date: '2026-09-20', end_date: '2026-10-01' };
+
+  it('subtracts the blocked room only during its half-open date range', () => {
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-19', [block]).sellable).toBe(7);
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-20', [block])).toEqual({ total: 7, blocked: 1, sellable: 6 });
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-30', [block]).sellable).toBe(6);
+    expect(getRoomTypeCapacityForDate(rooms, '2026-10-01', [block]).sellable).toBe(7);
+  });
+
+  it('ignores inactive, allow-sell and other room blocks without masking active blocks', () => {
+    const ignored = [{ ...block, allow_sell: true }, { ...block, status: 'cancelled' }, { ...block, room_id: 'other' }];
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-20', ignored).sellable).toBe(7);
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-20', [...ignored, block, block]).blocked).toBe(1);
+  });
+
+  it('supports open-ended blocks and unavailable room statuses without double subtraction', () => {
+    const unavailable = [{ ...rooms[0], status: 'out_of_order' }];
+    expect(getRoomTypeCapacityForDate(unavailable, '2026-09-20', [block])).toEqual({ total: 1, blocked: 1, sellable: 0 });
+    expect(getRoomTypeCapacityForDate(rooms, '2027-01-01', [{ ...block, end_date: null }]).sellable).toBe(6);
+    expect(getRoomTypeCapacityForDate([], '2026-09-20', [block]).sellable).toBe(0);
   });
 });
 
