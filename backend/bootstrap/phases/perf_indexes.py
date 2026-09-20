@@ -39,6 +39,13 @@ async def ensure_performance_indexes():
         # `idx_booking_overlap_check` (tenant_id, room_id, status, check_in,
         # check_out) prefix'i ile tamamen kapsanıyor. Kaldırıldı.
         ("guests", [("tenant_id", 1), ("vip", 1)], "idx_guest_vip", {}),
+                # Global Ops Visibility (Superadmin)
+        ("ops_events", [("severity", 1), ("created_at", -1)], "idx_ops_global_sev_created", {}),
+        ("ops_events", [("created_at", -1)], "idx_ops_global_created", {}),
+        ("webhook_deliveries", [("status", 1), ("created_at", -1)], "idx_wh_global_status_created", {}),
+        ("webhook_deliveries", [("created_at", -1)], "idx_wh_global_created", {}),
+        ("webhook_dlq", [("status", 1), ("created_at", -1)], "idx_wh_dlq_global_status_created", {}),
+
         ("folios", [("tenant_id", 1), ("status", 1), ("balance", 1)], "idx_folio_status_balance", {}),
         ("folios", [("tenant_id", 1), ("folio_type", 1), ("status", 1)], "idx_folio_type_status", {}),
         ("users", [("tenant_id", 1), ("email", 1)], "idx_user_email", {}),

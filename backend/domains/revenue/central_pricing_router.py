@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from core.audit import log_audit_event
 from core.security import get_current_user
 from core.tenant_db import get_system_db
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api/central-pricing", tags=["Central Pricing"])
@@ -83,30 +84,13 @@ def _money(value) -> float:
 
 
 async def _chain_context(current_user) -> tuple[str, list[dict]]:
-    tenant_id = current_user.tenant_id
-    own = await system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "is_chain_headquarters": 1},
-    )
-    chain_id = (own or {}).get("chain_id") or tenant_id
-    if (own or {}).get("chain_id"):
-        role = getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None))
-        is_hq = bool(getattr(current_user, "is_chain_headquarters", False) or (own or {}).get("is_chain_headquarters"))
-        if role != "super_admin" and not is_hq:
-            raise HTTPException(403, "Zincir fiyat yönetimi yalnız merkez tesis kullanıcılarına açıktır")
-        tenants = await system_db.tenants.find(
-            {"chain_id": chain_id},
-            {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
-        ).to_list(500)
-    else:
-        tenants = [own or {"tenant_id": tenant_id, "name": tenant_id}]
+    own, tenants = await resolve_chain_properties(current_user, require_headquarters=True, system_db=system_db)
+    chain_id = own.get("chain_id") or tenant_id_from_document(own)
     properties = [
         {
-            "tenant_id": row.get("tenant_id") or row.get("id"),
-            "property_name": row.get("hotel_name") or row.get("name") or row.get("tenant_id") or row.get("id"),
-        }
-        for row in tenants
-        if row.get("tenant_id") or row.get("id")
+            "tenant_id": tenant_id_from_document(t),
+            "property_name": t.get("property_name") or t.get("hotel_name") or t.get("name") or tenant_id_from_document(t)
+        } for t in tenants
     ]
     return chain_id, properties
 

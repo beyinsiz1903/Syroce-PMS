@@ -203,10 +203,23 @@ async def create_property(
     if not chain_id:
         chain_id = str(uuid.uuid4())
         new_chain = True
+        now_iso = datetime.now(UTC).isoformat()
+
+        # 1. Ana oteli 'zincir merkezi' olarak isaretle
         await _sys_db.tenants.update_one(
             {"$or": [{"tenant_id": current_user.tenant_id}, {"id": current_user.tenant_id}]},
-            {"$set": {"chain_id": chain_id}},
+            {"$set": {"chain_id": chain_id, "is_chain_headquarters": True}},
         )
+
+        # 2. Merkezi zincir (hotel_chains) kaydini olustur
+        chain_name = f"{own.get('property_name', 'Merkez')} Zinciri"
+        await _sys_db.hotel_chains.insert_one({
+            "id": chain_id,
+            "name": chain_name,
+            "headquarters_tenant_id": current_user.tenant_id,
+            "created_at": now_iso,
+            "status": "active"
+        })
 
     new_tid = str(uuid.uuid4())
     hotel_id = await _generate_unique_hotel_id()

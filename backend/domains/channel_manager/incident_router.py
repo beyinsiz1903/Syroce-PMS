@@ -59,7 +59,7 @@ async def list_incidents(
 ):
     """List operational incidents with filters."""
     query = {}
-    if current_user.role != "super_admin":
+    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
         query["tenant_id"] = current_user.tenant_id
 
     if status:
@@ -119,7 +119,7 @@ async def get_incident_detail(
 ):
     """Get full incident details with related data."""
     query = {"id": incident_id}
-    if current_user.role != "super_admin":
+    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
         query["tenant_id"] = current_user.tenant_id
 
     incident = await db[COLL_RECONCILIATION_CASES].find_one(
@@ -274,7 +274,7 @@ async def incident_summary(
 ):
     """Dashboard-level incident summary."""
     match_stage = {}
-    if current_user.role != "super_admin":
+    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
         match_stage["tenant_id"] = current_user.tenant_id
 
     pipeline = [

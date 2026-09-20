@@ -49,6 +49,7 @@ from core.security import get_current_user
 from core.tenant_db import get_system_db
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from shared_kernel.gl_periods import (
     GLPeriodError,
     assert_gl_period_open,
@@ -2776,65 +2777,26 @@ async def download_eledger_source_package(
     )
 
 
-async def _chain_properties(current_user: User) -> list[dict]:
-    tenant_id = _tenant_of(current_user)
-    own = await _system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {
-            "_id": 0,
-            "chain_id": 1,
-            "tenant_id": 1,
-            "id": 1,
-            "hotel_name": 1,
-            "name": 1,
-            "property_name": 1,
-            "is_chain_headquarters": 1,
-        },
-    )
-    chain_id = (own or {}).get("chain_id")
-    if not chain_id:
-        return [
-            {
-                "tenant_id": tenant_id,
-                "property_name": (own or {}).get("property_name") or (own or {}).get("hotel_name") or (own or {}).get("name") or tenant_id,
-            }
-        ]
-    tenants = await _system_db.tenants.find(
-        {"chain_id": chain_id},
-        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "property_name": 1},
-    ).to_list(500)
-    return [
-        {
-            "tenant_id": tenant.get("tenant_id") or tenant.get("id"),
-            "property_name": tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
-        }
-        for tenant in tenants
-        if tenant.get("tenant_id") or tenant.get("id")
-    ]
-
-
 async def _chain_scope(current_user: User) -> dict:
-    tenant_id = _tenant_of(current_user)
-    own = await _system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "is_chain_headquarters": 1},
-    )
-    chain_id = (own or {}).get("chain_id")
-    properties = await _chain_properties(current_user)
+    own, tenants = await resolve_chain_properties(current_user, require_headquarters=False, system_db=_system_db)
+    chain_id = own.get("chain_id")
     headquarters_tenant_id = None
     if chain_id:
-        chain = await _system_db.hotel_chains.find_one(
-            {"id": chain_id},
-            {"_id": 0, "headquarters_tenant_id": 1},
-        )
+        chain = await _system_db.hotel_chains.find_one({"id": chain_id}, {"_id": 0, "headquarters_tenant_id": 1})
         headquarters_tenant_id = (chain or {}).get("headquarters_tenant_id")
-        if not headquarters_tenant_id and (own or {}).get("is_chain_headquarters"):
-            headquarters_tenant_id = tenant_id
+        if not headquarters_tenant_id and own.get("is_chain_headquarters"):
+            headquarters_tenant_id = tenant_id_from_document(own)
+    properties = [
+        {
+            "tenant_id": tenant_id_from_document(t),
+            "property_name": t.get("property_name") or t.get("hotel_name") or t.get("name") or tenant_id_from_document(t)
+        } for t in tenants
+    ]
     return {
-        "tenant_id": tenant_id,
+        "tenant_id": tenant_id_from_document(own),
         "chain_id": chain_id,
         "properties": properties,
-        "headquarters_tenant_id": headquarters_tenant_id,
+        "headquarters_tenant_id": headquarters_tenant_id
     }
 
 
