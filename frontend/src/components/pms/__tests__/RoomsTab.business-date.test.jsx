@@ -90,4 +90,20 @@ describe('RoomsTab PMS business date', () => {
       expect(onDataRefresh).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('opens the same room-block action from a room-card context menu', () => {
+    render(
+      <RoomsTab
+        rooms={[room]}
+        bookings={[]}
+        businessDate="2026-08-28"
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('room-card-208'), { clientX: 120, clientY: 180 });
+
+    expect(screen.getByRole('menu', { name: 'Oda hızlı işlemleri' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Odayı blokla / arıza bildir' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Odayı satışa kapat');
+  });
 });
