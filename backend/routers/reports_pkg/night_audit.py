@@ -116,6 +116,18 @@ async def post_room_charges(
                     balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
                     await db.folios.update_one({"id": folio["id"], "tenant_id": current_user.tenant_id}, {"$set": {"balance": balance}})
 
+                    from core.audit import log_audit_event
+
+                    await log_audit_event(
+                        tenant_id=current_user.tenant_id,
+                        user_id=current_user.id,
+                        action="post_charge",
+                        entity_type="folio",
+                        entity_id=folio["id"],
+                        details=f"Night Audit: Added Room Charge of {charge_amount}",
+                        after_value=charge_dict,
+                    )
+
                     charges_posted += 1
                     total_amount += charge_amount
             except Exception as e:
@@ -363,6 +375,7 @@ async def automatic_posting(
                 await db.folios.insert_one(folio)
 
             # Post room charge
+            amount = booking.get("base_rate", booking.get("total_amount", 0) / max(1, booking.get("nights", 1)))
             room_charge = {
                 "id": str(uuid.uuid4()),
                 "tenant_id": current_user.tenant_id,
@@ -370,14 +383,34 @@ async def automatic_posting(
                 "booking_id": booking["id"],
                 "charge_category": "room",
                 "description": f"Room {booking.get('room_number', 'TBD')} - {audit_date}",
-                "amount": booking.get("base_rate", booking.get("total_amount", 0) / max(1, booking.get("nights", 1))),
-                "quantity": 1,
+                "unit_price": amount,
+                "quantity": 1.0,
+                "amount": amount,
+                "tax_amount": 0.0,
+                "total": amount,
+                "date": datetime.now(UTC).isoformat(),
                 "posted_at": datetime.now(UTC).isoformat(),
                 "posted_by": "night_audit_system",
                 "voided": False,
             }
 
             await db.folio_charges.insert_one(room_charge)
+
+            from core.audit import log_audit_event
+            from core.utils import calculate_folio_balance
+
+            new_balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
+            await db.folios.update_one({"id": folio["id"], "tenant_id": current_user.tenant_id}, {"$set": {"balance": new_balance}})
+
+            await log_audit_event(
+                tenant_id=current_user.tenant_id,
+                user_id=current_user.id,
+                action="post_charge",
+                entity_type="folio",
+                entity_id=folio["id"],
+                details=f"Night Audit: Added Room Charge of {amount}",
+                after_value=room_charge,
+            )
 
             # Post tax
             tax_amount = room_charge["amount"] * 0.10
@@ -469,34 +502,79 @@ async def handle_no_shows(
         room_id = booking.get("room_id")
         room_number = booking.get("room_number")
 
-        # Update booking status — v109 round-9 IDOR (defense-in-depth).
-        await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "no_show", "no_show_date": audit_date, "updated_at": datetime.now(UTC).isoformat()}})
-
         fee_posted = False
         folio_id = None
         folio_number = None
 
-        # Post no-show fee if configured
-        if charge_no_show_fee:
-            folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest"})
+        try:
+            from modules.reservations.repository import ReservationsRepository
+            from modules.reservations.services.update_reservation_service import UpdateReservationService
+            from shared_kernel.tenancy_context import PropertyContext, TenantContext
 
-            if folio:
-                folio_id = folio.get("id")
-                folio_number = folio.get("folio_number")
-                charge = {
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": current_user.tenant_id,
-                    "folio_id": folio_id,
-                    "booking_id": booking_id,
-                    "charge_category": "no_show_fee",
-                    "description": f"No-Show Fee - {audit_date}",
-                    "amount": no_show_fee,
-                    "posted_at": datetime.now(UTC).isoformat(),
-                    "voided": False,
-                }
-                await db.folio_charges.insert_one(charge)
-                total_charges += no_show_fee
-                fee_posted = True
+            repo = ReservationsRepository(db)
+            service = UpdateReservationService(repo)
+
+            tenant_ctx = TenantContext(tenant_id=current_user.tenant_id, role=current_user.role)
+            property_ctx = PropertyContext(property_id=None)
+
+            # This handles audit_log, inventory release, af_sadakat/capx events, etc.
+            await service.update_reservation(
+                booking_id=booking_id,
+                update_data={"status": "no_show", "no_show_date": audit_date},
+                tenant_context=tenant_ctx,
+                property_context=property_ctx,
+                current_user=current_user,
+                correlation_id=str(uuid.uuid4()),
+            )
+
+            # Post no-show fee if configured
+            if charge_no_show_fee:
+                folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest"})
+
+                if folio:
+                    from core.audit import log_audit_event
+                    from core.utils import calculate_folio_balance
+
+                    folio_id = folio.get("id")
+                    folio_number = folio.get("folio_number")
+                    charge = {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": current_user.tenant_id,
+                        "folio_id": folio_id,
+                        "booking_id": booking_id,
+                        "charge_category": "no_show_fee",
+                        "description": f"No-Show Fee - {audit_date}",
+                        "unit_price": no_show_fee,
+                        "quantity": 1.0,
+                        "amount": no_show_fee,
+                        "tax_amount": 0.0,
+                        "total": no_show_fee,
+                        "date": datetime.now(UTC).isoformat(),
+                        "posted_by": "SYSTEM",
+                        "voided": False,
+                    }
+                    await db.folio_charges.insert_one(charge)
+
+                    # Ensure balance is updated
+                    new_balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
+                    await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"$set": {"balance": new_balance}})
+
+                    # Emit audit log for the charge
+                    await log_audit_event(
+                        tenant_id=current_user.tenant_id,
+                        user_id=current_user.id,
+                        action="post_charge",
+                        entity_type="folio",
+                        entity_id=folio_id,
+                        details=f"Night Audit: Added No-Show fee of {no_show_fee}",
+                        after_value=charge,
+                    )
+
+                    total_charges += no_show_fee
+                    fee_posted = True
+        except Exception as e:
+            logger.error(f"Failed to process no_show for booking {booking_id}: {e}")
+            continue
 
         processed_count += 1
 
@@ -582,13 +660,37 @@ async def post_room_rates(
                 "id": str(uuid.uuid4()),
                 "tenant_id": current_user.tenant_id,
                 "folio_id": folio["id"],
+                "booking_id": booking["id"],
                 "charge_category": "room",
                 "description": f"Room Charge - {audit_date}",
+                "unit_price": rate,
+                "quantity": 1.0,
                 "amount": rate,
+                "tax_amount": 0.0,
+                "total": rate,
+                "date": datetime.now(UTC).isoformat(),
                 "posted_at": datetime.now(UTC).isoformat(),
+                "posted_by": "night_audit_system",
                 "voided": False,
             }
             await db.folio_charges.insert_one(charge)
+
+            from core.audit import log_audit_event
+            from core.utils import calculate_folio_balance
+
+            new_balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
+            await db.folios.update_one({"id": folio["id"], "tenant_id": current_user.tenant_id}, {"$set": {"balance": new_balance}})
+
+            await log_audit_event(
+                tenant_id=current_user.tenant_id,
+                user_id=current_user.id,
+                action="post_charge",
+                entity_type="folio",
+                entity_id=folio["id"],
+                details=f"Night Audit: Added Room Charge of {rate}",
+                after_value=charge,
+            )
+
             posted += 1
             total_amount += rate
 
@@ -628,13 +730,37 @@ async def post_taxes(
                 "id": str(uuid.uuid4()),
                 "tenant_id": current_user.tenant_id,
                 "folio_id": folio["id"],
+                "booking_id": booking["id"],
                 "charge_category": "tax",
                 "description": f"Room Tax ({tax_rate * 100}%) - {audit_date}",
+                "unit_price": tax_amount,
+                "quantity": 1.0,
                 "amount": tax_amount,
+                "tax_amount": 0.0,
+                "total": tax_amount,
+                "date": datetime.now(UTC).isoformat(),
                 "posted_at": datetime.now(UTC).isoformat(),
+                "posted_by": "night_audit_system",
                 "voided": False,
             }
             await db.folio_charges.insert_one(charge)
+
+            from core.audit import log_audit_event
+            from core.utils import calculate_folio_balance
+
+            new_balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
+            await db.folios.update_one({"id": folio["id"], "tenant_id": current_user.tenant_id}, {"$set": {"balance": new_balance}})
+
+            await log_audit_event(
+                tenant_id=current_user.tenant_id,
+                user_id=current_user.id,
+                action="post_charge",
+                entity_type="folio",
+                entity_id=folio["id"],
+                details=f"Night Audit: Added Tax Charge of {tax_amount}",
+                after_value=charge,
+            )
+
             posted += 1
             total_tax += tax_amount
 
