@@ -24,6 +24,7 @@ from pymongo.write_concern import WriteConcern
 from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import client, db
 from core.tenant_db import tenant_context
+from shared_kernel.audit_helper import audit_log
 
 logger = logging.getLogger("core.atomic_checkin_checkout")
 
@@ -189,21 +190,19 @@ async def check_in_booking_atomic(
             raise CheckInError(f"Room {room.get('room_number')} status changed during check-in (concurrent state mutation; check-in aborted to prevent overbook)")
 
         # ── 6. Audit log ──
-        audit_doc = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "entity_type": "booking",
-            "entity_id": booking_id,
-            "action": "check_in_completed",
-            "performed_by": actor_id,
-            "metadata": {
+        await audit_log(
+            actor_id=actor_id,
+            tenant_id=tenant_id,
+            entity_type="booking",
+            entity_id=booking_id,
+            action="check_in_completed",
+            metadata={
                 "room_id": room_id,
                 "room_number": room.get("room_number"),
                 "override_reason": override_reason,
             },
-            "timestamp": now_iso,
-        }
-        await db.pms_audit_trail.insert_one(audit_doc, session=session)
+            session=session,
+        )
 
         # ── 7. Outbox event ──
         outbox_doc = {
@@ -465,21 +464,19 @@ async def check_out_booking_atomic(
                 await db.housekeeping_tasks.insert_one(hk_doc, session=session)
 
         # ── 7. Audit log ──
-        audit_doc = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "entity_type": "booking",
-            "entity_id": booking_id,
-            "action": "check_out_completed",
-            "performed_by": actor_id,
-            "metadata": {
+        await audit_log(
+            actor_id=actor_id,
+            tenant_id=tenant_id,
+            entity_type="booking",
+            entity_id=booking_id,
+            action="check_out_completed",
+            metadata={
                 "room_id": room_id,
                 "forced": force,
                 "released_locks_count": released_locks_count,
             },
-            "timestamp": now_iso,
-        }
-        await db.pms_audit_trail.insert_one(audit_doc, session=session)
+            session=session,
+        )
 
         # ── 8. Outbox event ──
         outbox_doc = {

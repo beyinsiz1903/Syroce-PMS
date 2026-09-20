@@ -38,6 +38,7 @@ async def audit_log(
     metadata: dict[str, Any] | None = None,
     property_id: str | None = None,
     correlation_id: str | None = None,
+    session=None,
 ) -> dict[str, Any]:
     entry = build_audit_entry(
         actor_id=actor_id,
@@ -49,5 +50,8 @@ async def audit_log(
         property_id=property_id,
         correlation_id=correlation_id,
     )
-    await db.audit_logs.insert_one(entry)
+    if session:
+        await db.audit_logs.insert_one(entry, session=session)
+    else:
+        await db.audit_logs.insert_one(entry)
     return entry
