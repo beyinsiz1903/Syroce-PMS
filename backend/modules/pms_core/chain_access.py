@@ -25,6 +25,7 @@ async def resolve_chain_properties(
     *,
     require_headquarters: bool = True,
     include_archived: bool = False,
+    system_db=None,
 ) -> tuple[dict, list[dict]]:
     """Return the caller's own property and permitted chain properties.
 
@@ -36,7 +37,10 @@ async def resolve_chain_properties(
     if not tenant_id:
         raise HTTPException(status_code=403, detail="Otel bağlamı gerekli")
 
-    system_db = get_system_db()
+    # Explicit injection keeps central-office services on the same database
+    # handle as their subsequent financial reads.  Production callers omit it;
+    # isolated tests and controlled workers can provide their scoped handle.
+    system_db = system_db or get_system_db()
     own = await system_db.tenants.find_one(
         {"$or": [{"id": tenant_id}, {"tenant_id": tenant_id}]},
         {"_id": 0},
@@ -48,15 +52,24 @@ async def resolve_chain_properties(
     if not chain_id:
         return own, [own]
 
-    if require_headquarters and not (own.get("is_chain_headquarters") or _is_super_admin(current_user)):
+    # Older tenants stored the headquarters flag on the authenticated user
+    # record, while newer provisioning writes it on the tenant document.  Both
+    # values are server-authenticated context, so accepting either preserves
+    # the invariant without turning a request parameter into authority.
+    is_headquarters = bool(own.get("is_chain_headquarters") or getattr(current_user, "is_chain_headquarters", False))
+    if require_headquarters and not (is_headquarters or _is_super_admin(current_user)):
         raise HTTPException(status_code=403, detail="Zincir görünümü yalnızca merkez tesis yetkililerine açıktır")
 
     query: dict = {"chain_id": chain_id}
     if not include_archived:
         query["subscription_status"] = {"$ne": "archived"}
-    members = await system_db.tenants.find(query, {"_id": 0}).sort("property_name", 1).to_list(500)
+    cursor = system_db.tenants.find(query, {"_id": 0})
+    if hasattr(cursor, "sort"):
+        cursor = cursor.sort("property_name", 1)
+    members = await cursor.to_list(500)
 
     # Defensive invariant: never return a malformed document from another
     # tenant, even if a legacy query/mock returns it.
     members = [member for member in members if member.get("chain_id") == chain_id and tenant_id_from_document(member)]
+    members.sort(key=lambda member: (member.get("property_name") or member.get("hotel_name") or "").casefold())
     return own, members or [own]

@@ -67,7 +67,11 @@ async def upsell_products(
 async def _central_chain_properties(current_user) -> list[dict]:
     from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 
-    _own, tenants = await resolve_chain_properties(current_user, require_headquarters=True)
+    _own, tenants = await resolve_chain_properties(
+        current_user,
+        require_headquarters=True,
+        system_db=_system_db,
+    )
     return [
         {
             "tenant_id": tenant_id_from_document(tenant),
