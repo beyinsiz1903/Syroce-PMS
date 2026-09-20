@@ -778,6 +778,8 @@ async def swap_booking_rooms(
             target_booking_id=payload.target_booking_id,
             reason=payload.reason.strip(),
             moved_by=current_user.name,
+            actor_id=current_user.id,
+            is_impersonating=getattr(current_user, "is_impersonating", False),
         )
     except RoomSwapError as exc:
         raise HTTPException(
