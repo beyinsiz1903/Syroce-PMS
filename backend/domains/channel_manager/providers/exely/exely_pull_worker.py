@@ -17,6 +17,7 @@ from core.tenant_db import clear_tenant_context, set_tenant_context
 from core.transient_db_guard import TransientFailureTracker, is_transient_db_error
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.auto_import import auto_import_pending
+from domains.channel_manager.providers.exely.errors import ExelyValidationError
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.production_safety import reservation_sync_block_reason
 from domains.channel_manager.providers.exely.provider import ExelyProvider
@@ -43,6 +44,38 @@ def _record_scheduler_error(exc: BaseException, key: str, context: str) -> None:
         _transient_tracker.log_exception(logger, exc, key, context=context)
         return
     logger.error("[EXELY-PULL] %s failed exception_class=%s", context, type(exc).__name__)
+
+
+async def _record_configuration_error(tenant_id: str, error: ExelyValidationError) -> None:
+    """Expose invalid connection routing without turning each scheduler tick into an outage.
+
+    A validation failure happens before any provider request.  Retrying it once a
+    minute cannot recover it; it needs an operator to correct the saved mode or
+    endpoint.  Persist only a stable, non-secret error code so the connection
+    status API can surface the action required, and keep the scheduler alive for
+    every other tenant.
+    """
+    error_code = "EXELY_CONNECTION_CONFIGURATION_INVALID"
+    try:
+        await db.exely_connections.update_one(
+            {"tenant_id": tenant_id, "is_active": True},
+            {
+                "$set": {
+                    "last_sync_status": "configuration_error",
+                    "last_sync_error": error_code,
+                    "last_sync_error_at": datetime.now(UTC).isoformat(),
+                }
+            },
+        )
+    except Exception as exc:
+        _record_scheduler_error(exc, safe_fingerprint(tenant_id), "configuration_error_persist")
+        return
+    logger.warning(
+        "[EXELY-PULL] tenant_pull_blocked reason=%s field=%s tenant=%s",
+        error_code,
+        error.field or "unspecified",
+        safe_fingerprint(tenant_id),
+    )
 
 
 class ExelyPullScheduler:
@@ -147,11 +180,28 @@ class ExelyPullScheduler:
                     connection_mode=conn.get("mode", ""),
                     safety_window_minutes=safety_window_minutes,
                 )
+            except ExelyValidationError as exc:
+                await _record_configuration_error(tenant_id, exc)
+                # This is a saved-connection defect, not a transient provider
+                # or database outage.  Do not carry a transient failure streak
+                # into a later, unrelated connection problem.
+                _transient_tracker.reset(key)
             except Exception as e:
                 # Preserve transient streak tracking without serializing exception details.
                 _record_scheduler_error(e, key, "tenant_pull")
             else:
                 _transient_tracker.reset(key)
+                if conn.get("last_sync_status") == "configuration_error":
+                    await db.exely_connections.update_one(
+                        {"tenant_id": tenant_id, "is_active": True},
+                        {
+                            "$unset": {
+                                "last_sync_status": "",
+                                "last_sync_error": "",
+                                "last_sync_error_at": "",
+                            }
+                        },
+                    )
             finally:
                 clear_tenant_context()
 
