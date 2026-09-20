@@ -74,7 +74,10 @@ export default function RoomBlockDialog({ open, onOpenChange, rooms = [], defaul
       }, { headers: { 'Idempotency-Key': idempotencyKey('room-block-create') } });
       toast.success(`Oda ${selectedRoom?.room_number || ''} satışa kapatıldı.`);
       await refreshBlocks();
-      onChanged?.();
+      // Wait for the owning view to fetch the new block before closing. This
+      // prevents a successful toast followed by stale room/calendar cards.
+      await onChanged?.();
+      onOpenChange(false);
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Oda bloklanamadı.');
     } finally {
@@ -91,7 +94,7 @@ export default function RoomBlockDialog({ open, onOpenChange, rooms = [], defaul
       });
       toast.success('Oda bloğu kaldırıldı.');
       await refreshBlocks();
-      onChanged?.();
+      await onChanged?.();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Oda bloğu kaldırılamadı.');
     } finally {

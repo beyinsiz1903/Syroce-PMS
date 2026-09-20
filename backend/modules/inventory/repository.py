@@ -76,6 +76,31 @@ class InventoryRepository:
             {"_id": 0},
         ).to_list(100)
 
+    async def find_matching_active_room_block(
+        self,
+        tenant_id: str,
+        room_id: str,
+        block_type: str,
+        reason: str,
+        start_date: str,
+        end_date: str | None,
+        allow_sell: bool,
+    ) -> dict[str, Any] | None:
+        """Return an existing semantic duplicate created by a repeated UI submit."""
+        return await db.room_blocks.find_one(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "type": block_type,
+                "reason": reason,
+                "start_date": start_date,
+                "end_date": end_date,
+                "allow_sell": allow_sell,
+                "status": "active",
+            },
+            {"_id": 0},
+        )
+
     async def insert_room_block(self, block_doc: dict[str, Any]) -> None:
         await db.room_blocks.insert_one(block_doc)
 

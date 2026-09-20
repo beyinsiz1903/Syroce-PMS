@@ -13,7 +13,33 @@ import {
   getCellOccupancyTint,
   isRoomOccupiedOnDay,
   getActiveBookingsForRoomOnDate,
+  getRoomBlockForDate,
+  normalizeRoomBlocksResponse,
 } from '../calendarHelpers';
+
+describe('normalizeRoomBlocksResponse', () => {
+  it('endpointin ham dizi yanıtını korur', () => {
+    const blocks = [{ id: 'block-1' }];
+    expect(normalizeRoomBlocksResponse(blocks)).toBe(blocks);
+  });
+
+  it('eski blocks zarfını destekler ve geçersiz yanıtta boş dizi döner', () => {
+    expect(normalizeRoomBlocksResponse({ blocks: [{ id: 'block-1' }] })).toEqual([{ id: 'block-1' }]);
+    expect(normalizeRoomBlocksResponse(undefined)).toEqual([]);
+  });
+});
+
+describe('room blocks', () => {
+  const blocks = [{
+    id: 'block-1', room_id: 'room-201', status: 'active',
+    start_date: '2026-09-20', end_date: '2026-10-01',
+  }];
+
+  it('başlangıçta bloklar, tekrar satışa açılma gününde engellemez', () => {
+    expect(getRoomBlockForDate('room-201', '2026-09-20', blocks)).toEqual(blocks[0]);
+    expect(getRoomBlockForDate('room-201', '2026-10-01', blocks)).toBeUndefined();
+  });
+});
 
 describe('normalizeOccupancyStatus', () => {
   it('bilinen değerleri normalize eder, boşluk/büyük-küçük harfe toleranslı', () => {
