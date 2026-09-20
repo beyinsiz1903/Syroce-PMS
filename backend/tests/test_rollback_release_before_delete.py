@@ -20,6 +20,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+import pytest_asyncio
 
 import core.atomic_booking as atomic_booking
 from core.database import db
@@ -30,7 +31,8 @@ CHECK_IN = "2031-05-10"
 CHECK_OUT = "2031-05-12"  # 2 gece: 10, 11
 
 
-from core.tenant_db import get_system_db
+from core.tenant_db import clear_tenant_context, get_system_db, set_tenant_context
+
 
 async def _cleanup():
     sys_db = get_system_db()
@@ -42,9 +44,7 @@ async def _cleanup():
     await sys_db.notifications.delete_many({"tenant_id": TEST_TENANT})
 
 
-from core.tenant_db import set_tenant_context, clear_tenant_context
-
-@pytest.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def _around():
     set_tenant_context(TEST_TENANT)
     await _cleanup()
