@@ -89,6 +89,9 @@ class Promotion(BaseModel):
     valid_until: str | None = None  # ISO date string
 
 
+from pydantic import model_validator
+from typing import Any
+
 class ProductIn(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     description: str | None = None
@@ -105,6 +108,28 @@ class ProductIn(BaseModel):
     promotions: list[Promotion] = Field(default_factory=list)
     lead_time_days: int = Field(default=0, ge=0, le=365)  # ortalama teslim süresi
     payment_terms_days: int = Field(default=0, ge=0, le=365)  # vade (0 = peşin)
+    attributes: dict[str, Any] = Field(default_factory=dict, description="Kategoriye özel teknik spesifikasyonlar (gram, tel, vs.)")
+
+    @model_validator(mode="after")
+    def validate_category_attributes(self) -> 'ProductIn':
+        cat = self.category
+        attrs = self.attributes
+
+        # Banyo (Örn: Havlu, Bornoz) zorunlu alanlar
+        if cat == "banyo" and "havlu" in self.name.lower():
+            if "gram_m2" not in attrs:
+                raise ValueError("Banyo tekstili (Havlu vb.) için 'gram_m2' (m² gramajı) bilgisi zorunludur.")
+            if "materyal" not in attrs:
+                raise ValueError("Banyo tekstili için 'materyal' (%100 Pamuk vb.) bilgisi zorunludur.")
+
+        # Yatak Tekstili (Örn: Çarşaf, Nevresim) zorunlu alanlar
+        if cat == "yatak_tekstil":
+            if "tel_sayisi" not in attrs:
+                raise ValueError("Yatak tekstili için 'tel_sayisi' (Örn: 57 Tel, 83 Tel) bilgisi zorunludur.")
+            if "materyal" not in attrs:
+                raise ValueError("Yatak tekstili için 'materyal' (%100 Pamuk, %80 Pamuk / %20 Poly vs.) bilgisi zorunludur.")
+
+        return self
 
 
 class ProductOut(ProductIn):
