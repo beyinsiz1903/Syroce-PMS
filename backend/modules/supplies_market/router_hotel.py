@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from core.security import get_current_user
 from modules.pms_core.role_permission_service import require_op  # v99 DW
 
-from .models import CompareResponse, OrderCreate, OrderOut, ProductOut
-from .repository import orders_col, products_col, vendors_col
+from .models import CompareResponse, OrderCreate, OrderOut, ProductOut, VendorContractOut
+from .repository import contracts_col, orders_col, products_col, vendors_col
 from .service import place_order, public_product, resolve_effective_price
 
 logger = logging.getLogger(__name__)
@@ -213,4 +213,66 @@ async def confirm_delivery(
     doc["status"] = "delivered"
     doc["updated_at"] = now
     doc.pop("_id", None)
+    return doc
+
+
+# ── B2B Contracts (Cari Anlaşmalar) ──────────────────────────────────────────
+@router.get("/contracts", response_model=list[VendorContractOut])
+async def list_hotel_contracts(
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_procurement")),
+):
+    docs = await contracts_col.find({"hotel_tenant_id": current_user.tenant_id}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@router.post("/contracts/{contract_id}/accept", response_model=VendorContractOut)
+async def accept_hotel_contract(
+    contract_id: str,
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    doc = await contracts_col.find_one({"id": contract_id, "hotel_tenant_id": current_user.tenant_id})
+    if not doc:
+        raise HTTPException(404, "Anlaşma bulunamadı")
+    if doc.get("status") != "pending":
+        raise HTTPException(400, "Sadece beklemedeki anlaşmalar onaylanabilir")
+
+    # Update contract status
+    from .models import _utc_now_iso
+
+    now = _utc_now_iso()
+    await contracts_col.update_one({"id": contract_id}, {"$set": {"status": "active", "updated_at": now}})
+    doc["status"] = "active"
+    doc["updated_at"] = now
+
+    # Automatically register this vendor in the hotel's local procurement system
+    vendor = await vendors_col.find_one({"id": doc["vendor_id"]})
+    if vendor:
+        from core.tenant_db import get_system_db
+
+        sysdb = get_system_db()
+        local_sup = await sysdb.proc_suppliers.find_one({"tenant_id": current_user.tenant_id, "mp_vendor_id": vendor["id"]})
+        if not local_sup:
+            import uuid
+
+            sysdb.proc_suppliers.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": current_user.tenant_id,
+                    "name": vendor.get("company_name"),
+                    "code": f"B2B-{vendor.get('tax_no', vendor['id'][:6])}",
+                    "tax_no": vendor.get("tax_no"),
+                    "contact_name": vendor.get("contact_name"),
+                    "email": vendor.get("email"),
+                    "phone": vendor.get("phone"),
+                    "payment_terms_days": doc["payment_terms_days"],
+                    "credit_limit": doc["credit_limit_try"],
+                    "mp_vendor_id": vendor["id"],  # Link to global marketplace vendor
+                    "active": True,
+                }
+            )
+        else:
+            sysdb.proc_suppliers.update_one({"_id": local_sup["_id"]}, {"$set": {"payment_terms_days": doc["payment_terms_days"], "credit_limit": doc["credit_limit_try"], "active": True}})
+
     return doc
