@@ -17,13 +17,15 @@ from .models import (
     ProductIn,
     ProductOut,
     ShipmentInfo,
+    VendorContractIn,
+    VendorContractOut,
     VendorLogin,
     VendorPublic,
     VendorRegister,
     VendorTokenResponse,
     _utc_now_iso,
 )
-from .repository import orders_col, products_col, vendors_col
+from .repository import contracts_col, orders_col, products_col, vendors_col
 from .service import DEFAULT_COMMISSION_PCT, public_product, public_vendor
 from .vendor_auth import (
     create_vendor_token,
@@ -391,3 +393,50 @@ async def vendor_cancel_order(order_id: str, vendor_id: str = Depends(get_curren
     doc["status"] = "cancelled"
     doc["updated_at"] = now
     return _order_to_out(doc)
+
+
+# ── Contracts (Cari Anlaşmalar) ──────────────────────────────────────────────
+@router.post("/contracts", response_model=VendorContractOut)
+async def vendor_propose_contract(
+    payload: VendorContractIn,
+    vendor_id: str = Depends(get_current_vendor_id),
+):
+    vendor = await vendors_col.find_one({"id": vendor_id})
+    if not vendor or vendor.get("status") != "approved":
+        raise HTTPException(403, "Onaylı bir satıcı değilsiniz.")
+
+    # Otelin adını bul (tenant_id'den)
+    from core.tenant_db import get_system_db
+
+    sysdb = get_system_db()
+    tenant = await sysdb.organizations.find_one({"id": payload.hotel_tenant_id})
+    if not tenant:
+        raise HTTPException(404, "Otel bulunamadı.")
+
+    existing = await contracts_col.find_one({"vendor_id": vendor_id, "hotel_tenant_id": payload.hotel_tenant_id})
+    if existing:
+        raise HTTPException(409, "Bu otel ile zaten bir anlaşmanız veya beklemede olan bir teklifiniz var.")
+
+    now = _utc_now_iso()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "vendor_id": vendor_id,
+        "hotel_tenant_id": payload.hotel_tenant_id,
+        "hotel_name": tenant.get("name", "Bilinmeyen Otel"),
+        "credit_limit_try": payload.credit_limit_try,
+        "payment_terms_days": payload.payment_terms_days,
+        "discount_pct": payload.discount_pct,
+        "status": "pending",
+        "created_at": now,
+        "updated_at": now,
+    }
+    await contracts_col.insert_one(doc)
+    return doc
+
+
+@router.get("/contracts", response_model=list[VendorContractOut])
+async def vendor_list_contracts(
+    vendor_id: str = Depends(get_current_vendor_id),
+):
+    docs = await contracts_col.find({"vendor_id": vendor_id}).sort("created_at", -1).to_list(1000)
+    return docs

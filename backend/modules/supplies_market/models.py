@@ -89,8 +89,10 @@ class Promotion(BaseModel):
     valid_until: str | None = None  # ISO date string
 
 
-from pydantic import model_validator
 from typing import Any
+
+from pydantic import model_validator
+
 
 class ProductIn(BaseModel):
     name: str = Field(min_length=2, max_length=200)
@@ -111,7 +113,7 @@ class ProductIn(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict, description="Kategoriye özel teknik spesifikasyonlar (gram, tel, vs.)")
 
     @model_validator(mode="after")
-    def validate_category_attributes(self) -> 'ProductIn':
+    def validate_category_attributes(self) -> "ProductIn":
         cat = self.category
         attrs = self.attributes
 
@@ -223,3 +225,20 @@ class OrderOut(BaseModel):
 class OrderStatusUpdate(BaseModel):
     status: Literal["confirmed", "cancelled"]
     reason: str | None = None
+
+
+# ── B2B Cari Anlaşmalar (Contracts) ──────────────────────────────────────────
+class VendorContractIn(BaseModel):
+    hotel_tenant_id: str
+    credit_limit_try: float = Field(ge=0)
+    payment_terms_days: int = Field(default=30, ge=0, le=365)
+    discount_pct: float = Field(default=0, ge=0, le=50)
+
+
+class VendorContractOut(VendorContractIn):
+    id: str
+    vendor_id: str
+    hotel_name: str
+    status: Literal["pending", "active", "cancelled"]
+    created_at: str
+    updated_at: str
