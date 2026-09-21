@@ -135,6 +135,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: regenerated-store-assets
           path: |
             mobile/store/screenshots
