@@ -29,6 +29,8 @@ import {
   Utensils, Briefcase, ConciergeBell, BedDouble } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
+import AppLauncher from '@/components/AppLauncher';
+
 import NotificationBell from '@/components/NotificationBell';
 import NightScreen from '@/components/NightScreen';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -615,6 +617,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 <LanguageSelector />
               </div>
               <PushSubscriptionManager />
+              <AppLauncher user={user} />
               <NotificationBell />
               <ThemeToggle />
               <NightScreen />
