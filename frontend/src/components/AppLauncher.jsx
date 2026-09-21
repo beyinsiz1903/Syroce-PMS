@@ -14,8 +14,8 @@ import { useTranslation } from 'react-i18next';
 export default function AppLauncher({ user }) {
   const { t } = useTranslation();
 
-  // Yalnızca süper admin veya zincir yöneticilerine göster (isterseniz herkese açabilirsiniz)
-  const isSuperAdmin = user?.role === 'super_admin' || user?.role === 'chain_admin';
+  // Yalnızca süper admine göster (kesin kural)
+  const isSuperAdmin = user?.role === 'super_admin';
   if (!isSuperAdmin) return null;
 
   const apps = [
