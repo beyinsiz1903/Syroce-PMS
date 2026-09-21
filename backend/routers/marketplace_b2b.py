@@ -944,6 +944,40 @@ async def agency_create_reservation(
         # through create_booking_atomic.
         try:
             booking_doc = await create_booking_atomic(tenant_id=data.tenant_id, booking_doc=booking_doc)
+
+            # ---- FOLIO CREATION ----
+            from models.schemas import Folio, FolioType
+
+            folio = Folio(
+                id=_uuid(),
+                tenant_id=data.tenant_id,
+                booking_id=booking_id,
+                folio_type=FolioType.GUEST,
+                guest_id=guest_id,
+            )
+            folio_dict = folio.model_dump()
+            folio_dict["created_at"] = folio_dict["created_at"].isoformat()
+            await db.folios.insert_one(folio_dict)
+
+            # ---- BROADCAST & OUTBOX ----
+            try:
+                from routers.pms_bookings import _publish_multi_room_booking_created_events
+
+                property_id = data.tenant_id
+                await _publish_multi_room_booking_created_events(
+                    tenant_id=data.tenant_id,
+                    property_id=property_id,
+                    bookings=[booking_doc],
+                )
+                from core.ws_rooms import tenant_broadcast_room
+                from websocket_server import sio
+
+                await sio.emit("booking_created", {"booking": booking_doc}, room=tenant_broadcast_room(data.tenant_id))
+            except Exception as e:
+                import logging
+
+                logging.getLogger("marketplace").warning(f"Failed to publish B2B booking events: {e}")
+
         except BookingConflictError as conflict_err:
             raise HTTPException(status_code=409, detail=str(conflict_err))
 
