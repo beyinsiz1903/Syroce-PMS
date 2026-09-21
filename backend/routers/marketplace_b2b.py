@@ -40,15 +40,18 @@ router = APIRouter(prefix="/api/marketplace/v1", tags=["Marketplace v1"])
 
 # ─── Global Extranet UI ───────────────────────────────────────────────────
 
+
 class MarketplaceLoginRequest(BaseModel):
     email: str
     password: str
+
 
 @router.post("/extranet/auth/login")
 async def marketplace_extranet_login(req: MarketplaceLoginRequest):
     """Global B2B Extranet arayüzü (Marketplace UI) için giriş."""
     from core.security import create_token
     from security.passwords import verify_password
+
     sysdb = get_system_db()
 
     # Global users (tenant_id = null or "SYROCE_GLOBAL" etc.)
@@ -74,28 +77,17 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest):
 
     return {
         "token": token,
-        "user": {
-            "id": user["id"],
-            "name": user.get("name", ""),
-            "email": user.get("email", ""),
-            "role": "marketplace_agent",
-            "agency_id": user["agency_id"]
-        },
-        "agency": {
-            "id": agency["id"],
-            "name": agency.get("name", "")
-        }
+        "user": {"id": user["id"], "name": user.get("name", ""), "email": user.get("email", ""), "role": "marketplace_agent", "agency_id": user["agency_id"]},
+        "agency": {"id": agency["id"], "name": agency.get("name", "")},
     }
+
 
 @router.get("/extranet/my-hotels")
 async def marketplace_my_hotels(agency: dict = Depends(get_marketplace_agency)):
     """Acentenin aktif sözleşmesi olan otelleri listeler."""
     sysdb = get_system_db()
     # Query all active contracts for this global agency across all tenants
-    contracts = await sysdb.agency_contracts.find({
-        "agency_id": agency["agency_id"],
-        "is_active": True
-    }).to_list(1000)
+    contracts = await sysdb.agency_contracts.find({"agency_id": agency["agency_id"], "is_active": True}).to_list(1000)
 
     tenant_ids = list({c.get("tenant_id") for c in contracts if c.get("tenant_id")})
 
@@ -103,22 +95,12 @@ async def marketplace_my_hotels(agency: dict = Depends(get_marketplace_agency)):
     if tenant_ids:
         # Assuming there is a db.tenants or sysdb.tenants collection with hotel info
         # Let's query marketplace_listings instead, since that's what marketplace uses
-        listings = await sysdb.marketplace_listings.find({
-            "tenant_id": {"$in": tenant_ids},
-            "is_active": True
-        }, {"_id": 0}).to_list(1000)
+        listings = await sysdb.marketplace_listings.find({"tenant_id": {"$in": tenant_ids}, "is_active": True}, {"_id": 0}).to_list(1000)
 
         for listing in listings:
-            hotels.append({
-                "tenant_id": listing["tenant_id"],
-                "name": listing.get("hotel_name", "Bilinmeyen Otel"),
-                "city": listing.get("city", ""),
-                "country": listing.get("country", "")
-            })
+            hotels.append({"tenant_id": listing["tenant_id"], "name": listing.get("hotel_name", "Bilinmeyen Otel"), "city": listing.get("city", ""), "country": listing.get("country", "")})
 
     return {"hotels": hotels}
-
-
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
@@ -185,10 +167,7 @@ def _require_system_admin(
 # ─── Cross-tenant Agency Auth ─────────────────────────────────────────────
 
 
-async def get_marketplace_agency(
-    x_api_key: str | None = Header(None, alias="X-API-Key"),
-    authorization: str | None = Header(None)
-) -> dict:
+async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-API-Key"), authorization: str | None = Header(None)) -> dict:
     """Cross-tenant API key veya JWT doğrulama.
     Acenteler Syroce Agency otomasyonu için X-API-Key,
     Global Extranet UI üzerinden giriş için JWT Bearer token kullanabilir."""
@@ -199,6 +178,7 @@ async def get_marketplace_agency(
         from fastapi.security import HTTPAuthorizationCredentials
 
         from core.security import get_current_user
+
         try:
             creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization.split(" ", 1)[1])
             user = await get_current_user(creds)
@@ -232,11 +212,15 @@ async def get_marketplace_agency(
     if not agency:
         raise HTTPException(403, "Marketplace acentesi aktif değil")
 
+    # Determine source for %1 vs %2 billing differentiation
+    source = "extranet_ui" if authorization else "syroce_agency_app"
+
     return {
         "agency_id": agency["id"],
         "agency_name": agency.get("name", ""),
         "default_commission_pct": agency.get("default_commission_pct", 12.0),
         "contact_email": agency.get("contact_email", ""),
+        "source": source,
     }
 
 
@@ -979,6 +963,8 @@ async def agency_create_reservation(
             "total_amount": total,
             "commission_pct": commission_pct,
             "commission_amount": commission_amount,
+            "syroce_b2b_fee_pct": syroce_b2b_fee_pct,
+            "syroce_b2b_fee_amount": syroce_b2b_fee_amount,
             "net_to_hotel": net_to_hotel,
             "status": "confirmed",
             "created_at": _now_iso(),
@@ -1024,6 +1010,8 @@ async def agency_create_reservation(
             "total_amount": total,
             "commission_pct": commission_pct,
             "commission_amount": commission_amount,
+            "syroce_b2b_fee_pct": syroce_b2b_fee_pct,
+            "syroce_b2b_fee_amount": syroce_b2b_fee_amount,
             "net_to_hotel": net_to_hotel,
         },
     }
