@@ -38,6 +38,88 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/marketplace/v1", tags=["Marketplace v1"])
 
+# ─── Global Extranet UI ───────────────────────────────────────────────────
+
+class MarketplaceLoginRequest(BaseModel):
+    email: str
+    password: str
+
+@router.post("/extranet/auth/login")
+async def marketplace_extranet_login(req: MarketplaceLoginRequest):
+    """Global B2B Extranet arayüzü (Marketplace UI) için giriş."""
+    from core.security import create_token
+    from security.passwords import verify_password
+    sysdb = get_system_db()
+
+    # Global users (tenant_id = null or "SYROCE_GLOBAL" etc.)
+    # Assuming marketplace_agent users are in the global users collection.
+    user = await sysdb.users.find_one({"email": req.email.lower()})
+
+    if not user or not verify_password(req.password, user.get("hashed_password", "")):
+        raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
+
+    role = getattr(user.get("role"), "value", user.get("role"))
+    roles = user.get("roles") or []
+    if role != "marketplace_agent" and "marketplace_agent" not in roles:
+        raise HTTPException(status_code=403, detail="Sadece global acente kullanıcıları girebilir")
+
+    if not user.get("agency_id"):
+        raise HTTPException(status_code=403, detail="Kullanıcıya atanmış bir marketplace acentesi yok")
+
+    agency = await sysdb.marketplace_agencies.find_one({"id": user["agency_id"], "status": "active"})
+    if not agency:
+        raise HTTPException(status_code=403, detail="Marketplace acentesi aktif değil")
+
+    token = create_token(user["id"], None)
+
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "name": user.get("name", ""),
+            "email": user.get("email", ""),
+            "role": "marketplace_agent",
+            "agency_id": user["agency_id"]
+        },
+        "agency": {
+            "id": agency["id"],
+            "name": agency.get("name", "")
+        }
+    }
+
+@router.get("/extranet/my-hotels")
+async def marketplace_my_hotels(agency: dict = Depends(get_marketplace_agency)):
+    """Acentenin aktif sözleşmesi olan otelleri listeler."""
+    sysdb = get_system_db()
+    # Query all active contracts for this global agency across all tenants
+    contracts = await sysdb.agency_contracts.find({
+        "agency_id": agency["agency_id"],
+        "is_active": True
+    }).to_list(1000)
+
+    tenant_ids = list({c.get("tenant_id") for c in contracts if c.get("tenant_id")})
+
+    hotels = []
+    if tenant_ids:
+        # Assuming there is a db.tenants or sysdb.tenants collection with hotel info
+        # Let's query marketplace_listings instead, since that's what marketplace uses
+        listings = await sysdb.marketplace_listings.find({
+            "tenant_id": {"$in": tenant_ids},
+            "is_active": True
+        }, {"_id": 0}).to_list(1000)
+
+        for listing in listings:
+            hotels.append({
+                "tenant_id": listing["tenant_id"],
+                "name": listing.get("hotel_name", "Bilinmeyen Otel"),
+                "city": listing.get("city", ""),
+                "country": listing.get("country", "")
+            })
+
+    return {"hotels": hotels}
+
+
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -103,24 +185,52 @@ def _require_system_admin(
 # ─── Cross-tenant Agency Auth ─────────────────────────────────────────────
 
 
-async def get_marketplace_agency(x_api_key: str = Header(..., alias="X-API-Key")) -> dict:
-    """Cross-tenant API key doğrulama. Tenant context BURADA SET EDİLMEZ;
-    her endpoint istek bazında set eder."""
+async def get_marketplace_agency(
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    authorization: str | None = Header(None)
+) -> dict:
+    """Cross-tenant API key veya JWT doğrulama.
+    Acenteler Syroce Agency otomasyonu için X-API-Key,
+    Global Extranet UI üzerinden giriş için JWT Bearer token kullanabilir."""
     sysdb = get_system_db()
-    key_hash = _hash_key(x_api_key)
+    agency_id = None
 
-    key_doc = await sysdb.marketplace_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
-    if not key_doc:
-        raise HTTPException(401, "Geçersiz veya devre dışı marketplace API key")
+    if authorization and authorization.lower().startswith("bearer "):
+        from fastapi.security import HTTPAuthorizationCredentials
 
-    agency = await sysdb.marketplace_agencies.find_one({"id": key_doc["agency_id"], "status": "active"}, {"_id": 0})
+        from core.security import get_current_user
+        try:
+            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization.split(" ", 1)[1])
+            user = await get_current_user(creds)
+            role = getattr(user.role, "value", user.role) if hasattr(user, "role") else user.get("role")
+            roles = user.get("roles") or []
+            if role != "marketplace_agent" and "marketplace_agent" not in roles:
+                raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
+            agency_id = user.get("agency_id")
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(401, "Geçersiz token")
+    elif x_api_key:
+        key_hash = _hash_key(x_api_key)
+        key_doc = await sysdb.marketplace_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
+        if not key_doc:
+            raise HTTPException(401, "Geçersiz veya devre dışı marketplace API key")
+        agency_id = key_doc["agency_id"]
+
+        await sysdb.marketplace_api_keys.update_one(
+            {"key_hash": key_hash},
+            {"$set": {"last_used_at": _now_iso()}, "$inc": {"usage_count": 1}},
+        )
+    else:
+        raise HTTPException(401, "Kimlik doğrulama gereklidir (X-API-Key veya JWT)")
+
+    if not agency_id:
+        raise HTTPException(403, "Acente ID bulunamadı")
+
+    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id, "status": "active"}, {"_id": 0})
     if not agency:
         raise HTTPException(403, "Marketplace acentesi aktif değil")
-
-    await sysdb.marketplace_api_keys.update_one(
-        {"key_hash": key_hash},
-        {"$set": {"last_used_at": _now_iso()}, "$inc": {"usage_count": 1}},
-    )
 
     return {
         "agency_id": agency["id"],
