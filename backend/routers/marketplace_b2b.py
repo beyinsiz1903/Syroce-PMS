@@ -82,6 +82,62 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest):
     }
 
 
+async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-API-Key"), authorization: str | None = Header(None)) -> dict:
+    """Cross-tenant API key veya JWT doğrulama.
+    Acenteler Syroce Agency otomasyonu için X-API-Key,
+    Global Extranet UI üzerinden giriş için JWT Bearer token kullanabilir."""
+    sysdb = get_system_db()
+    agency_id = None
+
+    if authorization and authorization.lower().startswith("bearer "):
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        from core.security import get_current_user
+
+        try:
+            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization.split(" ", 1)[1])
+            user = await get_current_user(creds)
+            role = getattr(user.role, "value", user.role) if hasattr(user, "role") else user.get("role")
+            roles = user.get("roles") or []
+            if role != "marketplace_agent" and "marketplace_agent" not in roles:
+                raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
+            agency_id = user.get("agency_id")
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(401, "Geçersiz token")
+    elif x_api_key:
+        key_hash = _hash_key(x_api_key)
+        key_doc = await sysdb.marketplace_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
+        if not key_doc:
+            raise HTTPException(401, "Geçersiz veya devre dışı marketplace API key")
+        agency_id = key_doc["agency_id"]
+
+        await sysdb.marketplace_api_keys.update_one(
+            {"key_hash": key_hash},
+            {"$set": {"last_used_at": _now_iso()}, "$inc": {"usage_count": 1}},
+        )
+    else:
+        raise HTTPException(401, "Kimlik doğrulama gereklidir (X-API-Key veya JWT)")
+
+    if not agency_id:
+        raise HTTPException(403, "Acente ID bulunamadı")
+
+    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id, "status": "active"}, {"_id": 0})
+    if not agency:
+        raise HTTPException(403, "Marketplace acentesi aktif değil")
+
+    # Determine source for %1 vs %2 billing differentiation
+    source = "extranet_ui" if authorization else "syroce_agency_app"
+
+    return {
+        "agency_id": agency["id"],
+        "agency_name": agency.get("name", ""),
+        "default_commission_pct": agency.get("default_commission_pct", 12.0),
+        "contact_email": agency.get("contact_email", ""),
+        "source": source,
+    }
+
 @router.get("/extranet/my-hotels")
 async def marketplace_my_hotels(agency: dict = Depends(get_marketplace_agency)):
     """Acentenin aktif sözleşmesi olan otelleri listeler."""
@@ -167,61 +223,7 @@ def _require_system_admin(
 # ─── Cross-tenant Agency Auth ─────────────────────────────────────────────
 
 
-async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-API-Key"), authorization: str | None = Header(None)) -> dict:
-    """Cross-tenant API key veya JWT doğrulama.
-    Acenteler Syroce Agency otomasyonu için X-API-Key,
-    Global Extranet UI üzerinden giriş için JWT Bearer token kullanabilir."""
-    sysdb = get_system_db()
-    agency_id = None
 
-    if authorization and authorization.lower().startswith("bearer "):
-        from fastapi.security import HTTPAuthorizationCredentials
-
-        from core.security import get_current_user
-
-        try:
-            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization.split(" ", 1)[1])
-            user = await get_current_user(creds)
-            role = getattr(user.role, "value", user.role) if hasattr(user, "role") else user.get("role")
-            roles = user.get("roles") or []
-            if role != "marketplace_agent" and "marketplace_agent" not in roles:
-                raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
-            agency_id = user.get("agency_id")
-        except Exception as e:
-            if isinstance(e, HTTPException):
-                raise e
-            raise HTTPException(401, "Geçersiz token")
-    elif x_api_key:
-        key_hash = _hash_key(x_api_key)
-        key_doc = await sysdb.marketplace_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
-        if not key_doc:
-            raise HTTPException(401, "Geçersiz veya devre dışı marketplace API key")
-        agency_id = key_doc["agency_id"]
-
-        await sysdb.marketplace_api_keys.update_one(
-            {"key_hash": key_hash},
-            {"$set": {"last_used_at": _now_iso()}, "$inc": {"usage_count": 1}},
-        )
-    else:
-        raise HTTPException(401, "Kimlik doğrulama gereklidir (X-API-Key veya JWT)")
-
-    if not agency_id:
-        raise HTTPException(403, "Acente ID bulunamadı")
-
-    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id, "status": "active"}, {"_id": 0})
-    if not agency:
-        raise HTTPException(403, "Marketplace acentesi aktif değil")
-
-    # Determine source for %1 vs %2 billing differentiation
-    source = "extranet_ui" if authorization else "syroce_agency_app"
-
-    return {
-        "agency_id": agency["id"],
-        "agency_name": agency.get("name", ""),
-        "default_commission_pct": agency.get("default_commission_pct", 12.0),
-        "contact_email": agency.get("contact_email", ""),
-        "source": source,
-    }
 
 
 async def _get_listing_or_404(tenant_id: str) -> dict:
