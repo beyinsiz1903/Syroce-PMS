@@ -128,12 +128,13 @@ async def get_flash_report(
             "check_in": {"$lte": today_end.isoformat()},
             "check_out": {"$gte": today_start.isoformat()}
         },
-        {"_id": 0, "total_amount": 1, "paid_amount": 1, "charges": 1, "check_in": 1, "check_out": 1},
+        {"_id": 0, "total_amount": 1, "paid_amount": 1, "charges": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "room_number": 1},
     ).to_list(2000)
 
     total_revenue = 0
     collected = 0
     charges_by_cat = {}
+    room_revenue_breakdown = []
 
     for b in in_house_bookings:
         try:
@@ -150,6 +151,15 @@ async def get_flash_report(
 
         total_revenue += daily_amount
         collected += daily_paid
+        
+        room_revenue_breakdown.append({
+            "guest_name": b.get("guest_name", "Misafir"),
+            "room_number": b.get("room_number", "?"),
+            "daily_rate": round(daily_amount, 2),
+            "total_stay_amount": b.get("total_amount", 0),
+            "nights": nights
+        })
+
 
         for c in b.get("charges", []):
             cat = c.get("charge_category", "other")
