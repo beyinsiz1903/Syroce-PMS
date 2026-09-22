@@ -381,6 +381,7 @@ jobs:
         uses: actions/upload-artifact@v5
         if: always()
         with:
+          retention-days: 1
           name: backend-test-results
           path: |
             backend/test-results.xml
@@ -531,6 +532,7 @@ jobs:
         uses: actions/upload-artifact@v5
         if: always()
         with:
+          retention-days: 1
           name: backend-full-offline-results
           path: |
             backend/full-suite-results.xml
@@ -664,6 +666,7 @@ jobs:
         uses: actions/upload-artifact@v5
         if: always()
         with:
+          retention-days: 1
           name: battle-e2e-results
           path: |
             backend/battle-e2e-results.xml
@@ -762,6 +765,7 @@ jobs:
         uses: actions/upload-artifact@v5
         if: always()
         with:
+          retention-days: 1
           name: load-test-results
           path: |
             backend/load-test-results.xml
@@ -805,6 +809,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: frontend-build
           path: frontend/build/
 
@@ -921,6 +926,7 @@ jobs:
         uses: actions/upload-artifact@v5
         if: always()
         with:
+          retention-days: 1
           name: security-report
           path: backend/security-report.txt
 

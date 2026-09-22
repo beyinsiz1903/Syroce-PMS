@@ -134,6 +134,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: mobile-web-smoke-report
           path: |
             mobile/playwright-mobile-smoke-report
@@ -149,6 +150,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: mobile-smoke-drill-report
           path: docs/drill_reports/*_f10a_mobile_smoke.md
           if-no-files-found: warn

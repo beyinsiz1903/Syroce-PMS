@@ -249,6 +249,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: hotelrunner-ari-pilot-results
           path: backend/hotelrunner-ari-pilot-results.xml
           if-no-files-found: ignore
