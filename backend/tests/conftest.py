@@ -233,3 +233,20 @@ def pytest_sessionfinish(session, exitstatus):
             reporter.write_line(msg, red=True, bold=True)
         # Oturumu kırmızıya çevir (exit kodu != 0).
         session.exitstatus = 1
+
+@pytest.fixture(autouse=True)
+def mock_import_retry_worker_in_tests(monkeypatch):
+    """
+    Mock import_retry_worker so it doesn't run in the background during tests and steal records
+    from tests that are validating import_status='pending_auto_import'.
+    """
+    from core.import_retry_worker import import_retry_worker
+    
+    async def _mock_start(*args, **kwargs):
+        import_retry_worker._task = "mocked-task"
+        
+    async def _mock_stop(*args, **kwargs):
+        import_retry_worker._task = None
+
+    monkeypatch.setattr(import_retry_worker, "start", _mock_start)
+    monkeypatch.setattr(import_retry_worker, "stop", _mock_stop)
