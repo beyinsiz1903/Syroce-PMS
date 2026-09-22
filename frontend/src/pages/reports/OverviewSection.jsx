@@ -9,11 +9,17 @@ const OverviewSection = ({
   data,
   s,
   pc,
-  roomStatusData
+  roomStatusData,
+  reportPeriod
 }) => {
   const {
     t
   } = useTranslation();
+
+  const isDaily = reportPeriod === 'daily';
+  const labelSuffix = isDaily ? '(Seçili Gün)' : '(30 Gün)';
+  const prevLabelSuffix = isDaily ? 'Önceki gün: ' : 'Önceki ay: ';
+
   return <div className="space-y-6" data-testid="section-overview">
     <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" icon={LayoutDashboard} actions={<StatusBadge intent="success">Canlı</StatusBadge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
