@@ -75,7 +75,7 @@ async def send_flash_report_now(
 
 
 @sub_router.get("/reports/flash-report")
-@cached(ttl=300, key_prefix="flash_report")  # Cache for 5 min
+@cached(ttl=15, key_prefix="flash_report")  # Cache for 15s
 async def get_flash_report(
     date: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -384,7 +384,7 @@ async def email_daily_flash(
 
 
 @sub_router.get("/reports/daily-flash")
-@cached(ttl=300, key_prefix="report_daily_flash")  # Cache for 5 minutes
+@cached(ttl=15, key_prefix="report_daily_flash")  # Cache for 15 seconds
 async def get_daily_flash_report(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),
