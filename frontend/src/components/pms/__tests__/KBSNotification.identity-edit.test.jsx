@@ -87,7 +87,7 @@ describe('KBSNotification pending guest identity editing', () => {
 
     expect(screen.getByText('updateTitle')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('idLabel'), {
+    fireEvent.change(screen.getByLabelText(/idLabel/i), {
       target: { value: ' 12345678901 ' },
     });
     fireEvent.change(screen.getByLabelText('birthDateLabel'), {
