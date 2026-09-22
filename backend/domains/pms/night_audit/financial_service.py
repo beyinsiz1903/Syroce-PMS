@@ -260,7 +260,11 @@ class FinancialService:
             open_folios_list = doc.get("folios", [])
 
         # Enrich the list
-        open_folios_list = await self._enrich_with_guest_room(ctx.tenant_id, open_folios_list)
+        try:
+            open_folios_list = await self._enrich_with_guest_room(ctx.tenant_id, open_folios_list)
+        except Exception as exc:
+            logger.warning("get_daily_financial_summary enrich_with_guest_room failed: %s", exc)
+            degraded_subqueries.append("open_folios_enrich")
         for fol in open_folios_list:
             fol["balance"] = round(fol.get("balance", 0), 2)
 
@@ -465,7 +469,11 @@ class FinancialService:
         variance = round(total_charges - total_payments_amount, 2)
 
         # Enrich discrepancies with guest/room info
-        discrepancies = await self._enrich_with_guest_room(ctx.tenant_id, discrepancies)
+        try:
+            discrepancies = await self._enrich_with_guest_room(ctx.tenant_id, discrepancies)
+        except Exception as exc:
+            logger.warning("payment_reconciliation enrich_with_guest_room failed: %s", exc)
+            degraded_subqueries.append("discrepancies_enrich")
 
         # Modify the message to include guest name and room number!
         for d in discrepancies:
