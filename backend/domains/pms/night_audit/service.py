@@ -714,7 +714,7 @@ class NightAuditCoreService:
                     ]
                 ).to_list(None)
                 totals_by_date = {row["_id"]: row for row in totals}
-                
+
                 # 2. Enrich Payments
                 pmts = await self._db.payments.aggregate(
                     [
@@ -739,7 +739,7 @@ class NightAuditCoreService:
                     bd = run.get("business_date")
                     snapshot = totals_by_date.get(bd, {})
                     psnapshot = pmts_by_date.get(bd, {})
-                    
+
                     run["total_room_revenue"] = round(float(snapshot.get("revenue") or 0), 2)
                     run["total_tax_amount"] = round(float(snapshot.get("tax") or 0), 2)
                     run["total_payments_amount"] = round(float(psnapshot.get("payments") or 0), 2)

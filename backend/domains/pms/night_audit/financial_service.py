@@ -258,7 +258,7 @@ class FinancialService:
             open_balance["overpayment"] = round(abs(doc.get("negative_balance", 0)), 2)
             open_folios_count = doc.get("count", 0)
             open_folios_list = doc.get("folios", [])
-            
+
         # Enrich the list
         open_folios_list = await self._enrich_with_guest_room(ctx.tenant_id, open_folios_list)
         for fol in open_folios_list:
@@ -466,7 +466,7 @@ class FinancialService:
 
         # Enrich discrepancies with guest/room info
         discrepancies = await self._enrich_with_guest_room(ctx.tenant_id, discrepancies)
-        
+
         # Modify the message to include guest name and room number!
         for d in discrepancies:
             if d.get("type") == "high_balance":
