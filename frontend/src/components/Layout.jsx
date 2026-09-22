@@ -495,7 +495,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:bg-none dark:bg-background flex flex-col" data-testid="app-shell">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
+      <header className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
         <div className="px-3 py-1.5">
           <div className="flex items-center min-h-[44px]">
             <div

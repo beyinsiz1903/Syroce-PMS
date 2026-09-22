@@ -147,8 +147,8 @@ export default function PMSDateBadge({ inLayout = false }) {
   return (
     <div
       className={inLayout
-        ? "flex min-h-9 max-w-full shrink-0 select-none items-center justify-end border-b border-slate-200 bg-slate-50/90 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/70 sm:px-4"
-        : "max-w-full select-none"}
+        ? "print:hidden flex min-h-9 max-w-full shrink-0 select-none items-center justify-end border-b border-slate-200 bg-slate-50/90 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/70 sm:px-4"
+        : "print:hidden max-w-full select-none"}
       data-testid={inLayout ? "layout-business-date-bar" : undefined}
       aria-label={inLayout ? "PMS iş günü" : undefined}
       title={bdMeta?.update_source === "initialization"
