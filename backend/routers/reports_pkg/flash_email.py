@@ -151,7 +151,7 @@ async def get_flash_report(
 
         total_revenue += daily_amount
         collected += daily_paid
-        
+
         room_revenue_breakdown.append({
             "guest_name": b.get("guest_name", "Misafir"),
             "room_number": b.get("room_number", "?"),
