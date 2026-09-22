@@ -532,7 +532,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         )}
 
         {/* Business Date & Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <KpiCard
             icon={Calendar}
             intent="info"
@@ -553,6 +553,13 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             label="Son Oda Geliri"
             value={lastRun ? `${lastRun.total_room_revenue?.toFixed(2) || "0.00"} TL` : "-"}
             sub={lastRun ? `Vergi: ${lastRun.total_tax_amount?.toFixed(2) || "0.00"} TL` : undefined}
+          />
+          <KpiCard
+            icon={DollarSign}
+            intent="success"
+            label="Son Tahsilat"
+            value={lastRun ? `${lastRun.total_payments_amount?.toFixed(2) || "0.00"} TL` : "-"}
+            sub="Kasaya Giren Net Tutar"
           />
           <KpiCard
             icon={Users}

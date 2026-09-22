@@ -62,10 +62,17 @@ export default function ReconciliationTab(props) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-1.5">
-                  {reconciliation.high_balance_folios.map(f => <div key={f.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-800">{f.folio_number || f.id?.substring(0, 8)}</span>
+                  {reconciliation.high_balance_folios.map(f => <div key={f.id} className="flex items-center justify-between p-2.5 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm transition-colors border border-transparent hover:border-gray-200">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-gray-400" />
+                          <span className="font-medium text-gray-800">{f.folio_number || f.id?.substring(0, 8)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 ml-6 text-xs text-gray-500">
+                          <span>{f.room_no || 'Oda ?'}</span>
+                          <span>•</span>
+                          <span>{f.guest_name || 'İsimsiz'}</span>
+                        </div>
                       </div>
                       <span className={`font-bold ${f.balance > 0 ? "text-red-600" : "text-blue-600"}`}>
                         {f.balance?.toFixed(2)} TL
