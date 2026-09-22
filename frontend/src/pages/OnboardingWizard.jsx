@@ -11,11 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Building2, BedDouble, DollarSign, Users, CheckCircle2,
-  Circle, ChevronLeft, ChevronRight, SkipForward, Loader2,
-  PartyPopper, ArrowRight, RefreshCw, AlertCircle,
-} from "lucide-react";
+import { Building2, BedDouble, Banknote, Users, CheckCircle2, Circle, ChevronLeft, ChevronRight, SkipForward, Loader2, PartyPopper, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
 
 // 5 görünür wizard adımı; her biri backend'in 13 adımından bir veya
 // daha fazlasıyla eşleşir. UI ilerlemesi BURADAKİ 5 adıma göre hesaplanır
@@ -23,7 +19,7 @@ import {
 const STEP_DEFS = [
   { id: "hotel", labelKey: "onboarding.steps.hotel", labelFallback: "Otel Bilgileri", icon: Building2, related: ["hotel_info_completed"] },
   { id: "rooms", labelKey: "onboarding.steps.rooms", labelFallback: "Odalar", icon: BedDouble, related: ["rooms_configured"] },
-  { id: "rates", labelKey: "onboarding.steps.rates", labelFallback: "Fiyatlar", icon: DollarSign, related: ["rates_configured"] },
+  { id: "rates", labelKey: "onboarding.steps.rates", labelFallback: "Fiyatlar", icon: Banknote, related: ["rates_configured"] },
   { id: "team", labelKey: "onboarding.steps.team", labelFallback: "Ekip", icon: Users, related: ["team_members_added"] },
   { id: "done", labelKey: "onboarding.steps.done", labelFallback: "Tamamlandı", icon: PartyPopper, related: [] },
 ];
@@ -500,7 +496,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
 
       {currentDef.id === "rates" && (
         <ActionStep
-          icon={DollarSign}
+          icon={Banknote}
           title="Fiyat planı tanımlayın"
           description="En az bir rate plan eklediğinizde bu adım otomatik tamamlanır."
           done={!!stepStatus.rates_configured}

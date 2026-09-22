@@ -9,10 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import {
-  ClipboardCheck, RefreshCw, TrendingUp, Users, Wallet,
-  CheckCircle2, AlertCircle, Building, ArrowDownToLine, ArrowUpFromLine,
-} from "lucide-react";
+import { ClipboardCheck, RefreshCw, TrendingUp, Users, Wallet, CheckCircle2, AlertCircle, Building, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /**

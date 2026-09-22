@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import axios from "axios";
-import { Calendar, Users, Briefcase, Wifi, Coffee, Wind, BedDouble, CheckCircle, ArrowRight } from "lucide-react";
+import { Calendar, Users, Briefcase, Wifi, Coffee, Wind, BedDouble, CheckCircle, ArrowRight } from 'lucide-react';
 import { format, addDays } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
 

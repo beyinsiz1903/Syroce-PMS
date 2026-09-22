@@ -3,7 +3,7 @@
  * Provides module-specific error recovery without taking down adjacent modules.
  */
 import React from "react";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 export class ModuleErrorBoundary extends React.Component {
   constructor(props) {

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, Plus, Pencil, Trash2, ArrowLeft, Loader2, BookOpen, FileText, Eye, EyeOff, Save, X, RotateCcw, PlayCircle } from "lucide-react";
+import { GraduationCap, Plus, Pencil, Trash2, ArrowLeft, Loader2, BookOpen, FileText, Eye, EyeOff, Save, X, RotateCcw, PlayCircle } from 'lucide-react';
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";

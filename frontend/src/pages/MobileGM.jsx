@@ -6,23 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  ArrowLeft, 
-  BarChart3, 
-  TrendingUp, 
-  Users,
-  DollarSign,
-  Bed,
-  AlertCircle,
-  RefreshCw,
-  CheckCircle,
-  Clock,
-  Target,
-  Calendar,
-  Building2,
-  ChevronDown,
-  Home
-} from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, Users, Banknote, Bed, AlertCircle, RefreshCw, CheckCircle, Clock, Target, Calendar, Building2, ChevronDown, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const MobileGM = ({ user, tenant, embedded = false }) => {
@@ -296,7 +280,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                     ADR: {formatCurrency(dailyFlash?.revenue?.adr || 0)}
                   </p>
                 </div>
-                <DollarSign className="w-10 h-10 text-green-300" />
+                <Banknote className="w-10 h-10 text-green-300" />
               </div>
             </CardContent>
           </Card>
@@ -409,7 +393,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
-                <DollarSign className="w-5 h-5 mr-2 text-green-600" />
+                <Banknote className="w-5 h-5 mr-2 text-green-600" />
                 Finansal Özet
               </CardTitle>
             </CardHeader>

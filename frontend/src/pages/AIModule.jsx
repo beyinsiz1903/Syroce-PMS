@@ -4,10 +4,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-  Bot, MessageCircle, Send, Brain, TrendingUp, Sparkles, BarChart3, Users, 
-  Zap, Clock, Star, Hotel, ChefHat, Wrench, DollarSign, Globe, Loader2, ArrowLeft, ChevronRight, Menu, BookOpen
-} from 'lucide-react';
+import { Bot, MessageCircle, Send, Brain, TrendingUp, Sparkles, BarChart3, Users, Zap, Clock, Star, Hotel, ChefHat, Wrench, Banknote, Globe, Loader2, ArrowLeft, ChevronRight, Menu, BookOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LocalErrorBoundary from '@/components/LocalErrorBoundary';
 
@@ -107,7 +104,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
     {
       id: 'dynamic-pricing',
       title: 'Dynamic Pricing',
-      icon: DollarSign,
+      icon: Banknote,
       color: 'from-amber-500 to-amber-500',
       iconColor: 'text-amber-600'
     },
@@ -237,7 +234,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
         <Card className="border-0 shadow-sm rounded-2xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
-              <DollarSign className="w-5 h-5 text-amber-500" />
+              <Banknote className="w-5 h-5 text-amber-500" />
               AI Fiyatlandırma Önerisi
             </CardTitle>
           </CardHeader>

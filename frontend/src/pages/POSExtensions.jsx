@@ -1,7 +1,7 @@
 import { t } from "i18next";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 const TABS = [{
   id: "currency",
   label: "Çoklu Döviz"

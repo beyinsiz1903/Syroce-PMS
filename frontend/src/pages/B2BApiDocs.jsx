@@ -1,6 +1,6 @@
 import { t } from "i18next";
 import { useState, useEffect } from 'react';
-import { BookOpen, Key, Search, Hotel, Calendar, DollarSign, FileText, Bell, ChevronRight, Globe, Copy, Check, ArrowLeft, Code, Shield, Zap, Users, Sparkles, ClipboardList, CreditCard, Fingerprint, Package, Phone, Coffee, Building, Receipt, AlertTriangle, Gauge, List, Rocket } from 'lucide-react';
+import { BookOpen, Key, Search, Hotel, Calendar, Banknote, FileText, Bell, ChevronRight, Globe, Copy, Check, ArrowLeft, Code, Shield, Zap, Users, Sparkles, ClipboardList, CreditCard, Fingerprint, Package, Phone, Coffee, Building, Receipt, AlertTriangle, Gauge, List, Rocket } from 'lucide-react';
 const API_BASE = window.location.origin + '/api/b2b';
 const sections = [{
   id: 'overview',
@@ -28,7 +28,7 @@ const sections = [{
   icon: Calendar
 }, {
   id: 'rates',
-  icon: DollarSign
+  icon: Banknote
 }, {
   id: 'reservations',
   icon: FileText
@@ -872,7 +872,7 @@ export default function B2BApiDocs() {
 
             {/* ── RATES ── */}
             <section id="rates">
-              <SectionHeader icon={DollarSign} title={isEn ? 'Rates API' : 'Fiyat API'} id="rates-h" />
+              <SectionHeader icon={Banknote} title={isEn ? 'Rates API' : 'Fiyat API'} id="rates-h" />
               <Desc>{isEn ? 'Fetch agency-specific or base hotel rates for a date range.' : 'Acenteye özel veya temel otel fiyatlarini cekin.'}</Desc>
               <div className="mt-6">
                 <EndpointBlock method="GET" path="/api/b2b/rates">

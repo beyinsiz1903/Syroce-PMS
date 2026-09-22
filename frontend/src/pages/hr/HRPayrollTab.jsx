@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Clock, Calendar, DollarSign, Briefcase, UserPlus, Download, Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle, TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle, Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown, Timer, Check, X, Package, GraduationCap } from 'lucide-react';
+import { Clock, Calendar, Banknote, Briefcase, UserPlus, Download, Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle, TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle, Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown, Timer, Check, X, Package, GraduationCap } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { promptDialog, confirmDialog } from '@/lib/dialogs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,7 +20,7 @@ import PaginationBar from '@/components/PaginationBar';
 import SkeletonRow from '@/components/SkeletonRow';
 import { useHRPagination } from '@/hooks/useHRPagination';
 
-export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrollPreview, handlePayrollSaveDraft, savingDraft, handlePayrollExport, exporting, taxRates, payrollRuns, selectedRun, fmtCurrency, loadRunDetail, handlePayrollFinalize, finalizing, handleRevisionOpen, revising, handleRunXlsx, runRevisions, payrollPreview, Users, DollarSign }) {
+export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrollPreview, handlePayrollSaveDraft, savingDraft, handlePayrollExport, exporting, taxRates, payrollRuns, selectedRun, fmtCurrency, loadRunDetail, handlePayrollFinalize, finalizing, handleRevisionOpen, revising, handleRunXlsx, runRevisions, payrollPreview, Users, Banknote }) {
     const { t } = useTranslation();
     const selectedRunStatutoryIssues = useMemo(() => (selectedRun?.rows || []).filter(row => row.calculation_mode !== 'statutory_2026'), [selectedRun]);
     const selectedRunCanFinalize = Boolean(selectedRun?.rows?.length) && selectedRunStatutoryIssues.length === 0;
@@ -30,7 +30,7 @@ export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrol
             <Card>
               <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2"><DollarSign className="w-4 h-4" />{t('cm.pages_HRComplete.bordro_islemleri')}</CardTitle>
+                  <CardTitle className="flex items-center gap-2"><Banknote className="w-4 h-4" />{t('cm.pages_HRComplete.bordro_islemleri')}</CardTitle>
                   <p className="text-xs text-slate-500 mt-1">
                     {t('cm.pages_HRComplete.devam_kayitlarindan_otomatik_hesap_tr_is')}
                   </p>
@@ -204,8 +204,8 @@ export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrol
                 {payrollPreview ? <>
                     <div className="grid gap-3 md:grid-cols-3">
                       <KpiCard intent="info" icon={Users} label="Personel" value={payrollPreview.staff_count} />
-                      <KpiCard intent="success" icon={DollarSign} label={t('cm.pages_HRComplete.toplam_brut')} value={fmtCurrency(payrollPreview.total_gross_pay)} />
-                      <KpiCard intent="warning" icon={DollarSign} label={t('cm.pages_HRComplete.toplam_net')} value={fmtCurrency(payrollPreview.total_net_pay)} />
+                      <KpiCard intent="success" icon={Banknote} label={t('cm.pages_HRComplete.toplam_brut')} value={fmtCurrency(payrollPreview.total_gross_pay)} />
+                      <KpiCard intent="warning" icon={Banknote} label={t('cm.pages_HRComplete.toplam_net')} value={fmtCurrency(payrollPreview.total_net_pay)} />
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">

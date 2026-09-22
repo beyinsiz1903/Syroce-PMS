@@ -11,15 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  Network, Plus, RefreshCw, CheckCircle, AlertTriangle, XCircle,
-  Clock, ArrowUpDown, Link2, Unlink, Shield, Activity, FileText,
-  Download, Eye, ChevronRight, Zap, Settings, Database, Map,
-  Loader2, Wifi, Key, Home, BedDouble, DollarSign, FileCode,
-  RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer,
-  UserCheck, Ban, PackageCheck, AlertCircle, MailCheck, MailX,
-  Search, Filter, ExternalLink, Instagram, Facebook, Twitter
-} from 'lucide-react';
+import { Network, Plus, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock, ArrowUpDown, Link2, Unlink, Shield, Activity, FileText, Download, Eye, ChevronRight, Zap, Settings, Database, Map, Loader2, Wifi, Key, Home, BedDouble, Banknote, FileCode, RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer, UserCheck, Ban, PackageCheck, AlertCircle, MailCheck, MailX, Search, Filter, ExternalLink, Instagram, Facebook, Twitter } from 'lucide-react';
 
 const API_BASE = '/channel-manager/v2';
 
@@ -746,7 +738,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     { key: 'auth_status', label: 'Authentication', icon: Key, desc: 'Token ve kimlik doğrulama' },
                     { key: 'property_access_status', label: 'Property Access', icon: Home, desc: 'Otel erişim kontrolü' },
                     { key: 'inventory_read_status', label: 'Room Types', icon: BedDouble, desc: 'Oda tipleri okuma' },
-                    { key: 'rate_read_status', label: 'Rate Plans', icon: DollarSign, desc: 'Fiyat planları okuma' },
+                    { key: 'rate_read_status', label: 'Rate Plans', icon: Banknote, desc: 'Fiyat planları okuma' },
                     { key: 'xml_connectivity_status', label: 'XML API', icon: FileCode, desc: 'OTA XML bağlantısı' },
                   ].map(({ key, label, icon: Icon, desc }) => {
                     const step = testResult[key];

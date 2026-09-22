@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { DollarSign, FileText, Loader2, LogIn, Save, UserX, X, XCircle } from 'lucide-react';
+import { Banknote, FileText, Loader2, LogIn, Save, UserX, X, XCircle } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { formatCurrency } from '@/lib/currency';
 
@@ -321,7 +321,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
                 onClick={() => onViewFolio(booking.id)}
                 className="bg-green-600 hover:bg-green-700"
               >
-                <DollarSign className="w-4 h-4 mr-1" />
+                <Banknote className="w-4 h-4 mr-1" />
                 {t('folio.title')}
               </Button>
               <Button 

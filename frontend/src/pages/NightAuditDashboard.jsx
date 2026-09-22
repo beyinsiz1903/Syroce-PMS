@@ -10,14 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
-import {
-  Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle,
-  RefreshCw, Calendar, FileText, ChevronDown, ChevronUp,
-  DollarSign, Users, Building2, BarChart3, Eye, Loader2,
-  Shield, Info, Timer, Settings2, Zap, RotateCcw,
-  TrendingUp, CreditCard, ShieldCheck, Scale, Receipt,
-  PieChart, ArrowUpDown, Banknote, AlertOctagon, Search
-} from "lucide-react";
+import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, Banknote, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, AlertOctagon, Search } from 'lucide-react';
 import { toast } from "sonner";
 import { confirmDialog } from "@/lib/dialogs";
 import { emitBusinessDateChanged } from "@/lib/businessDateEvents";
@@ -548,14 +541,14 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             sub={todayCompleted ? "Bugün tamamlandı" : "Bugün bekliyor"}
           />
           <KpiCard
-            icon={DollarSign}
+            icon={Banknote}
             intent="info"
             label="Son Oda Geliri"
             value={lastRun ? `${lastRun.total_room_revenue?.toFixed(2) || "0.00"} TL` : "-"}
             sub={lastRun ? `Vergi: ${lastRun.total_tax_amount?.toFixed(2) || "0.00"} TL` : undefined}
           />
           <KpiCard
-            icon={DollarSign}
+            icon={Banknote}
             intent="success"
             label="Son Tahsilat"
             value={lastRun ? `${lastRun.total_payments_amount?.toFixed(2) || "0.00"} TL` : "-"}

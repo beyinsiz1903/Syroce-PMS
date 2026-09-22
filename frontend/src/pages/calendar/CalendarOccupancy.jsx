@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 const CalendarOccupancy = ({ dateRange, getOccupancyForDate, showDeluxePanel, onToggleDeluxe, collapsed = false, onToggleCollapse }) => {
   const values = dateRange.map((date) => Math.max(0, Math.min(100, Number(getOccupancyForDate(date)) || 0)));

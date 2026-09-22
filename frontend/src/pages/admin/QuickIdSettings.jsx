@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, Save, KeyRound, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, ScanLine } from "lucide-react";
+import { Loader2, Save, KeyRound, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, ScanLine } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const AUTO_PROVIDER = "__auto__";

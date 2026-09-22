@@ -12,11 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Building2, DollarSign, TrendingUp, TrendingDown, AlertTriangle,
-  Search, CreditCard, FileText, Clock, CheckCircle2, XCircle,
-  ChevronDown, ChevronRight, Loader2, Plus, Calendar, Info, ArrowRight,
-} from 'lucide-react';
+import { Building2, Banknote, TrendingUp, TrendingDown, AlertTriangle, Search, CreditCard, FileText, Clock, CheckCircle2, XCircle, ChevronDown, ChevronRight, Loader2, Plus, Calendar, Info, ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const fmt = (v) => {
@@ -279,7 +275,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <DollarSign className="w-4 h-4 text-green-500" />
+                        <Banknote className="w-4 h-4 text-green-500" />
                         {t('agentArap.totalPaid')}
                       </div>
                       <div className="text-2xl font-bold mt-1 text-green-600">{fmt(summary.total_paid)}</div>

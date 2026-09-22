@@ -4,7 +4,7 @@ import DOMPurify from "dompurify";
 import axios from "axios";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, BookOpen, Award, CheckCircle2, ArrowLeft, FileText, Loader2, Download, ClipboardList, Settings2, Lock, Building2, RefreshCw, PlayCircle, Clock3, AlertTriangle, Trophy } from "lucide-react";
+import { GraduationCap, BookOpen, Award, CheckCircle2, ArrowLeft, FileText, Loader2, Download, ClipboardList, Settings2, Lock, Building2, RefreshCw, PlayCircle, Clock3, AlertTriangle, Trophy } from 'lucide-react';
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";

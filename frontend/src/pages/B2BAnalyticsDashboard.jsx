@@ -5,10 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  BarChart3, TrendingUp, DollarSign, Activity, Download,
-  Building2, Zap, RefreshCw, FileText, Info, ArrowRight, Database,
-} from 'lucide-react';
+import { BarChart3, TrendingUp, Banknote, Activity, Download, Building2, Zap, RefreshCw, FileText, Info, ArrowRight, Database } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell,
@@ -296,7 +293,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
           // KPICard kendi formatCurrency'sini cagiriyor (TRY-only); sayisal istemiyoruz,
           // tenant para birimiyle once formatlayip string verelim.
           value={fmtMoney(kpis.total_revenue || 0)}
-          icon={DollarSign} color="amber"
+          icon={Banknote} color="amber"
         />
         <KPICard title={t('cm.pages_B2BAnalyticsDashboard.aktif_acente')} value={kpis.active_agencies || 0} icon={Building2} color="cyan" />
         <KPICard title="Tesis API Trafiği" value={kpis.api_calls || 0} icon={Activity} color="indigo" />

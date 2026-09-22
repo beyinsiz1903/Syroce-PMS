@@ -7,11 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { confirmDialog } from '@/lib/dialogs';
-import {
-  KeyRound, Shield, Eye, EyeOff, RefreshCw, Trash2, ExternalLink,
-  CheckCircle2, XCircle, Save, Lock, Cloud, Bot, Mail, Activity, Database, Plug,
-  CreditCard,
-} from "lucide-react";
+import { KeyRound, Shield, Eye, EyeOff, RefreshCw, Trash2, ExternalLink, CheckCircle2, XCircle, Save, Lock, Cloud, Bot, Mail, Activity, Database, Plug, CreditCard } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const CATEGORY_META = {

@@ -12,11 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Handshake, Clock, CheckCircle2, XCircle, Ban, RefreshCw, Building2,
-  Percent, Calendar, CreditCard, Globe, FileText, AlertTriangle, Loader2,
-  Info, ArrowRight,
-} from 'lucide-react';
+import { Handshake, Clock, CheckCircle2, XCircle, Ban, RefreshCw, Building2, Percent, Calendar, CreditCard, Globe, FileText, AlertTriangle, Loader2, Info, ArrowRight } from 'lucide-react';
 
 const STATUS_META = {
   pending:    { color: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300', icon: Clock, label: 'Bekliyor' },

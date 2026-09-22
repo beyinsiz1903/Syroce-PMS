@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { PhoneIncoming, PhoneOutgoing, RefreshCw, Play, FileEdit, Check, X } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, RefreshCw, Play, FileEdit, Check, X } from 'lucide-react';
 
 const STATUS_LABEL = {
   ringing: "Çalıyor",

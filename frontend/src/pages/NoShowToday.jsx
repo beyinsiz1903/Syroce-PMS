@@ -12,10 +12,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertTriangle, UserX, Calendar, RefreshCw, Loader2, Search, Phone, MessageSquare,
-  Clock, FileText, X,
-} from 'lucide-react';
+import { AlertTriangle, UserX, Calendar, RefreshCw, Loader2, Search, Phone, MessageSquare, Clock, FileText, X } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';

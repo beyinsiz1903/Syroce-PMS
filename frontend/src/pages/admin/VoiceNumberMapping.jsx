@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, Phone, Plus, Trash2, Save, RefreshCw, X, Info } from "lucide-react";
+import { Loader2, Phone, Plus, Trash2, Save, RefreshCw, X, Info } from 'lucide-react';
 
 import { confirmDialog } from "@/lib/dialogs";
 

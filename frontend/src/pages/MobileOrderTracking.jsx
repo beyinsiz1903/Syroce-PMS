@@ -7,21 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import {
-  ArrowLeft, 
-  Clock, 
-  AlertTriangle,
-  CheckCircle,
-  ChefHat,
-  UtensilsCrossed,
-  Filter,
-  RefreshCw,
-  Eye,
-  TrendingUp,
-  Calendar,
-  User,
-  Store
-} from 'lucide-react';
+import { ArrowLeft, Clock, AlertTriangle, CheckCircle, ChefHat, UtensilsCrossed, Filter, RefreshCw, Eye, TrendingUp, Calendar, User, Store } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canUpdateMobileOrderStatus } from '@/utils/mobilePermissions';
 

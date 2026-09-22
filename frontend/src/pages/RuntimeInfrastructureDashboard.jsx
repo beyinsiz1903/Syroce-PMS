@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Activity, Database, Radio, Mail, AlertTriangle, Shield, RefreshCw, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Activity, Database, Radio, Mail, AlertTriangle, Shield, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react';
 const API = "";
 function StatusIndicator({
   status

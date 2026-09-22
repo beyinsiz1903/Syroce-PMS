@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Play } from 'lucide-react';
 import { useNavigate } from "react-router-dom";
 import { useSimulation } from "@/context/SimulationContext";
 

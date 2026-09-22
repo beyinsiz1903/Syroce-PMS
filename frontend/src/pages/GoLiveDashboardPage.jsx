@@ -5,7 +5,7 @@ import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, Shield, Zap, Activity, Play, RefreshCw, Loader2, CheckCircle2, XCircle, AlertTriangle, Target, TrendingUp, Clock, BarChart3, Server } from "lucide-react";
+import { ArrowLeft, Shield, Zap, Activity, Play, RefreshCw, Loader2, CheckCircle2, XCircle, AlertTriangle, Target, TrendingUp, Clock, BarChart3, Server } from 'lucide-react';
 const API = "";
 function ScoreRing({
   score,

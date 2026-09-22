@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2, XCircle, Clock, Wifi, WifiOff, Lock, Eye, Loader2, Database, Radio, Zap, TrendingUp, TrendingDown, Minus, Users, Building2, Layers, Network, ShieldAlert } from "lucide-react";
+import { Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2, XCircle, Clock, Wifi, WifiOff, Lock, Eye, Loader2, Database, Radio, Zap, TrendingUp, TrendingDown, Minus, Users, Building2, Layers, Network, ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /* ── Status mapping (TR + Sprint A intent palette) ─────────────────── */

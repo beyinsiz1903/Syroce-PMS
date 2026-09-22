@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, TrendingDown, Package, Users, Zap, ShoppingCart } from 'lucide-react';
+import { Banknote, TrendingDown, Package, Users, Zap, ShoppingCart } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ExpenseSummaryCard = ({ expenseData }) => {
@@ -16,7 +16,7 @@ const ExpenseSummaryCard = ({ expenseData }) => {
       case 'staff_costs': return <Users className="w-4 h-4" />;
       case 'utilities': return <Zap className="w-4 h-4" />;
       case 'procurement': return <ShoppingCart className="w-4 h-4" />;
-      default: return <DollarSign className="w-4 h-4" />;
+      default: return <Banknote className="w-4 h-4" />;
     }
   };
 

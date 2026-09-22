@@ -16,7 +16,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, RefreshCw, X, Loader2 } from "lucide-react";
+import { Building2, Plus, RefreshCw, X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
 

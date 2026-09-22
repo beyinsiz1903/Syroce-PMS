@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { DollarSign, AlertTriangle, Lightbulb } from 'lucide-react';
+import { Banknote, AlertTriangle, Lightbulb } from 'lucide-react';
 import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
@@ -158,7 +158,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
                 className="bg-[#C09D63] hover:bg-[#B08D55] text-white"
                 data-testid="payment-submit-btn"
               >
-                <DollarSign className="w-4 h-4 mr-2" />
+                <Banknote className="w-4 h-4 mr-2" />
                 {t('folio.postPayment')}
               </Button>
             </div>

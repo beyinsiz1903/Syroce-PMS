@@ -7,7 +7,7 @@ import { FixedSizeList as List } from 'react-window';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, User, DollarSign, Eye } from 'lucide-react';
+import { Calendar, User, Banknote, Eye } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
 
@@ -60,7 +60,7 @@ const BookingRow = memo(({ index, style, data }) => {
             <div>
               <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.tutar')}</div>
               <div className="font-medium flex items-center gap-1">
-                <DollarSign className="w-3 h-3" />
+                <Banknote className="w-3 h-3" />
                 ${booking.total_amount?.toFixed(2) || '0.00'}
               </div>
             </div>

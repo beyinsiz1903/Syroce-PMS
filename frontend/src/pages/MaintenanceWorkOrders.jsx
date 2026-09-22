@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Wrench, Filter, RefreshCw, AlertTriangle, CheckCircle, Camera, Image, Video } from "lucide-react";
+import { Building2, Wrench, Filter, RefreshCw, AlertTriangle, CheckCircle, Camera, Image, Video } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";

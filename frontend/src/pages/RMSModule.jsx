@@ -24,11 +24,7 @@ import {
   Legend,
   Filler,
 } from 'chart.js';
-import {
-  TrendingUp, Hotel, CalendarDays,
-  Ban, Zap, ArrowUpRight, ArrowDownRight, Minus,
-  RefreshCw, Loader2, AlertTriangle, Info, FlaskConical, BarChart3
-} from 'lucide-react';
+import { TrendingUp, Hotel, CalendarDays, Ban, Zap, ArrowUpRight, ArrowDownRight, Minus, RefreshCw, Loader2, AlertTriangle, Info, FlaskConical, BarChart3 } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement,

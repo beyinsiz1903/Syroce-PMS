@@ -7,10 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/ui/kpi-card';
-import {
-  UtensilsCrossed, RefreshCw, ShoppingCart, CreditCard, TrendingUp, Clock,
-  Plus, Monitor, AlertCircle, ExternalLink,
-} from 'lucide-react';
+import { UtensilsCrossed, RefreshCw, ShoppingCart, CreditCard, TrendingUp, Clock, Plus, Monitor, AlertCircle, ExternalLink } from 'lucide-react';
 
 const fmt = (v, lang) => (v || 0).toLocaleString(
   lang === 'tr' ? 'tr-TR' : lang === 'de' ? 'de-DE' : lang === 'fr' ? 'fr-FR' : lang === 'es' ? 'es-ES' : lang === 'it' ? 'it-IT' : lang === 'pt' ? 'pt-BR' : lang === 'ru' ? 'ru-RU' : lang === 'ar' ? 'ar-SA' : lang === 'zh' ? 'zh-CN' : 'en-US',

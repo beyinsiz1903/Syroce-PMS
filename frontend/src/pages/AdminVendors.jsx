@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import {
-  Store, CheckCircle2, Ban, Loader2, RefreshCw, ShoppingBag,
-  Clock, ShieldAlert, ShieldCheck, Wallet, Package,
-} from "lucide-react";
+import { Store, CheckCircle2, Ban, Loader2, RefreshCw, ShoppingBag, Clock, ShieldAlert, ShieldCheck, Wallet, Package } from 'lucide-react';
 
 import { confirmDialog, promptDialog } from "@/lib/dialogs";
 import { Button } from "@/components/ui/button";

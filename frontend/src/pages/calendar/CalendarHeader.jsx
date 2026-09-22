@@ -1,10 +1,7 @@
 import React, { useRef, useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import {
-  Calendar as CalendarIcon, ChevronLeft, ChevronRight,
-  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal, MoreHorizontal, Wrench
-} from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal, MoreHorizontal, Wrench } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,

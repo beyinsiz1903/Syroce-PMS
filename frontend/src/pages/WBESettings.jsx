@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, ExternalLink, Code } from "lucide-react";
+import { Copy, ExternalLink, Code } from 'lucide-react';
 import { toast } from "sonner";
 
 export default function WBESettings() {

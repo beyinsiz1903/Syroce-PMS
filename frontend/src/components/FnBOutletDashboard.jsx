@@ -5,10 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input }  from '@/components/ui/input';
 import { Label }  from '@/components/ui/label';
 import { toast }  from 'sonner';
-import {
-  TrendingUp, TrendingDown, DollarSign, Percent,
-  RefreshCw, Store, Award, ShoppingCart,
-} from 'lucide-react';
+import { TrendingUp, TrendingDown, Banknote, Percent, RefreshCw, Store, Award, ShoppingCart } from 'lucide-react';
 
 /* ─── helpers ── */
 const fmtDate = (d) => d.toISOString().slice(0, 10);
@@ -138,14 +135,14 @@ const FnBOutletDashboard = () => {
           ))
         ) : summary ? (
           <>
-            <SummaryCard icon={DollarSign}  label="Toplam Ciro"   value={`₺${fmt2(summary.total_revenue)}`}     color="blue"  />
+            <SummaryCard icon={Banknote}  label="Toplam Ciro"   value={`₺${fmt2(summary.total_revenue)}`}     color="blue"  />
             <SummaryCard icon={TrendingDown} label="Toplam Maliyet" value={`₺${fmt2(summary.total_cost)}`}      color="red"   />
             <SummaryCard icon={TrendingUp}  label="Brüt Kâr"     value={`₺${fmt2(summary.gross_profit)}`}      color="green" />
             <SummaryCard icon={Percent}     label="Kâr Marjı"    value={fmtPct(summary.profit_margin)}          color="gray"  />
           </>
         ) : (
           <div className="col-span-4 rounded-2xl border-2 border-dashed border-gray-200 bg-white py-8 text-center">
-            <DollarSign className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <Banknote className="w-10 h-10 text-gray-300 mx-auto mb-2" />
             <p className="text-gray-400 text-sm">Seçilen dönem için satış verisi yok</p>
           </div>
         )}

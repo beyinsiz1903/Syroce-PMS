@@ -8,28 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  ArrowLeft, 
-  UtensilsCrossed, 
-  DollarSign, 
-  TrendingUp,
-  Clock,
-  Users,
-  RefreshCw,
-  ShoppingBag,
-  BarChart3,
-  Plus,
-  Minus,
-  FileText,
-  XCircle,
-  MenuIcon,
-  Calculator,
-  Download,
-  Store,
-  ChevronDown,
-  CheckCircle,
-  Home
-} from 'lucide-react';
+import { ArrowLeft, UtensilsCrossed, Banknote, TrendingUp, Clock, Users, RefreshCw, ShoppingBag, BarChart3, Plus, Minus, FileText, XCircle, MenuIcon, Calculator, Download, Store, ChevronDown, CheckCircle, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { promptDialog } from '@/lib/dialogs';
@@ -298,7 +277,7 @@ const MobileFnB = ({ user }) => {
                     {formatCurrency(dailySummary?.total_sales || 0)}
                   </p>
                 </div>
-                <DollarSign className="w-10 h-10 text-green-300" />
+                <Banknote className="w-10 h-10 text-green-300" />
               </div>
             </CardContent>
           </Card>

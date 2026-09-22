@@ -11,17 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Network, 
-  Plus, 
-  Download, 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock,
-  XCircle,
-  RefreshCw,
-  Settings
-} from 'lucide-react';
+import { Network, Plus, Download, AlertTriangle, CheckCircle, Clock, XCircle, RefreshCw, Settings } from 'lucide-react';
 
 const ChannelManagerModule = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();

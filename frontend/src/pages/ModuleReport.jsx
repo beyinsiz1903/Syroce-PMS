@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import {
-  CheckCircle2, XCircle, FileSpreadsheet, Plus, RefreshCw, Search,
-  Building2, Sparkles, Receipt, BarChart3,
-} from 'lucide-react';
+import { CheckCircle2, XCircle, FileSpreadsheet, Plus, RefreshCw, Search, Building2, Sparkles, Receipt, BarChart3 } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

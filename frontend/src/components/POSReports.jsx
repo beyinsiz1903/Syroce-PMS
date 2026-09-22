@@ -9,10 +9,7 @@ import { Label } from './ui/label';
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from './ui/tabs';
-import {
-  BarChart3, RefreshCw, Printer, Calendar, Receipt,
-  TrendingUp, CreditCard, DollarSign, AlertCircle,
-} from 'lucide-react';
+import { BarChart3, RefreshCw, Printer, Calendar, Receipt, TrendingUp, CreditCard, Banknote, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 
@@ -130,7 +127,7 @@ const POSReports = ({ outletId }) => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <Card>
                     <CardContent className="p-4 text-center">
-                      <DollarSign className="w-6 h-6 mx-auto text-green-600 mb-1" />
+                      <Banknote className="w-6 h-6 mx-auto text-green-600 mb-1" />
                       <p className="text-xs text-gray-600">{t('cm.components_POSReports.brut_satis')}</p>
                       <p className="text-2xl font-bold text-green-600">
                         {fmt(report.gross_sales)}

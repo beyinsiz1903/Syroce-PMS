@@ -9,15 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Compass,
-  Search,
-  ExternalLink,
-  EyeOff,
-  Menu as MenuIcon,
-  Lock,
-  Globe,
-} from "lucide-react";
+import { Compass, Search, ExternalLink, EyeOff, Menu as MenuIcon, Lock, Globe } from 'lucide-react';
 import { NAV_ITEMS } from "@/config/navItems";
 import { canAccessPath, canAccessNavItem } from '@/utils/moduleAccess';
 import { useEntitlements } from '@/context/EntitlementContext';

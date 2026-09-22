@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Clock, Calendar, DollarSign, Briefcase, UserPlus, Download, Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle, TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle, Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown, Timer, Check, X, Package, GraduationCap } from 'lucide-react';
+import { Clock, Calendar, Banknote, Briefcase, UserPlus, Download, Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle, TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle, Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown, Timer, Check, X, Package, GraduationCap } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { promptDialog, confirmDialog } from '@/lib/dialogs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -954,10 +954,10 @@ const HRComplete = () => {
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
           <TabsTrigger value="payroll" data-testid="tab-payroll">
-            <DollarSign className="w-4 h-4 mr-2" />Bordro
+            <Banknote className="w-4 h-4 mr-2" />Bordro
           </TabsTrigger>
           <TabsTrigger value="advances" data-testid="tab-advances">
-            <DollarSign className="w-4 h-4 mr-2" />Avanslar
+            <Banknote className="w-4 h-4 mr-2" />Avanslar
           </TabsTrigger>
           <TabsTrigger value="leave" data-testid="tab-leave">
             <Calendar className="w-4 h-4 mr-2" />{t('cm.pages_HRComplete.izin')}
@@ -979,7 +979,7 @@ const HRComplete = () => {
         <HRAttendanceTab Users={Users} attendanceMetrics={attendanceMetrics} Clock={Clock} TrendingUp={TrendingUp} outstandingEquipTotal={outstandingEquipTotal} Package={Package} expiringTrainTotal={expiringTrainTotal} GraduationCap={GraduationCap} selectedStaffId={selectedStaffId} setSelectedStaffId={setSelectedStaffId} staffDropdown={staffDropdown} clockIn={clockIn} clockOut={clockOut} navigate={navigate} recordsRange={recordsRange} attendanceRecords={attendanceRecords} fmtTime={fmtTime} topPerformers={topPerformers} />
 
         {/* === PAYROLL === */}
-        <HRPayrollTab exportMonth={exportMonth} setExportMonth={setExportMonth} handlePayrollPreview={handlePayrollPreview} handlePayrollSaveDraft={handlePayrollSaveDraft} savingDraft={savingDraft} handlePayrollExport={handlePayrollExport} exporting={exporting} taxRates={taxRates} payrollRuns={payrollRuns} selectedRun={selectedRun} fmtCurrency={fmtCurrency} loadRunDetail={loadRunDetail} handlePayrollFinalize={handlePayrollFinalize} finalizing={finalizing} handleRevisionOpen={handleRevisionOpen} revising={revising} handleRunXlsx={handleRunXlsx} runRevisions={runRevisions} payrollPreview={payrollPreview} Users={Users} DollarSign={DollarSign} />
+        <HRPayrollTab exportMonth={exportMonth} setExportMonth={setExportMonth} handlePayrollPreview={handlePayrollPreview} handlePayrollSaveDraft={handlePayrollSaveDraft} savingDraft={savingDraft} handlePayrollExport={handlePayrollExport} exporting={exporting} taxRates={taxRates} payrollRuns={payrollRuns} selectedRun={selectedRun} fmtCurrency={fmtCurrency} loadRunDetail={loadRunDetail} handlePayrollFinalize={handlePayrollFinalize} finalizing={finalizing} handleRevisionOpen={handleRevisionOpen} revising={revising} handleRunXlsx={handleRunXlsx} runRevisions={runRevisions} payrollPreview={payrollPreview} Users={Users} Banknote={Banknote} />
 
         {/* === LEAVE === */}
         <HRLeaveTab leaveCounts={leaveCounts} loadLeaveBalances={loadLeaveBalances} staffPage={staffPage} balanceLoading={balanceLoading} leaveBalances={leaveBalances} submitLeave={submitLeave} leaveForm={leaveForm} setLeaveForm={setLeaveForm} staffDropdown={staffDropdown} LEAVE_TYPE_LABEL={LEAVE_TYPE_LABEL} creatingLeave={creatingLeave} leavePage={leavePage} STATUS_INTENT={STATUS_INTENT} STATUS_LABEL={STATUS_LABEL} decideLeave={decideLeave} />

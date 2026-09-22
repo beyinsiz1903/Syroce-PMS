@@ -6,9 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  ShieldCheck, ShieldX, Loader2, GraduationCap, Search,
-} from 'lucide-react';
+import { ShieldCheck, ShieldX, Loader2, GraduationCap, Search } from 'lucide-react';
 
 const apiBase = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '');
 const publicAxios = axios.create({ baseURL: apiBase ? `${apiBase}/api` : '/api' });

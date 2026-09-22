@@ -10,9 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  TrendingUp, AlertTriangle, Lock, Unlock, Save, Users
-} from 'lucide-react';
+import { TrendingUp, AlertTriangle, Lock, Unlock, Save, Users } from 'lucide-react';
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const RT_KEYS = ['standard', 'deluxe', 'cornerSuite', 'juniorSuite', 'kingSuite'];

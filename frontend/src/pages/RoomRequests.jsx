@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { RefreshCw, Clock, CheckCircle2, PlayCircle, AlertTriangle, User, Phone, MessageSquare, Building, QrCode, Sparkles, ClipboardList, ArrowRight } from "lucide-react";
+import { RefreshCw, Clock, CheckCircle2, PlayCircle, AlertTriangle, User, Phone, MessageSquare, Building, QrCode, Sparkles, ClipboardList, ArrowRight } from 'lucide-react';
 import RoomQRPrintAction from "@/components/RoomQRPrintAction";
 const STATUS_COLUMNS = [{
   key: "new",

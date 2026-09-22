@@ -18,35 +18,7 @@ import CashierShiftModal from '@/components/mobile-finance/dialogs/CashierShiftM
 import CashFlowModal from '@/components/mobile-finance/dialogs/CashFlowModal';
 import RiskModal from '@/components/mobile-finance/dialogs/RiskModal';
 import FolioExtractModal from '@/components/mobile-finance/dialogs/FolioExtractModal';
-import {
-  ArrowLeft, 
-  DollarSign, 
-  TrendingUp, 
-  Calendar,
-  AlertCircle,
-  Receipt,
-  CreditCard,
-  RefreshCw,
-  Plus,
-  BarChart3,
-  User,
-  FileText,
-  Clock,
-  CheckCircle,
-  Download,
-  FileDown,
-  TrendingDown,
-  Building2,
-  Banknote,
-  Filter,
-  Eye,
-  AlertTriangle,
-  XCircle,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  Wallet,
-  Home
-} from 'lucide-react';
+import { ArrowLeft, Banknote, TrendingUp, Calendar, AlertCircle, Receipt, CreditCard, RefreshCw, Plus, BarChart3, User, FileText, Clock, CheckCircle, Download, FileDown, TrendingDown, Building2, Filter, Eye, AlertTriangle, XCircle, ArrowUpCircle, ArrowDownCircle, Wallet, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const MobileFinance = ({ user }) => {
@@ -416,7 +388,7 @@ const MobileFinance = ({ user }) => {
                     {dailyCollections?.payment_count || 0} işlem
                   </p>
                 </div>
-                <DollarSign className="w-10 h-10 text-green-300" />
+                <Banknote className="w-10 h-10 text-green-300" />
               </div>
             </CardContent>
           </Card>

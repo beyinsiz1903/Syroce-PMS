@@ -8,15 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  DollarSign,
-  TrendingDown,
-  Calendar,
-  RefreshCw,
-  Download,
-  BarChart3,
-  PieChart,
-} from 'lucide-react';
+import { Banknote, TrendingDown, Calendar, RefreshCw, Download, BarChart3, PieChart } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -177,7 +169,7 @@ export default function CostAnalyticsView() {
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-red-600" />
+            <Banknote className="w-5 h-5 text-red-600" />
             {t('costAnalytics.title')}
           </h2>
           <p className="text-sm text-gray-600 mt-1">{t('costAnalytics.subtitle')}</p>
@@ -406,7 +398,7 @@ export default function CostAnalyticsView() {
 
       {categoryData.length > 0 && (
         <div className="rounded-md border border-blue-100 bg-blue-50/60 p-4 text-sm text-gray-700 flex items-start gap-3">
-          <DollarSign className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
+          <Banknote className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
           <div>
             <p className="font-medium text-gray-900 mb-1">
               {t('costAnalytics.summaryTitle')}

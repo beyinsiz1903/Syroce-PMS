@@ -12,10 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { runIdle } from '@/lib/idle';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { confirmDialog } from '@/lib/dialogs';
-import {
-  Sparkles, Plus, Calendar, Users, DoorOpen, RefreshCw, Trash2,
-  CheckCircle2, XCircle, PlayCircle, Receipt, History, Lock,
-} from 'lucide-react';
+import { Sparkles, Plus, Calendar, Users, DoorOpen, RefreshCw, Trash2, CheckCircle2, XCircle, PlayCircle, Receipt, History, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';

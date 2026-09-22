@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import { ArrowLeft, DollarSign, Tag, Package, TrendingUp, RefreshCw, Percent } from 'lucide-react';
+import { ArrowLeft, Banknote, Tag, Package, TrendingUp, RefreshCw, Percent } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const RateManagementMobile = ({ user }) => {

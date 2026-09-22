@@ -7,11 +7,7 @@ import StaffAssignment    from '../components/StaffAssignment';
 import MessagingTemplates from '../components/MessagingTemplates';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { alertDialog } from '@/lib/dialogs';
-import {
-  Users, UtensilsCrossed, MessageSquare, Sparkles,
-  ArrowLeft, Menu, ShoppingBag, BarChart2, ScissorsSquare,
-  ChevronRight,
-} from 'lucide-react';
+import { Users, UtensilsCrossed, MessageSquare, Sparkles, ArrowLeft, Menu, ShoppingBag, BarChart2, ScissorsSquare, ChevronRight } from 'lucide-react';
 
 /* ─── tab config ─────────────────────────────────────────────────── */
 const TABS = [

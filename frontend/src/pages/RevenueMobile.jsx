@@ -4,20 +4,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {
-  ArrowLeft, 
-  RefreshCw, 
-  TrendingUp, 
-  TrendingDown, 
-  Minus,
-  DollarSign,
-  PieChart,
-  BarChart3,
-  Calendar,
-  Users,
-  XCircle,
-  AlertCircle
-} from 'lucide-react';
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus, Banknote, PieChart, BarChart3, Calendar, Users, XCircle, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const RevenueMobile = ({ user }) => {
@@ -180,7 +167,7 @@ const RevenueMobile = ({ user }) => {
               <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <DollarSign className="h-5 w-5" />
+                    <Banknote className="h-5 w-5" />
                     <span className="text-sm font-medium">ADR</span>
                   </div>
                   <div className="text-2xl font-bold">{formatCurrency(adrData?.adr || 0)}</div>

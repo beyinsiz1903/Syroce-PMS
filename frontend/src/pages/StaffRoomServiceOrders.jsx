@@ -4,11 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast }          from 'sonner';
 import { confirmDialog }  from '@/lib/dialogs';
-import {
-  ArrowLeft, RefreshCw, Clock, BedDouble, Coffee,
-  CheckCircle2, ChefHat, Truck, XCircle, Wifi, WifiOff,
-  ListChecks, Loader2, Package,
-} from 'lucide-react';
+import { ArrowLeft, RefreshCw, Clock, BedDouble, Coffee, CheckCircle2, ChefHat, Truck, XCircle, Wifi, WifiOff, ListChecks, Loader2, Package } from 'lucide-react';
 
 /* ─── constants ─────────────────────────────────────────────────── */
 const STATUS_FLOW  = { pending: 'confirmed', confirmed: 'preparing', preparing: 'delivered' };

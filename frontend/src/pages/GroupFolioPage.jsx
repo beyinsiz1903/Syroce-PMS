@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Merge, Users, DollarSign, FileText, Check, AlertTriangle, RefreshCw, ArrowRight, Lock, Search, ChevronDown, ChevronRight, CreditCard, Banknote, TrendingUp, Layers, Clock } from 'lucide-react';
+import { Merge, Users, Banknote, FileText, Check, AlertTriangle, RefreshCw, ArrowRight, Lock, Search, ChevronDown, ChevronRight, CreditCard, TrendingUp, Layers, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
 const fmtTL = (v, locale = 'tr-TR') => (v || 0).toLocaleString(locale, {
@@ -302,7 +302,7 @@ const GroupFolioPage = ({
         {summary && <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="summary-stats">
             <StatCard icon={Users} label={t('cm.pages_GroupFolioPage.toplam_grup')} value={summary.total_groups} sub={`${summary.active_groups} aktif`} color="bg-violet-100 text-violet-600" />
             <StatCard icon={FileText} label={t('cm.pages_GroupFolioPage.toplam_rez')} value={summary.total_bookings} color="bg-blue-100 text-blue-600" />
-            <StatCard icon={DollarSign} label={t('cm.pages_GroupFolioPage.toplam_bakiye')} value={`${fmtTL(summary.total_balance)} TL`} color={summary.total_balance > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'} />
+            <StatCard icon={Banknote} label={t('cm.pages_GroupFolioPage.toplam_bakiye')} value={`${fmtTL(summary.total_balance)} TL`} color={summary.total_balance > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'} />
             <StatCard icon={Merge} label="Birlestirmeler" value={summary.merge_operations} sub={`${summary.merged_folios} folio`} color="bg-amber-100 text-amber-600" />
           </div>}
 

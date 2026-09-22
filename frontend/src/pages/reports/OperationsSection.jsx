@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, DollarSign, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
+import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, Banknote, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
 export const NoShowSection = ({
@@ -176,7 +176,7 @@ export const DepartmentsSection = ({
           <StatBox label="Tamamlanan" value={maint.completed_month || 0} color="green" />
         </div></CardContent>
       </Card>
-      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><DollarSign className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Banknote className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
           <StatBox label="Bekleyen" value={finance.pending_invoices || 0} color="red" />
           <StatBox label="Ödenen" value={finance.paid_invoices_month || 0} color="green" />

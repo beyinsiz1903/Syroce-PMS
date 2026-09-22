@@ -10,23 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import {
-  ArrowLeft, 
-  Package,
-  AlertTriangle,
-  TrendingDown,
-  TrendingUp,
-  Filter,
-  RefreshCw,
-  History,
-  Edit,
-  CheckCircle,
-  XCircle,
-  BarChart3,
-  Plus,
-  Minus,
-  Activity
-} from 'lucide-react';
+import { ArrowLeft, Package, AlertTriangle, TrendingDown, TrendingUp, Filter, RefreshCw, History, Edit, CheckCircle, XCircle, BarChart3, Plus, Minus, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canAdjustMobileInventory } from '@/utils/mobilePermissions';
 

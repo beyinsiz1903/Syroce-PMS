@@ -1,8 +1,6 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
-import {
-  CheckCircle2, AlertTriangle, Loader2, XCircle, Clock,
-} from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Loader2, XCircle, Clock } from 'lucide-react';
 
 export const statusConfig = {
   completed: { label: "Tamamlandı", color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: CheckCircle2 },

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, AlertTriangle, History, PlayCircle } from "lucide-react";
+import { Loader2, RefreshCw, AlertTriangle, History, PlayCircle } from 'lucide-react';
 
 const recommendationVariant = (rec) => {
   if (rec === "auto_safe" || rec === "auto_safe_all_inactive") return "secondary";

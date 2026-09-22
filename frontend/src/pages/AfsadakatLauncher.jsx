@@ -10,10 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import {
-  Sparkles, ExternalLink, Loader2, ShieldCheck, AlertCircle,
-  ShoppingBag, Wrench, Crown, Search, Check
-} from "lucide-react";
+import { Sparkles, ExternalLink, Loader2, ShieldCheck, AlertCircle, ShoppingBag, Wrench, Crown, Search, Check } from 'lucide-react';
 import api from "@/api/axios";
 
 // A simple autocomplete component for Guest Search

@@ -4,10 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  FileText, Printer, Users, BedDouble,
-  Calendar, ArrowUpRight, ArrowDownRight, Minus
-} from 'lucide-react';
+import { FileText, Printer, Users, BedDouble, Calendar, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 
 const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departures = [], inhouse = [] }) => {
   const { t, i18n } = useTranslation();

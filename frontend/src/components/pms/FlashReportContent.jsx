@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, BedDouble, DollarSign, LogIn, LogOut, AlertTriangle, RefreshCw, Printer, Users, UserX, UserPlus, XCircle, Sparkles, X } from 'lucide-react';
+import { TrendingUp, BedDouble, Banknote, LogIn, LogOut, AlertTriangle, RefreshCw, Printer, Users, UserX, UserPlus, XCircle, Sparkles, X } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useTranslation } from 'react-i18next';
@@ -241,7 +241,7 @@ const FlashReportContent = ({
                 <p className="text-2xl font-bold text-emerald-900">{fmtMoney(d.kpi?.adr || 0)}</p>
                 <p className="text-xs text-emerald-600 mt-0.5">{t('cm.components_pms_FlashReportContent.ort_oda_fiyati')}</p>
               </div>
-              <DollarSign className="w-7 h-7 text-emerald-500" />
+              <Banknote className="w-7 h-7 text-emerald-500" />
             </div>
           </CardContent>
         </Card>
@@ -322,7 +322,7 @@ const FlashReportContent = ({
         <Card data-testid="flash-departments">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-emerald-500" /> {t('cm.components_pms_FlashReportContent.departman_bazli_gelir')}
+              <Banknote className="w-4 h-4 text-emerald-500" /> {t('cm.components_pms_FlashReportContent.departman_bazli_gelir')}
             </CardTitle>
           </CardHeader>
           <CardContent>

@@ -15,10 +15,7 @@ import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import {
-  ArrowLeft, AlertTriangle, RefreshCw, Loader2, ChevronDown,
-  ChevronRight, Clock, User as UserIcon, Building2,
-} from "lucide-react";
+import { ArrowLeft, AlertTriangle, RefreshCw, Loader2, ChevronDown, ChevronRight, Clock, User as UserIcon, Building2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));

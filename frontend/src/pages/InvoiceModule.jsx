@@ -15,10 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  FileText, Plus, Building2, Info,
-  Wallet, Package, AlertCircle, Receipt, BarChart3, Inbox,
-} from 'lucide-react';
+import { FileText, Plus, Building2, Info, Wallet, Package, AlertCircle, Receipt, BarChart3, Inbox } from 'lucide-react';
 
 const InvoiceModule = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();

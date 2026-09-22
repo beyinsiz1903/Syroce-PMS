@@ -16,10 +16,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import {
-  ArrowRight, CalendarDays, Clock3, Dumbbell, Info, Loader2, MapPin,
-  Plus, RefreshCw, Search, Settings2, UserRound, X,
-} from "lucide-react";
+import { ArrowRight, CalendarDays, Clock3, Dumbbell, Info, Loader2, MapPin, Plus, RefreshCw, Search, Settings2, UserRound, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { guestLabel } from '@/utils/displayIdentifiers';
 

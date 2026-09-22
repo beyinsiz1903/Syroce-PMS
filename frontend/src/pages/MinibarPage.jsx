@@ -11,10 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { confirmDialog } from '@/lib/dialogs';
-import {
-  Wine, Plus, RefreshCw, Trash2, Pencil, Receipt,
-  Boxes, PackageCheck, AlertTriangle, Minus,
-} from 'lucide-react';
+import { Wine, Plus, RefreshCw, Trash2, Pencil, Receipt, Boxes, PackageCheck, AlertTriangle, Minus } from 'lucide-react';
 
 const CATEGORY_OPTIONS = [
   { value: 'drink', label: 'İçecek' },

@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Search, FileText, CreditCard, Plus, DollarSign, Receipt, Eye, Printer } from 'lucide-react';
+import { Search, FileText, CreditCard, Plus, Banknote, Receipt, Eye, Printer } from 'lucide-react';
 import RegistrationCard from './RegistrationCard';
 import PrintableFolio from './PrintableFolio';
 import { alertDialog } from '@/lib/dialogs';

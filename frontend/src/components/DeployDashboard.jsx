@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { Rocket, RefreshCw, CheckCircle, XCircle, RotateCcw, Clock, GitBranch, ChevronDown, ChevronRight, Server, Activity, TrendingUp } from "lucide-react";
+import { Rocket, RefreshCw, CheckCircle, XCircle, RotateCcw, Clock, GitBranch, ChevronDown, ChevronRight, Server, Activity, TrendingUp } from 'lucide-react';
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";

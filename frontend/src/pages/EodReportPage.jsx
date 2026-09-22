@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Loader2, FileText, Send, Download, Calendar, X as XIcon, AlertTriangle, CheckCircle2, TrendingUp, DollarSign, ExternalLink } from 'lucide-react';
+import { Loader2, FileText, Send, Download, Calendar, X as XIcon, AlertTriangle, CheckCircle2, TrendingUp, Banknote, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 const today = () => new Date().toISOString().slice(0, 10);
@@ -348,7 +348,7 @@ export default function EodReportPage({
             {/* Finansal blok — büyük */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <KpiCard label="Doluluk" value={`${data.occupancy_rate}%`} sub={`${data.occupied} / ${data.rooms_total} oda dolu`} accent="sky" icon={TrendingUp} />
-              <KpiCard label={t('cm.pages_EodReportPage.toplam_gelir')} value={`${(data.revenue_total || 0).toLocaleString(i18n.language)} ₺`} sub={`Ödeme ${(data.payments_total || 0).toLocaleString(i18n.language)} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString(i18n.language)} ₺`} accent="emerald" icon={DollarSign} />
+              <KpiCard label={t('cm.pages_EodReportPage.toplam_gelir')} value={`${(data.revenue_total || 0).toLocaleString(i18n.language)} ₺`} sub={`Ödeme ${(data.payments_total || 0).toLocaleString(i18n.language)} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString(i18n.language)} ₺`} accent="emerald" icon={Banknote} />
             </div>
 
             {/* Operasyonel blok — yatay küçük */}

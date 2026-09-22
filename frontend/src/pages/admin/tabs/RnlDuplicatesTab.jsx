@@ -4,10 +4,7 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Loader2, RefreshCw, ShieldAlert, CheckCircle2, AlertTriangle,
-  PlayCircle, Database,
-} from 'lucide-react';
+import { Loader2, RefreshCw, ShieldAlert, CheckCircle2, AlertTriangle, PlayCircle, Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const BASE = '/api/admin/db/room-night-lock-duplicates';

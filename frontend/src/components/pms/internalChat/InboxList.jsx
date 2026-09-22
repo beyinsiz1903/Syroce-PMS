@@ -1,9 +1,7 @@
 import { Badge as BadgeUI } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Inbox, AlertCircle, CheckCircle, MessageSquare, Reply,
-} from 'lucide-react';
+import { Inbox, AlertCircle, CheckCircle, MessageSquare, Reply } from 'lucide-react';
 
 const InboxList = ({
   inbox,

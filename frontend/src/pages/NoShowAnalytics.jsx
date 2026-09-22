@@ -6,11 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Ban, TrendingDown, Building2, Radio, AlertTriangle, Flame,
-  Calendar, Shield, Brain, ChevronRight, Info, Plus, Trash2,
-  ToggleLeft, ToggleRight, RefreshCw, Target, Zap, BarChart3
-} from 'lucide-react';
+import { Ban, TrendingDown, Building2, Radio, AlertTriangle, Flame, Calendar, Shield, Brain, ChevronRight, Info, Plus, Trash2, ToggleLeft, ToggleRight, RefreshCw, Target, Zap, BarChart3 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /* ─── Color maps ───────────────────────────────────────── */

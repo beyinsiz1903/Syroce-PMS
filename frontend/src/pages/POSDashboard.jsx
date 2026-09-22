@@ -9,11 +9,7 @@ import POSOutletManagement  from '../components/POSOutletManagement';
 import POSReports           from '../components/POSReports';
 import POSPrinterSettings   from '../components/POSPrinterSettings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import {
-  UtensilsCrossed, BarChart3, Sparkles, Store, LayoutGrid,
-  AlertCircle, Coffee, Tablet, Printer, Menu as MenuIcon,
-  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor,
-} from 'lucide-react';
+import { UtensilsCrossed, BarChart3, Sparkles, Store, LayoutGrid, AlertCircle, Coffee, Tablet, Printer, Menu as MenuIcon, TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor } from 'lucide-react';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 

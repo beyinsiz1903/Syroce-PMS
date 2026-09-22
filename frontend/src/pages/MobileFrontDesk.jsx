@@ -8,29 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { performCheckin } from '@/utils/offlineCheckin';
 import { performCheckout } from '@/utils/offlineCheckout';
-import { 
-  ArrowLeft, 
-  Users, 
-  CheckCircle, 
-  XCircle,
-  Clock,
-  Bed,
-  RefreshCw,
-  UserPlus,
-  Calendar,
-  Search,
-  AlertCircle,
-  DollarSign,
-  Filter,
-  Star,
-  Home,
-  Camera,
-  CreditCard,
-  QrCode,
-  Key,
-  ChevronDown,
-  ChevronUp
-} from 'lucide-react';
+import { ArrowLeft, Users, CheckCircle, XCircle, Clock, Bed, RefreshCw, UserPlus, Calendar, Search, AlertCircle, Banknote, Filter, Star, Home, Camera, CreditCard, QrCode, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import useMediaCapture from '@/hooks/useMediaCapture';
@@ -725,7 +703,7 @@ const MobileFrontDesk = ({ user }) => {
                 className="h-20 flex flex-col items-center justify-center bg-blue-600 hover:bg-blue-700"
                 onClick={() => setFeeCalculatorModalOpen(true)}
               >
-                <DollarSign className="w-6 h-6 mb-1" />
+                <Banknote className="w-6 h-6 mb-1" />
                 <span className="text-xs">Ücret Hesapla</span>
               </Button>
               <Button

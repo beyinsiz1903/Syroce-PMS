@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, RefreshCw, Settings2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, RefreshCw, Settings2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 
 const SETUP_STATUSES = new Set([402, 403]);

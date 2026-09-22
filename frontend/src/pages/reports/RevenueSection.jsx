@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { DollarSign, Calendar, TrendingUp, Utensils, RefreshCw } from 'lucide-react';
+import { Banknote, Calendar, TrendingUp, Utensils, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, Cell, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
 import { useTranslation } from 'react-i18next';
@@ -140,7 +140,7 @@ const RevenueSection = ({
   return <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title={t('cm.pages_reports_RevenueSection.bugunku_gelir')} value={s.today_revenue} icon={DollarSign} color="green" />
+      <KPICard title={t('cm.pages_reports_RevenueSection.bugunku_gelir')} value={s.today_revenue} icon={Banknote} color="green" />
       <KPICard title={t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={pc.week_revenue} icon={Calendar} color="blue" />
       <KPICard title={t('cm.pages_reports_RevenueSection.aylik_gelir')} value={pc.month_revenue} prevValue={pc.prev_month_revenue} icon={TrendingUp} color="purple" />
       <KPICard title="F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />

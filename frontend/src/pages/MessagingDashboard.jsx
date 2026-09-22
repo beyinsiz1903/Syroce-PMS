@@ -17,12 +17,7 @@ import { Switch } from '../components/ui/switch';
 import { PageHeader } from '../components/ui/page-header';
 import { KpiCard } from '../components/ui/kpi-card';
 import { StatusBadge } from '../components/ui/status-badge';
-import {
-  Mail, MessageSquare, RefreshCw, Send, Settings, FileText, BarChart3,
-  Loader2, Plus, Trash2, CheckCircle2, XCircle, Clock, AlertTriangle,
-  Pencil, TestTube, ArrowRight, Zap, Play, Power, Timer, Bell, Sparkles,
-  Shield,
-} from 'lucide-react';
+import { Mail, MessageSquare, RefreshCw, Send, Settings, FileText, BarChart3, Loader2, Plus, Trash2, CheckCircle2, XCircle, Clock, AlertTriangle, Pencil, TestTube, ArrowRight, Zap, Play, Power, Timer, Bell, Sparkles, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';

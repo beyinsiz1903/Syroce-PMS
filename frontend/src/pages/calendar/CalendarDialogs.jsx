@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, CheckCircle, AlertCircle, Clock, Gift, UserCheck, UserPlus } from "lucide-react";
+import { Search, CheckCircle, AlertCircle, Clock, Gift, UserCheck, UserPlus } from 'lucide-react';
 import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpers";
 import { alertDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';

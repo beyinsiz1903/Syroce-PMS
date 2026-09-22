@@ -1,26 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "react-hot-toast";
-import {
-  AlertTriangle,
-  ShoppingCart,
-  Package,
-  Truck,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Plus,
-  Minus,
-  Trash2,
-  CreditCard,
-  Banknote,
-  Store,
-  BarChart3,
-  Sparkles,
-  Tag,
-  Clock,
-  Wallet,
-} from "lucide-react";
+import { AlertTriangle, ShoppingCart, Package, Truck, CheckCircle2, XCircle, Loader2, Plus, Minus, Trash2, CreditCard, Banknote, Store, BarChart3, Sparkles, Tag, Clock, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const PAYMENT_LABELS = {

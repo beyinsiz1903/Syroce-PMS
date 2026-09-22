@@ -10,9 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Calendar, Plus, Users, Clock, Printer, CheckCircle, AlertCircle
-} from 'lucide-react';
+import { Calendar, Plus, Users, Clock, Printer, CheckCircle, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const SETUP_TYPES = [

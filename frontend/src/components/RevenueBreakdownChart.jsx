@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { DollarSign, TrendingUp } from 'lucide-react';
+import { Banknote, TrendingUp } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
@@ -40,7 +40,7 @@ const RevenueBreakdownChart = () => {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center">
-          <DollarSign className="w-5 h-5 mr-2 text-green-600" />
+          <Banknote className="w-5 h-5 mr-2 text-green-600" />
           Revenue Breakdown - {data.month}
         </CardTitle>
       </CardHeader>

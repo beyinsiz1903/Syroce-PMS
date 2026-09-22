@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { CalendarCheck, Users, BedDouble, AlertTriangle, DoorOpen, DoorClosed, ShieldCheck, RefreshCw, Moon, CheckCircle, XCircle, Wrench, TrendingUp, Filter, Building2, Sparkles, ChevronRight } from "lucide-react";
+import { CalendarCheck, Users, BedDouble, AlertTriangle, DoorOpen, DoorClosed, ShieldCheck, RefreshCw, Moon, CheckCircle, XCircle, Wrench, TrendingUp, Filter, Building2, Sparkles, ChevronRight } from 'lucide-react';
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from "recharts";
 const API = "";

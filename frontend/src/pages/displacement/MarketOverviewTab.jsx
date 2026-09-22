@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Building2, DollarSign, Percent, BarChart3 } from 'lucide-react';
+import { Building2, Banknote, Percent, BarChart3 } from 'lucide-react';
 import { RISK_COLORS, fmt } from './helpers';
 import { LoadingState, EmptyState, MetricCard } from './shared';
 const MarketOverviewTab = ({
@@ -37,7 +37,7 @@ const MarketOverviewTab = ({
   return <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <MetricCard icon={Building2} label={t('displacement.totalRooms', 'Total Rooms')} value={data.total_rooms} />
-        <MetricCard icon={DollarSign} label={t('displacement.historicalAdr', 'Historical ADR')} value={fmt(data.historical_adr)} prefix="₺" />
+        <MetricCard icon={Banknote} label={t('displacement.historicalAdr', 'Historical ADR')} value={fmt(data.historical_adr)} prefix="₺" />
         <MetricCard icon={Percent} label={t('displacement.cancelRate', 'Cancel Rate')} value={`${data.cancellation_rate_pct}%`} />
         <MetricCard icon={BarChart3} label={t('displacement.channels', 'Channels')} value={data.channel_mix?.length || 0} />
       </div>

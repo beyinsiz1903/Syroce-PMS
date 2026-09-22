@@ -7,22 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import {
-  Briefcase, 
-  Users, 
-  Building2,
-  TrendingUp,
-  DollarSign,
-  Calendar,
-  FileText,
-  Target,
-  Phone,
-  Mail,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  Plus
-} from 'lucide-react';
+import { Briefcase, Users, Building2, TrendingUp, Banknote, Calendar, FileText, Target, Phone, Mail, CheckCircle, Clock, AlertCircle, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const SalesModule = ({ user, tenant, onLogout }) => {

@@ -12,7 +12,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { TrendingUp, RefreshCw, Loader2, BarChart3 } from "lucide-react";
+import { TrendingUp, RefreshCw, Loader2, BarChart3 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend,

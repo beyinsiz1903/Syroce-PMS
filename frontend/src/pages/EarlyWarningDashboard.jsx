@@ -8,19 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Play,
-  Square,
-  RefreshCw,
-  Zap,
-  Gauge,
-  TrendingUp,
-  Clock,
-  Radar,
-} from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Play, Square, RefreshCw, Zap, Gauge, TrendingUp, Clock, Radar } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const BASE = "/ops-events/early-warnings";

@@ -4,10 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import {
-  CreditCard, ArrowRightLeft, Building2, DollarSign, ArrowDownUp,
-  Plus, Receipt, FileText, Loader2, Split
-} from 'lucide-react';
+import { CreditCard, ArrowRightLeft, Building2, Banknote, ArrowDownUp, Plus, Receipt, FileText, Loader2, Split } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -177,7 +174,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setCariForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
         <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setAgencyForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowAgency(!showAgency); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
-        <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
+        <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><Banknote className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
         <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol">
           <Split className="w-3 h-3 mr-1" /> Folyo Böl
         </Button>

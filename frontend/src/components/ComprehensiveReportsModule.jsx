@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { TrendingUp, DollarSign, Target, BarChart3, PieChart, Award } from 'lucide-react';
+import { TrendingUp, Banknote, Target, BarChart3, PieChart, Award } from 'lucide-react';
 const ComprehensiveReportsModule = () => {
   const [menuEngineering, setMenuEngineering] = useState(null);
   const [campaigns, setCampaigns] = useState([]);

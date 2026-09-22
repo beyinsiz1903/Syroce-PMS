@@ -21,10 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Wrench, CheckCircle, Clock, AlertCircle, Plus, Search,
-  ClipboardList, Filter, RefreshCw, Trash2, User, BedDouble
-} from 'lucide-react';
+import { Wrench, CheckCircle, Clock, AlertCircle, Plus, Search, ClipboardList, Filter, RefreshCw, Trash2, User, BedDouble } from 'lucide-react';
 
 const TASK_TYPE_KEYS = ['maintenance', 'cleaning', 'repair', 'inspection', 'setup', 'delivery'];
 const TASK_ICONS = { maintenance: '', cleaning: '', repair: '', inspection: '', setup: '', delivery: '' };

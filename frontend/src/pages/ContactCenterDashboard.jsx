@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, RefreshCw, 
-  AlertCircle, PhoneCall, Headset, Play, Users, Radio, Volume2, 
-  CheckCircle2, Zap, ShieldAlert, Sparkles 
-} from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, RefreshCw, AlertCircle, PhoneCall, Headset, Play, Users, Radio, Volume2, CheckCircle2, Zap, ShieldAlert, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 

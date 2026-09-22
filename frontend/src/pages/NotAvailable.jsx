@@ -2,7 +2,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Lock, ArrowLeft } from "lucide-react";
+import { Lock, ArrowLeft } from 'lucide-react';
 import { useTranslation } from "react-i18next";
 
 export default function NotAvailable({ user }) {

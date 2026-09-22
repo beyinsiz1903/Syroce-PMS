@@ -1,7 +1,4 @@
-import {
-  Sparkles, Wrench, Wifi, Tv, Thermometer, Utensils, Wine, Beer, Shirt,
-  Car, Bell, Heart, Package, MessageSquare, AlertTriangle, Hotel, CheckCircle2, Loader2
-} from "lucide-react";
+import { Sparkles, Wrench, Wifi, Tv, Thermometer, Utensils, Wine, Beer, Shirt, Car, Bell, Heart, Package, MessageSquare, AlertTriangle, Hotel, CheckCircle2, Loader2 } from 'lucide-react';
 
 export const ICONS = {
   sparkles: Sparkles, wrench: Wrench, wifi: Wifi, tv: Tv, thermometer: Thermometer,

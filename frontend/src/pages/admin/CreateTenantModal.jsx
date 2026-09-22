@@ -3,13 +3,7 @@ import axios from 'axios';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import {
-  Building2, Home, TreePalm, Bed, Car, Building, Gem, Tent,
-  Briefcase, Sun, Snowflake, Droplets, Star, Crown, ChevronRight,
-  ChevronLeft, Check, Users, DoorOpen, Sparkles, ArrowRight,
-  RotateCcw, CalendarDays, UserRound, Plug, WalletCards,
-  SlidersHorizontal, Search, ChevronDown, Info,
-} from 'lucide-react';
+import { Building2, Home, TreePalm, Bed, Car, Building, Gem, Tent, Briefcase, Sun, Snowflake, Droplets, Star, Crown, ChevronRight, ChevronLeft, Check, Users, DoorOpen, Sparkles, ArrowRight, RotateCcw, CalendarDays, UserRound, Plug, WalletCards, SlidersHorizontal, Search, ChevronDown, Info } from 'lucide-react';
 import { MODULE_GROUPS, PLANS, isModuleIncludedInPlan } from './tenantConstants';
 import { useTranslation } from 'react-i18next';
 

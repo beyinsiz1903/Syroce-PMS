@@ -10,10 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Star, MessageCircle, RefreshCw, Send, TrendingUp, Mail, Globe,
-  Building2, ClipboardList, Inbox, Search, ExternalLink, CheckCircle2
-} from 'lucide-react';
+import { Star, MessageCircle, RefreshCw, Send, TrendingUp, Mail, Globe, Building2, ClipboardList, Inbox, Search, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const SOURCE_META = {

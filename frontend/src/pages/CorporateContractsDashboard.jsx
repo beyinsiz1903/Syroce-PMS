@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Building2, TrendingUp, Percent, AlertTriangle, RefreshCw } from "lucide-react";
+import { Building2, TrendingUp, Percent, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
 

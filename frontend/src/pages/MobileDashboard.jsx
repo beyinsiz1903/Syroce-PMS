@@ -2,19 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  Home, 
-  Bed, 
-  Users, 
-  UtensilsCrossed, 
-  Wrench, 
-  DollarSign, 
-  BarChart3,
-  ArrowLeft,
-  Menu,
-  Smartphone,
-  Shield
-} from 'lucide-react';
+import { Home, Bed, Users, UtensilsCrossed, Wrench, Banknote, BarChart3, ArrowLeft, Menu, Smartphone, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const MobileDashboard = ({ user, onLogout }) => {
@@ -63,7 +51,7 @@ const MobileDashboard = ({ user, onLogout }) => {
       id: 'finance',
       name: t('mobileDashboard.finance'),
       nameEn: 'Finance',
-      icon: DollarSign,
+      icon: Banknote,
       color: 'bg-teal-500',
       roles: ['ADMIN', 'SUPERVISOR', 'FINANCE'],
       path: '/mobile/finance'
@@ -182,7 +170,7 @@ const MobileDashboard = ({ user, onLogout }) => {
             className="flex flex-col items-center py-4 h-auto"
             onClick={() => navigate('/invoices')}
           >
-            <DollarSign className="w-6 h-6 mb-1" />
+            <Banknote className="w-6 h-6 mb-1" />
             <span className="text-xs">{t('mobileDashboard.invoices')}</span>
           </Button>
           <Button 

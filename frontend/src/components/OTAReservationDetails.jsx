@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Textarea } from './ui/textarea';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Building2, CreditCard, Users, DollarSign, Plus, Link2 } from 'lucide-react';
+import { Building2, CreditCard, Users, Banknote, Plus, Link2 } from 'lucide-react';
 const OTAReservationDetails = ({
   bookingId
 }) => {
@@ -130,7 +130,7 @@ const OTAReservationDetails = ({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5" />
+              <Banknote className="w-5 h-5" />
               Extra Charges
             </CardTitle>
             <Button onClick={() => setShowAddCharge(!showAddCharge)} size="sm" variant="outline">

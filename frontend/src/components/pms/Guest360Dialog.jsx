@@ -9,11 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Send, FileText, Star, Phone, Mail, MapPin, Calendar,
-  Hotel, Award, ShieldCheck, AlertTriangle, MessageSquare,
-  Heart, Globe, Tag, Clock, User, DollarSign, TrendingUp, Loader2, Crown
-} from 'lucide-react';
+import { Send, FileText, Star, Phone, Mail, MapPin, Calendar, Hotel, Award, ShieldCheck, AlertTriangle, MessageSquare, Heart, Globe, Tag, Clock, User, Banknote, TrendingUp, Loader2, Crown } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { promptDialog } from '@/lib/dialogs';
 import CallButton from '@/components/contact-center/CallButton';

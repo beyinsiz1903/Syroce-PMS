@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw, AlertTriangle, Receipt, CreditCard } from 'lucide-react';
+import { Plus, ClipboardList, Banknote, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw, AlertTriangle, Receipt, CreditCard } from 'lucide-react';
 import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
@@ -495,7 +495,7 @@ th{background:#f5f5f5}
 
                 <div>
                   <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
-                    <DollarSign className="w-5 h-5 mr-2 text-emerald-600" /> Ödemeler
+                    <Banknote className="w-5 h-5 mr-2 text-emerald-600" /> Ödemeler
                   </h3>
                   <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
                     {folioPayments.length === 0 ? <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-gray-200 rounded-xl bg-gray-50 text-gray-400">

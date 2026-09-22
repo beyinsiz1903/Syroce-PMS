@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast, Toaster } from "react-hot-toast";
 import { confirmDialog } from '@/lib/dialogs';
-import { Store, Package, ClipboardList, Plus, Edit2, Trash2, Truck, CheckCircle2, XCircle, LogOut, Loader2, Wallet, TrendingUp } from "lucide-react";
+import { Store, Package, ClipboardList, Plus, Edit2, Trash2, Truck, CheckCircle2, XCircle, LogOut, Loader2, Wallet, TrendingUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const VENDOR_TOKEN_KEY = "vendor_token";
 const CATEGORIES = [{

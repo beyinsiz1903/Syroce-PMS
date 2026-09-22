@@ -15,11 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from './ui/alert-dialog';
-import {
-  Plus, Pencil, Trash2, RefreshCw, Store, MapPin, Users, Clock,
-  ChefHat, GlassWater, Coffee as CafeIcon, Sparkles, Bed, UtensilsCrossed,
-  Loader2,
-} from 'lucide-react';
+import { Plus, Pencil, Trash2, RefreshCw, Store, MapPin, Users, Clock, ChefHat, GlassWater, Coffee as CafeIcon, Sparkles, Bed, UtensilsCrossed, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';

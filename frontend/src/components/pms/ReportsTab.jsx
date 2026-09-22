@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, TrendingUp, Hotel, DollarSign, BarChart3, LogIn, LogOut, Home } from 'lucide-react';
+import { RefreshCw, TrendingUp, Hotel, Banknote, BarChart3, LogIn, LogOut, Home } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import ReservationReportsTab from './ReservationReportsTab';
@@ -166,7 +166,7 @@ const ReportsTab = () => {
         <Card className="border-l-4 border-l-emerald-500">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-              <DollarSign className="w-4 h-4" /> ADR
+              <Banknote className="w-4 h-4" /> ADR
             </div>
             <p className="text-2xl font-bold">{revenue ? fmtCurrency(adr) : '...'}</p>
             <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.ortalama_gunluk_oda_fiyati')}</p>

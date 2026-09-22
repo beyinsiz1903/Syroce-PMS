@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Building2, TrendingUp, DollarSign, Users, Calendar } from 'lucide-react';
+import { Building2, TrendingUp, Banknote, Users, Calendar } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -127,7 +127,7 @@ const MultiPropertyDashboard = () => {
                 <p className="text-sm text-gray-600">{t('reports.totalRevenue')}</p>
                 <p className="text-3xl font-bold">${(dashboardData?.total_revenue || 0).toLocaleString()}</p>
               </div>
-              <DollarSign className="w-8 h-8 text-green-500" />
+              <Banknote className="w-8 h-8 text-green-500" />
             </div>
           </CardContent>
         </Card>

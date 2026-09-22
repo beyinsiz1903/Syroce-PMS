@@ -5,12 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { 
-  Instagram, Twitter, Facebook, TrendingUp, AlertTriangle, Heart, 
-  MessageCircle, Info, RefreshCw, Loader2, Shield, Bot, Sparkles, 
-  CheckCircle2, CornerDownRight, Settings, Inbox, LayoutDashboard, 
-  Send, Unlink, Link2, Search, CheckCircle, Clock, Activity, Zap, Plus, Edit2, Trash2 
-} from 'lucide-react';
+import { Instagram, Twitter, Facebook, TrendingUp, AlertTriangle, Heart, MessageCircle, Info, RefreshCw, Loader2, Shield, Bot, Sparkles, CheckCircle2, CornerDownRight, Settings, Inbox, LayoutDashboard, Send, Unlink, Link2, Search, CheckCircle, Clock, Activity, Zap, Plus, Edit2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';

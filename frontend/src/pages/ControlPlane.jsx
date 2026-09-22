@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
-import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge, Flame, Award, Rocket, LayoutDashboard } from "lucide-react";
+import { Search, Activity, Radio, ArrowLeft, RefreshCw, AlertTriangle, CheckCircle, XCircle, Clock, ChevronRight, ChevronDown, Copy, ExternalLink, Gauge, Flame, Award, Rocket, LayoutDashboard } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";

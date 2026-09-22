@@ -1,22 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import {
-  BarChart3,
-  BookOpenCheck,
-  CalendarRange,
-  Cable,
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  Landmark,
-  LayoutDashboard,
-  ListTree,
-  ReceiptText,
-  Search,
-  Settings2,
-  Star,
-  Users,
-  Zap,
-} from 'lucide-react';
+import { BarChart3, BookOpenCheck, CalendarRange, Cable, ChevronDown, ChevronRight, FileText, Landmark, LayoutDashboard, ListTree, ReceiptText, Search, Settings2, Star, Users, Zap } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 
 export const GL_NAV_GROUPS = [

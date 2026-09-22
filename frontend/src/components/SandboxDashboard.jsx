@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { Shield, CheckCircle, XCircle, AlertTriangle, RefreshCw, Play, ChevronDown, ChevronUp, ExternalLink, Clock, TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { Shield, CheckCircle, XCircle, AlertTriangle, RefreshCw, Play, ChevronDown, ChevronUp, ExternalLink, Clock, TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";

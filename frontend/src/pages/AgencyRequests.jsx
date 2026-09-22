@@ -1,20 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-import { 
-  Building2, 
-  Calendar, 
-  Users, 
-  DollarSign, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle,
-  Loader2,
-  Phone,
-  Mail,
-  Bed
-} from 'lucide-react';
+import { Building2, Calendar, Users, Banknote, Clock, CheckCircle, XCircle, AlertCircle, Loader2, Phone, Mail, Bed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

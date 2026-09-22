@@ -9,11 +9,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 
 import { promptDialog } from '@/lib/dialogs';
-import {
-  User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone,
-  Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw, Pencil,
-  Download, ShieldCheck, LogOut,
-} from 'lucide-react';
+import { User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone, Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw, Pencil, Download, ShieldCheck, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const getInitials = (name) => {

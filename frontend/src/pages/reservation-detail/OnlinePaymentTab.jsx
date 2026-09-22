@@ -5,10 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import {
-  CreditCard, Eye, EyeOff, Lock, Shield, AlertTriangle,
-  Plus, Trash2, Loader2, Check, Info
-} from 'lucide-react';
+import { CreditCard, Eye, EyeOff, Lock, Shield, AlertTriangle, Plus, Trash2, Loader2, Check, Info } from 'lucide-react';
 import { API } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';

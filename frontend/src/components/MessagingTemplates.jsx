@@ -6,15 +6,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
-import { 
-  MessageSquare, 
-  Phone, 
-  Mail,
-  Send,
-  RefreshCw,
-  Copy,
-  Edit
-} from 'lucide-react';
+import { MessageSquare, Phone, Mail, Send, RefreshCw, Copy, Edit } from 'lucide-react';
 
 const MessagingTemplates = () => {
   const [templates, setTemplates] = useState([]);

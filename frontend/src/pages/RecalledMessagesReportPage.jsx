@@ -19,22 +19,7 @@ import { Input } from "../components/ui/input";
 import { PageHeader } from "../components/ui/page-header";
 import { KpiCard } from "../components/ui/kpi-card";
 import { StatusBadge } from "../components/ui/status-badge";
-import {
-  ArrowLeft,
-  Undo2,
-  RefreshCw,
-  Loader2,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  User as UserIcon,
-  Building2,
-  AlertTriangle,
-  Download,
-  Inbox,
-  History,
-  TrendingUp,
-} from "lucide-react";
+import { ArrowLeft, Undo2, RefreshCw, Loader2, ChevronDown, ChevronRight, Clock, User as UserIcon, Building2, AlertTriangle, Download, Inbox, History, TrendingUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));

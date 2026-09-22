@@ -10,18 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
-import { 
-  Mail, 
-  MessageSquare, 
-  Phone, 
-  Bell,
-  Send,
-  Users,
-  FileText,
-  Clock,
-  CheckCircle,
-  Smartphone
-} from 'lucide-react';
+import { Mail, MessageSquare, Phone, Bell, Send, Users, FileText, Clock, CheckCircle, Smartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { alertDialog } from '@/lib/dialogs';
 

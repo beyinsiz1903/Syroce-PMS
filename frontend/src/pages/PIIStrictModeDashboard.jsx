@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Shield, ShieldAlert, ShieldCheck, Eye, EyeOff, Lock, Unlock, AlertTriangle, CheckCircle2, ArrowLeft, RefreshCw, Database, FileWarning, Clock, Users, Route } from "lucide-react";
+import { Shield, ShieldAlert, ShieldCheck, Eye, EyeOff, Lock, Unlock, AlertTriangle, CheckCircle2, ArrowLeft, RefreshCw, Database, FileWarning, Clock, Users, Route } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
 function PIIStrictModeDashboard({

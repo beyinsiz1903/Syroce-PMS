@@ -4,11 +4,7 @@ import axios from 'axios';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Calendar, AlertOctagon, AlertTriangle, CheckCircle2,
-  ArrowRight, RefreshCw, Building2, Users, Bed, Brush,
-  ShieldAlert, Clock, Info, Play,
-} from 'lucide-react';
+import { Calendar, AlertOctagon, AlertTriangle, CheckCircle2, ArrowRight, RefreshCw, Building2, Users, Bed, Brush, ShieldAlert, Clock, Info, Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ACTION_LABELS = {

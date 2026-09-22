@@ -4,7 +4,7 @@
  * Softphone numarayı doldurur ve hazırsa çağrıyı başlatır, değilse aktivasyona
  * yönlendirir. Geçerli numara yoksa hiçbir şey render edilmez.
  */
-import { Phone } from "lucide-react";
+import { Phone } from 'lucide-react';
 
 import { dialViaSoftphone, normalizeDialNumber } from "@/lib/softphone";
 

@@ -17,7 +17,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Settings2, Plus, RefreshCw, Trash2, Save, Search, Loader2 } from "lucide-react";
+import { Settings2, Plus, RefreshCw, Trash2, Save, Search, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /**

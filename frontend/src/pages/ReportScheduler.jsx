@@ -11,7 +11,7 @@ import { confirmDialog } from '@/lib/dialogs';
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Calendar, Clock, Mail, Plus, Play, Pause, Trash2, Edit, Send, RefreshCw, AlertTriangle, CheckCircle, XCircle, FileText, BarChart3, Loader2, RotateCcw, Eye, ScrollText, Info } from "lucide-react";
+import { Calendar, Clock, Mail, Plus, Play, Pause, Trash2, Edit, Send, RefreshCw, AlertTriangle, CheckCircle, XCircle, FileText, BarChart3, Loader2, RotateCcw, Eye, ScrollText, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const BACKEND = import.meta.env.VITE_BACKEND_URL || "";
 const headers = () => ({

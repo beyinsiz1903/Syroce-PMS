@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, RefreshCw, Filter, ArrowLeft, List } from "lucide-react";
+import { Calendar, RefreshCw, Filter, ArrowLeft, List } from 'lucide-react';
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
 import { folioLabel, reservationLabel, roomLabel } from '@/utils/displayIdentifiers';

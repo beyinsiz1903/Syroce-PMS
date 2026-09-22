@@ -10,10 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  Shield, Send, CheckCircle, AlertTriangle, Clock,
-  Download, Search, UserCog, Loader2, RefreshCw, Skull, ListPlus
-} from 'lucide-react';
+import { Shield, Send, CheckCircle, AlertTriangle, Clock, Download, Search, UserCog, Loader2, RefreshCw, Skull, ListPlus } from 'lucide-react';
 
 const escapeXml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 const EMPTY_LIST = Object.freeze([]);

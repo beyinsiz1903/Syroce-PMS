@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText } from 'lucide-react';
+import { Building, Home, MapPin, TrendingUp, Hotel, Banknote, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const MultiProperty = ({ embedded = false }) => {
@@ -69,7 +69,7 @@ const MultiProperty = ({ embedded = false }) => {
           </Card>
           <Card>
             <CardContent className="pt-6 text-center">
-              <DollarSign className="w-10 h-10 text-amber-600 mx-auto mb-2" />
+              <Banknote className="w-10 h-10 text-amber-600 mx-auto mb-2" />
               <p className="text-3xl font-bold">€{data.summary.total_revenue}</p>
               <p className="text-sm text-gray-500">Bugün Gelir</p>
             </CardContent>

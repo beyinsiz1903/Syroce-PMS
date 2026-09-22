@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Grid3X3, CalendarDays, Ban, CheckCircle2, Eye, Loader2, Building2, ChevronDown, ChevronUp, Settings2, Percent, DollarSign, X, AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Grid3X3, CalendarDays, Ban, CheckCircle2, Eye, Loader2, Building2, ChevronDown, ChevronUp, Settings2, Percent, Banknote, X, AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
@@ -851,7 +851,7 @@ const AgencyOverrideEditor = ({
           <Percent className="w-2.5 h-2.5" /> Carpan
         </button>
         <button onClick={() => setOverrideType('fixed')} className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${overrideType === 'fixed' ? 'bg-sky-100 text-sky-700' : 'bg-zinc-200 text-zinc-500'}`}>
-          <DollarSign className="w-2.5 h-2.5" /> Sabit
+          <Banknote className="w-2.5 h-2.5" /> Sabit
         </button>
       </div>
 

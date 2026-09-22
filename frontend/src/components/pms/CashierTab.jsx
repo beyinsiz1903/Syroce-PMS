@@ -10,13 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Wallet, DollarSign, ArrowRightLeft, Clock,
-  LogIn, LogOut, Receipt, RefreshCw,
-  Calculator, UserCheck, Users, Plus, Minus,
-  FileText, FileDown, Search, Printer, AlertTriangle,
-  Landmark, CalendarRange, KeyRound
-} from 'lucide-react';
+import { Wallet, Banknote, ArrowRightLeft, Clock, LogIn, LogOut, Receipt, RefreshCw, Calculator, UserCheck, Users, Plus, Minus, FileText, FileDown, Search, Printer, AlertTriangle, Landmark, CalendarRange, KeyRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const DIFF_THRESHOLD = 50;
@@ -588,7 +582,7 @@ const CashierTab = () => {
                   {filteredTransactions.map((t, i) => (
                     <div key={t.id || i} className="flex items-center justify-between p-2 rounded border border-gray-100 hover:bg-gray-50 text-xs">
                       <div className="flex items-center gap-2">
-                        {t.direction === 'in' ? <DollarSign className="w-3.5 h-3.5 text-emerald-500" /> : <ArrowRightLeft className="w-3.5 h-3.5 text-red-500" />}
+                        {t.direction === 'in' ? <Banknote className="w-3.5 h-3.5 text-emerald-500" /> : <ArrowRightLeft className="w-3.5 h-3.5 text-red-500" />}
                         <span className="text-gray-700">{t.description || txnTypeLabel(t.type)}</span>
                         <Badge variant="outline" className="text-[10px]">{methodLabel(t.method)}</Badge>
                         {t.created_by_name && (

@@ -8,12 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import {
-  X, Calendar, DollarSign, FileText, Users, Receipt,
-  History, MessageSquare, Star, AlertTriangle,
-  LogIn, LogOut, Repeat2, Shield, Mail, Loader2, CreditCard,
-  ChevronDown, DoorOpen, Globe, Clock, Layers, Eye, BedDouble,
-} from 'lucide-react';
+import { X, Calendar, Banknote, FileText, Users, Receipt, History, MessageSquare, Star, AlertTriangle, LogIn, LogOut, Repeat2, Shield, Mail, Loader2, CreditCard, ChevronDown, DoorOpen, Globe, Clock, Layers, Eye, BedDouble } from 'lucide-react';
 
 import { API, fmtTL, fmtCurrency, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
@@ -404,7 +399,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const primaryTabs = [
     { id: 'general', label: 'Genel Bilgiler', icon: FileText },
     { id: 'guests', label: `Misafirler${guests?.length ? ` (${guests.length})` : ''}`, icon: Users },
-    { id: 'folios', label: 'Folyolar', icon: DollarSign },
+    { id: 'folios', label: 'Folyolar', icon: Banknote },
     { id: 'online_payment', label: 'Online Ödeme', icon: CreditCard },
     { id: 'extras', label: 'Ek Ücretler', icon: Receipt },
     { id: 'invoice', label: 'Fatura', icon: Receipt },

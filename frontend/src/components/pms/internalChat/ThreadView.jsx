@@ -18,10 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  MessagesSquare, MessageSquare, RefreshCw, ArrowLeft,
-  AlertCircle, CheckCheck, MoreVertical, Trash2, Pencil, X, Send,
-} from 'lucide-react';
+import { MessagesSquare, MessageSquare, RefreshCw, ArrowLeft, AlertCircle, CheckCheck, MoreVertical, Trash2, Pencil, X, Send } from 'lucide-react';
 import { ROLE_LABELS, RECALL_WINDOW_MS, EDIT_WINDOW_MS } from './constants';
 import { useTranslation } from 'react-i18next';
 

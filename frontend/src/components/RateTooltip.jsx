@@ -1,5 +1,5 @@
 import React from 'react';
-import { DollarSign, TrendingUp, Tag } from 'lucide-react';
+import { Banknote, TrendingUp, Tag } from 'lucide-react';
 
 /**
  * Rate Tooltip - Shows ADR, BAR, and Rate Code on hover
@@ -29,7 +29,7 @@ const RateTooltip = ({ adr, bar, rateCode, date, visible }) => {
       {/* ADR (Average Daily Rate) */}
       <div className="flex items-center justify-between mb-1.5">
         <span className="flex items-center gap-1 text-gray-400">
-          <DollarSign className="w-3 h-3" />
+          <Banknote className="w-3 h-3" />
           ADR:
         </span>
         <span className="font-bold text-green-400">

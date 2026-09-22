@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { DollarSign, BedDouble, Users, Hotel, Utensils, TrendingUp, AlertTriangle, BarChart3, ArrowUpRight, ArrowDownRight, Calendar, BookOpen, LayoutDashboard } from 'lucide-react';
+import { Banknote, BedDouble, Users, Hotel, Utensils, TrendingUp, AlertTriangle, BarChart3, ArrowUpRight, ArrowDownRight, Calendar, BookOpen, LayoutDashboard } from 'lucide-react';
 import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, formatPercent, KPICard, CustomTooltip, SectionHeader, EmptyState, StatBox, ROOM_STATUS_COLORS, ROOM_STATUS_LABELS } from './ReportHelpers';
 const OverviewSection = ({
@@ -23,7 +23,7 @@ const OverviewSection = ({
   return <div className="space-y-6" data-testid="section-overview">
     <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" icon={LayoutDashboard} actions={<StatusBadge intent="success">Canlı</StatusBadge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      <KPICard title={`Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="success" />
+      <KPICard title={`Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrency(pc.prev_month_revenue)} icon={Banknote} color="success" />
       <KPICard title="Ortalama ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
       <KPICard title="RevPAR" value={s.revpar} icon={BarChart3} color="warning" />
       <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="info" />

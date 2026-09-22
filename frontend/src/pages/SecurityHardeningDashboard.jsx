@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Shield, Lock, Users, Server, Eye, RefreshCw, Loader2, KeyRound, ClipboardCheck, Database, AlertTriangle } from "lucide-react";
+import { Shield, Lock, Users, Server, Eye, RefreshCw, Loader2, KeyRound, ClipboardCheck, Database, AlertTriangle } from 'lucide-react';
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";

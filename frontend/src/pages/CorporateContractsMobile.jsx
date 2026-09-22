@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import { ArrowLeft, Building2, AlertTriangle, Calendar, DollarSign, RefreshCw, Award } from 'lucide-react';
+import { ArrowLeft, Building2, AlertTriangle, Calendar, Banknote, RefreshCw, Award } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const CorporateContractsMobile = ({ user }) => {

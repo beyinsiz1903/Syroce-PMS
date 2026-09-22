@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { Printer, Loader2 } from "lucide-react";
+import { Printer, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 

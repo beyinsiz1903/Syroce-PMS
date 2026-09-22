@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck, Download, Printer } from 'lucide-react';
+import { BarChart3, Banknote, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck, Download, Printer } from 'lucide-react';
 import ForecastReportsPage from './ForecastReportsPage';
 import FlashReportContent from '@/components/pms/FlashReportContent';
 import TrialBalancePage from './TrialBalancePage';
@@ -43,7 +43,7 @@ const REPORT_MENU = [{
 }, {
   id: 'revenue',
   label: 'Gelir Raporu',
-  icon: DollarSign,
+  icon: Banknote,
   desc: 'Gelir analizi ve trend'
 }, {
   id: 'adr_revpar',

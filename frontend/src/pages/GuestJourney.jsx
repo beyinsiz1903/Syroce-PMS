@@ -10,10 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Smile, Meh, Frown, Home, Plus, Trash2, RefreshCw,
-  MessageSquare, DoorClosed,
-} from 'lucide-react';
+import { Smile, Meh, Frown, Home, Plus, Trash2, RefreshCw, MessageSquare, DoorClosed } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { confirmDialog } from '@/lib/dialogs';

@@ -17,7 +17,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { PageHeader } from "../components/ui/page-header";
 import { useToast } from "../hooks/use-toast";
-import { AlertTriangle, BellRing, Check, RefreshCw, Search, ShieldCheck, Loader2 } from "lucide-react";
+import { AlertTriangle, BellRing, Check, RefreshCw, Search, ShieldCheck, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ROLE_LABELS = {

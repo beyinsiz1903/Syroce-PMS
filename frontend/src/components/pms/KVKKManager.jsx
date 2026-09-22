@@ -11,9 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Shield, CheckCircle, Database, UserX
-} from 'lucide-react';
+import { Shield, CheckCircle, Database, UserX } from 'lucide-react';
 
 const CATEGORY_KEYS = ['guestId', 'folioInvoice', 'contactInfo', 'preferencesNotes', 'cameraRecords', 'marketingConsents', 'complaintRecords', 'employeeRecords'];
 const RETENTION_KEYS = ['tenYears', 'tenYears', 'threeYears', 'fiveYears', 'thirtyDays', 'untilRevoked', 'fiveYears', 'fifteenYears'];

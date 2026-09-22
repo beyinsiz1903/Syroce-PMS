@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "@/api/axios";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { AlertTriangle, Crown, Repeat, Cake, Heart, ShieldAlert, Utensils, Bed, MapPin, FileText, Loader2 } from "lucide-react";
+import { AlertTriangle, Crown, Repeat, Cake, Heart, ShieldAlert, Utensils, Bed, MapPin, FileText, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const LEVEL_STYLE = {

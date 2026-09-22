@@ -5,7 +5,7 @@ import { Badge } from './ui/badge';
 import { Slider } from './ui/slider';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { TrendingUp, DollarSign, Calendar, Target, Award } from 'lucide-react';
+import { TrendingUp, Banknote, Calendar, Target, Award } from 'lucide-react';
 const RevenueManagementAdvanced = () => {
   const [activeTab, setActiveTab] = useState('pricing'); // pricing, heatmap, compset
   const [pricingData, setPricingData] = useState(null);
@@ -99,7 +99,7 @@ const RevenueManagementAdvanced = () => {
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b">
         <Button variant={activeTab === 'pricing' ? 'default' : 'ghost'} onClick={() => setActiveTab('pricing')} className="rounded-b-none">
-          <DollarSign className="w-4 h-4 mr-2" />
+          <Banknote className="w-4 h-4 mr-2" />
           Price Optimizer
         </Button>
         <Button variant={activeTab === 'heatmap' ? 'default' : 'ghost'} onClick={() => setActiveTab('heatmap')} className="rounded-b-none">

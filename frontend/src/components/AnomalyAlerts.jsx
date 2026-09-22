@@ -3,14 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { 
-  Bell,
-  AlertTriangle,
-  TrendingDown,
-  DollarSign,
-  X,
-  Activity
-} from 'lucide-react';
+import { Bell, AlertTriangle, TrendingDown, Banknote, X, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const AnomalyAlerts = () => {
@@ -57,7 +50,7 @@ const AnomalyAlerts = () => {
       case 'occupancy_drop':
         return <TrendingDown className="h-5 w-5" />;
       case 'revpar_deviation':
-        return <DollarSign className="h-5 w-5" />;
+        return <Banknote className="h-5 w-5" />;
       case 'cancellation_spike':
         return <X className="h-5 w-5" />;
       default:

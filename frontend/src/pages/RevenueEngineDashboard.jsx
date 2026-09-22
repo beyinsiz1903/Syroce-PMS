@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { TrendingUp, DollarSign, BarChart3, Target, Calendar, ArrowUp, ArrowDown, Minus, Zap, ShieldAlert, Globe, ChevronRight, RefreshCw, CheckCircle } from 'lucide-react';
+import { TrendingUp, Banknote, BarChart3, Target, Calendar, ArrowUp, ArrowDown, Minus, Zap, ShieldAlert, Globe, ChevronRight, RefreshCw, CheckCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

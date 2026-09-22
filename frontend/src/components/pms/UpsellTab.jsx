@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { TrendingUp, Search, CheckCircle, XCircle, RefreshCw, Sparkles, ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3, DollarSign, Target, Percent, Building2, Settings as SettingsIcon } from 'lucide-react';
+import { TrendingUp, Search, CheckCircle, XCircle, RefreshCw, Sparkles, ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3, Banknote, Target, Percent, Building2, Settings as SettingsIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const PRICE_FIELDS = [{
   key: 'late_checkout',
@@ -290,7 +290,7 @@ const UpsellTab = ({
           <Card className="border-l-4 border-l-emerald-500">
             <CardContent className="pt-4 pb-3">
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-                <DollarSign className="w-4 h-4" /> ADR
+                <Banknote className="w-4 h-4" /> ADR
               </div>
               <p className="text-2xl font-bold">{kpis.adr?.toFixed(0)} TL</p>
               <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.ortalama_gunluk_fiyat')}</p>

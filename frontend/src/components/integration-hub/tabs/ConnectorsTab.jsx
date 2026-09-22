@@ -4,15 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import {
-  Network, Plus, RefreshCw, CheckCircle, AlertTriangle, XCircle,
-  Clock, ArrowUpDown, Link2, Unlink, Shield, Activity, FileText,
-  Download, Eye, ChevronRight, Zap, Settings, Database, Map,
-  Loader2, Wifi, Key, Home, BedDouble, DollarSign, FileCode,
-  RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer,
-  UserCheck, Ban, PackageCheck, AlertCircle, MailCheck, MailX,
-  Search, Filter, ExternalLink
-} from 'lucide-react';
+import { Network, Plus, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock, ArrowUpDown, Link2, Unlink, Shield, Activity, FileText, Download, Eye, ChevronRight, Zap, Settings, Database, Map, Loader2, Wifi, Key, Home, BedDouble, Banknote, FileCode, RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer, UserCheck, Ban, PackageCheck, AlertCircle, MailCheck, MailX, Search, Filter, ExternalLink } from 'lucide-react';
 import { HealthBadge, StatusBadge, AckBadge } from '../badges';
 
 export default function ConnectorsTab(props) {

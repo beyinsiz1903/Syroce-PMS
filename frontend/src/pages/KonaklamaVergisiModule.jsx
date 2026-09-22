@@ -7,31 +7,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { Button } from '@/components/ui/button';
-import {
-  Building2,
-  Calculator,
-  CheckCircle2,
-  ClipboardList,
-  Download,
-  FileCode,
-  FileDown,
-  FileText,
-  History,
-  Info,
-  Loader2,
-  Lock,
-  Mail,
-  Percent,
-  Plus,
-  Printer,
-  Receipt,
-  RefreshCw,
-  Save,
-  Send,
-  Settings,
-  ShieldOff,
-  Wallet,
-} from "lucide-react";
+import { Building2, Calculator, CheckCircle2, ClipboardList, Download, FileCode, FileDown, FileText, History, Info, Loader2, Lock, Mail, Percent, Plus, Printer, Receipt, RefreshCw, Save, Send, Settings, ShieldOff, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { folioLabel, reservationLabel } from '@/utils/displayIdentifiers';
 

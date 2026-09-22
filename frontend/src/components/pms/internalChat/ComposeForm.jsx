@@ -6,9 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
-import {
-  Building2, Users, MessageSquare, Search, Send,
-} from 'lucide-react';
+import { Building2, Users, MessageSquare, Search, Send } from 'lucide-react';
 import { DEPARTMENTS, ROLE_LABELS, CONVERSATION_DEPARTMENT_FILTERS } from './constants';
 
 const ComposeForm = ({

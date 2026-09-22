@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { ArrowLeft, Clock, Filter, Search, User, Shield, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye, Globe, Monitor, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Clock, Filter, Search, User, Shield, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye, Globe, Monitor, ShieldCheck, ShieldAlert } from 'lucide-react';
 const API = "";
 function SeverityBadge({
   severity

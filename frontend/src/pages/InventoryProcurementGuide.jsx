@@ -4,11 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 
 import { Button } from '@/components/ui/button';
-import {
-  Package, AlertTriangle, ClipboardList, CheckCircle2, Truck,
-  PackageCheck, ArrowRight, ShoppingCart, Sparkles, RefreshCw,
-  ChevronDown, ChevronUp, FileText, Wallet, Clock, Users,
-} from 'lucide-react';
+import { Package, AlertTriangle, ClipboardList, CheckCircle2, Truck, PackageCheck, ArrowRight, ShoppingCart, Sparkles, RefreshCw, ChevronDown, ChevronUp, FileText, Wallet, Clock, Users } from 'lucide-react';
 
 // Static color tokens — Tailwind JIT cannot resolve `bg-${color}-100` strings,
 // so every class is written out fully here and safelisted automatically by JIT

@@ -19,10 +19,7 @@ import {
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import {
-  Users, Plus, LogIn, LogOut, Search, Loader2, ChevronRight,
-  Trash2, RefreshCw, BedDouble, Wallet, CreditCard,
-} from 'lucide-react';
+import { Users, Plus, LogIn, LogOut, Search, Loader2, ChevronRight, Trash2, RefreshCw, BedDouble, Wallet, CreditCard } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);

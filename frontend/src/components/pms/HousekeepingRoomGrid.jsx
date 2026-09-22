@@ -6,10 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import {
-  Bed, CheckCircle, AlertTriangle, Wrench, Search as SearchIcon,
-  Eye, Filter, RefreshCw, ChevronDown, Sparkles
-} from 'lucide-react';
+import { Bed, CheckCircle, AlertTriangle, Wrench, Search as SearchIcon, Eye, Filter, RefreshCw, ChevronDown, Sparkles } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
 import { performRoomStatusUpdate } from '@/utils/offlineRoomStatus';
 import { websocket } from '@/lib/websocket';

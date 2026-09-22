@@ -2,9 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { 
-  ShieldCheck, Key, RefreshCw, AlertTriangle, CheckCircle, Database, Link as LinkIcon
-} from 'lucide-react';
+import { ShieldCheck, Key, RefreshCw, AlertTriangle, CheckCircle, Database, Link as LinkIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

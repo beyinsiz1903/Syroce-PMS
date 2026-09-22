@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
-import { TrendingUp, TrendingDown, Minus, Award, Shield, Clock, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Award, Shield, Clock, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";

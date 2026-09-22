@@ -8,11 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
-import {
-  Plug, RefreshCw, CheckCircle2, KeyRound, Wrench,
-  ExternalLink, ShieldCheck, AlertCircle, Settings2,
-  ArrowRight, Info,
-} from "lucide-react";
+import { Plug, RefreshCw, CheckCircle2, KeyRound, Wrench, ExternalLink, ShieldCheck, AlertCircle, Settings2, ArrowRight, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const CATEGORY_TONE = {

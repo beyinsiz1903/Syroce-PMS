@@ -6,16 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { 
-  Building2,
-  DollarSign,
-  AlertCircle,
-  Clock,
-  Search,
-  Download,
-  Mail,
-  Phone
-} from 'lucide-react';
+import { Building2, Banknote, AlertCircle, Clock, Search, Download, Mail, Phone } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useTranslation } from 'react-i18next';
@@ -299,7 +290,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                         ${totalOutstanding.toFixed(2)}
                       </div>
                     </div>
-                    <DollarSign className="w-12 h-12 opacity-75" />
+                    <Banknote className="w-12 h-12 opacity-75" />
                   </div>
                 </CardContent>
               </Card>
@@ -403,7 +394,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
               <CardContent>
                 {filteredData.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
-                    <DollarSign className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                    <Banknote className="w-16 h-16 mx-auto mb-4 opacity-50" />
                     <p className="text-lg font-semibold mb-2">No Pending AR</p>
                     <p className="text-sm">All corporate invoices are paid up!</p>
                   </div>

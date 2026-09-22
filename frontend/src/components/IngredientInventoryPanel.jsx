@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Package, AlertTriangle, DollarSign, Boxes, Plus } from 'lucide-react';
+import { Package, AlertTriangle, Banknote, Boxes, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const categoryLabels = {
@@ -118,7 +118,7 @@ const IngredientInventoryPanel = () => {
         <Card className="bg-gradient-to-r from-emerald-50 to-emerald-100 border-emerald-200">
           <CardContent className="p-4">
             <p className="text-xs text-emerald-700 font-semibold flex items-center gap-2 uppercase tracking-wide">
-              <DollarSign className="w-4 h-4" />
+              <Banknote className="w-4 h-4" />
               {t('cm.components_IngredientInventoryPanel.envanter_degeri', 'Envanter Değeri')}
             </p>
             <p className="text-3xl font-bold text-emerald-900 mt-1">

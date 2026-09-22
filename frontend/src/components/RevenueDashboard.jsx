@@ -12,7 +12,7 @@ import {
   Legend
 } from 'chart.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import { Banknote, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -134,7 +134,7 @@ const RevenueDashboard = () => {
                 <p className="text-sm text-gray-600">Total Revenue</p>
                 <p className="text-2xl font-bold">${totalRevenue.toLocaleString()}</p>
               </div>
-              <DollarSign className="w-8 h-8 text-green-500" />
+              <Banknote className="w-8 h-8 text-green-500" />
             </div>
           </CardContent>
         </Card>

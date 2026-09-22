@@ -3,14 +3,11 @@ import DOMPurify from "dompurify";
 import axios from "axios";
 import { toast } from "sonner";
 
-import {
-  BookOpen, ChevronRight, FileText, Hotel, LifeBuoy, Loader2,
-  Package, Rocket, ScrollText, Search, Tag,
-} from "lucide-react";
+import { BookOpen, ChevronRight, FileText, Hotel, LifeBuoy, Loader2, Package, Rocket, ScrollText, Search, Tag } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
-  Rocket, Hotel, DollarSign: BookOpen, Package, ScrollText,
+  Rocket, Hotel, Banknote: BookOpen, Package, ScrollText,
   BookOpen, FileText,
 };
 

@@ -15,18 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { 
-  FileText, 
-  Download, 
-  Calendar,
-  TrendingUp,
-  DollarSign,
-  Building,
-  FileSpreadsheet,
-  Plus,
-  X,
-  Trash2
-} from 'lucide-react';
+import { FileText, Download, Calendar, TrendingUp, Banknote, Building, FileSpreadsheet, Plus, X, Trash2 } from 'lucide-react';
 import { normalizeFeatures } from '@/utils/featureFlags';
 import { useTranslation } from 'react-i18next';
 
@@ -71,7 +60,7 @@ const Reports = ({ user, tenant, onLogout }) => {
       id: 'daily-flash',
       name: t('reports.dailyFlashReport'),
       category: 'financial',
-      icon: DollarSign,
+      icon: Banknote,
       endpoint: '/reports/daily-flash/excel',
       needsDateRange: false,
       description: t('reports.dailyFlashReport')
@@ -80,7 +69,7 @@ const Reports = ({ user, tenant, onLogout }) => {
       id: 'company-aging',
       name: t('reports.companyAgingReport'),
       category: 'financial',
-      icon: DollarSign,
+      icon: Banknote,
       endpoint: '/reports/company-aging/excel',
       needsDateRange: false,
       description: t('reports.companyAgingReport')
@@ -89,7 +78,7 @@ const Reports = ({ user, tenant, onLogout }) => {
       id: 'revenue-detail',
       name: t('reports.revenueDetailReport'),
       category: 'financial',
-      icon: DollarSign,
+      icon: Banknote,
       endpoint: '/reports/revenue-detail/excel',
       needsDateRange: true,
       description: t('reports.revenueDetailReport')

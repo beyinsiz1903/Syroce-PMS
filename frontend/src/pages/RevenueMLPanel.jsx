@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendingUp, Brain, Target, AlertTriangle, Users, ChevronRight, ArrowUp, ArrowDown, Minus, RefreshCw, Loader2, DollarSign } from 'lucide-react';
+import { TrendingUp, Brain, Target, AlertTriangle, Users, ChevronRight, ArrowUp, ArrowDown, Minus, RefreshCw, Loader2, Banknote } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -136,7 +136,7 @@ export default function RevenueMLPanel() {
 
       {/* Summary KPIs — Sprint A standardı */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard icon={DollarSign} intent="danger" label="Riskli Rez. Geliri" value={`${(data?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString('tr-TR')} TL`} />
+        <KpiCard icon={Banknote} intent="danger" label="Riskli Rez. Geliri" value={`${(data?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString('tr-TR')} TL`} />
         <KpiCard icon={Target} intent="success" label={t('cm.pages_RevenueMLPanel.fiyat_opt_firsati')} value={priceOpt.length} />
         <KpiCard icon={TrendingUp} intent="info" label={t('cm.pages_RevenueMLPanel.yuksek_talep_gunu')} value={`${data?.summary?.high_demand_days_next_14 || 0}/14`} />
         <KpiCard icon={AlertTriangle} intent="warning" label={t('cm.pages_RevenueMLPanel.riskli_rez_sayisi')} value={data?.cancellation_risk?.at_risk_count || 0} />

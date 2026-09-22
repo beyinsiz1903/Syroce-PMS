@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import {
-  Activity, AlertCircle, BarChart3, CheckCircle2, ChevronDown,
-  Clock, Gauge, Info, RefreshCw, ServerCog,
-} from "lucide-react";
+import { Activity, AlertCircle, BarChart3, CheckCircle2, ChevronDown, Clock, Gauge, Info, RefreshCw, ServerCog } from 'lucide-react';
 import { toast } from "sonner";
 
 import {

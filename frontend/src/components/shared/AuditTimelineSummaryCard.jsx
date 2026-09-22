@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { Shield, Activity, AlertTriangle, Info } from "lucide-react";
+import { Shield, Activity, AlertTriangle, Info } from 'lucide-react';
 import { SeverityBadge, DegradedState, NetworkError } from "./OperationalWidgets";
 
 const PERIOD_OPTIONS = [

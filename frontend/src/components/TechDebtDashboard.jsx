@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { Bug, AlertTriangle, CheckCircle, Target, Clock, Flame, ChevronDown, ChevronUp, RefreshCw, TrendingDown } from "lucide-react";
+import { Bug, AlertTriangle, CheckCircle, Target, Clock, Flame, ChevronDown, ChevronUp, RefreshCw, TrendingDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";

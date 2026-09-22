@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { ArrowRightLeft, FileText, DollarSign, CreditCard, AlertTriangle, ShieldCheck, RefreshCw, Ban, Receipt, ArrowUpRight, Clock, Building2, Plus, Printer, Layers } from "lucide-react";
+import { ArrowRightLeft, FileText, Banknote, CreditCard, AlertTriangle, ShieldCheck, RefreshCw, Ban, Receipt, ArrowUpRight, Clock, Building2, Plus, Printer, Layers } from 'lucide-react';
 import { printFolio, printProformaInvoice } from "@/components/pms/PrintTemplates";
 import { toast } from "sonner";
 import FolioWindowsPanel from "@/components/folio/FolioWindowsPanel";
@@ -367,7 +367,7 @@ export default function FolioDetailView({
                 <Clock className="w-3.5 h-3.5 mr-1.5" /> {t("folio.timeline")}
               </TabsTrigger>
               <TabsTrigger data-testid="folio-tab-tax" value="tax" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
-                <DollarSign className="w-3.5 h-3.5 mr-1.5" /> {t("folio.taxBreakdown")}
+                <Banknote className="w-3.5 h-3.5 mr-1.5" /> {t("folio.taxBreakdown")}
               </TabsTrigger>
               <TabsTrigger data-testid="folio-tab-splits" value="splits" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
                 <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> {t("folio.splits")}

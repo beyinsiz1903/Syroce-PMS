@@ -6,7 +6,7 @@ import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, AlertTriangle, Bell, CheckCircle2, XCircle, Clock, RefreshCw, Loader2, Shield, Activity, Eye, Check } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Bell, CheckCircle2, XCircle, Clock, RefreshCw, Loader2, Shield, Activity, Eye, Check } from 'lucide-react';
 const API = "";
 function AlertCard({
   alert,

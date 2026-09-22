@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { Plus, CookingPot, Flame, Timer, UtensilsCrossed, Percent, DollarSign, TrendingUp } from 'lucide-react';
+import { Plus, CookingPot, Flame, Timer, UtensilsCrossed, Percent, Banknote, TrendingUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const categoryOptions = [
@@ -486,7 +486,7 @@ const RecipeCostingManager = () => {
                     </p>
                   </div>
                   <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-amber-50 p-4">
-                    <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5"/> Satış Fiyatı</p>
+                    <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide flex items-center gap-1.5"><Banknote className="w-3.5 h-3.5"/> Satış Fiyatı</p>
                     <p className="text-3xl font-extrabold text-amber-700 mt-2">
                       ₺{selectedRecipe.selling_price?.toFixed(2)}
                     </p>

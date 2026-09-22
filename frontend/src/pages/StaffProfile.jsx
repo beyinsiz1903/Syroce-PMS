@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { ArrowLeft, RefreshCw, User, Mail, Phone, Building2, Briefcase, Calendar, Clock, DollarSign, Award, FileText, AlertCircle, GraduationCap, Folder, TrendingUp, UserMinus, Plus, Trash2, Download, Upload, ChevronDown, ChevronRight, Target, Package, ShieldAlert, BookOpen, Check, RotateCcw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, User, Mail, Phone, Building2, Briefcase, Calendar, Clock, Banknote, Award, FileText, AlertCircle, GraduationCap, Folder, TrendingUp, UserMinus, Plus, Trash2, Download, Upload, ChevronDown, ChevronRight, Target, Package, ShieldAlert, BookOpen, Check, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -668,11 +668,11 @@ const StaffProfile = ({ user }) => {
           <div className="flex items-center gap-2 text-sm text-slate-700"><Mail className="w-4 h-4 text-slate-400" /> {s.email || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Phone className="w-4 h-4 text-slate-400" /> {s.phone || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-slate-400" /> T.C. Kimlik: {s.national_id || '—'}</div>
-          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" /> IBAN: {s.iban || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Banknote className="w-4 h-4 text-slate-400" /> IBAN: {s.iban || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Building2 className="w-4 h-4 text-slate-400" /> {s.department || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Briefcase className="w-4 h-4 text-slate-400" /> {s.employment_type || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Calendar className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.i_\u015Fe_giri\u015F")}{s.hire_date || '—'}</div>
-          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" />{s.salary_agreement
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Banknote className="w-4 h-4 text-slate-400" />{s.salary_agreement
             ? `${s.salary_agreement.unit === 'monthly' ? 'Aylık' : 'Saatlik'} ${s.salary_agreement.basis === 'net' ? 'net' : 'brüt'}: ${formatCurrency(s.salary_agreement.amount, 'TRY')}`
             : `${t('cm.pages_StaffProfile.saatlik')}${s.hourly_rate ? `${s.hourly_rate} TRY` : 'tanımsız (eski yaklaşık model)'}`}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Clock className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.ayl\u0131k_saat")}{s.monthly_hours || '195 (default)'}</div>

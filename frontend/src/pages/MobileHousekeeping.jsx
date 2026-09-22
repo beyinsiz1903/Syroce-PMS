@@ -20,27 +20,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { 
-  ArrowLeft, 
-  Bed, 
-  CheckCircle, 
-  Clock, 
-  Users,
-  AlertCircle,
-  TrendingUp,
-  BarChart3,
-  RefreshCw,
-  Package,
-  Search,
-  MapPin,
-  History,
-  Plus,
-  ChevronDown,
-  ChevronRight,
-  Sparkles,
-  Home,
-  Camera
-} from 'lucide-react';
+import { ArrowLeft, Bed, CheckCircle, Clock, Users, AlertCircle, TrendingUp, BarChart3, RefreshCw, Package, Search, MapPin, History, Plus, ChevronDown, ChevronRight, Sparkles, Home, Camera } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

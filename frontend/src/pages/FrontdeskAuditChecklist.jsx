@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
-import { Calendar, AlertTriangle, CheckCircle, RefreshCw, Users, FileText, LogOut, DoorOpen } from "lucide-react";
+import { Calendar, AlertTriangle, CheckCircle, RefreshCw, Users, FileText, LogOut, DoorOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { folioLabel, reservationLabel } from '@/utils/displayIdentifiers';
 

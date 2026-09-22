@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { toast } from "sonner";
-import { Network, CheckCircle2, XCircle, Send, Activity, RefreshCw, Link2, Copy } from "lucide-react";
+import { Network, CheckCircle2, XCircle, Send, Activity, RefreshCw, Link2, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const isoDate = (offset = 0) => {

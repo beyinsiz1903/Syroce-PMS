@@ -5,14 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { 
-  Building2, 
-  MapPin, 
-  CheckCircle,
-  Search,
-  Hotel,
-  Home
-} from 'lucide-react';
+import { Building2, MapPin, CheckCircle, Search, Hotel, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const PropertySwitcher = ({ onPropertyChange }) => {

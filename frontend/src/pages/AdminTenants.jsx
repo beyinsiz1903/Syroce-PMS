@@ -15,12 +15,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import {
-  Calendar, Building2, ChevronDown, ChevronUp, Shield,
-  Search, RefreshCw,
-  Plus, Pencil, Users, UsersRound, ArrowUpDown,
-  Settings2, LogIn,
-} from 'lucide-react';
+import { Calendar, Building2, ChevronDown, ChevronUp, Shield, Search, RefreshCw, Plus, Pencil, Users, UsersRound, ArrowUpDown, Settings2, LogIn } from 'lucide-react';
 
 import { PLANS, MODULE_GROUPS, isModuleIncludedInPlan } from './admin/tenantConstants';
 import CreateTenantModal from './admin/CreateTenantModal';

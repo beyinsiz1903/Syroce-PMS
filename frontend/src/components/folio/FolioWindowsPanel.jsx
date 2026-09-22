@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Layers, Plus, RefreshCw, User, Building2, Crown, Briefcase } from "lucide-react";
+import { Layers, Plus, RefreshCw, User, Building2, Crown, Briefcase } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const PAYOR_OPTIONS = [{
   value: "guest",

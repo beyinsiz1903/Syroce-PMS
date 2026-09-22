@@ -22,10 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { promptDialog } from '@/lib/dialogs';
-import {
-  ArrowLeft, ShieldAlert, RefreshCw, Loader2, Trash2, Eye,
-  CalendarClock, FileLock2, AlertTriangle, X, Pencil, Save, RotateCcw,
-} from "lucide-react";
+import { ArrowLeft, ShieldAlert, RefreshCw, Loader2, Trash2, Eye, CalendarClock, FileLock2, AlertTriangle, X, Pencil, Save, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const PAGE_SIZE = 50;

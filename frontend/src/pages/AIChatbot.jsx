@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MessageCircle, Send, Home, Bot, Brain, DollarSign, BarChart3 } from 'lucide-react';
+import { MessageCircle, Send, Home, Bot, Brain, Banknote, BarChart3 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const AIChatbot = () => {

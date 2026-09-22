@@ -8,18 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import {
-  ArrowLeft, 
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertTriangle,
-  TrendingUp,
-  DollarSign,
-  RefreshCw,
-  FileText,
-  History
-} from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Clock, AlertTriangle, TrendingUp, Banknote, RefreshCw, FileText, History } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canApproveMobileRequest } from '@/utils/mobilePermissions';
 
@@ -148,7 +137,7 @@ const MobileApprovals = ({ user }) => {
     switch (type) {
       case 'discount':
       case 'price_override':
-        return <DollarSign className="h-5 w-5 text-green-500" />;
+        return <Banknote className="h-5 w-5 text-green-500" />;
       case 'budget_expense':
         return <TrendingUp className="h-5 w-5 text-amber-500" />;
       case 'refund':

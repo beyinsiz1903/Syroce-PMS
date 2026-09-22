@@ -17,10 +17,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
 import { confirmDialog } from '@/lib/dialogs';
-import {
-  Car, ParkingSquare, Plus, RefreshCw, Trash2, Receipt, AlertTriangle,
-  KeyRound, ScanLine, BarChart3, CheckCircle2,
-} from 'lucide-react';
+import { Car, ParkingSquare, Plus, RefreshCw, Trash2, Receipt, AlertTriangle, KeyRound, ScanLine, BarChart3, CheckCircle2 } from 'lucide-react';
 
 const KIND_OPTIONS = [
   { value: 'transfer_vehicle', label: 'Transfer Aracı', icon: Car },

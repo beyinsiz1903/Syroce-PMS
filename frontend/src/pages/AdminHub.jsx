@@ -1,29 +1,7 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  Shield,
-  Users,
-  ShieldAlert,
-  Gavel,
-  Building2,
-  Truck,
-  Package,
-  Compass,
-  FileBarChart,
-  Sparkles,
-  Brush,
-  Utensils,
-  Bell,
-  KeyRound,
-  Webhook,
-  Smartphone,
-  QrCode,
-  ChevronRight,
-  History,
-  AlertTriangle,
-  Wallet,
-} from 'lucide-react';
+import { Shield, Users, ShieldAlert, Gavel, Building2, Truck, Package, Compass, FileBarChart, Sparkles, Brush, Utensils, Bell, KeyRound, Webhook, Smartphone, QrCode, ChevronRight, History, AlertTriangle, Wallet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 const SECTIONS = [

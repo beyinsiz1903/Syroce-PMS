@@ -8,9 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  BellOff, Wine, Plus, Trash2, Clock, CheckCircle, AlertTriangle, DoorOpen
-} from 'lucide-react';
+import { BellOff, Wine, Plus, Trash2, Clock, CheckCircle, AlertTriangle, DoorOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const MINIBAR_ITEMS = [

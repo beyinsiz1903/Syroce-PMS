@@ -12,11 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TableLoadingSkeleton } from '@/utils/lazyLoad';
-import {
-  Calendar, Users, TrendingUp, LogIn, LogOut, Star,
-  AlertTriangle, Clock, UserPlus, CheckSquare, Printer, XCircle,
-  ChevronDown, ChevronUp, CreditCard, Loader2
-} from 'lucide-react';
+import { Calendar, Users, TrendingUp, LogIn, LogOut, Star, AlertTriangle, Clock, UserPlus, CheckSquare, Printer, XCircle, ChevronDown, ChevronUp, CreditCard, Loader2 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 
 import { confirmDialog } from '@/lib/dialogs';

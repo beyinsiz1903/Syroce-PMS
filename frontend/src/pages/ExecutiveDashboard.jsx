@@ -7,21 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PropertySwitcher from '@/components/PropertySwitcher';
-import {
-  ArrowLeft,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Users,
-  Home,
-  Star,
-  Wallet,
-  AlertTriangle,
-  RefreshCw,
-  Calendar,
-  ChevronRight,
-  Activity,
-} from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Banknote, Users, Home, Star, Wallet, AlertTriangle, RefreshCw, Calendar, ChevronRight, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ExecutiveDashboard = ({ user, embedded = false }) => {
@@ -209,7 +195,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <DollarSign className="h-6 w-6" />
+                            <Banknote className="h-6 w-6" />
                             <span className="text-sm font-medium opacity-90">
                               {kpiSnapshot.kpis.revpar.label}
                             </span>

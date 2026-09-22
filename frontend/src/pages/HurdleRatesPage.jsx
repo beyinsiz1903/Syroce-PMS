@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Gauge, Plus, RefreshCw, Trash2, Loader2, CheckCircle2, XCircle, Search } from "lucide-react";
+import { Gauge, Plus, RefreshCw, Trash2, Loader2, CheckCircle2, XCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /**

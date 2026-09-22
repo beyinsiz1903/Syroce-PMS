@@ -1,18 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  Loader2,
-  TrendingUp,
-  Sparkles,
-  DollarSign,
-  Zap,
-  Globe,
-  Cog,
-  BrainCircuit,
-  GitCompareArrows,
-  AlertTriangle,
-} from 'lucide-react';
+import { Loader2, TrendingUp, Sparkles, Banknote, Zap, Globe, Cog, BrainCircuit, GitCompareArrows, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const GelirYonetimiPage = lazy(() => import('@/pages/GelirYonetimiPage'));
@@ -53,7 +42,7 @@ export default function RevenueHub({ user, tenant, onLogout }) {
   const tabConfig = [
     { value: 'overview',     icon: TrendingUp,       labelKey: 'revenueHub.tabs.overview',     fallback: 'Genel' },
     { value: 'autopilot',    icon: Sparkles,         labelKey: 'revenueHub.tabs.autopilot',    fallback: 'Autopilot' },
-    { value: 'rates',        icon: DollarSign,       labelKey: 'revenueHub.tabs.rates',        fallback: 'Rate Manager' },
+    { value: 'rates',        icon: Banknote,       labelKey: 'revenueHub.tabs.rates',        fallback: 'Rate Manager' },
     { value: 'dynamic',      icon: Zap,              labelKey: 'revenueHub.tabs.dynamic',      fallback: 'Dinamik Fiyat' },
     { value: 'central',      icon: Globe,            labelKey: 'revenueHub.tabs.central',      fallback: 'Merkezi Fiyat' },
     { value: 'engine',       icon: Cog,              labelKey: 'revenueHub.tabs.engine',       fallback: 'Engine' },

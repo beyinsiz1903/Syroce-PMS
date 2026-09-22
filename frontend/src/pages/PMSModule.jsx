@@ -80,13 +80,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { 
-  BedDouble, Users, Calendar, Plus, CheckCircle, DollarSign, 
-  ClipboardList, BarChart3, TrendingUp, UserCheck, LogIn, LogOut, Home, FileText, 
-  Star, Send, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown,
-  Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt,
-  MapPin, Shield, Lock, Heart
-} from 'lucide-react';
+import { BedDouble, Users, Calendar, Plus, CheckCircle, Banknote, ClipboardList, BarChart3, TrendingUp, UserCheck, LogIn, LogOut, Home, FileText, Star, Send, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown, Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt, MapPin, Shield, Lock, Heart } from 'lucide-react';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import LiteSetupBanner from '@/components/LiteSetupBanner';

@@ -2,11 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Badge } from '@/components/ui/badge';
-import {
-  Home, Clock, CheckCircle, AlertTriangle, RefreshCw,
-  Wifi, WifiOff, ChefHat, Utensils, Bell, Filter,
-  Timer, ArrowRight, Coffee, UtensilsCrossed
-} from 'lucide-react';
+import { Home, Clock, CheckCircle, AlertTriangle, RefreshCw, Wifi, WifiOff, ChefHat, Utensils, Bell, Filter, Timer, ArrowRight, Coffee, UtensilsCrossed } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWebSocket, websocket } from '@/lib/websocket';
 

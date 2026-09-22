@@ -16,9 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import {
-  ArrowLeft, DoorOpen, Info, Link2, Loader2, Plus, RefreshCw, Shield, Trash2,
-} from "lucide-react";
+import { ArrowLeft, DoorOpen, Info, Link2, Loader2, Plus, RefreshCw, Shield, Trash2 } from 'lucide-react';
 
 export default function SuiteConnectingPage({ user }) {
   const navigate = useNavigate();

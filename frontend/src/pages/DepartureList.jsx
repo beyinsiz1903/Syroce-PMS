@@ -12,10 +12,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  LogOut, AlertCircle, Wallet, Clock, RefreshCw, Loader2, Search, ArrowUpDown,
-  CreditCard, Phone, FileText, X,
-} from 'lucide-react';
+import { LogOut, AlertCircle, Wallet, Clock, RefreshCw, Loader2, Search, ArrowUpDown, CreditCard, Phone, FileText, X } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 

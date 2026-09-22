@@ -3,13 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useHRTab } from '@/hooks/useHRTab';
 import axios from 'axios';
 import { toast } from 'sonner';
-import {
-  Clock, Calendar, DollarSign, Briefcase, UserPlus, Download,
-  Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle,
-  TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle,
-  Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown,
-  Timer, Check, X, Package, GraduationCap, Star, ListChecks, Mail, Phone,
-} from 'lucide-react';
+import { Clock, Calendar, Banknote, Briefcase, UserPlus, Download, Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle, TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle, Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown, Timer, Check, X, Package, GraduationCap, Star, ListChecks, Mail, Phone } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { promptDialog, confirmDialog } from '@/lib/dialogs';
 
@@ -1028,10 +1022,10 @@ const HRComplete = ({ user }) => {
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
           {hasFeature("hr", "payroll") && (<TabsTrigger value="payroll" data-testid="tab-payroll" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
-            <DollarSign className="w-4 h-4 mr-2" />Bordro
+            <Banknote className="w-4 h-4 mr-2" />Bordro
           </TabsTrigger>)}
           {hasFeature("hr", "payroll") && (<TabsTrigger value="advances" data-testid="tab-advances" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
-            <DollarSign className="w-4 h-4 mr-2" />Avanslar
+            <Banknote className="w-4 h-4 mr-2" />Avanslar
           </TabsTrigger>)}
           {hasFeature("hr", "leave") && (<TabsTrigger value="leave" data-testid="tab-leave" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Calendar className="w-4 h-4 mr-2" />İzin
@@ -1238,7 +1232,7 @@ const HRComplete = ({ user }) => {
               <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-slate-50/50 border-b border-slate-100 pb-4">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
-                    <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><DollarSign className="w-5 h-5" /></div>
+                    <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><Banknote className="w-5 h-5" /></div>
                     Bordro İşlemleri
                   </CardTitle>
                   <p className="text-sm text-slate-500 mt-1.5 ml-9">
@@ -1473,14 +1467,14 @@ const HRComplete = ({ user }) => {
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                         <div className="flex items-center gap-3 mb-2">
-                          <div className="p-2 rounded-lg bg-slate-100 text-slate-700"><DollarSign className="w-5 h-5" /></div>
+                          <div className="p-2 rounded-lg bg-slate-100 text-slate-700"><Banknote className="w-5 h-5" /></div>
                           <div className="text-sm font-semibold text-slate-600">Toplam Brüt</div>
                         </div>
                         <div className="text-3xl font-bold text-slate-900">{fmtCurrency(payrollPreview.total_gross_pay)}</div>
                       </div>
                       <div className="rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-5 shadow-sm">
                         <div className="flex items-center gap-3 mb-2">
-                          <div className="p-2 rounded-lg bg-teal-100 text-teal-700"><DollarSign className="w-5 h-5" /></div>
+                          <div className="p-2 rounded-lg bg-teal-100 text-teal-700"><Banknote className="w-5 h-5" /></div>
                           <div className="text-sm font-semibold text-slate-600">Toplam Net</div>
                         </div>
                         <div className="text-3xl font-bold text-slate-900">{fmtCurrency(payrollPreview.total_net_pay)}</div>
@@ -1534,7 +1528,7 @@ const HRComplete = ({ user }) => {
                   </div>
                 ) : (
                   <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-12 text-center text-slate-500">
-                    <DollarSign className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                    <Banknote className="w-12 h-12 mx-auto text-slate-300 mb-4" />
                     <p className="text-base font-medium text-slate-700 mb-2">Bordro önizlemek için ay seçin ve <strong>Önizle</strong>'ye basın.</p>
                     <p className="text-sm">Kalıcı kayıt için <strong>Taslak Kaydet</strong>'e basabilir veya doğrudan <strong>CSV İndir</strong> diyebilirsiniz.</p>
                   </div>

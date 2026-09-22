@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Calendar, Plus, Trash2, Save, DollarSign } from 'lucide-react';
+import { Calendar, Plus, Trash2, Save, Banknote } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -145,7 +145,7 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
                   <Label className="text-xs">{t('cm.components_MultiPeriodRateManager.fiyat_gunluk')}</Label>
                   <div className="flex gap-2 mt-1">
                     <div className="relative flex-1">
-                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Banknote className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type="number"
                         value={period.rate}

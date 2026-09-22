@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Activity, Bell, Building2, TrendingUp, Brain, AlertTriangle, Globe, Zap, Shield, RefreshCw, ChevronRight, ArrowUp, ArrowDown, Minus, Users, DollarSign, BarChart3, Radio, Layers, Eye, Crosshair } from 'lucide-react';
+import { Activity, Bell, Building2, TrendingUp, Brain, AlertTriangle, Globe, Zap, Shield, RefreshCw, ChevronRight, ArrowUp, ArrowDown, Minus, Users, Banknote, BarChart3, Radio, Layers, Eye, Crosshair } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -485,7 +485,7 @@ function MultiPropertyPanel({
         <KPICard label="Portfolio Doluluk" value={`${portfolio.portfolio_occupancy_pct || 0}%`} icon={Building2} color="bg-teal-50 text-teal-700" />
         <KPICard label="Toplam Oda" value={portfolio.total_rooms || 0} icon={Layers} color="bg-blue-50 text-blue-700" />
         <KPICard label="Müsait Oda" value={portfolio.total_available || 0} icon={Eye} color="bg-green-50 text-green-700" />
-        <KPICard label="Portfolio Gelir" value={`${(revenue.total_portfolio_revenue || 0).toLocaleString()} TL`} icon={DollarSign} color="bg-indigo-50 text-indigo-700" />
+        <KPICard label="Portfolio Gelir" value={`${(revenue.total_portfolio_revenue || 0).toLocaleString()} TL`} icon={Banknote} color="bg-indigo-50 text-indigo-700" />
       </div>
 
       {/* Property Comparison */}
@@ -697,7 +697,7 @@ function CompetitivePanel({
       <Card data-testid="adr-suggestions-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-green-600" /> ADR Ayarlama Onerileri
+            <Banknote className="w-4 h-4 text-green-600" /> ADR Ayarlama Onerileri
             {totalImpact !== 0 && <Badge variant={totalImpact > 0 ? 'default' : 'destructive'} className="ml-2">
                 {totalImpact > 0 ? '+' : ''}{totalImpact.toLocaleString()} TL/ay
               </Badge>}

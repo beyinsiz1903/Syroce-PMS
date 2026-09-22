@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { Activity, AlertTriangle, ArrowRight, CheckCircle2, Clock, Database, Eye, Gauge, Inbox, Loader2, PlugZap, RefreshCw, Server, Shield, ShieldAlert, Timer, Wifi, WifiOff, XCircle, Zap, TrendingUp, BarChart3, GitCompare, Radio, Play, Target, ArrowUpRight, ArrowDownRight, Minus, Calendar, FileText, ChevronRight, Layers, FlaskConical, Link2, Ban, CircleSlash, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, CheckCircle2, Clock, Database, Eye, Gauge, Inbox, Loader2, PlugZap, RefreshCw, Server, Shield, ShieldAlert, Timer, Wifi, WifiOff, XCircle, Zap, TrendingUp, BarChart3, GitCompare, Radio, Play, Target, ArrowUpRight, ArrowDownRight, Minus, Calendar, FileText, ChevronRight, Layers, FlaskConical, Link2, Ban, CircleSlash, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 // Round-7: Hardcoded "syroce_default" cross-tenant sızıntı riskiydi. Tenant

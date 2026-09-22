@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useNavigate } from "react-router-dom";
-import { ShoppingBag, QrCode, ScanLine, Mail, Package, Sparkles, CheckCircle2, Clock, Loader2, RefreshCw, Gift, ExternalLink } from "lucide-react";
+import { ShoppingBag, QrCode, ScanLine, Mail, Package, Sparkles, CheckCircle2, Clock, Loader2, RefreshCw, Gift, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const ICONS = {
   QrCode,

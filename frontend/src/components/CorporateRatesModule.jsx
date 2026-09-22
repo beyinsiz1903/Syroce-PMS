@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Building2, Plus, Calendar, DollarSign, Users } from 'lucide-react';
+import { Building2, Plus, Calendar, Banknote, Users } from 'lucide-react';
 const CorporateRatesModule = () => {
   const [contracts, setContracts] = useState([]);
   const [ratePlans, setRatePlans] = useState([]);

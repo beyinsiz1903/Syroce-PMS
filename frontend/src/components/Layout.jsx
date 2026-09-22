@@ -20,13 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Home, Hotel, FileText, TrendingUp, ShoppingCart, Headset,
-  User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
-  Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
-  ChevronDown, Server, CalendarCheck, X, Undo2,
-  BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare, Activity,
-  Utensils, Briefcase, ConciergeBell, BedDouble } from 'lucide-react';
+import { Home, Hotel, FileText, TrendingUp, ShoppingCart, Headset, User, LogOut, Menu, Calendar, Banknote, Settings as SettingsIcon, Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck, ChevronDown, Server, CalendarCheck, X, Undo2, BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare, Activity, Utensils, Briefcase, ConciergeBell, BedDouble } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
 import AppLauncher from '@/components/AppLauncher';
@@ -57,11 +51,11 @@ const ICON_BY_KEY = {
   reports_basic: FileText,
   reports: BarChart3,
   settings: SettingsIcon,
-  invoices: DollarSign,
+  invoices: Banknote,
   cost_management: Layers,
   channel_manager: Layers,
-  unified_rate_manager: DollarSign,
-  rate_manager: DollarSign,
+  unified_rate_manager: Banknote,
+  rate_manager: Banknote,
   rms: TrendingUp,
   ai: Bot,
   marketplace: ShoppingCart,
@@ -82,7 +76,7 @@ const ICON_BY_KEY = {
   transfer_parking: ParkingSquare,
   lost_found: ShoppingCart,
   group_folio: FileText,
-  travel_agent_arap: DollarSign,
+  travel_agent_arap: Banknote,
   agency_management: Building2,
   agency_content: FileText,
   data_intelligence: BrainCircuit,
@@ -90,7 +84,7 @@ const ICON_BY_KEY = {
   ml_scheduler: Clock,
   revenue_autopilot_v2: Rocket,
   analytics_export: Download,
-  gelir_yonetimi: DollarSign,
+  gelir_yonetimi: Banknote,
   ai_zeka: BrainCircuit,
   analitik_raporlar: Download,
   no_show_analytics: BarChart3,
@@ -99,7 +93,7 @@ const ICON_BY_KEY = {
   api_docs: FileText,
   pos_dashboard: ShoppingCart,
   contact_center_dashboard: Headset,
-  cashier_workspace: DollarSign,
+  cashier_workspace: Banknote,
   tasks_workspace: ClipboardCheck,
   observability: Activity,
   control_plane: Server,

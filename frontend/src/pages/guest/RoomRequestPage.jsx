@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { alertDialog } from '@/lib/dialogs';
-import { Loader2, Hotel, AlertTriangle, CheckCircle2, Minus, Plus, MessageSquare, ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
+import { Loader2, Hotel, AlertTriangle, CheckCircle2, Minus, Plus, MessageSquare, ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react';
 import { ICONS, LANGS, UI, LOCALE, DEPT_LABELS, DEPT_ICONS, DEPT_DESCRIPTIONS, EXPERIENCE_COPY } from "./constants";
 import { useGuestCart } from "./hooks/useGuestCart";
 

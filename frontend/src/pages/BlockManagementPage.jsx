@@ -13,10 +13,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AlertTriangle, ArrowRight, BarChart3, Building2, CalendarClock, DoorOpen,
-  Info, Loader2, Plus, RefreshCw, TrendingUp, Users,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, Building2, CalendarClock, DoorOpen, Info, Loader2, Plus, RefreshCw, TrendingUp, Users } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from "recharts";

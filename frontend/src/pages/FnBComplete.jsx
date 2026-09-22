@@ -2,10 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  ChefHat, FileText, Package, Monitor, TrendingUp,
-  ArrowLeft, BookOpen, UtensilsCrossed, ExternalLink,
-} from 'lucide-react';
+import { ChefHat, FileText, Package, Monitor, TrendingUp, ArrowLeft, BookOpen, UtensilsCrossed, ExternalLink } from 'lucide-react';
 import FnBOutletDashboard       from '@/components/FnBOutletDashboard';
 import RecipeCostingManager     from '@/components/RecipeCostingManager';
 import IngredientInventoryPanel from '@/components/IngredientInventoryPanel';

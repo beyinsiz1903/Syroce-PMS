@@ -9,10 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
-import {
-  AlarmClock, Plus, CheckCircle, XCircle, Clock,
-  Trash2, RefreshCw, PhoneCall, PhoneOff, Repeat, Bell, BellOff, Volume2, TimerReset
-} from 'lucide-react';
+import { AlarmClock, Plus, CheckCircle, XCircle, Clock, Trash2, RefreshCw, PhoneCall, PhoneOff, Repeat, Bell, BellOff, Volume2, TimerReset } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   getWakeUpAlarmSettings,

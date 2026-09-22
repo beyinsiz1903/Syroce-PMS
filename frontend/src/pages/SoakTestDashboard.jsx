@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Activity, Play, Square, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Clock, Server, Database, Gauge, TrendingUp, Zap, Shield } from "lucide-react";
+import { Activity, Play, Square, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Clock, Server, Database, Gauge, TrendingUp, Zap, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
 function MetricCard({

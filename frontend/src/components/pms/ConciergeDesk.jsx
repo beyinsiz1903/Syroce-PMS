@@ -13,12 +13,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog } from '@/lib/dialogs';
 import { formatCurrency } from '@/lib/currency';
-import {
-  MapPin, Car, Utensils, Ticket, Clock, Plus, CheckCircle,
-  AlertCircle, Package, Key, Coffee, Bell, Search, RefreshCw,
-  Pencil, Trash2, XCircle, ListChecks, Hourglass, PlayCircle,
-  CheckCircle2, Wallet, Loader2, ConciergeBell,
-} from 'lucide-react';
+import { MapPin, Car, Utensils, Ticket, Clock, Plus, CheckCircle, AlertCircle, Package, Key, Coffee, Bell, Search, RefreshCw, Pencil, Trash2, XCircle, ListChecks, Hourglass, PlayCircle, CheckCircle2, Wallet, Loader2, ConciergeBell } from 'lucide-react';
 
 const TYPE_ICONS = {
   restaurant: Utensils, transfer: Car, tour: MapPin, ticket: Ticket,

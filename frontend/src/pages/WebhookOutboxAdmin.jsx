@@ -11,10 +11,7 @@ import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { toast } from "sonner";
 import { confirmDialog } from "@/lib/dialogs";
-import {
-  Activity, RefreshCw, Send, AlertTriangle, CheckCircle2,
-  XCircle, Clock, Inbox, RotateCcw, Trash2, Hourglass, ServerCrash, ShieldCheck,
-} from "lucide-react";
+import { Activity, RefreshCw, Send, AlertTriangle, CheckCircle2, XCircle, Clock, Inbox, RotateCcw, Trash2, Hourglass, ServerCrash, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 // status → Sprint A intent mapping (StatusBadge intent palette: success/warning/danger/info/neutral)
