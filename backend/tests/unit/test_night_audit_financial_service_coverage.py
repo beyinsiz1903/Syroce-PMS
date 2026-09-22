@@ -132,7 +132,7 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
     assert result.data["tax"]["breakdown"] == {"vat": 82.34, "accommodation_tax": 22.67}
     assert result.data["open_folios"] == {
         "count": 3,
-        "balance": {"total": 300.0, "receivable": 350.0, "overpayment": 50.0},
+        "balance": {"total": 300.0, "receivable": 350.0, "overpayment": 50.0}, "items": [],
     }
     assert result.data["net_position"] == 605.14
     assert result.data["audit_status"] == "completed"
@@ -171,13 +171,16 @@ async def test_payment_reconciliation_detects_duplicate_orphan_rate_and_high_bal
         AsyncCursor([{"id": "folio-1", "folio_number": "F-1", "balance": 1500.0}])
     )
     bookings = _find_collection(
-        AsyncCursor([{"id": "booking-1", "room_rate": 120.0, "status": "checked_in"}])
+        AsyncCursor([{"id": "booking-1", "room_rate": 120.0, "status": "checked_in"}]),
+        AsyncCursor([{"id": "booking-1", "guest_id": "g1", "guest_name": "Test Guest", "room_id": "r1", "room_no": "101"}])
     )
     database = SimpleNamespace(
         folio_charges=folio_charges,
         payments=payments,
         folios=folios,
         bookings=bookings,
+        guests=_find_collection(AsyncCursor([])),
+        rooms=_find_collection(AsyncCursor([])),
     )
 
     result = await _service(database).get_payment_reconciliation(_ctx(), "2026-08-25")
@@ -221,13 +224,15 @@ async def test_payment_reconciliation_reports_booking_enrichment_failure():
         ),
         payments=_find_collection(AsyncCursor()),
         folios=_find_collection(AsyncCursor()),
-        bookings=_find_collection(AsyncCursor(error=RuntimeError("booking lookup failed"))),
+        bookings=_find_collection(AsyncCursor(error=RuntimeError("booking lookup failed")), AsyncCursor(error=RuntimeError("booking lookup failed"))),
+        guests=_find_collection(AsyncCursor([])),
+        rooms=_find_collection(AsyncCursor([])),
     )
 
     result = await _service(database).get_payment_reconciliation(_ctx(), "2026-08-25")
 
     assert result.data["degraded"] is True
-    assert result.data["degraded_subqueries"] == ["bookings_enrich"]
+    assert set(result.data["degraded_subqueries"]) == {"bookings_enrich", "discrepancies_enrich"}
     assert result.data["discrepancies"][0]["type"] == "orphan_charge"
 
 

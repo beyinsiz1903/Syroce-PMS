@@ -690,20 +690,17 @@ class NightAuditCoreService:
         # Hardened audit runs use operational counters and may not include the
         # legacy financial fields consumed by the dashboard. Derive those from
         # authoritative business-date charges rather than displaying 0.00 TL.
-        missing_financial_dates = [
-            run.get("business_date")
-            for run in runs
-            if run.get("business_date")
-            and ("total_room_revenue" not in run or "total_tax_amount" not in run)
-        ]
-        if missing_financial_dates:
+        # ALSO derive total_payments for all runs to show collections clearly.
+        valid_dates = [run.get("business_date") for run in runs if run.get("business_date")]
+        if valid_dates:
             try:
+                # 1. Enrich Revenue
                 totals = await self._db.folio_charges.aggregate(
                     [
                         {
                             "$match": {
                                 "tenant_id": ctx.tenant_id,
-                                "business_date": {"$in": missing_financial_dates},
+                                "business_date": {"$in": valid_dates},
                                 "voided": {"$ne": True},
                             }
                         },
@@ -717,11 +714,36 @@ class NightAuditCoreService:
                     ]
                 ).to_list(None)
                 totals_by_date = {row["_id"]: row for row in totals}
+
+                # 2. Enrich Payments
+                pmts = await self._db.payments.aggregate(
+                    [
+                        {
+                            "$match": {
+                                "tenant_id": ctx.tenant_id,
+                                "date": {"$in": valid_dates},
+                                "status": {"$ne": "voided"},
+                            }
+                        },
+                        {
+                            "$group": {
+                                "_id": "$date",
+                                "payments": {"$sum": "$amount"}
+                            }
+                        },
+                    ]
+                ).to_list(None)
+                pmts_by_date = {row["_id"]: row for row in pmts}
+
                 for run in runs:
-                    snapshot = totals_by_date.get(run.get("business_date"), {})
-                    run.setdefault("total_room_revenue", round(float(snapshot.get("revenue") or 0), 2))
-                    run.setdefault("total_tax_amount", round(float(snapshot.get("tax") or 0), 2))
-            except Exception as exc:  # noqa: BLE001 — history remains available
+                    bd = run.get("business_date")
+                    snapshot = totals_by_date.get(bd, {})
+                    psnapshot = pmts_by_date.get(bd, {})
+
+                    run["total_room_revenue"] = round(float(snapshot.get("revenue") or 0), 2)
+                    run["total_tax_amount"] = round(float(snapshot.get("tax") or 0), 2)
+                    run["total_payments_amount"] = round(float(psnapshot.get("payments") or 0), 2)
+            except Exception as exc:  # noqa: BLE001
                 logger.warning("Night audit history financial enrichment failed: %s", exc)
         total = await self._db.night_audit_runs.count_documents({"tenant_id": ctx.tenant_id})
         return ServiceResult.success({"runs": runs, "total": total, "limit": limit, "skip": skip})

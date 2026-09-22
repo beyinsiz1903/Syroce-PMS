@@ -164,6 +164,10 @@ export default function OverviewTab(props) {
                 <p className="font-semibold">{lastRun.total_room_revenue?.toFixed(2)} TL</p>
               </div>
               <div>
+                <span className="text-gray-500 text-xs">Tahsilat</span>
+                <p className="font-semibold text-emerald-600">{lastRun.total_payments_amount?.toFixed(2) || "0.00"} TL</p>
+              </div>
+              <div>
                 <span className="text-gray-500 text-xs">Vergi</span>
                 <p className="font-semibold">{lastRun.total_tax_amount?.toFixed(2)} TL</p>
               </div>
@@ -260,10 +264,14 @@ export default function OverviewTab(props) {
                     </div>
                     {isExpanded && (
                       <div className="border-t bg-gray-50/50 px-4 py-3 space-y-3">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                           <div>
                             <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.oda_geliri_e569c')}</span>
                             <p className="font-semibold">{run.total_room_revenue?.toFixed(2)} TL</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 text-xs">Tahsilat</span>
+                            <p className="font-semibold text-emerald-600">{run.total_payments_amount?.toFixed(2) || "0.00"} TL</p>
                           </div>
                           <div>
                             <span className="text-gray-500 text-xs">Vergi</span>
