@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck, Download, Printer } from 'lucide-react';
 import ForecastReportsPage from './ForecastReportsPage';
+import FlashReportContent from '@/components/pms/FlashReportContent';
 import TrialBalancePage from './TrialBalancePage';
 import { ROOM_STATUS_COLORS, ROOM_STATUS_LABELS, formatPercent } from './reports/ReportHelpers';
 import OverviewSection from './reports/OverviewSection';
@@ -26,6 +27,11 @@ const BACKEND_URL = "";
 const REPORT_MENU = [{
   type: 'header',
   label: 'GENEL'
+}, {
+  id: 'flash_report',
+  label: 'Bugünün Özeti (Flash)',
+  icon: Activity,
+  desc: 'Anlık kasa ve tesis durumu'
 }, {
   id: 'overview',
   label: 'Genel Bakış',
@@ -180,6 +186,8 @@ const BasicReports = ({
 }) => {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
+  const [reportPeriod, setReportPeriod] = useState("monthly");
+  const [reportDate, setReportDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -212,7 +220,10 @@ const BasicReports = ({
     setLoading(true);
     setError(null);
     try {
-      const json = await fetchJsonWithRetry(BACKEND_URL + '/api/reports/basic-dashboard', {
+      const urlParams = new URLSearchParams();
+      if (reportPeriod) urlParams.append('period', reportPeriod);
+      if (reportDate) urlParams.append('date', reportDate);
+      const json = await fetchJsonWithRetry(BACKEND_URL + `/api/reports/basic-dashboard?${urlParams.toString()}`, {
         credentials: 'include',
       });
       setData(json);
@@ -222,7 +233,7 @@ const BasicReports = ({
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, []);
+  }, [reportPeriod, reportDate]);
 
   // Only fetch the heavy dashboard payload when the active section actually
   // needs it. Self-contained sections (expenses, official) load their own
@@ -416,8 +427,10 @@ const BasicReports = ({
   const renderContent = () => {
 
     switch (activeSection) {
+      case 'flash_report':
+        return <FlashReportContent showDatePicker={true} />;
       case 'overview':
-        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} />;
+        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
       case 'revenue':
         return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} />;
       case 'adr_revpar':
@@ -463,7 +476,7 @@ const BasicReports = ({
       case 'expenses':
         return <div data-testid="section-expenses"><CostAnalyticsView /></div>;
       default:
-        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} />;
+        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
     }
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
@@ -524,6 +537,22 @@ const BasicReports = ({
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
                             <div className="flex items-center gap-2">
+                <select 
+                  className="border rounded px-2 py-1 text-sm bg-white print:hidden"
+                  value={reportPeriod}
+                  onChange={(e) => setReportPeriod(e.target.value)}
+                >
+                  <option value="monthly">Son 30 Gün</option>
+                  <option value="daily">Günlük (Seçili Tarih)</option>
+                </select>
+                {reportPeriod === 'daily' && (
+                  <input 
+                    type="date" 
+                    className="border rounded px-2 py-1 text-sm bg-white print:hidden"
+                    value={reportDate || new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setReportDate(e.target.value)}
+                  />
+                )}
                 <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
                 </Button>
