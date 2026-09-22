@@ -339,5 +339,6 @@ jobs:
         uses: actions/upload-artifact@v5
         if: always() && steps.check-key.outputs.secrets_exist == 'true'
         with:
+          retention-days: 1
           name: nilvera-sandbox-results
           path: backend/nilvera-sandbox-results.xml

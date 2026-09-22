@@ -324,6 +324,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: exely-pilot-results
           path: backend/exely-pilot-results.xml
           if-no-files-found: ignore

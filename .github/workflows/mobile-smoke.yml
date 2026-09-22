@@ -332,6 +332,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: maestro-ios-debug
           path: |
             smoke-artifacts/ios/output.log
@@ -342,6 +343,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: smoke-ios-summary
           path: smoke-ios-summary.txt
 
@@ -465,6 +467,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: maestro-android-debug
           path: |
             smoke-artifacts/android/output.log
@@ -475,6 +478,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
+          retention-days: 1
           name: smoke-android-summary
           path: smoke-android-summary.txt
 
