@@ -119,11 +119,45 @@ async def get_flash_report(
         {"_id": 0, "total_amount": 1, "base_rate": 1, "paid_amount": 1, "charges": 1, "channel": 1, "status": 1},
     ).to_list(1000)
 
-    total_revenue = sum(b.get("total_amount", 0) for b in today_bookings)
-    collected = sum(b.get("paid_amount", 0) for b in today_bookings)
+
+    # BUG FIX: Calculate revenue correctly based on ALL in-house guests, splitting by nights
+    in_house_bookings = await db.bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+            "check_in": {"$lte": today_end.isoformat()},
+            "check_out": {"$gte": today_start.isoformat()}
+        },
+        {"_id": 0, "total_amount": 1, "paid_amount": 1, "charges": 1, "check_in": 1, "check_out": 1},
+    ).to_list(2000)
+
+    total_revenue = 0
+    collected = 0
+    charges_by_cat = {}
+
+    for b in in_house_bookings:
+        try:
+            ci_str = b.get("check_in", "").replace("Z", "+00:00")[:10]
+            co_str = b.get("check_out", "").replace("Z", "+00:00")[:10]
+            ci = datetime.fromisoformat(ci_str).date()
+            co = datetime.fromisoformat(co_str).date()
+            nights = max(1, (co - ci).days)
+        except Exception:
+            nights = 1
+
+        daily_amount = float(b.get("total_amount") or 0) / nights
+        daily_paid = float(b.get("paid_amount") or 0) / nights
+        
+        total_revenue += daily_amount
+        collected += daily_paid
+
+        for c in b.get("charges", []):
+            cat = c.get("charge_category", "other")
+            amt = float(c.get("amount") or 0) / nights
+            charges_by_cat[cat] = charges_by_cat.get(cat, 0) + amt
+
     adr = total_revenue / occupied_today if occupied_today > 0 else 0
     revpar = total_revenue / total_rooms if total_rooms > 0 else 0
-
     no_shows = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}, "status": "no_show"})
 
     cancellations = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": "cancelled", "created_at": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}})
@@ -139,12 +173,6 @@ async def get_flash_report(
         fnb_revenue = sum(o.get("total_amount", 0) for o in fnb_orders)
     except Exception:
         pass
-
-    charges_by_cat = {}
-    for b in today_bookings:
-        for c in b.get("charges", []):
-            cat = c.get("charge_category", "other")
-            charges_by_cat[cat] = charges_by_cat.get(cat, 0) + c.get("amount", 0)
 
     room_revenue = charges_by_cat.get("room", charges_by_cat.get("accommodation", 0))
     if not charges_by_cat:
