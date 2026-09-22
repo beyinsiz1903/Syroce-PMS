@@ -351,9 +351,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     ]
     revenue_trend = [{"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "revenue": row["revenue"]} for row in metric_rows]
 
-    hk_completed = len([t for t in hk_tasks if t.get("status") == "completed"])
-    hk_pending = len([t for t in hk_tasks if t.get("status") in ["pending", "assigned"]])
-    hk_in_progress = len([t for t in hk_tasks if t.get("status") == "in_progress"])
+    hk_completed = len([t for t in hk_tasks if str(t.get("status") or t.get("task_status") or "").strip().lower() == "completed"])
+    hk_pending = len([t for t in hk_tasks if str(t.get("status") or t.get("task_status") or "").strip().lower() in ["pending", "assigned", "open"]])
+    hk_in_progress = len([t for t in hk_tasks if str(t.get("status") or t.get("task_status") or "").strip().lower() in ["in_progress", "inprogress", "active"]])
 
     source_distribution = {}
     source_revenue = {}
