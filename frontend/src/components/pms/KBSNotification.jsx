@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { COUNTRIES } from '@/lib/countries';
 import {
   Shield, Send, CheckCircle, AlertTriangle, Clock,
   Download, Search, UserCog, Loader2, RefreshCw, Skull, ListPlus
@@ -128,7 +129,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const [activeTab, setActiveTab] = useState('pending');
   const [sending, setSending] = useState(false);
   const [editDialog, setEditDialog] = useState(null);
-  const [editForm, setEditForm] = useState({ id_number: '', birth_date: '' });
+  const [editForm, setEditForm] = useState({ id_number: '', birth_date: '', nationality: '' });
   const [savingGuestInfo, setSavingGuestInfo] = useState(false);
 
   // Faz 1 kuyruk altyapısı entegrasyonu
@@ -612,7 +613,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   };
 
   const openEditDialog = (guest) => {
-    setEditForm({ id_number: guest.id_number || '', birth_date: guest.birth_date || '' });
+    setEditForm({ id_number: guest.id_number || '', birth_date: guest.birth_date || '', nationality: guest.nationality || '' });
     setEditDialog(guest);
   };
 
@@ -940,7 +941,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                     <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
                   </div>
                   <div className="text-xs text-red-600 mt-1">
-                    {tk('missing')} {!guest.id_number ? tk('idNumber') + ' ' : ''}{!isTurkishGuest(guest) && !guest.birth_date ? tk('birthDate') : ''}
+                    {tk('missing')} {!guest.id_number ? (isTurkishGuest(guest) ? tk('idNumber') + ' ' : 'Pasaport No ') : ''}{!isTurkishGuest(guest) && !guest.birth_date ? tk('birthDate') : ''}
                   </div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
@@ -1055,7 +1056,16 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
             <div className="space-y-4">
               <p className="text-sm text-gray-600">{editDialog.guest_name} - {tk('room')} {editDialog.room_number}</p>
               <div>
-                <Label htmlFor="kbs-guest-id-number">{tk('idLabel')}</Label>
+                <Label htmlFor="kbs-guest-nationality">{tk('nationality', 'Uyruk')}</Label>
+                <Select value={editForm.nationality} onValueChange={val => setEditForm({ ...editForm, nationality: val })}>
+                  <SelectTrigger id="kbs-guest-nationality"><SelectValue placeholder="TR" /></SelectTrigger>
+                  <SelectContent>
+                    {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="kbs-guest-id-number">{tk('idLabel')} / Pasaport No</Label>
                 <Input
                   id="kbs-guest-id-number"
                   value={editForm.id_number}
