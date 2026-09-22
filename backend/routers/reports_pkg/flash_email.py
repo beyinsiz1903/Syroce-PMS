@@ -216,6 +216,7 @@ async def get_flash_report(
             "other": round(other_revenue, 2),
             "collected": round(collected, 2),
             "outstanding": round(grand_total - collected, 2),
+            "room_revenue_breakdown": room_revenue_breakdown,
         },
         "operations": {
             "arrivals": arrivals_today,
