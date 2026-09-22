@@ -51,7 +51,7 @@ export default function CommunicationCenter({ user }) {
         variant="outline"
         size="icon"
         onClick={() => changeDisplayMode('minimized')}
-        className="communication-center-restore safe-fixed-bottom fixed right-2 z-50 h-9 w-9 rounded-full bg-white/95 shadow-lg"
+        className="print:hidden communication-center-restore safe-fixed-bottom fixed right-2 z-50 h-9 w-9 rounded-full bg-white/95 shadow-lg"
         aria-label="İletişim merkezini göster"
         data-testid="communication-center-restore"
       >
@@ -63,7 +63,7 @@ export default function CommunicationCenter({ user }) {
   const minimized = displayMode === 'minimized';
 
   return (
-    <div className="communication-center safe-fixed-bottom fixed right-4 z-50 flex flex-col items-end gap-2 sm:right-5">
+    <div className="print:hidden communication-center safe-fixed-bottom fixed right-4 z-50 flex flex-col items-end gap-2 sm:right-5">
       {open && (
         <div
           className="w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-950"
