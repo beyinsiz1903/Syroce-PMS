@@ -147,7 +147,7 @@ async def get_flash_report(
 
         daily_amount = float(b.get("total_amount") or 0) / nights
         daily_paid = float(b.get("paid_amount") or 0) / nights
-        
+
         total_revenue += daily_amount
         collected += daily_paid
 
