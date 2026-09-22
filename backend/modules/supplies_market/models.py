@@ -94,7 +94,7 @@ from typing import Any
 from pydantic import model_validator
 
 
-class ProductIn(BaseModel):
+class ProductBase(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     description: str | None = None
     category: ProductCategory
@@ -112,6 +112,10 @@ class ProductIn(BaseModel):
     payment_terms_days: int = Field(default=0, ge=0, le=365)  # vade (0 = peşin)
     attributes: dict[str, Any] = Field(default_factory=dict, description="Kategoriye özel teknik spesifikasyonlar (gram, tel, vs.)")
 
+
+
+
+class ProductIn(ProductBase):
     @model_validator(mode="after")
     def validate_category_attributes(self) -> "ProductIn":
         cat = self.category
@@ -134,7 +138,7 @@ class ProductIn(BaseModel):
         return self
 
 
-class ProductOut(ProductIn):
+class ProductOut(ProductBase):
     id: str
     vendor_id: str
     vendor_name: str
