@@ -2,13 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, BedDouble, DollarSign, LogIn, LogOut, AlertTriangle, RefreshCw, Printer, Users, UserX, UserPlus, XCircle, Sparkles } from 'lucide-react';
+import { TrendingUp, BedDouble, DollarSign, LogIn, LogOut, AlertTriangle, RefreshCw, Printer, Users, UserX, UserPlus, XCircle, Sparkles, X } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useTranslation } from 'react-i18next';
 const PIE_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6366f1'];
 const FlashReportContent = ({
   showDatePicker = false,
+  isEmbedded = false,
+  targetDate = null,
   rooms,
   bookings,
   arrivals,
@@ -28,6 +30,7 @@ const FlashReportContent = ({
   const [loading, setLoading] = useState(false);
   const [usingFallback, setUsingFallback] = useState(false);
   const [error, setError] = useState(null);
+  const [showBreakdownModal, setShowBreakdownModal] = useState(false);
 
   // Props'lardan client-side fallback üretebilir miyiz? (PMSModule sekmesi → evet, standalone → hayır)
   const hasFallbackData = Array.isArray(rooms) || Array.isArray(bookings) || Array.isArray(arrivals) || Array.isArray(departures) || Array.isArray(inhouse);
@@ -35,9 +38,9 @@ const FlashReportContent = ({
     setLoading(true);
     setUsingFallback(false);
     setError(null);
-    const effectiveDate = showDatePicker ? selectedDate : new Date().toISOString().split('T')[0];
+    const effectiveDate = targetDate || (showDatePicker ? selectedDate : new Date().toISOString().split('T')[0]);
     try {
-      const url = showDatePicker ? `/reports/flash-report?date=${selectedDate}` : '/reports/flash-report';
+      const url = targetDate || showDatePicker ? `/reports/flash-report?date=${targetDate || selectedDate}` : '/reports/flash-report';
       const res = await axios.get(url);
       if (res.data && res.data.occupancy) {
         setReportData(res.data);
@@ -115,7 +118,7 @@ const FlashReportContent = ({
     } finally {
       setLoading(false);
     }
-  }, [showDatePicker, selectedDate, rooms, bookings, arrivals, departures, inhouse, hasFallbackData]);
+  }, [showDatePicker, selectedDate, targetDate, rooms, bookings, arrivals, departures, inhouse, hasFallbackData]);
   useEffect(() => {
     loadFlashReport();
   }, [loadFlashReport]);
@@ -198,7 +201,8 @@ const FlashReportContent = ({
   }));
   return <div className="space-y-4" data-testid="flash-report-content">
       {/* Toolbar: tarih + yazdır + yenile */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!isEmbedded && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-gray-600">
           {t('cm.components_pms_FlashReportContent.tarih')} <span className="font-medium text-gray-900">{d.date}</span>
           {usingFallback && <span className="ml-2 text-xs text-amber-600">{t('cm.components_pms_FlashReportContent.cevrimdisi_veri_anlik_degil')}</span>}
@@ -212,7 +216,8 @@ const FlashReportContent = ({
             <Printer className="w-4 h-4 mr-1.5" /> {t('cm.components_pms_FlashReportContent.yazdir')}
           </Button>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Ana KPI'lar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -334,13 +339,23 @@ const FlashReportContent = ({
             <div className="space-y-1.5">
               {(d.departments || []).map((dep, i) => {
               const pct = totalRev > 0 ? (dep.amount || 0) / totalRev * 100 : 0;
-              return <div key={dep.id || i} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-700">{dep.name}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium text-gray-900">{fmtMoney(dep.amount || 0)}</span>
-                      <span className="text-xs text-gray-500 w-12 text-right">{pct.toFixed(1)}%</span>
-                    </div>
-                  </div>;
+              const isRoomRev = dep.name === 'Oda Geliri';
+              return (
+                <div 
+                  key={dep.id || i} 
+                  className={`flex items-center justify-between text-sm py-1.5 px-2 rounded -mx-2 ${isRoomRev ? 'cursor-pointer hover:bg-blue-50 transition-colors border border-transparent hover:border-blue-100' : ''}`}
+                  onClick={isRoomRev ? () => setShowBreakdownModal(true) : undefined}
+                  title={isRoomRev ? "Detayları görüntülemek için tıklayın" : undefined}
+                >
+                  <span className={`${isRoomRev ? 'text-blue-700 font-medium' : 'text-gray-700'} flex items-center`}>
+                    {dep.name} {isRoomRev && <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-normal">DETAY</span>}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium text-gray-900">{fmtMoney(dep.amount || 0)}</span>
+                    <span className="text-xs text-gray-500 w-12 text-right">{pct.toFixed(1)}%</span>
+                  </div>
+                </div>
+              );
             })}
             </div>
           </CardContent>
@@ -404,6 +419,50 @@ const FlashReportContent = ({
       <div className="text-[11px] text-gray-400 text-right">
         Para birimi: {currencyCode} ({currencySymbol})
       </div>
+
+      {showBreakdownModal && reportData?.revenue?.room_revenue_breakdown && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 print:hidden" onClick={() => setShowBreakdownModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-lg text-slate-800">Oda Geliri Detayları (In-House Odalar)</h3>
+              <button onClick={() => setShowBreakdownModal(false)} className="p-1 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-0 overflow-y-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-gray-500 uppercase bg-slate-50 sticky top-0 shadow-sm">
+                  <tr>
+                    <th className="px-4 py-3">Oda</th>
+                    <th className="px-4 py-3">Misafir</th>
+                    <th className="px-4 py-3 text-right">Geceleme</th>
+                    <th className="px-4 py-3 text-right">Toplam Tutar</th>
+                    <th className="px-4 py-3 text-right font-bold text-blue-600">Günlük Fiyat (Gelir)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {reportData.revenue.room_revenue_breakdown.map((item, i) => (
+                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-2 font-medium">{item.room_number || '?'}</td>
+                      <td className="px-4 py-2">{item.guest_name || 'İsimsiz'}</td>
+                      <td className="px-4 py-2 text-right">{item.nights} Gece</td>
+                      <td className="px-4 py-2 text-right text-gray-500">{fmtMoney(item.total_stay_amount)}</td>
+                      <td className="px-4 py-2 text-right font-semibold text-emerald-600">{fmtMoney(item.daily_rate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 sticky bottom-0 border-t border-gray-200">
+                  <tr>
+                    <td colSpan={4} className="px-4 py-3 text-right font-bold text-slate-700">TOPLAM GÜNLÜK ODA GELİRİ:</td>
+                    <td className="px-4 py-3 text-right text-lg font-bold text-emerald-700">{fmtMoney(reportData.revenue.room_revenue_breakdown.reduce((sum, item) => sum + (item.daily_rate || 0), 0))}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>;
 };
 export default FlashReportContent;

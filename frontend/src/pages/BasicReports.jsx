@@ -428,7 +428,7 @@ const BasicReports = ({
 
     switch (activeSection) {
       case 'flash_report':
-        return <FlashReportContent showDatePicker={true} />;
+        return <FlashReportContent showDatePicker={false} isEmbedded={true} targetDate={reportPeriod === 'daily' && reportDate ? reportDate : new Date().toISOString().split('T')[0]} />;
       case 'overview':
         return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
       case 'revenue':
@@ -537,6 +537,7 @@ const BasicReports = ({
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
                             <div className="flex items-center gap-2">
+                {activeSection !== 'flash_report' && (
                 <select 
                   className="border rounded px-2 py-1 text-sm bg-white print:hidden"
                   value={reportPeriod}
@@ -545,7 +546,8 @@ const BasicReports = ({
                   <option value="monthly">Son 30 Gün</option>
                   <option value="daily">Günlük (Seçili Tarih)</option>
                 </select>
-                {reportPeriod === 'daily' && (
+                )}
+                {(reportPeriod === 'daily' || activeSection === 'flash_report') && (
                   <input 
                     type="date" 
                     className="border rounded px-2 py-1 text-sm bg-white print:hidden"
