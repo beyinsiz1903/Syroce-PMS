@@ -177,6 +177,8 @@ def _mask_pii(value):
 
 @sub_router.get("/reports/basic-dashboard")
 async def get_basic_reports_dashboard(
+    date: str = None,
+    period: str = "monthly",
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("basic_reporting")),
 ):
@@ -184,18 +186,30 @@ async def get_basic_reports_dashboard(
     Temel Raporlar Dashboard - OPTIMIZED: Batch queries + cache (Tur 28).
     """
     has_pii = _user_has_pii_access(current_user)
-    return await _basic_dashboard_impl(current_user, has_pii)
+    return await _basic_dashboard_impl(current_user, has_pii, date, period)
 
 
 @cached(ttl=120, key_prefix="reports:basic_dashboard", role_aware=True)
-async def _basic_dashboard_impl(current_user: User, has_pii: bool):
-    today = datetime.now(UTC)
+async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: str = None, period: str = "monthly"):
+    if target_date:
+        try:
+            today = datetime.fromisoformat(target_date[:10]).replace(tzinfo=UTC)
+        except ValueError:
+            today = datetime.now(UTC)
+    else:
+        today = datetime.now(UTC)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today.replace(hour=23, minute=59, second=59)
     tenant_id = current_user.tenant_id
-    month_start = (today - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
-    week_start = (today - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
-    trend_start = (today - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == "daily":
+        month_start = today_start
+        trend_start = today_start
+        week_start = today_start
+    else:
+        month_start = (today - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = (today - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        trend_start = (today - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+
 
     # ALL queries in parallel
     async def get_fnb():
@@ -239,11 +253,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
         db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"}),
         db.housekeeping_tasks.find({"tenant_id": tenant_id, "created_at": {"$gte": (today - timedelta(days=7)).isoformat()}}).to_list(5000),
         db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": {"$in": ["open", "in_progress", "pending"]}}),
-        db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": "completed", "completed_at": {"$gte": month_start.isoformat()}}),
+        db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": "completed", "completed_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}),
         db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": {"$in": ["pending", "partial"]}}),
-        db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": "paid", "created_at": {"$gte": month_start.isoformat()}}),
+        db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": "paid", "created_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}),
         db.guests.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "nationality": 1, "country": 1}).to_list(5000),
-        db.payments.find({"tenant_id": tenant_id, "processed_at": {"$gte": month_start.isoformat()}}, {"_id": 0, "amount": 1, "method": 1, "status": 1}).to_list(5000),
+        db.payments.find({"tenant_id": tenant_id, "processed_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}, {"_id": 0, "amount": 1, "method": 1, "status": 1}).to_list(5000),
         db.bookings.find(
             {
                 "tenant_id": tenant_id,

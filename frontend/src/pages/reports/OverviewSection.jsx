@@ -9,15 +9,21 @@ const OverviewSection = ({
   data,
   s,
   pc,
-  roomStatusData
+  roomStatusData,
+  reportPeriod
 }) => {
   const {
     t
   } = useTranslation();
+
+  const isDaily = reportPeriod === 'daily';
+  const labelSuffix = isDaily ? '(Seçili Gün)' : '(30 Gün)';
+  const prevLabelSuffix = isDaily ? 'Önceki gün: ' : 'Önceki ay: ';
+
   return <div className="space-y-6" data-testid="section-overview">
     <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" icon={LayoutDashboard} actions={<StatusBadge intent="success">Canlı</StatusBadge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      <KPICard title="Toplam Gelir (30 Gün)" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="success" />
+      <KPICard title={`Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="success" />
       <KPICard title="Ortalama ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
       <KPICard title="RevPAR" value={s.revpar} icon={BarChart3} color="warning" />
       <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="info" />
@@ -40,7 +46,7 @@ const OverviewSection = ({
 
     <div className="grid md:grid-cols-3 gap-4">
       <Card className="shadow-sm">
-        <CardHeader className="pb-1"><CardTitle className="text-xs text-gray-500">Gelir Trendi (30 Gün)</CardTitle></CardHeader>
+        <CardHeader className="pb-1"><CardTitle className="text-xs text-gray-500">{`Gelir Trendi ${labelSuffix}`}</CardTitle></CardHeader>
         <CardContent className="pb-3">
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={data?.revenue_trend || []}>
@@ -58,7 +64,7 @@ const OverviewSection = ({
         </CardContent>
       </Card>
       <Card className="shadow-sm">
-        <CardHeader className="pb-1"><CardTitle className="text-xs text-gray-500">Doluluk Trendi (30 Gün)</CardTitle></CardHeader>
+        <CardHeader className="pb-1"><CardTitle className="text-xs text-gray-500">{`Doluluk Trendi ${labelSuffix}`}</CardTitle></CardHeader>
         <CardContent className="pb-3">
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={data?.occupancy_trend || []}>
@@ -96,12 +102,12 @@ const OverviewSection = ({
         <p className="text-[11px] text-slate-500 mt-0.5">{pc.week_bookings} rezervasyon</p>
       </Card>
       <Card className="p-4 border-l-4 border-l-emerald-500">
-        <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wide">Son 30 Gün</p>
+        <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wide">{isDaily ? "Seçili Gün" : "Son 30 Gün"}</p>
         <p className="text-2xl font-bold text-slate-900">{formatCurrency(pc.month_revenue)}</p>
         <p className="text-[11px] text-slate-500 mt-0.5">{pc.month_bookings} rezervasyon</p>
       </Card>
       <Card className="p-4 border-l-4 border-l-indigo-500">
-        <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wide">Önceki 30 Gün</p>
+        <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wide">{isDaily ? "Önceki Gün" : "Önceki 30 Gün"}</p>
         <p className="text-2xl font-bold text-slate-900">{formatCurrency(pc.prev_month_revenue)}</p>
         <p className="text-[11px] text-slate-500 mt-0.5">{pc.prev_month_bookings} rezervasyon</p>
       </Card>

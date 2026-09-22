@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck } from 'lucide-react';
+import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck, Download, Printer } from 'lucide-react';
 import ForecastReportsPage from './ForecastReportsPage';
+import FlashReportContent from '@/components/pms/FlashReportContent';
 import TrialBalancePage from './TrialBalancePage';
 import { ROOM_STATUS_COLORS, ROOM_STATUS_LABELS, formatPercent } from './reports/ReportHelpers';
 import OverviewSection from './reports/OverviewSection';
@@ -25,6 +27,11 @@ const BACKEND_URL = "";
 const REPORT_MENU = [{
   type: 'header',
   label: 'GENEL'
+}, {
+  id: 'flash_report',
+  label: 'Bugünün Özeti (Flash)',
+  icon: Activity,
+  desc: 'Anlık kasa ve tesis durumu'
 }, {
   id: 'overview',
   label: 'Genel Bakış',
@@ -179,6 +186,8 @@ const BasicReports = ({
 }) => {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
+  const [reportPeriod, setReportPeriod] = useState("monthly");
+  const [reportDate, setReportDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -211,7 +220,10 @@ const BasicReports = ({
     setLoading(true);
     setError(null);
     try {
-      const json = await fetchJsonWithRetry(BACKEND_URL + '/api/reports/basic-dashboard', {
+      const urlParams = new URLSearchParams();
+      if (reportPeriod) urlParams.append('period', reportPeriod);
+      if (reportDate) urlParams.append('date', reportDate);
+      const json = await fetchJsonWithRetry(BACKEND_URL + `/api/reports/basic-dashboard?${urlParams.toString()}`, {
         credentials: 'include',
       });
       setData(json);
@@ -221,7 +233,7 @@ const BasicReports = ({
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, []);
+  }, [reportPeriod, reportDate]);
 
   // Only fetch the heavy dashboard payload when the active section actually
   // needs it. Self-contained sections (expenses, official) load their own
@@ -361,10 +373,64 @@ const BasicReports = ({
     const term = officialSearch.toLowerCase();
     return (r.guest_name || '').toLowerCase().includes(term) || (r.room_number || '').toString().includes(term) || (r.national_id || '').includes(term) || (r.passport_number || '').toLowerCase().includes(term);
   });
+
+  const handleGenericExportCsv = () => {
+    if (activeSection === 'official' && typeof handleOfficialExportCsv === 'function') {
+      handleOfficialExportCsv();
+      return;
+    }
+    
+    const sectionContainer = document.querySelector('[data-testid="reports-desktop-content"]');
+    if (!sectionContainer) return;
+    
+    const tables = sectionContainer.querySelectorAll('table');
+    if (tables.length === 0) {
+      toast.error('Bu raporda dışa aktarılabilecek bir tablo bulunamadı. Lütfen tablo içeren bir rapor seçin.');
+      return;
+    }
+
+    let csvContent = "";
+    
+    tables.forEach((table, index) => {
+      if (index > 0) csvContent += "\n\n";
+      
+      const rows = table.querySelectorAll('tr');
+      rows.forEach(row => {
+        const rowData = [];
+        const cells = row.querySelectorAll('th, td');
+        cells.forEach(cell => {
+          let text = (cell.innerText || "").replace(/(\r\n|\n|\r)/gm, " ").trim();
+          if (text.includes(',') || text.includes('"')) {
+            text = `"${text.replace(/"/g, '""')}"`;
+          }
+          rowData.push(text);
+        });
+        csvContent += rowData.join(',') + "\n";
+      });
+    });
+
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `rapor_${activeSection}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleGenericPrint = () => {
+    window.print();
+  };
+
   const renderContent = () => {
+
     switch (activeSection) {
+      case 'flash_report':
+        return <FlashReportContent showDatePicker={true} />;
       case 'overview':
-        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} />;
+        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
       case 'revenue':
         return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} />;
       case 'adr_revpar':
@@ -410,13 +476,13 @@ const BasicReports = ({
       case 'expenses':
         return <div data-testid="section-expenses"><CostAnalyticsView /></div>;
       default:
-        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} />;
+        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
     }
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
   return <>
       <div className="flex min-h-[calc(100vh-64px)]">
-        <aside className="w-[260px] bg-white border-r border-gray-200 flex-shrink-0 hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
+        <aside className="w-[260px] bg-white border-r border-gray-200 flex-shrink-0 hidden print:hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-sky-600" />
@@ -449,7 +515,7 @@ const BasicReports = ({
           </div>
         </aside>
 
-        <div className="lg:hidden w-full">
+        <div className="lg:hidden print:hidden w-full">
           <div className="p-3 bg-white border-b sticky top-0 z-10">
             <div className="flex items-center gap-2 mb-2">
               <BarChart3 className="w-4 h-4 text-sky-600" />
@@ -462,7 +528,7 @@ const BasicReports = ({
           <div className="p-4" data-testid="reports-mobile-content">{renderContent()}</div>
         </div>
 
-        <main className="flex-1 hidden lg:block overflow-y-auto" data-testid="reports-desktop-content">
+        <main className="flex-1 hidden print:block lg:block overflow-y-auto" data-testid="reports-desktop-content">
           <div className="p-6 max-w-6xl">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -470,9 +536,33 @@ const BasicReports = ({
                 <ChevronRight className="w-3 h-3" />
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
-              <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn">
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile
-              </Button>
+                            <div className="flex items-center gap-2">
+                <select 
+                  className="border rounded px-2 py-1 text-sm bg-white print:hidden"
+                  value={reportPeriod}
+                  onChange={(e) => setReportPeriod(e.target.value)}
+                >
+                  <option value="monthly">Son 30 Gün</option>
+                  <option value="daily">Günlük (Seçili Tarih)</option>
+                </select>
+                {reportPeriod === 'daily' && (
+                  <input 
+                    type="date" 
+                    className="border rounded px-2 py-1 text-sm bg-white print:hidden"
+                    value={reportDate || new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setReportDate(e.target.value)}
+                  />
+                )}
+                <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                  <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
+                </Button>
+                <Button onClick={handleGenericExportCsv} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                  <Download className="w-3.5 h-3.5 mr-1.5" />Excel/CSV
+                </Button>
+                <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile
+                </Button>
+              </div>
             </div>
             {renderContent()}
           </div>
