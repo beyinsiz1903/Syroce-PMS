@@ -219,6 +219,9 @@ def test_backend_mutation_path_classifier_protects_reservation_detail_and_frontd
     assert reservation_id_for_mutation(
         "/api/frontdesk/checkout/booking-a", "POST"
     ) == "booking-a"
+    assert reservation_id_for_mutation(
+        "/api/pms/reservations/booking-a/checkout", "POST"
+    ) == "booking-a"
 
     # Reads and lock-management calls must stay outside mutation enforcement.
     assert reservation_id_for_mutation(

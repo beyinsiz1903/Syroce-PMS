@@ -270,10 +270,39 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByTestId('btn-checkout'));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith(
-      '/frontdesk/checkout/booking-test?auto_close_folios=true',
+      '/pms/reservations/booking-test/checkout?auto_close_folios=true',
     ));
     await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
       bookingId: 'booking-test',
+      operation: 'checked_out',
+    }));
+  });
+
+  it('uses the canonical full-detail booking id for check-out', async () => {
+    const onOperationComplete = vi.fn();
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, id: 'canonical-booking-id', status: 'checked_in' },
+      },
+    });
+
+    render(
+      <ReservationDetailModal
+        bookingId="stale-list-reference"
+        onClose={() => {}}
+        onOperationComplete={onOperationComplete}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('btn-checkout'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/canonical-booking-id/checkout?auto_close_folios=true',
+    ));
+    await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
+      bookingId: 'canonical-booking-id',
       operation: 'checked_out',
     }));
   });
