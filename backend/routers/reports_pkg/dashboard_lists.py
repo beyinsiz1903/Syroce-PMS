@@ -77,6 +77,7 @@ async def get_official_guest_list(
             "room_number": 1,
             "room_id": 1,
             "id_number": 1,
+            "national_id": 1,
             "passport_number": 1,
             "check_in": 1,
             "check_out": 1,
@@ -138,7 +139,7 @@ async def get_official_guest_list(
         row = {
             "booking_id": b.get("id"),
             "guest_name": full_name,
-            "national_id": _mask_pii((g or {}).get("national_id") or b.get("id_number")) if not has_pii else ((g or {}).get("national_id") or b.get("id_number")),
+            "national_id": _mask_pii((g or {}).get("national_id") or b.get("national_id") or b.get("id_number")) if not has_pii else ((g or {}).get("national_id") or b.get("national_id") or b.get("id_number")),
             "passport_number": _mask_pii((g or {}).get("passport_number") or b.get("passport_number")) if not has_pii else ((g or {}).get("passport_number") or b.get("passport_number")),
             "country": (g or {}).get("country"),
             "city": (g or {}).get("city"),
@@ -260,17 +261,24 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "room_id": 1,
                 "nationality": 1,
                 "id_number": 1,
+                "national_id": 1,
                 "passport_number": 1,
             },
         ).to_list(10000),
         db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"}),
-        db.housekeeping_tasks.find({"tenant_id": tenant_id, "created_at": {"$gte": (today - timedelta(days=7)).isoformat()}}).to_list(5000),
+        db.housekeeping_tasks.find({
+            "tenant_id": tenant_id, 
+            "$or": [
+                {"created_at": {"$gte": trend_start.isoformat(), "$lte": today_end.isoformat()}},
+                {"updated_at": {"$gte": trend_start.isoformat(), "$lte": today_end.isoformat()}}
+            ]
+        }).to_list(5000),
         db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": {"$in": ["open", "in_progress", "pending"]}}),
         db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": "completed", "completed_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}),
         db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": {"$in": ["pending", "partial"]}}),
         db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": "paid", "created_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}),
         db.guests.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "nationality": 1, "country": 1}).to_list(5000),
-        db.payments.find({"tenant_id": tenant_id, "processed_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}, {"_id": 0, "amount": 1, "method": 1, "status": 1}).to_list(5000),
+        db.payments.find({"tenant_id": tenant_id, "processed_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}, {"_id": 0, "amount": 1, "method": 1, "payment_method": 1, "status": 1}).to_list(5000),
         db.bookings.find(
             {
                 "tenant_id": tenant_id,
@@ -335,24 +343,51 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             week_bookings.append(bk)
         # P1 fix: ay listesi — cancelled / no_show da dahil edilmeli; aksi
         # halde "No-Show & İptaller" sekmesi recent_guests_data filtresinden
-        # geçemediği için boş görünür.
-        if ci >= ms_s and status in (*ALL_REVENUE_STATUSES, "cancelled", "no_show"):
+        # geçemediği için boş görünür. Konaklaması geçmiş aydan devredenler
+        # için de (co >= ms_s) kontrolü eklenmeli.
+        if (ci >= ms_s or co >= ms_s) and status in (*ALL_REVENUE_STATUSES, "cancelled", "no_show"):
             if status in ALL_REVENUE_STATUSES:
                 month_bookings.append(bk)
+            
+            g = guests_by_id.get(bk.get("guest_id"))
+            full_name = bk.get("guest_name")
+            if not full_name and g:
+                full_name = f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+
+            email = bk.get("guest_email")
+            if not email and g:
+                email = g.get("email") or g.get("contact_email")
+
+            phone = bk.get("guest_phone")
+            if not phone and g:
+                phone = g.get("phone") or g.get("contact_phone")
+
+            nat = bk.get("nationality")
+            if not nat and g:
+                nat = g.get("nationality") or g.get("country")
+
+            id_num = bk.get("id_number") or bk.get("national_id")
+            if not id_num and g:
+                id_num = g.get("national_id")
+
+            pass_num = bk.get("passport_number")
+            if not pass_num and g:
+                pass_num = g.get("passport_number")
+                
             recent_guests_data.append(
                 {
-                    "guest_name": bk.get("guest_name"),
-                    "guest_email": bk.get("guest_email"),
-                    "guest_phone": bk.get("guest_phone"),
+                    "guest_name": full_name,
+                    "guest_email": email,
+                    "guest_phone": phone,
                     "room_number": str(bk.get("room_number") or room_map.get(str(bk.get("room_id"))) or "?").strip() or "?",
                     "room_type": bk.get("room_type"),
                     "check_in": ci,
                     "check_out": co,
                     "total_amount": amt,
                     "status": status,
-                    "nationality": bk.get("nationality"),
-                    "id_number": bk.get("id_number") if has_pii else _mask_pii(bk.get("id_number")),
-                    "passport_number": bk.get("passport_number") if has_pii else _mask_pii(bk.get("passport_number")),
+                    "nationality": nat,
+                    "id_number": id_num if has_pii else _mask_pii(id_num),
+                    "passport_number": pass_num if has_pii else _mask_pii(pass_num),
                     "booking_source": bk.get("booking_source"),
                 }
             )
@@ -416,10 +451,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     NON_CASH_METHODS = {"discount", "city_ledger", "complimentary", "correction", "ar"}
 
     for p in all_payments:
-        method = p.get("method", "other")
+        method = p.get("method") or p.get("payment_method") or "other"
         amt = p.get("amount", 0) or 0
         payment_methods[method] = payment_methods.get(method, 0) + amt
-        if p.get("status") == "paid" and method not in NON_CASH_METHODS:
+        if p.get("status", "paid") == "paid" and method not in NON_CASH_METHODS:
             total_paid += amt
     payment_methods = {k: round(v, 2) for k, v in payment_methods.items()}
 
