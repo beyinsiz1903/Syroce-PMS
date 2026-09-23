@@ -62,14 +62,15 @@ export const RoomStatusSection = ({
     </Card>
   </div>;
 export const HousekeepingSection = ({
-  hk
+  hk,
+  reportDate
 }) => <div className="space-y-6" data-testid="section-housekeeping">
-    <SectionHeader title="Housekeeping Raporu" description="Temizlik operasyonları ve verimlilik" />
+    <SectionHeader title="Housekeeping Raporu" description={`${reportDate} tarihli temizlik görevleri ve durumları`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Tamamlanan" value={hk.completed || 0} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen" value={hk.pending || 0} icon={Clock} color="amber" />
       <KPICard title="Devam Eden" value={hk.in_progress || 0} icon={Activity} color="blue" />
-      <KPICard title="Haftalık Toplam" value={hk.total_week || 0} icon={Activity} color="purple" />
+      <KPICard title="Günlük Toplam" value={hk.total || 0} icon={Activity} color="purple" />
     </div>
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Housekeeping Performans Özeti</CardTitle></CardHeader>
@@ -99,16 +100,23 @@ export const HousekeepingSection = ({
         </div>
       </CardContent>
     </Card>
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Görev Detayları ({hk.rows?.length || 0})</CardTitle></CardHeader>
+      <CardContent className="p-0 overflow-x-auto">
+        {(hk.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Oda</th><th className="text-left p-3">Görev</th><th className="text-left p-3">Durum</th><th className="text-left p-3">Personel</th><th className="text-left p-3">Başlangıç</th><th className="text-left p-3">Bitiş</th></tr></thead><tbody>{hk.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.task_type || '-'}</td><td className="p-3">{row.status || '-'}</td><td className="p-3">{row.assigned_to || '-'}</td><td className="p-3 text-xs">{row.started_at ? new Date(row.started_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 text-xs">{row.completed_at ? new Date(row.completed_at).toLocaleString('tr-TR') : '-'}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CheckCircle2} message="Seçili tarihte housekeeping görevi yok" /></div>}
+      </CardContent>
+    </Card>
   </div>;
 export const PaymentsSection = ({
   payments,
-  paymentData
+  paymentData,
+  reportDate
 }) => {
   const {
     t
   } = useTranslation();
   return <div className="space-y-6" data-testid="section-payments">
-    <SectionHeader title={t('common.paymentReport')} description={t('common.paymentReportDesc')} />
+    <SectionHeader title={t('common.paymentReport')} description={`${reportDate} tarihli geçerli tahsilatlar`} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <KPICard title="Toplam Ödenen" value={payments.total_paid} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen Fatura" value={payments.total_pending} icon={Clock} color="amber" />
@@ -142,6 +150,12 @@ export const PaymentsSection = ({
         </CardContent>
       </Card>
     </div>
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Tahsilat Hareketleri ({payments.rows?.length || 0})</CardTitle></CardHeader>
+      <CardContent className="p-0 overflow-x-auto">
+        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3">{row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.amount)}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
+      </CardContent>
+    </Card>
   </div>;
 };
 export const DepartmentsSection = ({
