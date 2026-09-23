@@ -245,6 +245,7 @@ const ReportBuilder = () => {
   const generateReport = async () => {
     if (!selectedSource) return toast.error(t('reportBuilder.selectSource'));
     if (selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
+    if (dateFrom && dateTo && dateFrom > dateTo) return toast.error('Başlangıç tarihi bitiş tarihinden sonra olamaz');
     setLoading(true);
     setReportData(null);
     setColumnLabels({});
@@ -289,7 +290,14 @@ const ReportBuilder = () => {
         },
         body: JSON.stringify(buildConfig())
       });
-      if (!res.ok) throw new Error(t('reportBuilder.exportFailed'));
+      if (!res.ok) {
+        let detail = '';
+        try {
+          const payload = await res.json();
+          detail = payload.detail || '';
+        } catch {/* response is not JSON */}
+        throw new Error(detail || t('reportBuilder.exportFailed'));
+      }
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -335,12 +343,22 @@ const ReportBuilder = () => {
   };
   const loadTemplate = tpl => {
     const c = tpl.config;
+    const source = dataSources[c.data_source];
+    if (!source) {
+      toast.error('Bu şablonun veri kaynağı artık kullanılamıyor');
+      return;
+    }
+    const validColumns = (c.columns || []).filter(col => source.columns[col]);
+    if (validColumns.length === 0) {
+      toast.error('Bu şablonda kullanılabilir sütun kalmamış');
+      return;
+    }
     setSelectedSource(c.data_source);
-    setSelectedColumns(c.columns || []);
-    setFilters(c.filters || []);
+    setSelectedColumns(validColumns);
+    setFilters((c.filters || []).filter(f => validColumns.includes(f.field)));
     setDateFrom(c.date_from || '');
     setDateTo(c.date_to || '');
-    setSortBy(c.sort_by || '');
+    setSortBy(validColumns.includes(c.sort_by) ? c.sort_by : '');
     setSortOrder(c.sort_order || 'desc');
     setLimit(c.limit || 500);
     setShowTemplates(false);
