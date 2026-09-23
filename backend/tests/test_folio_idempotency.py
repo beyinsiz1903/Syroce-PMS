@@ -71,6 +71,8 @@ class _FakeDB:
         self.payments = _Coll()
         self.idempotency_keys = _Coll()
         self.city_tax_rules = _Coll()
+        self.tenant_settings = _Coll()
+        self.tenant_settings.docs.append({"tenant_id": "tenant-A", "business_date": "2026-09-22"})
 
 
 class _FakeRequest:

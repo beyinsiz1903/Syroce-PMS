@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
-from core.business_date_service import ensure_business_date_initialized
+from core.business_date_service import accounting_day_match, accounting_period_match, ensure_business_date_initialized
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
@@ -476,11 +476,11 @@ async def get_finance_snapshot(
     todays_payments = await db.payments.find(
         {
             "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"business_date": today.isoformat()},
+            **accounting_day_match(
+                today.isoformat(),
                 {"payment_date": today.isoformat()},
                 {"processed_at": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}},
-            ],
+            ),
         }
     ).to_list(10000)
 
@@ -501,10 +501,11 @@ async def get_finance_snapshot(
     mtd_payments = await db.payments.find(
         {
             "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"business_date": {"$gte": month_start.isoformat(), "$lte": today.isoformat()}},
+            **accounting_period_match(
+                month_start.isoformat(),
+                today.isoformat(),
                 {"processed_at": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
-            ],
+            ),
         }
     ).to_list(10000)
 

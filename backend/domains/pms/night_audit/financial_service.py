@@ -9,6 +9,7 @@ import os
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_service import accounting_day_match
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +85,12 @@ class FinancialService:
                 "$match": {
                     "tenant_id": ctx.tenant_id,
                     "status": {"$ne": "voided"},
-                    "$or": [
+                    **accounting_day_match(
+                        business_date,
                         {"date": business_date},
                         {"payment_date": business_date},
                         {"processed_at": {"$regex": f"^{business_date}"}},
-                    ],
+                    ),
                 }
             },
             {
@@ -334,7 +336,13 @@ class FinancialService:
                     {
                         "tenant_id": ctx.tenant_id,
                         "status": {"$ne": "voided"},
-                        "$or": [{"date": business_date}, {"payment_date": business_date}],
+                        **accounting_day_match(
+                            business_date,
+                            {"date": business_date},
+                            {"payment_date": business_date},
+                            {"processed_at": {"$regex": f"^{business_date}"}},
+                            {"created_at": {"$regex": f"^{business_date}"}},
+                        ),
                     },
                     {"_id": 0, "id": 1, "booking_id": 1, "amount": 1, "payment_method": 1, "description": 1},
                 ).max_time_ms(_FIN_AGG_MAX_MS),

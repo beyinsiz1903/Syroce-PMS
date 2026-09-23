@@ -8,6 +8,7 @@ from datetime import date as date_type
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer
 
+from core.business_date_service import accounting_day_match
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
@@ -445,13 +446,14 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         db.payments.find(
             {
                 "tenant_id": tenant_id,
-                "$or": [
+                **accounting_day_match(
+                    target_day,
                     {"processed_at": {"$regex": f"^{target_day}"}},
                     {"payment_date": target_day},
                     {"date": target_day},
                     {"created_at": {"$regex": f"^{target_day}"}},
                     {"created_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                ],
+                ),
             },
             {"_id": 0},
         ).to_list(10000),
@@ -746,8 +748,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         {
             "tenant_id": tenant_id,
             "voided": {"$ne": True},
-            "$or": [
-                {"business_date": target_day},
+            **accounting_day_match(
+                target_day,
                 {"date": target_day},
                 {"date": {"$regex": f"^{target_day}"}},
                 {"date": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
@@ -755,7 +757,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 {"posted_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
                 {"created_at": {"$regex": f"^{target_day}"}},
                 {"created_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-            ],
+            ),
         },
         {"_id": 0},
     ).to_list(10000)

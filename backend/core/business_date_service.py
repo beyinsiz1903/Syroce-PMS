@@ -148,3 +148,79 @@ async def ensure_business_date_initialized(
         stored.get("business_date_initialization_reason"),
     )
     return business_date_payload(stored)
+
+
+async def stamp_open_business_date(db, tenant_id: str, document: dict[str, Any]) -> str:
+    """Attach the hotel's open PMS day to a newly-created financial record.
+
+    Wall-clock timestamps remain the immutable event time, while
+    ``business_date`` is the accounting day.  They intentionally diverge when
+    reception keeps working after midnight before night audit is completed.
+    An explicit business date (for example a night-audit room charge) is
+    preserved.
+    """
+    explicit = _date_only(document.get("business_date"))
+    if explicit is not None:
+        document["business_date"] = explicit.isoformat()
+        return document["business_date"]
+
+    state = await ensure_business_date_initialized(db, tenant_id)
+    resolved = _date_only(state.get("business_date"))
+    if resolved is None:
+        raise RuntimeError(f"PMS business date is invalid for tenant {tenant_id}")
+    document["business_date"] = resolved.isoformat()
+    return document["business_date"]
+
+
+def accounting_day_match(business_date: str, *legacy_date_clauses: dict[str, Any]) -> dict[str, Any]:
+    """Match an accounting day without double-classifying modern records.
+
+    Timestamp/date fallbacks are only allowed for legacy documents that do not
+    yet carry ``business_date``.  A modern record posted after midnight must
+    therefore stay on its open PMS day and cannot also appear on the following
+    calendar day.
+    """
+    missing_business_date = {
+        "$or": [
+            {"business_date": {"$exists": False}},
+            {"business_date": None},
+            {"business_date": ""},
+        ]
+    }
+    clauses: list[dict[str, Any]] = [{"business_date": str(business_date)[:10]}]
+    if legacy_date_clauses:
+        clauses.append(
+            {
+                "$and": [
+                    missing_business_date,
+                    {"$or": list(legacy_date_clauses)},
+                ]
+            }
+        )
+    return {"$or": clauses}
+
+
+def accounting_period_match(
+    start_business_date: str,
+    end_business_date: str,
+    *legacy_date_clauses: dict[str, Any],
+) -> dict[str, Any]:
+    """Match an inclusive PMS-day range with legacy timestamp fallbacks."""
+    missing_business_date = {
+        "$or": [
+            {"business_date": {"$exists": False}},
+            {"business_date": None},
+            {"business_date": ""},
+        ]
+    }
+    clauses: list[dict[str, Any]] = [
+        {
+            "business_date": {
+                "$gte": str(start_business_date)[:10],
+                "$lte": str(end_business_date)[:10],
+            }
+        }
+    ]
+    if legacy_date_clauses:
+        clauses.append({"$and": [missing_business_date, {"$or": list(legacy_date_clauses)}]})
+    return {"$or": clauses}

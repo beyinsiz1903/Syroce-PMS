@@ -16,6 +16,12 @@ try:
 except ImportError:
     Workbook = None
 
+from core.business_date_service import (
+    accounting_day_match,
+    accounting_period_match,
+    ensure_business_date_initialized,
+    stamp_open_business_date,
+)
 from core.database import db
 from core.security import get_current_user
 from models.enums import RiskLevel
@@ -59,7 +65,8 @@ async def get_daily_collections_mobile(
     if date:
         target_date = datetime.fromisoformat(date)
     else:
-        target_date = datetime.now(UTC)
+        business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        target_date = datetime.fromisoformat(str(business_state["business_date"])[:10])
 
     # Get payments for the day
     total_collected = 0.0
@@ -67,7 +74,16 @@ async def get_daily_collections_mobile(
     payment_methods = {}
 
     business_day = target_date.date().isoformat()
-    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$regex": f"^{business_day}"}}, {"payment_date": business_day}, {"date": business_day}]}):
+    payment_query = {
+        "tenant_id": current_user.tenant_id,
+        **accounting_day_match(
+            business_day,
+            {"processed_at": {"$regex": f"^{business_day}"}},
+            {"payment_date": business_day},
+            {"date": business_day},
+        ),
+    }
+    async for payment in db.payments.find(payment_query):
         amount = payment.get("amount", 0)
         total_collected += amount
         payment_count += 1
@@ -94,7 +110,8 @@ async def get_monthly_collections_mobile(
 ):
     """Get monthly collections for finance mobile dashboard"""
 
-    today = datetime.now(UTC)
+    business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    today = datetime.fromisoformat(str(business_state["business_date"])[:10])
     target_year = year or today.year
     target_month = month or today.month
 
@@ -111,7 +128,17 @@ async def get_monthly_collections_mobile(
     total_collected = 0.0
     payments_by_method = {}
 
-    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}}, {"created_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}}]}):
+    last_business_day = (end_of_month - timedelta(days=1)).date().isoformat()
+    payment_query = {
+        "tenant_id": current_user.tenant_id,
+        **accounting_period_match(
+            start_of_month.date().isoformat(),
+            last_business_day,
+            {"processed_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
+            {"created_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
+        ),
+    }
+    async for payment in db.payments.find(payment_query):
         amount = payment.get("amount", 0)
         total_collected += amount
 
@@ -385,6 +412,7 @@ async def record_payment_mobile(
         "created_at": datetime.now(UTC),
         "created_by": current_user.username,
     }
+    await stamp_open_business_date(db, current_user.tenant_id, payment)
 
     try:
         await db.payments.insert_one(payment)
@@ -449,14 +477,24 @@ async def get_cash_flow_summary_mobile(
     - Weekly collection/payment plan
     - Bank balance summaries
     """
-    today = datetime.now(UTC).date()
+    business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    today = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
     start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
     end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
     # Today's cash inflow (payments received)
     today_inflow = 0.0
     inflow_count = 0
-    async for payment in db.payments.find({"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$regex": f"^{today.isoformat()}"}}, {"payment_date": today.isoformat()}, {"date": today.isoformat()}]}):
+    payment_query = {
+        "tenant_id": current_user.tenant_id,
+        **accounting_day_match(
+            today.isoformat(),
+            {"processed_at": {"$regex": f"^{today.isoformat()}"}},
+            {"payment_date": today.isoformat()},
+            {"date": today.isoformat()},
+        ),
+    }
+    async for payment in db.payments.find(payment_query):
         today_inflow += payment.get("amount", 0)
         inflow_count += 1
 

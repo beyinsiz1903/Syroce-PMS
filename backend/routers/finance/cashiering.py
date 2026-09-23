@@ -18,6 +18,7 @@ try:
 except ImportError:
     Workbook = None
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.security import get_current_user
 from domains.pms.night_audit_module import CityLedgerAccount
@@ -286,6 +287,7 @@ async def process_split_payment(booking_id: str, payments: list[dict], credentia
             "processed_at": datetime.now(UTC).isoformat(),
             "processed_by": current_user.name,
         }
+        await stamp_open_business_date(db, current_user.tenant_id, payment_record)
         await db.payments.insert_one(payment_record)
         payment_records.append(payment_record)
 

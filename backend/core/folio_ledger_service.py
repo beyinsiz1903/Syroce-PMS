@@ -12,6 +12,7 @@ from typing import Any
 
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 
 logger = logging.getLogger(__name__)
@@ -175,10 +176,11 @@ class FolioLedgerService:
             "idempotency_key": idempotency_key or str(uuid.uuid4()),
             "posted_by": posted_by,
             "posted_at": now,
-            "business_date": business_date or now[:10],
+            "business_date": business_date,
             "night_audit_run_id": night_audit_run_id,
             "metadata": metadata or {},
         }
+        await stamp_open_business_date(db, tenant_id, entry)
         result = await self._insert_entry(entry)
         return {"entry_id": result["id"], "new_balance": await self.compute_balance(tenant_id, folio_id)}
 
@@ -222,10 +224,11 @@ class FolioLedgerService:
             "idempotency_key": idempotency_key or str(uuid.uuid4()),
             "posted_by": posted_by,
             "posted_at": now,
-            "business_date": business_date or now[:10],
+            "business_date": business_date,
             "night_audit_run_id": None,
             "metadata": metadata or {},
         }
+        await stamp_open_business_date(db, tenant_id, entry)
         result = await self._insert_entry(entry)
         return {"entry_id": result["id"], "new_balance": await self.compute_balance(tenant_id, folio_id)}
 
@@ -273,10 +276,11 @@ class FolioLedgerService:
             "idempotency_key": idempotency_key or str(uuid.uuid4()),
             "posted_by": posted_by,
             "posted_at": now,
-            "business_date": now[:10],
+            "business_date": None,
             "night_audit_run_id": None,
             "metadata": metadata or {},
         }
+        await stamp_open_business_date(db, tenant_id, entry)
         result = await self._insert_entry(entry)
         new_balance = await self.compute_balance(tenant_id, folio_id)
         return {"entry_id": result["id"], "new_balance": new_balance}
@@ -326,10 +330,13 @@ class FolioLedgerService:
             "idempotency_key": f"void:{entry_id}",
             "posted_by": posted_by,
             "posted_at": now,
-            "business_date": original.get("business_date", now[:10]),
+            # A reversal belongs to the currently open accounting day, not to
+            # the historical day of the original entry.
+            "business_date": None,
             "night_audit_run_id": None,
             "metadata": {"voided_entry_id": entry_id, "void_reason": reason},
         }
+        await stamp_open_business_date(db, tenant_id, void_entry)
         result = await self._insert_entry(void_entry)
 
         # Mark original as voided (only allowed field update)
@@ -383,7 +390,7 @@ class FolioLedgerService:
             "idempotency_key": f"{idem_key}:out",
             "posted_by": posted_by,
             "posted_at": now,
-            "business_date": now[:10],
+            "business_date": None,
             "night_audit_run_id": None,
             "metadata": {"transfer_to": to_folio_id},
         }
@@ -412,10 +419,13 @@ class FolioLedgerService:
             "idempotency_key": f"{idem_key}:in",
             "posted_by": posted_by,
             "posted_at": now,
-            "business_date": now[:10],
+            "business_date": None,
             "night_audit_run_id": None,
             "metadata": {"transfer_from": from_folio_id},
         }
+
+        await stamp_open_business_date(db, tenant_id, out_entry)
+        await stamp_open_business_date(db, tenant_id, in_entry)
 
         out_result = await self._insert_entry(out_entry)
         in_result = await self._insert_entry(in_entry)

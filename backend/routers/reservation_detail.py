@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
-from core.business_date_service import ensure_business_date_initialized
+from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.channel_room_charge_pricing import (
     analyze_legacy_double_tax_charge,
     is_channel_total_tax_inclusive,
@@ -1723,6 +1723,16 @@ async def record_payment(
         "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    await stamp_open_business_date(db, tid, payment)
+
+    # The reservation detail dialog is one of the main front-desk payment
+    # entry points.  Keep it on the same cashier contract as the dedicated
+    # folio endpoint: cash may not be posted without an open shift and every
+    # durable payment must have exactly one shift transaction.
+    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+
+    method_str = str(data.method or "").lower()
+    await ensure_active_shift(tid, method_str)
     try:
         await db.payments.insert_one({**payment})
     except Exception as exc:
@@ -1740,6 +1750,32 @@ async def record_payment(
         # Payment never became durable -> free the auto-dedup slot for a retry.
         if auto_lock_id:
             await release_idempotency(db, lock_id=auto_lock_id)
+        raise
+
+    is_cash = method_str == "cash"
+    actor_email = getattr(current_user, "email", None) or getattr(current_user, "id", None)
+    try:
+        await record_cash_transaction(
+            tenant_id=tid,
+            amount=data.amount,
+            method=method_str,
+            direction="in",
+            description=f"Rezervasyon ödemesi - {booking.get('reservation_number') or booking_id[:8]}",
+            txn_type="folio_payment",
+            ref_type="payment",
+            ref_id=payment["id"],
+            created_by=actor_email,
+            created_by_name=getattr(current_user, "name", None) or actor_email,
+            idempotency_key=f"payment:{payment['id']}",
+            require_open_shift=is_cash,
+        )
+    except HTTPException as exc:
+        if is_cash and exc.status_code == 409:
+            # The shift can close in the small interval between the pre-check
+            # and the atomic append.  Do not leave an orphan payment behind.
+            await db.payments.delete_one({"id": payment["id"], "tenant_id": tid})
+            if auto_lock_id:
+                await release_idempotency(db, lock_id=auto_lock_id)
         raise
 
     # Update booking paid_amount
@@ -2012,6 +2048,7 @@ async def transfer_to_cari(
             "processed_at": now,
             "voided": False,
         }
+        await stamp_open_business_date(db, tid, payment)
         await db.payments.insert_one({**payment}, session=session)
 
         commit_stage["name"] = "cari bakiyesi güncelleme"
@@ -2164,6 +2201,7 @@ async def record_agency_payment(
         "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    await stamp_open_business_date(db, tid, payment)
     await db.payments.insert_one({**payment})
 
     new_paid = (booking.get("paid_amount", 0) or 0) + data.amount
@@ -2819,6 +2857,7 @@ async def record_deposit(
         "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    await stamp_open_business_date(db, tid, payment)
     await db.payments.insert_one({**payment})
 
     new_paid = (booking.get("paid_amount", 0) or 0) + data.amount
@@ -4638,6 +4677,7 @@ async def refund_deposit(
             "processed_at": now,
             "voided": False,
         }
+        await stamp_open_business_date(db, tid, payment)
         await db.payments.insert_one({**payment}, session=session)
 
         refunded_total = round(current_refunded + data.refund_amount, 2)

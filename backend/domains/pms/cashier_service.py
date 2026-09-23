@@ -21,10 +21,11 @@ Tasarım notları:
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,106 @@ async def get_shift_transactions(tenant_id: str, shift_id: str | None = None) ->
     txns = (shift or {}).get("transactions") or []
     # En yeni önce
     return sorted(txns, key=lambda t: t.get("created_at") or "", reverse=True)
+
+
+def _event_datetime(value) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+async def reconcile_open_shift_payments(tenant_id: str) -> int:
+    """Backfill cash payments missing from the currently open shift.
+
+    Several legacy payment endpoints wrote the financial payment row but did
+    not append the corresponding cashier transaction.  That made X/Z reports
+    and handover amounts appear as zero.  Reconciliation is idempotent by
+    payment id and is run before reading, closing, or handing over a shift.
+    """
+    shift = await get_active_shift(tenant_id)
+    if not shift:
+        return 0
+
+    shift_business_date = str(shift.get("business_date") or "")[:10]
+    if not shift_business_date:
+        marker: dict = {}
+        shift_business_date = await stamp_open_business_date(db, tenant_id, marker)
+        await db.cashier_shifts.update_one(
+            {"_id": shift["_id"], "tenant_id": tenant_id, "status": "open"},
+            {"$set": {"business_date": shift_business_date}},
+        )
+
+    candidates = await db.payments.find(
+        {
+            "tenant_id": tenant_id,
+            "$or": [
+                {"business_date": shift_business_date},
+                {"business_date": {"$exists": False}},
+                {"business_date": None},
+                {"business_date": ""},
+            ],
+        },
+        {"_id": 0},
+    ).to_list(10000)
+
+    opened_at = _event_datetime(shift.get("opened_at"))
+    existing_keys = {
+        str(txn.get("idempotency_key"))
+        for txn in (shift.get("transactions") or [])
+        if txn.get("idempotency_key")
+    }
+    recovered = 0
+    for payment in candidates:
+        payment_id = str(payment.get("id") or "").strip()
+        key = f"payment:{payment_id}"
+        if not payment_id or key in existing_keys or payment.get("voided"):
+            continue
+        status = str(payment.get("status") or "paid").lower()
+        if status in {"void", "voided", "failed", "cancelled", "rejected"}:
+            continue
+        method = str(payment.get("method") or payment.get("payment_method") or "").lower()
+        if method != "cash":
+            continue
+        event_at = _event_datetime(
+            payment.get("processed_at") or payment.get("created_at") or payment.get("payment_date") or payment.get("date")
+        )
+        if opened_at and (event_at is None or event_at < opened_at):
+            continue
+
+        amount = float(payment.get("amount") or 0)
+        is_refund = str(payment.get("payment_type") or "").lower() == "refund" or amount < 0
+        if not str(payment.get("business_date") or "").strip():
+            await db.payments.update_one(
+                {"id": payment_id, "tenant_id": tenant_id},
+                {"$set": {"business_date": shift_business_date}},
+            )
+        txn = await record_cash_transaction(
+            tenant_id=tenant_id,
+            amount=abs(amount),
+            method="cash",
+            direction="out" if is_refund else "in",
+            description="Kasa ödeme mutabakatı" if not is_refund else "Kasa iade mutabakatı",
+            txn_type="refund" if is_refund else "folio_payment",
+            ref_type="payment",
+            ref_id=payment_id,
+            created_by=payment.get("processed_by") or payment.get("created_by"),
+            created_by_name=payment.get("processed_by_name") or payment.get("created_by_name"),
+            idempotency_key=key,
+            require_open_shift=True,
+        )
+        if txn:
+            existing_keys.add(key)
+            recovered += 1
+    return recovered
 
 
 async def record_cash_transaction(
@@ -152,6 +253,7 @@ async def record_cash_transaction(
         "fx_rate": fx_rate_f,
         "original_amount": original_amount_f,
     }
+    await stamp_open_business_date(db, tenant_id, txn)
     if extra and isinstance(extra, dict):
         for k, v in extra.items():
             if k not in txn:

@@ -55,6 +55,7 @@ def _database(*, deposit, booking=None):
 
 def _patch(monkeypatch, database):
     monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
     monkeypatch.setattr(

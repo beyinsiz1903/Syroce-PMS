@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from core.business_date_service import ensure_business_date_initialized
+from core.business_date_service import accounting_day_match, ensure_business_date_initialized
 from core.database import db
 from core.email import send_email
 from core.helpers import require_module
@@ -90,13 +90,13 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     payments = await db.payments.find(
         {
             "tenant_id": tenant_id,
-            "$or": [
-                {"business_date": business_date},
+            **accounting_day_match(
+                business_date,
                 {"payment_date": business_date},
                 {"date": business_date},
                 {"processed_at": {"$regex": f"^{business_date}"}},
                 {"created_at": {"$regex": f"^{business_date}"}},
-            ],
+            ),
         },
         {"_id": 0},
     ).to_list(10000)

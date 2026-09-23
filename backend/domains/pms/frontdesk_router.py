@@ -20,6 +20,7 @@ from core.booking_atomicity import (
     is_replica_set_unavailable,
     standalone_fallback_allowed,
 )
+from core.business_date_service import stamp_open_business_date
 from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import db
 from core.security import (
@@ -783,6 +784,7 @@ async def add_folio_payment(
             "processed_by": current_user.name,
             "processed_at": now_iso,
         }
+        await stamp_open_business_date(db, current_user.tenant_id, payment_doc)
         # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
         from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
 

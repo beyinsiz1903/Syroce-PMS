@@ -2,10 +2,11 @@ import asyncio
 import logging
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 
+from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
 from core.security import get_current_user
@@ -115,6 +116,9 @@ async def get_current_shift(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     await _ensure_shift_indexes()
+    from domains.pms.cashier_service import reconcile_open_shift_payments
+
+    await reconcile_open_shift_payments(current_user.tenant_id)
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"}, sort=[("opened_at", -1)])
     if shift:
         shift["id"] = str(shift.pop("_id"))
@@ -152,6 +156,7 @@ async def open_shift(
         "opened_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
         "denominations": body.get("denomination_counts", body.get("denominations", {})),
     }
+    await stamp_open_business_date(db, current_user.tenant_id, doc)
     try:
         await db.cashier_shifts.insert_one(doc)
     except Exception as e:
@@ -169,13 +174,21 @@ async def close_shift(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
+    from domains.pms.cashier_service import reconcile_open_shift_payments
+
+    await reconcile_open_shift_payments(current_user.tenant_id)
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
     now = datetime.utcnow()
     counted_amount = _safe_float(body.get("counted_amount", 0))
-    expected = shift.get("opening_amount", 0) + shift.get("cash_in", 0) - shift.get("cash_out", 0)
+    expected = (
+        _safe_float(shift.get("opening_amount", 0))
+        + _safe_float(shift.get("cash_in", 0))
+        - _safe_float(shift.get("cash_out", 0))
+    )
     difference = counted_amount - expected
+    close_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
         {
@@ -188,6 +201,7 @@ async def close_shift(
                 "closing_denominations": body.get("denomination_counts", body.get("denominations", {})),
                 "closed_by": current_user.email,
                 "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
+                "closed_business_date": close_business_date,
             }
         },
     )
@@ -271,9 +285,24 @@ async def handover_shift(
         # operator stays in their existing budget — never a hard error.
         pass
 
+    # Only mutate/recover financial state after the receiving operator has
+    # successfully authenticated.  Then reload the shift so the handover uses
+    # the authoritative repaired counters.
+    from domains.pms.cashier_service import reconcile_open_shift_payments
+
+    await reconcile_open_shift_payments(current_user.tenant_id)
+    shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
+    if not shift:
+        raise HTTPException(status_code=409, detail="Vardiya doğrulama sırasında kapandı/devredildi")
+
     target_name = target_user.get("name") or target_user.get("full_name") or target_email
     now = datetime.utcnow()
-    expected = shift.get("opening_amount", 0) + shift.get("cash_in", 0) - shift.get("cash_out", 0)
+    expected = (
+        _safe_float(shift.get("opening_amount", 0))
+        + _safe_float(shift.get("cash_in", 0))
+        - _safe_float(shift.get("cash_out", 0))
+    )
+    handover_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
 
     await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
@@ -290,6 +319,7 @@ async def handover_shift(
                 "handover_to_name": target_name,
                 "handover_at": now.isoformat(),
                 "handover_note": body.get("note", ""),
+                "closed_business_date": handover_business_date,
             }
         },
     )
@@ -309,6 +339,7 @@ async def handover_shift(
         "handover_from_email": current_user.email,
         "handover_from_name": current_user.name if hasattr(current_user, "name") else current_user.email,
     }
+    await stamp_open_business_date(db, current_user.tenant_id, new_doc)
     await db.cashier_shifts.insert_one(new_doc)
     new_doc["id"] = new_doc.pop("_id")
     return {
@@ -555,10 +586,11 @@ async def period_report(
     Aralıkta opened_at olan tüm vardiyaların toplu özetini döner.
     Varsayılan: son 7 gün.
     """
+    open_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     if not end_date:
-        end_date = datetime.now(UTC).date().isoformat()
+        end_date = open_business_date
     if not start_date:
-        start_date = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
+        start_date = (datetime.fromisoformat(end_date).date() - timedelta(days=7)).isoformat()
     try:
         s_dt = datetime.fromisoformat(start_date)
         e_dt = datetime.fromisoformat(end_date)
@@ -610,11 +642,25 @@ async def period_report(
             return False
         return s_iso <= ts <= e_iso
 
+    def _txn_in_range(txn: dict) -> bool:
+        accounting_day = str(txn.get("business_date") or "")[:10]
+        if accounting_day:
+            return start_date <= accounting_day <= end_date
+        return _in_range(txn.get("created_at") or txn.get("timestamp"))
+
+    def _shift_open_in_range(shift: dict) -> bool:
+        accounting_day = str(shift.get("business_date") or "")[:10]
+        return start_date <= accounting_day <= end_date if accounting_day else _in_range(shift.get("opened_at"))
+
+    def _shift_close_in_range(shift: dict) -> bool:
+        accounting_day = str(shift.get("closed_business_date") or "")[:10]
+        return start_date <= accounting_day <= end_date if accounting_day else _in_range(shift.get("closed_at"))
+
     async for s in cursor:
         # Vardiya tx'lerinden aralıkta olanları filtrele
         all_txns = s.get("transactions") or []
-        txns_in_range = [t for t in all_txns if _in_range(t.get("created_at") or t.get("timestamp"))]
-        if not txns_in_range and not _in_range(s.get("opened_at")):
+        txns_in_range = [t for t in all_txns if _txn_in_range(t)]
+        if not txns_in_range and not _shift_open_in_range(s):
             # Vardiyanın hiçbir tx'i aralıkta değil ve açılışı da değilse atla
             continue
 
@@ -627,7 +673,7 @@ async def period_report(
         # Vardiya bazlı toplamları (opening/closing) yalnızca opened_at aralık
         # içindeyse dahil et — yoksa önceki dönemden devreden vardiyanın açılışı
         # bu döneme yanlışlıkla eklenir.
-        opening_in = float(s.get("opening_amount") or 0) if _in_range(s.get("opened_at")) else 0.0
+        opening_in = float(s.get("opening_amount") or 0) if _shift_open_in_range(s) else 0.0
         # cash_in/cash_out yalnız aralıktaki nakit tx'lerden hesapla
         c_in = sum(float(t.get("amount") or 0) for t in txns_in_range if (t.get("method") == "cash") and (t.get("direction") == "in"))
         c_out = sum(float(t.get("amount") or 0) for t in txns_in_range if (t.get("method") == "cash") and (t.get("direction") == "out"))
@@ -636,9 +682,9 @@ async def period_report(
         totals["cash_out_total"] += c_out
         totals["expected_total"] += opening_in + c_in - c_out
         # closing/difference yalnız closed_at aralıktaysa dahil
-        if s.get("closing_amount") is not None and _in_range(s.get("closed_at")):
+        if s.get("closing_amount") is not None and _shift_close_in_range(s):
             totals["closing_total"] += float(s.get("closing_amount") or 0)
-        if s.get("difference") is not None and _in_range(s.get("closed_at")):
+        if s.get("difference") is not None and _shift_close_in_range(s):
             totals["difference_total"] += float(s.get("difference") or 0)
 
         cashier_key = s.get("cashier_email") or s.get("cashier_name") or "?"
@@ -694,7 +740,7 @@ async def period_report(
                 "status": s.get("status"),
                 "opened_at": s.get("opened_at"),
                 "closed_at": s.get("closed_at"),
-                "opening_in_period": _in_range(s.get("opened_at")),
+                "opening_in_period": _shift_open_in_range(s),
                 "opening_amount": float(s.get("opening_amount") or 0),
                 "cash_in_period": c_in,
                 "cash_out_period": c_out,

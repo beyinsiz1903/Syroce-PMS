@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from core.business_date_service import ensure_business_date_initialized
+from core.business_date_service import (
+    accounting_day_match,
+    accounting_period_match,
+    ensure_business_date_initialized,
+    stamp_open_business_date,
+)
 from domains.pms.night_audit.schemas import RunNightAuditRequest
 
 
@@ -116,6 +121,56 @@ async def test_clean_tenant_starts_on_first_operational_use_day():
 
     assert result["business_date"] == "2026-08-24"
     assert result["initialization_reason"] == "first_operational_use"
+
+
+@pytest.mark.asyncio
+async def test_financial_record_uses_open_pms_day_after_calendar_midnight():
+    document = {"processed_at": "2026-08-25T00:15:00+03:00"}
+
+    with patch(
+        "core.business_date_service.ensure_business_date_initialized",
+        new=AsyncMock(return_value={"business_date": "2026-08-24"}),
+    ):
+        result = await stamp_open_business_date(SimpleNamespace(), "t1", document)
+
+    assert result == "2026-08-24"
+    assert document["business_date"] == "2026-08-24"
+
+
+@pytest.mark.asyncio
+async def test_explicit_financial_business_date_is_preserved():
+    document = {"business_date": "2026-08-23T12:00:00+03:00"}
+    resolver = AsyncMock()
+
+    with patch("core.business_date_service.ensure_business_date_initialized", new=resolver):
+        result = await stamp_open_business_date(SimpleNamespace(), "t1", document)
+
+    assert result == "2026-08-23"
+    assert document["business_date"] == "2026-08-23"
+    resolver.assert_not_awaited()
+
+
+def test_accounting_day_match_does_not_fallback_for_stamped_records():
+    result = accounting_day_match(
+        "2026-08-24",
+        {"processed_at": {"$gte": "2026-08-24T00:00:00", "$lt": "2026-08-25T00:00:00"}},
+    )
+
+    assert result["$or"][0] == {"business_date": "2026-08-24"}
+    legacy_branch = result["$or"][1]["$and"]
+    assert {"business_date": {"$exists": False}} in legacy_branch[0]["$or"]
+    assert legacy_branch[1]["$or"][0]["processed_at"]["$gte"] == "2026-08-24T00:00:00"
+
+
+def test_accounting_period_match_keeps_legacy_fallback_separate():
+    result = accounting_period_match(
+        "2026-08-01",
+        "2026-08-31",
+        {"processed_at": {"$gte": "2026-08-01T00:00:00", "$lt": "2026-09-01T00:00:00"}},
+    )
+
+    assert result["$or"][0] == {"business_date": {"$gte": "2026-08-01", "$lte": "2026-08-31"}}
+    assert result["$or"][1]["$and"][0]["$or"][0] == {"business_date": {"$exists": False}}
 
 
 @pytest.mark.asyncio
