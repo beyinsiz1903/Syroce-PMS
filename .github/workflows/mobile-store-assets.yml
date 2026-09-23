@@ -30,13 +30,13 @@ permissions:
 jobs:
   verify-store-assets:
     name: Mağaza görsellerini yeniden üret ve karşılaştır
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -52,7 +52,7 @@ jobs:
 
       - name: Install DejaVu fonts
         # generate_assets.py /usr/share/fonts/truetype/dejavu/ altındaki
-        # DejaVuSans (+Bold) yazı tiplerini kullanır. ubuntu-latest
+        # DejaVuSans (+Bold) yazı tiplerini kullanır. ubuntu-24.04
         # üzerinde varsayılan olarak yüklü değildir.
         run: |
           set -euo pipefail
@@ -134,7 +134,7 @@ jobs:
         # olarak yükle ki geliştirici lokal olarak çalıştırmadan da
         # indirip commit'leyebilsin.
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: regenerated-store-assets

@@ -20,7 +20,7 @@ env:
 jobs:
   # ============ LOCKFILE HOST GUARD (HARD GATE) ============
   lockfile-guard:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -29,12 +29,12 @@ jobs:
 
   # ============ BACKEND LINTING (HARD GATE) ============
   backend-lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -97,7 +97,7 @@ jobs:
 
   # ============ FRONTEND LINTING (HARD GATE) ============
   frontend-lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -127,7 +127,7 @@ jobs:
 
   # ============ BACKEND TESTS (HARD GATE) ============
   backend-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: backend-lint
     services:
       mongodb:
@@ -153,7 +153,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -378,7 +378,7 @@ jobs:
           REQUIRE_LIVE_MONGO: "1"
 
       - name: Upload test results
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           retention-days: 1
@@ -395,7 +395,7 @@ jobs:
   # does not require a real provider, provider mutation, or scheduled chaos run.
   backend-full-offline:
     name: Backend Full Offline Suite + Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: backend-lint
     timeout-minutes: 30
     env:
@@ -465,7 +465,7 @@ jobs:
           done
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -529,7 +529,7 @@ jobs:
             --allow-skip 'test_hotelrunner_import_projects_provider_note_into_existing_notes_collection'
 
       - name: Upload full-suite results, coverage, and backend log
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           retention-days: 1
@@ -542,7 +542,7 @@ jobs:
 
   # ============ BATTLE E2E TESTS (HARD GATE) ============
   battle-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: backend-lint
     services:
       mongodb:
@@ -568,7 +568,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -663,7 +663,7 @@ jobs:
           MONGO_TEST_URI: ${{ env.MONGO_URL }}
 
       - name: Upload test results and backend logs
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           retention-days: 1
@@ -675,7 +675,7 @@ jobs:
 
   # ============ LOAD TESTS (HARD GATE) ============
   load-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: backend-lint
     timeout-minutes: 10
     services:
@@ -702,7 +702,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -762,7 +762,7 @@ jobs:
           LOAD_TEST_API_URL: http://localhost:8001
 
       - name: Upload load test results
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           retention-days: 1
@@ -773,7 +773,7 @@ jobs:
 
   # ============ FRONTEND BUILD (HARD GATE) ============
   frontend-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: frontend-lint
     steps:
       - uses: actions/checkout@v5
@@ -807,7 +807,7 @@ jobs:
           find build/ -name "*.js" -exec du -sh {} \; | sort -rh | head -10
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: frontend-build
@@ -815,13 +815,13 @@ jobs:
 
   # ============ SECURITY SCAN (HARD GATE) ============
   security-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [backend-lint, frontend-lint]
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -923,7 +923,7 @@ jobs:
           exit-code: 0
 
       - name: Upload security report
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           retention-days: 1
@@ -932,7 +932,7 @@ jobs:
 
   # ============ DOCKER BUILD & PUSH ============
   docker-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [backend-test, load-test, frontend-build, security-scan, battle-e2e]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
     permissions:
@@ -992,7 +992,7 @@ jobs:
 
   # ============ DEPLOY STAGING ============
   deploy-staging:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [docker-build]
     if: github.ref == 'refs/heads/staging'
     environment: staging
@@ -1174,7 +1174,7 @@ jobs:
             -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"$ACTOR\",\"short\":true},{\"title\":\"Branch\",\"value\":\"$BRANCH\",\"short\":true},{\"title\":\"Environment\",\"value\":\"staging\",\"short\":true}]}]}" || true
           # NOTE: || true is intentional — Slack notification failure must not block a successful deploy
   deploy-production:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [docker-build]
     # Production currently runs on DigitalOcean App Platform. Keep this
     # Kubernetes path dormant unless the repository explicitly selects it.

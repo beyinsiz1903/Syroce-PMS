@@ -19,7 +19,7 @@ jobs:
     # so it runs fast and gates every push/PR.
     theme-guard:
         name: Theme Guard (dark-coverage + brand-drift)
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 5
         steps:
             - uses: actions/checkout@v5
@@ -32,7 +32,7 @@ jobs:
 
     # ============ KNIP DEAD-CODE GUARD (SOFT GATE) ============
     knip:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         steps:
             - uses: actions/checkout@v5
             - name: Set up Node.js
@@ -54,7 +54,7 @@ jobs:
     # on PRs. This job blocks merges if any frontend unit test fails.
     vitest:
         name: Frontend Unit Tests + Coverage (Vitest)
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@v5
@@ -71,7 +71,7 @@ jobs:
             - name: Run vitest with coverage thresholds (hard gate)
               run: cd frontend && yarn test:coverage
             - name: Upload frontend coverage report
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               if: always()
               with:
                   retention-days: 1
@@ -83,7 +83,7 @@ jobs:
     # timezone-sensitive unit tests and Expo native dependency/schema checks.
     mobile-unit:
         name: Mobile Pilot Readiness (config + TS + tests + Expo Doctor)
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@v5
@@ -100,7 +100,7 @@ jobs:
 
     # ============ E2E SMOKE (HARD GATE on PR) ============
     e2e-smoke:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 25
         # NOTE: MongoDB is intentionally NOT a `services:` entry — it must run
         # as a single-node replica set (`--replSet`) so that the multi-document
@@ -153,7 +153,7 @@ jobs:
                       sleep 2
                   done
             - name: Set up Python
-              uses: actions/setup-python@v5
+              uses: actions/setup-python@v6
               with:
                   python-version: '3.11'
                   cache: 'pip'
@@ -207,7 +207,7 @@ jobs:
             - name: Run e2e smoke
               run: cd frontend && yarn e2e
             - name: Upload Playwright report
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               if: always()
               with:
                   name: playwright-report

@@ -71,7 +71,7 @@ env:
 jobs:
     plan:
         name: Plan Matrix Shards
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         outputs:
             matrix: ${{ steps.set-shards.outputs.matrix }}
             main_teardown_shard: ${{ steps.set-shards.outputs.main_teardown_shard }}
@@ -105,10 +105,10 @@ jobs:
 
     setup:
         name: Stress Setup & Seed
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 20
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v5
 
             - name: Pre-flight — required secrets + base URL health
               id: preflight
@@ -184,7 +184,7 @@ jobs:
                   yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
 
             - name: Upload Auth State
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               with:
                   name: stress-auth
                   path: frontend/e2e-stress/.auth/
@@ -194,7 +194,7 @@ jobs:
     stress:
         name: Shard ${{ matrix.shard }} - ${{ matrix.name }}
         needs: [setup, plan]
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 45
         strategy:
             fail-fast: false
@@ -209,7 +209,7 @@ jobs:
             STRESS_REPORT_TAG: ${{ matrix.report_tag }}
             STRESS_REPORT_TITLE: 'Stress Shard ${{ matrix.shard }} — ${{ matrix.name }}'
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v5
 
             - name: Set up Node.js
               uses: actions/setup-node@v5
@@ -228,7 +228,7 @@ jobs:
                   cd frontend && yarn e2e:install
 
             - name: Download Auth State
-              uses: actions/download-artifact@v5
+              uses: actions/download-artifact@v7
               with:
                   name: stress-auth
                   path: frontend/e2e-stress/.auth/
@@ -243,7 +243,7 @@ jobs:
 
             - name: Upload POS Auth State
               if: matrix.is_pos == 'true'
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               with:
                   name: stress-auth-pos
                   path: frontend/e2e-stress/.auth/
@@ -271,7 +271,7 @@ jobs:
             # If the seed job fails, this upload is skipped.
             # This is intentional: if Shard B fails here, teardown job will fail-closed.
             - name: Upload Seeded Auth State
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               with:
                   name: stress-state-shard-${{ matrix.shard }}
                   path: frontend/e2e-stress/.auth/
@@ -421,7 +421,7 @@ jobs:
 
             - name: Upload Playwright HTML report
               if: always()
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               with:
                   name: playwright-stress-report-shard-${{ matrix.shard }}
                   path: frontend/playwright-stress-report/
@@ -429,7 +429,7 @@ jobs:
 
             - name: Upload drill report (markdown)
               if: always()
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               with:
                   name: stress-drill-report-shard-${{ matrix.shard }}
                   path: docs/drill_reports/*_stress_${{ env.STRESS_REPORT_TAG }}.md
@@ -438,7 +438,7 @@ jobs:
 
             - name: Upload traces / videos / screenshots
               if: always()
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               with:
                   name: stress-test-results-shard-${{ matrix.shard }}
                   path: frontend/test-results-stress/
@@ -449,10 +449,10 @@ jobs:
         name: Stress Teardown & Cleanup
         needs: [setup, stress, plan]
         if: always()
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 20
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v5
 
             - name: Set up Node.js
               uses: actions/setup-node@v5
@@ -472,7 +472,7 @@ jobs:
 
             - name: Download Seeded Auth State
               if: always() && needs.plan.outputs.main_teardown_shard != 'NONE'
-              uses: actions/download-artifact@v5
+              uses: actions/download-artifact@v7
               with:
                   name: stress-state-shard-${{ needs.plan.outputs.main_teardown_shard }}
                   path: frontend/e2e-stress/.auth/
@@ -499,7 +499,7 @@ jobs:
 
             - name: Download POS Auth State
               if: always()
-              uses: actions/download-artifact@v5
+              uses: actions/download-artifact@v7
               continue-on-error: true
               with:
                   name: stress-auth-pos
@@ -540,7 +540,7 @@ jobs:
 
             - name: Upload Teardown Log
               if: always()
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               with:
                   name: stress-teardown-logs
                   path: frontend/e2e-stress/teardown-logs/teardown-*.json

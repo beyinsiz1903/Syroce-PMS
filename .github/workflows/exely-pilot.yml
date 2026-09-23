@@ -51,7 +51,7 @@ env:
 jobs:
   exely-pilot:
     name: Run Exely PMSConnect Pilot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: exely-pilot
     concurrency:
       group: exely-pilot
@@ -188,7 +188,7 @@ jobs:
           verify_completed_workflow "frontend-quality.yml"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -322,7 +322,7 @@ jobs:
 
       - name: Upload safe pilot test results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: exely-pilot-results
