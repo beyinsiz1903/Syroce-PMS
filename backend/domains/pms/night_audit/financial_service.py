@@ -150,6 +150,13 @@ class FinancialService:
                     "positive_balance": {"$sum": {"$cond": [{"$gt": ["$balance", 0]}, "$balance", 0]}},
                     "negative_balance": {"$sum": {"$cond": [{"$lt": ["$balance", 0]}, "$balance", 0]}},
                     "count": {"$sum": 1},
+                    "folios": {
+                        "$push": {
+                            "folio_number": "$folio_number",
+                            "booking_id": "$booking_id",
+                            "balance": "$balance"
+                        }
+                    }
                 }
             },
         ]
@@ -244,11 +251,23 @@ class FinancialService:
 
         open_balance = {"total": 0.0, "receivable": 0.0, "overpayment": 0.0}
         open_folios_count = 0
+        open_folios_list = []
         for doc in open_balance_docs:
             open_balance["total"] = round(doc.get("total_balance", 0), 2)
             open_balance["receivable"] = round(doc.get("positive_balance", 0), 2)
             open_balance["overpayment"] = round(abs(doc.get("negative_balance", 0)), 2)
             open_folios_count = doc.get("count", 0)
+            open_folios_list = doc.get("folios", [])
+
+        # Enrich the list
+        try:
+            open_folios_list = await self._enrich_with_guest_room(ctx.tenant_id, open_folios_list)
+        except Exception as exc:
+            logger.warning("get_daily_financial_summary enrich_with_guest_room failed: %s", exc)
+            degraded_subqueries.append("open_folios_enrich")
+        for fol in open_folios_list:
+            fol["balance"] = round(fol.get("balance", 0), 2)
+
 
         return ServiceResult.success(
             {
@@ -271,6 +290,7 @@ class FinancialService:
                 "open_folios": {
                     "count": open_folios_count,
                     "balance": open_balance,
+                    "items": open_folios_list
                 },
                 "net_position": round(total_revenue + total_tax - total_payments, 2),
                 "audit_status": audit_run.get("status") if audit_run else "not_run",
@@ -439,13 +459,36 @@ class FinancialService:
                     {
                         "type": "high_balance",
                         "severity": "error",
-                        "message": f"Yuksek bakiyeli folio: {f.get('folio_number')} - {f.get('balance', 0):.2f} TL",
+                        "message": f"Yüksek bakiyeli folio: {f.get('folio_number')} - {f.get('balance', 0):.2f} TL",
                         "entity_id": f.get("id"),
                         "amount": f.get("balance", 0),
+                        "booking_id": f.get("booking_id"),
                     }
                 )
 
         variance = round(total_charges - total_payments_amount, 2)
+
+        # Enrich discrepancies with guest/room info
+        try:
+            discrepancies = await self._enrich_with_guest_room(ctx.tenant_id, discrepancies)
+        except Exception as exc:
+            logger.warning("payment_reconciliation enrich_with_guest_room failed: %s", exc)
+            degraded_subqueries.append("discrepancies_enrich")
+
+        # Modify the message to include guest name and room number!
+        for d in discrepancies:
+            if d.get("type") == "high_balance":
+                g = d.get("guest_name", "Misafir")
+                r = d.get("room_no", "Oda ?")
+                d["message"] = f"Yüksek Bakiyeli Folyo ({r} - {g}): {d.get('amount', 0):.2f} TL"
+            elif d.get("type") == "orphan_charge":
+                g = d.get("guest_name", "İsimsiz")
+                r = d.get("room_no", "?")
+                if g != "İsimsiz" or r != "?":
+                    d["message"] = f"Sahipsiz Masraf ({r} - {g}): {d.get('amount', 0):.2f} TL"
+
+        # Enrich high balance folios as well
+        high_balance_folios = await self._enrich_with_guest_room(ctx.tenant_id, high_balance_folios)
 
         return ServiceResult.success(
             {

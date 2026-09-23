@@ -201,8 +201,8 @@ const FlashReportContent = ({
   }));
   return <div className="space-y-4" data-testid="flash-report-content">
       {/* Toolbar: tarih + yazdır + yenile */}
-{!isEmbedded && (
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!isEmbedded && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-gray-600">
           {t('cm.components_pms_FlashReportContent.tarih')} <span className="font-medium text-gray-900">{d.date}</span>
           {usingFallback && <span className="ml-2 text-xs text-amber-600">{t('cm.components_pms_FlashReportContent.cevrimdisi_veri_anlik_degil')}</span>}
@@ -215,6 +215,7 @@ const FlashReportContent = ({
           <Button variant="outline" size="sm" onClick={printReport} data-testid="flash-print">
             <Printer className="w-4 h-4 mr-1.5" /> {t('cm.components_pms_FlashReportContent.yazdir')}
           </Button>
+        </div>
         </div>
       )}
 

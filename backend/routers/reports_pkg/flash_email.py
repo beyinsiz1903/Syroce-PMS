@@ -75,7 +75,7 @@ async def send_flash_report_now(
 
 
 @sub_router.get("/reports/flash-report")
-@cached(ttl=300, key_prefix="flash_report")  # Cache for 5 min
+@cached(ttl=15, key_prefix="flash_report")  # Cache for 15s
 async def get_flash_report(
     date: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -131,7 +131,6 @@ async def get_flash_report(
         {"_id": 0, "total_amount": 1, "paid_amount": 1, "charges": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "room_number": 1, "room_id": 1},
     ).to_list(2000)
 
-
     room_ids = list({b.get("room_id") for b in in_house_bookings if b.get("room_id")})
     room_map = {}
     if room_ids:
@@ -162,7 +161,7 @@ async def get_flash_report(
 
         total_revenue += daily_amount
         collected += daily_paid
-        
+
         room_revenue_breakdown.append({
             "guest_name": b.get("guest_name", "Misafir"),
             "room_number": str(b.get("room_number") or room_map.get(b.get("room_id")) or "?").strip() or "?",
@@ -227,6 +226,7 @@ async def get_flash_report(
             "other": round(other_revenue, 2),
             "collected": round(collected, 2),
             "outstanding": round(grand_total - collected, 2),
+            "room_revenue_breakdown": room_revenue_breakdown,
         },
         "operations": {
             "arrivals": arrivals_today,
@@ -394,7 +394,7 @@ async def email_daily_flash(
 
 
 @sub_router.get("/reports/daily-flash")
-@cached(ttl=300, key_prefix="report_daily_flash")  # Cache for 5 minutes
+@cached(ttl=15, key_prefix="report_daily_flash")  # Cache for 15 seconds
 async def get_daily_flash_report(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),

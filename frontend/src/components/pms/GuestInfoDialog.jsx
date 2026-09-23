@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { User } from 'lucide-react';
+import { COUNTRIES } from '@/lib/countries';
 
 const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSaved }) => {
   const { t } = useTranslation();
@@ -77,11 +78,12 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
                 </div>
                 <div>
                   <Label>{t('guest.nationality')}</Label>
-                  <Input 
-                    value={selectedGuest.nationality || ''} 
-                    onChange={(e) => setSelectedGuest({...selectedGuest, nationality: e.target.value})}
-                    placeholder="TR"
-                  />
+                  <Select value={selectedGuest.nationality || ''} onValueChange={(val) => setSelectedGuest({...selectedGuest, nationality: val})}>
+                    <SelectTrigger><SelectValue placeholder="TR" /></SelectTrigger>
+                    <SelectContent>
+                      {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Gender</Label>

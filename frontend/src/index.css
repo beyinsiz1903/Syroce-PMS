@@ -699,6 +699,7 @@ code {
 .dark .data-\[state\=active\]\:text-blue-600[data-state=active],
 .dark .data-\[state\=active\]\:text-blue-700[data-state=active] { color: #93c5fd; }
 .dark .border-blue-100,
+.dark .hover\:border-blue-100:hover,
 .dark .border-blue-200,
 .dark .border-blue-300,
 .dark .hover\:border-blue-300:hover { border-color: #1d4ed8; }

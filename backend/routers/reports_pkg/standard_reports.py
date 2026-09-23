@@ -166,7 +166,7 @@ async def get_revenue_report(
 
 
 @sub_router.get("/reports/daily-summary")
-@cached(ttl=300, key_prefix="report_daily_summary")  # Cache for 5 minutes
+@cached(ttl=30, key_prefix="report_daily_summary")  # Cache for 30 seconds
 async def get_daily_summary(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),

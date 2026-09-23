@@ -138,6 +138,36 @@ export default function FinancialTab(props) {
                   <p className="text-xs text-blue-600">{t('cm.components_nightaudit_tabs_FinancialTab.fazla_odeme')}</p>
                 </div>
               </div>
+
+              {financialSummary.open_folios?.items && financialSummary.open_folios.items.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Açık Folyo Detayları</h4>
+                  <div className="overflow-x-auto rounded border">
+                    <table className="w-full text-sm text-left">
+                      <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b">
+                        <tr>
+                          <th className="px-3 py-2">Folyo No</th>
+                          <th className="px-3 py-2">Oda</th>
+                          <th className="px-3 py-2">Misafir</th>
+                          <th className="px-3 py-2 text-right">Bakiye</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {financialSummary.open_folios.items.map((fol, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 font-medium text-blue-600">{fol.folio_number || '-'}</td>
+                            <td className="px-3 py-2">{fol.room_no || '?'}</td>
+                            <td className="px-3 py-2">{fol.guest_name || 'İsimsiz'}</td>
+                            <td className={`px-3 py-2 text-right font-semibold ${fol.balance > 0 ? 'text-amber-600' : (fol.balance < 0 ? 'text-blue-600' : 'text-gray-500')}`}>
+                              {fol.balance?.toFixed(2)} TL
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </>
