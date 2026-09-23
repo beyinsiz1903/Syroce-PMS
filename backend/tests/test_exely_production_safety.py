@@ -313,6 +313,8 @@ async def test_direct_tenant_pull_preserves_classified_provider_read_failure(mon
         "provider_read_count": 1,
         "provider_write_count": 0,
     }
+    provider.discover_rooms.assert_not_awaited()
+    provider.pull_reservations.assert_awaited_once()
     log_sync.assert_awaited_once_with("exely", "synthetic-tenant", "scheduled_pull", "failed", error="REJECTED")
 
 

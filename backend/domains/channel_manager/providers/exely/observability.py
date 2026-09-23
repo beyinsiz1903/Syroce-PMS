@@ -31,6 +31,11 @@ _metrics = {
 }
 
 
+def _failure_streak_key(connection_id: str, soap_action: str) -> str:
+    """Keep unrelated provider operations from inflating one outage streak."""
+    return f"{safe_fingerprint(connection_id)}:{soap_action or '-'}"
+
+
 def record_provider_call(
     *,
     soap_action: str,
@@ -47,7 +52,7 @@ def record_provider_call(
     if success:
         _metrics["success_count"] += 1
         _metrics["last_success_at"] = now
-        _recoverable_failure_streaks.pop(safe_fingerprint(connection_id), None)
+        _recoverable_failure_streaks.pop(_failure_streak_key(connection_id, soap_action), None)
     else:
         _metrics["error_count"] += 1
         _metrics["last_error_at"] = now
@@ -83,9 +88,10 @@ def record_provider_failure(
         _metrics["soap_fault_count"] += 1
 
     connection_key = safe_fingerprint(connection_id)
+    streak_key = _failure_streak_key(connection_id, soap_action)
     if recoverable:
-        streak = _recoverable_failure_streaks.get(connection_key, 0) + 1
-        _recoverable_failure_streaks[connection_key] = streak
+        streak = _recoverable_failure_streaks.get(streak_key, 0) + 1
+        _recoverable_failure_streaks[streak_key] = streak
         if streak < _RECOVERABLE_FAILURE_THRESHOLD:
             logger.warning(
                 "[EXELY-OBS] RETRYABLE_FAILURE type=%s conn=%s action=%s streak=%d",

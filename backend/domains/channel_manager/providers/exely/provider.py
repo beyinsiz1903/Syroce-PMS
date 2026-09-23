@@ -665,13 +665,23 @@ class ExelyProvider:
         provider_write_count: int = 0,
     ) -> ProviderResult:
         duration_ms = int((time.time() - start_time) * 1000)
-        obs.record_provider_failure(
-            error_type=type(error).__name__,
-            message=str(error),
-            connection_id=self._connection_id,
-            soap_action=soap_action,
-            recoverable=error.recoverable,
-        )
+        if isinstance(error, ExelyRateLimitError) and error.source == "local_quota":
+            # The local guard deliberately prevented an outbound request. This
+            # is backpressure, not a provider outage, and must not grow the
+            # sustained-failure streak or create a Sentry error storm.
+            logger.info(
+                "[EXELY] local_quota_blocked action=%s retry_after_seconds=%d",
+                soap_action,
+                error.retry_after_seconds,
+            )
+        else:
+            obs.record_provider_failure(
+                error_type=type(error).__name__,
+                message=str(error),
+                connection_id=self._connection_id,
+                soap_action=soap_action,
+                recoverable=error.recoverable,
+            )
         classification = _classify_exception(error, mutation=mutation, provider_write_count=provider_write_count)
         provider_status_class = "WRITE_OUTCOME_UNKNOWN" if classification == AMBIGUOUS else classification
         error_type = type(error).__name__ if isinstance(error, ExelyTemporaryError) else classification

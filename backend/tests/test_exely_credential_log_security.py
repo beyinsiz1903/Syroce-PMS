@@ -279,6 +279,31 @@ def test_exely_observability_demotes_retryable_failures_and_resets_after_success
     assert "streak=1" in caplog.records[-1].getMessage()
 
 
+def test_exely_observability_keeps_failure_streaks_separate_by_operation(caplog):
+    exely_observability.reset_metrics()
+    caplog.set_level(logging.WARNING, logger="exely.observability")
+
+    for _ in range(4):
+        exely_observability.record_provider_failure(
+            error_type="ExelyTemporaryError",
+            message="synthetic temporary failure",
+            connection_id="synthetic-connection",
+            soap_action="OTA_HotelAvailRQ",
+            recoverable=True,
+        )
+
+    exely_observability.record_provider_failure(
+        error_type="ExelyTemporaryError",
+        message="synthetic temporary failure",
+        connection_id="synthetic-connection",
+        soap_action="OTA_ReadRQ",
+        recoverable=True,
+    )
+
+    assert "action=OTA_ReadRQ streak=1" in caplog.records[-1].getMessage()
+    assert caplog.records[-1].levelno == logging.WARNING
+
+
 def test_exely_observability_keeps_permanent_failures_as_errors(caplog):
     exely_observability.reset_metrics()
     caplog.set_level(logging.WARNING, logger="exely.observability")
