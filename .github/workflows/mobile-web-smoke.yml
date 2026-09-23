@@ -36,7 +36,7 @@ concurrency:
 jobs:
   smoke:
     name: Mobile Web smoke (Pixel 7 viewport)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       MOBILE_E2E_BASE_URL: ${{ github.event.inputs.base_url }}
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Set up Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "20"
 
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: mobile-web-smoke-report
@@ -148,7 +148,7 @@ jobs:
       # so an official F10A baseline can be promoted from a single artifact.
       - name: Upload drill report (markdown)
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: mobile-smoke-drill-report

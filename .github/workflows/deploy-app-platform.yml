@@ -24,7 +24,7 @@ env:
 jobs:
   # ── Build & Push Images ────────────────────────────────────────
   build-push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -83,7 +83,7 @@ jobs:
   # ── Deploy to App Platform ─────────────────────────────────────
   deploy-app-platform:
     needs: build-push
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: ${{ github.event.inputs.environment }}
     steps:
       - name: Validate deployment target

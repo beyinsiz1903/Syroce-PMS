@@ -86,7 +86,7 @@ jobs:
   # ---------- Resolve trigger inputs into per-platform build URLs ----------
   resolve:
     name: Tetikleyici girdilerini çöz
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       run_ios: ${{ steps.parse.outputs.run_ios }}
       run_android: ${{ steps.parse.outputs.run_android }}
@@ -330,7 +330,7 @@ jobs:
 
       - name: Upload Maestro debug output
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: maestro-ios-debug
@@ -341,7 +341,7 @@ jobs:
 
       - name: Upload PR comment summary
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: smoke-ios-summary
@@ -352,7 +352,7 @@ jobs:
     name: Android smoke (Emulator)
     needs: resolve
     if: needs.resolve.outputs.run_android == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       MAESTRO_VERSION: "1.39.0"
@@ -465,7 +465,7 @@ jobs:
 
       - name: Upload Maestro debug output
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: maestro-android-debug
@@ -476,7 +476,7 @@ jobs:
 
       - name: Upload PR comment summary
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 1
           name: smoke-android-summary
@@ -487,16 +487,16 @@ jobs:
     name: Sonuclari yorumla
     needs: [resolve, ios-smoke, android-smoke]
     if: always() && needs.resolve.outputs.issue_number != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Download summaries
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           path: summaries
           pattern: smoke-*-summary
 
       - name: Compose and post comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           ISSUE_NUMBER: ${{ needs.resolve.outputs.issue_number }}
           PROFILE: ${{ needs.resolve.outputs.profile }}
@@ -558,7 +558,7 @@ jobs:
     name: Smoke gate
     needs: [resolve, ios-smoke, android-smoke]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Verify all requested platforms passed
         env:
