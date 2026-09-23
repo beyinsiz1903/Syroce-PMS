@@ -305,6 +305,43 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
 });
 
 describe('FoliosTab — sade ödeme akışı', () => {
+  it('konaklama, ekstralar ve ön ödemeyi ayrı ve anlaşılır gösterir', () => {
+    render(
+      <FoliosTab
+        {...singleFolioProps({
+          charges: [
+            { id: 'room', charge_type: 'room_charge', charge_category: 'room', description: 'Oda Ücreti', total: 100 },
+            { id: 'meal', charge_type: 'restaurant', charge_category: 'food_beverage', description: 'Akşam Yemeği', total: 30 },
+          ],
+          extra_charges: [
+            { id: 'minibar', charge_name: 'Minibar', category: 'Minibar', total: 20 },
+          ],
+          payments: [
+            { id: 'prepay', amount: 40, payment_type: 'prepayment', method: 'card', notes: 'Rezervasyon ön ödemesi' },
+          ],
+          summary: {
+            total_amount: 100,
+            accommodation_total: 100,
+            additional_charge_total: 50,
+            gross_total: 150,
+            total_payments: 40,
+            prepayment_total: 40,
+            reservation_total_due: 110,
+            balance: 110,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText('Konaklama').length).toBeGreaterThan(0);
+    expect(screen.getByText('Ekstralar')).toBeInTheDocument();
+    expect(screen.getByText('Genel Toplam')).toBeInTheDocument();
+    expect(screen.getByTestId('prepayment-summary')).toHaveTextContent('Ön ödeme alındı');
+    expect(screen.getByText('Akşam Yemeği')).toBeInTheDocument();
+    expect(screen.getByText('Yiyecek & İçecek')).toBeInTheDocument();
+    expect(screen.getAllByText('Ön ödeme').length).toBeGreaterThan(0);
+  });
+
   it('ödeme tipini kullanıcıya seçtirmez ve tam bakiye ödemesini otomatik final kaydeder', async () => {
     render(<FoliosTab {...singleFolioProps()} />);
 

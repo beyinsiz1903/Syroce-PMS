@@ -99,8 +99,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const rawFolioBalance = Number(summary?.folio_balance ?? summary?.balance) || 0;
   const reservationTotalDue = Number(summary?.reservation_total_due ?? summary?.balance) || 0;
   const hasAllocatedPrepayment = pendingRoomAmount > 0.01 && reservationTotalDue <= 0.01 && rawFolioBalance < -0.01;
-  const displayedFolioBalance = hasAllocatedPrepayment ? 0 : rawFolioBalance;
   const hasHistoricalRoomCredit = readOnly && pendingRoomAmount > 0.01 && Number(summary?.folio_balance) < -0.01;
+  const accommodationTotal = Number(summary?.accommodation_total ?? summary?.total_amount) || 0;
+  const additionalChargeTotal = Number(summary?.additional_charge_total ?? summary?.total_extra) || 0;
+  const prepaymentTotal = Number(summary?.prepayment_total) || 0;
+  const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
 
   const completePendingRoomCharge = async () => {
     setReconcilingRoomCharge(true);
@@ -146,22 +149,50 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const exec = async (fn) => { setLoading(true); try { await fn(); onRefresh?.(); } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); } setLoading(false); };
 
   const allItems = [
-    ...(charges || []).map(c => ({ ...c, _type: 'charge' })),
-    ...(extra_charges || []).map(c => ({ ...c, _type: 'charge' })),
+    ...(charges || []).map(c => ({ ...c, _type: 'charge', _source: 'folio' })),
+    ...(extra_charges || []).map(c => ({ ...c, _type: 'charge', _source: 'extra' })),
     ...(payments || []).map(p => ({ ...p, _type: 'payment' })),
   ].sort((a, b) => new Date(b.created_at || b.processed_at || 0) - new Date(a.created_at || a.processed_at || 0));
 
+  const itemKind = (item) => {
+    if (item._type === 'payment') {
+      return String(item.payment_type || '').toLowerCase() === 'prepayment' ? 'Ön ödeme' : 'Tahsilat';
+    }
+    const category = String(item.category || item.charge_category || '').toLowerCase();
+    const categoryLabels = {
+      food_beverage: 'Yiyecek & İçecek',
+      food_and_beverage: 'Yiyecek & İçecek',
+      restaurant: 'Yiyecek & İçecek',
+      minibar: 'Minibar',
+      spa: 'Spa',
+      laundry: 'Çamaşırhane',
+      transfer: 'Transfer',
+      other: 'Diğer ekstra',
+    };
+    if (item._source === 'extra') return categoryLabels[category] || item.category || item.charge_category || 'Ekstra hizmet';
+    if (item.charge_type === 'room_charge' || item.charge_category === 'room') return 'Konaklama';
+    if (item.charge_type === 'tax' || ['tax', 'city_tax'].includes(item.charge_category)) return 'Vergi';
+    return categoryLabels[category] || item.category || item.charge_category || 'Ekstra hizmet';
+  };
+
   return (
     <div data-testid="folios-tab" className="space-y-4">
-      <div className="grid grid-cols-4 gap-3">
-        <SummaryCard currency={currency} label="Toplam" value={summary?.total_amount} color="blue" />
-        <SummaryCard currency={currency} label="Borçlar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
-        <SummaryCard currency={currency} label="Ödemeler" value={summary?.total_payments} color="emerald" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <SummaryCard currency={currency} label="Konaklama" value={accommodationTotal} color="blue" />
+        <SummaryCard currency={currency} label="Ekstralar" value={additionalChargeTotal} color="amber" />
+        <SummaryCard currency={currency} label="Genel Toplam" value={grossTotal} color="blue" />
+        <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.total_payments} color="emerald" />
+        <SummaryCard currency={currency} label="Kalan Bakiye" value={reservationTotalDue} color={reservationTotalDue > 0 ? 'red' : 'green'} />
         {(summary?.total_discounts || 0) > 0 && (
           <SummaryCard currency={currency} label="İndirimler" value={summary?.total_discounts} color="rose" />
         )}
-        <SummaryCard currency={currency} label="Bakiye" value={displayedFolioBalance} color={displayedFolioBalance > 0 ? 'red' : 'green'} />
       </div>
+      {prepaymentTotal > 0 && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="prepayment-summary">
+          <span className="font-semibold">Ön ödeme alındı:</span> {fmtCurrency(prepaymentTotal, currency)}
+          <span className="ml-2 text-xs text-emerald-700">Toplam tahsilata ve kalan bakiyeye dahil edilmiştir.</span>
+        </div>
+      )}
       {hasAllocatedPrepayment && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="allocated-prepayment-note">
           {fmtTL(Math.abs(rawFolioBalance))} TL peşin tahsilat, {fmtCurrency(pendingRoomAmount, currency)} bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
@@ -433,7 +464,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-800">{item.description || item.charge_name || item.method || item.payment_type || '-'}</div>
-                <div className="text-xs text-gray-400">{fmtTs(item.created_at || item.processed_at)}{item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}</div>
+                <div className="text-xs text-gray-400">
+                  <span className="font-medium text-slate-500">{itemKind(item)}</span>
+                  <span className="mx-1">·</span>{fmtTs(item.created_at || item.processed_at)}
+                  {item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}
+                </div>
               </div>
               <div className={`text-sm font-bold ${item._type === 'payment' ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {item._type === 'payment' ? '-' : '+'}{fmtCurrency(item.total ?? item.charge_amount ?? item.amount, currency)}

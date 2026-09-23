@@ -361,6 +361,13 @@ def _build_financial_summary(
     active_charges = [charge for charge in charges if not charge.get("voided")]
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
     total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") != "discount")
+    prepayment_total = sum(
+        payment.get("amount", 0)
+        for payment in payments
+        if not payment.get("voided")
+        and payment.get("method") != "discount"
+        and str(payment.get("payment_type") or "").lower() == "prepayment"
+    )
     total_discounts = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") == "discount")
     total_extra = sum(_extra_charge_total(charge) for charge in extra_charges if not charge.get("voided"))
     total_deposits = sum(
@@ -399,6 +406,19 @@ def _build_financial_summary(
         - total_payments
         - total_discounts
     )
+    # Keep the commercial stay price and guest-added services separate in the
+    # API contract.  The old UI only had ``total_amount`` and ``total_charges``;
+    # once a restaurant/minibar row was posted it therefore looked as if the
+    # room price itself had changed.  ``additional_charge_total`` mirrors the
+    # exact non-accommodation component used by ``reservation_total_due`` and
+    # deliberately includes both folio-native rows and legacy booking-scoped
+    # ``extra_charges`` without counting either twice.
+    accommodation_total = max(
+        float(booking.get("total_amount", 0) or 0),
+        float(reservation_price_component_total or 0),
+    )
+    additional_charge_total = total_charges - reservation_price_component_total + total_extra
+    gross_total = accommodation_total + additional_charge_total
     # A posted accommodation amount above the confirmed reservation total is
     # a pricing reconciliation problem, not an amount the receptionist should
     # collect.  This includes system-generated accommodation-tax rows.
@@ -411,8 +431,13 @@ def _build_financial_summary(
         "total_amount": booking.get("total_amount", 0),
         "total_charges": round(total_charges, 2),
         "total_payments": round(total_payments, 2),
+        "prepayment_total": round(prepayment_total, 2),
+        "other_payments_total": round(total_payments - prepayment_total, 2),
         "total_discounts": round(total_discounts, 2),
         "total_extra": round(total_extra, 2),
+        "accommodation_total": round(accommodation_total, 2),
+        "additional_charge_total": round(additional_charge_total, 2),
+        "gross_total": round(gross_total, 2),
         "accommodation_tax_total": round(accommodation_tax_total, 2),
         "total_deposits": round(total_deposits, 2),
         "balance": round(balance, 2),

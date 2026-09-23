@@ -293,6 +293,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const unpostedRoomAmount = Number(summary?.unposted_room_amount) || 0;
   const hasAllocatedPrepayment = unpostedRoomAmount > 0.01 && !hasReservationAmountDue && balance < -0.01;
   const displayedFolioBalance = hasAllocatedPrepayment ? 0 : balance;
+  const accommodationTotal = Number(summary?.accommodation_total ?? summary?.total_amount) || 0;
+  const additionalChargeTotal = Number(summary?.additional_charge_total ?? summary?.total_extra) || 0;
+  const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
+  const prepaymentTotal = Number(summary?.prepayment_total) || 0;
   const channelPricingIssue = summary?.channel_pricing_issue;
   const hasRoomAssignment = Boolean(booking?.room_id && room?.id);
   const canEditStayDates = !readOnly && ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
@@ -497,8 +501,18 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </div>
                 <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
-                    <span className="font-semibold text-slate-800">{fmtCurrency(summary?.total_amount, currency)}</span>
+                    <span className="text-slate-500">Konaklama</span>
+                    <span className="font-semibold text-slate-800">{fmtCurrency(accommodationTotal, currency)}</span>
+                  </div>
+                  {additionalChargeTotal > 0 && (
+                    <div className="flex justify-between text-xs" data-testid="additional-charge-total">
+                      <span className="text-slate-500">Ekstralar</span>
+                      <span className="font-semibold text-amber-700">+{fmtCurrency(additionalChargeTotal, currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t border-slate-200 pt-1.5 text-xs" data-testid="gross-total">
+                    <span className="font-medium text-slate-600">Genel toplam</span>
+                    <span className="font-semibold text-slate-900">{fmtCurrency(grossTotal, currency)}</span>
                   </div>
                   {pricingReconciliationRequired && (
                     <div className="rounded-md bg-amber-100/70 px-2 py-1.5 text-[11px] leading-4 text-amber-900" data-testid="pricing-reconciliation-alert">
@@ -512,9 +526,15 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </div>
                   )}
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
+                    <span className="text-slate-500">Toplam tahsilat</span>
                     <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.total_payments, currency)}</span>
                   </div>
+                  {prepaymentTotal > 0 && (
+                    <div className="flex justify-between rounded bg-emerald-100/70 px-1.5 py-1 text-xs" data-testid="prepayment-total">
+                      <span className="font-medium text-emerald-800">Ön ödeme</span>
+                      <span className="font-semibold text-emerald-700">{fmtCurrency(prepaymentTotal, currency)}</span>
+                    </div>
+                  )}
                   {unpostedRoomAmount > 0.01 && (
                     <>
                       <div className="flex justify-between text-xs">

@@ -39,6 +39,30 @@ def test_summary_keeps_unposted_room_total_before_night_audit():
     assert summary["balance"] == 3100.0
 
 
+def test_summary_separates_prepayment_and_guest_extras_from_accommodation():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 5000.0, "paid_amount": 1000.0},
+        [
+            {"charge_type": "room_charge", "charge_category": "room", "total": 5000.0, "voided": False},
+            {"charge_type": "restaurant", "charge_category": "food_beverage", "total": 450.0, "voided": False},
+        ],
+        [
+            {"amount": 1000.0, "payment_type": "prepayment", "method": "card", "voided": False},
+            {"amount": 250.0, "payment_type": "interim", "method": "cash", "voided": False},
+        ],
+        [{"charge_name": "Minibar", "total": 150.0, "voided": False}],
+        [],
+    )
+
+    assert summary["accommodation_total"] == 5000.0
+    assert summary["additional_charge_total"] == 600.0
+    assert summary["gross_total"] == 5600.0
+    assert summary["prepayment_total"] == 1000.0
+    assert summary["other_payments_total"] == 250.0
+    assert summary["total_payments"] == 1250.0
+    assert summary["reservation_total_due"] == 4350.0
+
+
 def test_summary_keeps_full_stay_visible_when_only_some_room_nights_are_posted():
     summary = reservation_detail._build_financial_summary(
         {"total_amount": 7500.0, "paid_amount": 0.0},
