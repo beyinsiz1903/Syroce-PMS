@@ -393,11 +393,15 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
 
     payment_methods = {}
     total_paid = 0
+    # Sadece otele giren sıcak parayı (nakit akışını) temsil etmeyen,
+    # folyo dengeleme/kapatma işlemleri:
+    NON_CASH_METHODS = {"discount", "city_ledger", "complimentary", "correction", "ar"}
+
     for p in all_payments:
         method = p.get("method", "other")
         amt = p.get("amount", 0) or 0
         payment_methods[method] = payment_methods.get(method, 0) + amt
-        if p.get("status") == "paid":
+        if p.get("status") == "paid" and method not in NON_CASH_METHODS:
             total_paid += amt
     payment_methods = {k: round(v, 2) for k, v in payment_methods.items()}
 
