@@ -449,26 +449,33 @@ async def _execute_pipeline(
 ) -> dict:
     """Execute the full night audit pipeline for a run."""
 
+    simulation_blockers: list[str] = []
+    simulation_warnings: list[str] = []
+
     # ── Stage: Validate ──
     if not skip_validations:
         try:
             validation = await _validate_preconditions(tenant_id, prop_id, bd)
             if validation["blocking_errors"]:
+                simulation_blockers = validation["blocking_errors"]
+                simulation_warnings = validation["warnings"]
                 await db.night_audit_runs.update_one(
                     {"id": run_id},
                     {
                         "$set": {
-                            "status": S_BLOCKED,
+                            "status": S_RUNNING if dry_run else S_BLOCKED,
                             "stage": ST_VALIDATING,
                             "errors": validation["blocking_errors"],
                             "warnings": validation["warnings"],
                             "updated_at": _now_iso(),
-                            "completed_at": _now_iso(),
+                            "completed_at": None if dry_run else _now_iso(),
                         }
                     },
                 )
-                return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED", "run_id": run_id, "blockers": validation["blocking_errors"]}
+                if not dry_run:
+                    return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED", "run_id": run_id, "blockers": validation["blocking_errors"]}
             if validation["warnings"]:
+                simulation_warnings = validation["warnings"]
                 await db.night_audit_runs.update_one(
                     {"id": run_id},
                     {"$set": {"warnings": validation["warnings"]}},
@@ -496,13 +503,22 @@ async def _execute_pipeline(
 
     # ── Dry run: aday seti olusturuldu, gercek post yapilmadan ozet don ──
     if dry_run:
-        # Pending item'lari bilgi amacli sayalim, ama folio'lara yazmayalim.
-        pending = await db.night_audit_run_items.count_documents(
-            {"run_id": run_id, "status": IS_PENDING},
-        )
-        skipped = await db.night_audit_run_items.count_documents(
-            {"run_id": run_id, "status": IS_SKIPPED},
-        )
+        # Simülasyon, canlı denetimle aynı aday ve fiyat hesaplarını kullanır;
+        # folyo/rezervasyon/oda veya iş günü üzerinde hiçbir değişiklik yapmaz.
+        # Operatöre yalnızca adet değil, beklenen finansal etkiyi de döndür.
+        items = await db.night_audit_run_items.find(
+            {"run_id": run_id},
+            {"_id": 0},
+        ).to_list(20_000)
+        pending_items = [item for item in items if item.get("status") == IS_PENDING]
+        skipped_items = [item for item in items if item.get("status") == IS_SKIPPED]
+        room_items = [item for item in pending_items if item.get("posting_type") == "room_charge"]
+        no_show_items = [item for item in pending_items if item.get("posting_type") == "no_show"]
+        pending = len(pending_items)
+        skipped = len(skipped_items)
+        projected_room_revenue = round(sum(float(item.get("amount") or 0) for item in room_items), 2)
+        projected_tax = round(sum(float(item.get("tax_amount") or 0) for item in room_items), 2)
+        projected_total = round(sum(float(item.get("total") or 0) for item in pending_items), 2)
         await db.night_audit_runs.update_one(
             {"id": run_id},
             {
@@ -518,7 +534,23 @@ async def _execute_pipeline(
             },
         )
         run = await db.night_audit_runs.find_one({"id": run_id}, {"_id": 0})
-        return {"success": True, "dry_run": True, "would_post": pending, "would_skip": skipped, "run": run}
+        return {
+            "success": True,
+            "dry_run": True,
+            "business_date": bd,
+            "status": "dry_run_completed",
+            "rooms_processed": len([item for item in items if item.get("posting_type") == "room_charge"]),
+            "charges_posted": len(room_items),
+            "no_shows_processed": len(no_show_items),
+            "total_room_revenue": projected_room_revenue,
+            "total_tax_amount": projected_tax,
+            "projected_total": projected_total,
+            "would_post": pending,
+            "would_skip": skipped,
+            "blockers": simulation_blockers,
+            "warnings": simulation_warnings,
+            "run": run,
+        }
 
     # ── Stage: Post charges ──
     return await _posting_and_close(run_id, tenant_id, bd)

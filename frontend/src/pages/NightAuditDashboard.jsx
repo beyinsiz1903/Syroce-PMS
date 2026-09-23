@@ -54,6 +54,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [showRunDialog, setShowRunDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [blockedRunDetail, setBlockedRunDetail] = useState(null);
+  const [simulationResult, setSimulationResult] = useState(null);
   const [runActionId, setRunActionId] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [prepRefreshKey, setPrepRefreshKey] = useState(0);
@@ -255,12 +256,17 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       const postedChargeCount = result.charges_posted ?? result.run?.processed_count ?? 0;
       toast.success(
         runOptions.dry_run
-          ? `Simülasyon tamamlandı: ${result.rooms_processed} oda işlendi`
+          ? `Simülasyon tamamlandı: ${result.would_post ?? postedChargeCount} işlem öngörüldü`
           : `Gece denetimi tamamlandı: ${postedChargeCount} masraf kaydedildi`
       );
       setShowRunDialog(false);
       setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
-      await loadAll();
+      if (result.dry_run) {
+        setSimulationResult(result);
+        await fetchHistory();
+      } else {
+        await loadAll();
+      }
       setPrepRefreshKey((k) => k + 1);
     } catch (err) {
       if (isNightAuditTimeout(err)) {
@@ -906,6 +912,77 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(simulationResult)} onOpenChange={(open) => !open && setSimulationResult(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-indigo-600" />
+                Gece Denetimi Simülasyon Sonucu
+              </DialogTitle>
+              <DialogDescription>
+                Bu sonuç yalnızca tahmindir; folyo, rezervasyon, oda ve iş günü değiştirilmedi.
+              </DialogDescription>
+            </DialogHeader>
+            {simulationResult && (
+              <div className="space-y-4" data-testid="simulation-result-dialog">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">Oda adayı</p>
+                    <p className="text-xl font-semibold">{simulationResult.rooms_processed ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">Yazılacak masraf</p>
+                    <p className="text-xl font-semibold">{simulationResult.charges_posted ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">No-show adayı</p>
+                    <p className="text-xl font-semibold">{simulationResult.no_shows_processed ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">Atlanacak işlem</p>
+                    <p className="text-xl font-semibold">{simulationResult.would_skip ?? 0}</p>
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-indigo-50 p-3">
+                  <div className="flex justify-between text-sm">
+                    <span>Tahmini oda geliri</span>
+                    <strong>{Number(simulationResult.total_room_revenue || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</strong>
+                  </div>
+                  <div className="flex justify-between text-sm mt-1">
+                    <span>Tahmini vergi</span>
+                    <strong>{Number(simulationResult.total_tax_amount || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</strong>
+                  </div>
+                  <div className="flex justify-between text-sm mt-2 pt-2 border-t border-indigo-200">
+                    <span>Toplam tahmini folyo etkisi</span>
+                    <strong>{Number(simulationResult.projected_total || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</strong>
+                  </div>
+                </div>
+                {simulationResult.blockers?.length > 0 && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                    <p className="text-sm font-semibold text-rose-800 mb-2">
+                      Canlı gün sonunu engelleyen sorunlar ({simulationResult.blockers.length})
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 text-xs text-rose-800">
+                      {simulationResult.blockers.map((blocker, index) => <li key={`${index}-${blocker}`}>{blocker}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {simulationResult.warnings?.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm font-semibold text-amber-800 mb-2">Uyarılar ({simulationResult.warnings.length})</p>
+                    <ul className="list-disc pl-5 space-y-1 text-xs text-amber-800">
+                      {simulationResult.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <Button onClick={() => setSimulationResult(null)}>Kapat</Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>

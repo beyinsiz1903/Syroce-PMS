@@ -183,10 +183,13 @@ async def run_night_audit(
             "VALIDATION_BLOCKED": 422,
         }.get(code, 400)
         raise HTTPException(status_code=status_code, detail=result)
-    # Successful run mutates folio charges, payments, balances → drop dashboards.
-    _invalidate_finance_cache(current_user.tenant_id)
-    # History/business-date also change after a successful audit run.
-    for prefix in ("na_history", "na_business_date"):
+    # Simulation only records its audit trace/candidates; it never changes
+    # folios, reservations, rooms or the business date. Avoid invalidating
+    # finance/business-date caches as though a real close had happened.
+    if not request.dry_run:
+        _invalidate_finance_cache(current_user.tenant_id)
+    prefixes = ("na_history",) if request.dry_run else ("na_history", "na_business_date")
+    for prefix in prefixes:
         try:
             _cache.safe_invalidate(current_user.tenant_id, prefix)
         except Exception as e:  # pragma: no cover

@@ -322,6 +322,54 @@ async def test_blocked_on_orphan_checkin():
         c.close()
 
 
+@pytest.mark.asyncio
+async def test_dry_run_reports_blockers_and_financial_projection_without_live_writes():
+    """Simulation must finish with useful projections even when live close is blocked."""
+    c, db = await _get_db()
+    try:
+        await _cleanup(db)
+        await _call_engine("ensure_night_audit_indexes", c, db)
+        await _seed_booking(db, room_rate=1000.0)
+        await _seed_booking(db, room_rate=750.0, no_folio=True)
+        await db.tenant_settings.insert_one({"tenant_id": TENANT, "business_date": BD})
+
+        result = await _call_engine(
+            "start_night_audit",
+            c,
+            db,
+            TENANT,
+            PROPERTY,
+            BD,
+            "manual",
+            {"id": "tester"},
+            dry_run=True,
+        )
+
+        assert result["success"] is True
+        assert result["dry_run"] is True
+        assert result["status"] == "dry_run_completed"
+        assert result["blockers"]
+        assert result["rooms_processed"] == 2
+        assert result["charges_posted"] == 1
+        assert result["would_post"] == 1
+        assert result["would_skip"] == 1
+        assert result["total_room_revenue"] == 892.86
+        assert result["total_tax_amount"] == 107.14
+        assert result["projected_total"] == 1000.0
+
+        # Audit trace/candidates may be recorded, but hotel operations stay read-only.
+        assert await db.folio_charges.count_documents({"tenant_id": TENANT}) == 0
+        folios = await db.folios.find({"tenant_id": TENANT}, {"_id": 0}).to_list(10)
+        assert all(folio["balance"] == 0 for folio in folios)
+        settings = await db.tenant_settings.find_one({"tenant_id": TENANT}, {"_id": 0})
+        assert settings["business_date"] == BD
+        bookings = await db.bookings.find({"tenant_id": TENANT}, {"_id": 0}).to_list(10)
+        assert all(booking["status"] == "checked_in" for booking in bookings)
+    finally:
+        await _cleanup(db)
+        c.close()
+
+
 # ═══════════════════════════════════════════════════════════════
 #  C. DUPLICATE POSTING PREVENTION
 # ═══════════════════════════════════════════════════════════════
