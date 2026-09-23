@@ -8,7 +8,7 @@ from fastapi.security import HTTPBearer
 
 security = HTTPBearer()
 
-from core.business_date_service import ensure_business_date_initialized
+from core.business_date_service import accounting_day_match, ensure_business_date_initialized
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
@@ -182,13 +182,13 @@ async def get_daily_summary(
     payments = await db.payments.find(
         {
             "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"business_date": day},
+            **accounting_day_match(
+                day,
                 {"processed_at": {"$regex": f"^{day}"}},
                 {"payment_date": day},
                 {"date": day},
                 {"created_at": {"$regex": f"^{day}"}},
-            ],
+            ),
         },
         {"_id": 0},
     ).to_list(10000)

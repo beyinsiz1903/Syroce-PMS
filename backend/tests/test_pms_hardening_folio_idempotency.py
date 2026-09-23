@@ -72,6 +72,7 @@ class _FakeDB:
         self.folio_charges = _Coll()
         self.payments = _Coll()
         self.idempotency_keys = _Coll()
+        self.tenant_settings = _Coll()
 
 
 class _FakeRequest:
@@ -95,6 +96,10 @@ def fake_user():
 @pytest.fixture(autouse=True)
 def _patch(monkeypatch):
     fake_db = _FakeDB()
+    fake_db.tenant_settings.docs.append({
+        "tenant_id": "tenant-A",
+        "business_date": "2026-09-23",
+    })
     # Pre-seed an open folio for refund / void paths.
     fake_db.folios.docs.append({
         "id": "F1",

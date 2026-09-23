@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
@@ -426,6 +427,7 @@ async def record_group_payment(
         "recorded_by": current_user.name,
         "created_at": datetime.now(UTC).isoformat(),
     }
+    await stamp_open_business_date(db, tid, payment)
     await db.payments.insert_one(payment)
     payment.pop("_id", None)
 
@@ -492,6 +494,7 @@ async def record_group_bulk_payment(
             "recorded_by": current_user.name,
             "created_at": datetime.now(UTC).isoformat(),
         }
+        await stamp_open_business_date(db, tid, payment)
         await db.payments.insert_one(payment)
         payment.pop("_id", None)
         payments_created.append({**payment, "guest_name": ab["guest_name"]})

@@ -280,10 +280,17 @@ def test_quick_room_status_update_invalidates_room_board_cache(mock_db, override
         res = client.put("/api/housekeeping/room/room_1/status", params={"new_status": "cleaning"})
 
     assert res.status_code == 200
-    mock_db.rooms.update_one.assert_awaited_once_with(
-        {"id": "room_1", "tenant_id": "tenant_1"},
-        {"$set": {"status": "cleaning", "updated_at": ANY}},
-    )
+    mock_db.rooms.update_one.assert_awaited_once()
+    room_filter, update = mock_db.rooms.update_one.await_args.args
+    assert room_filter == {"id": "room_1", "tenant_id": "tenant_1"}
+    assert update["$set"] == {
+        "status": "cleaning",
+        "housekeeping_status": "cleaning",
+        "hk_status": "cleaning",
+        "housekeeping_updated_at": ANY,
+        "housekeeping_updated_by": "user_1",
+        "updated_at": ANY,
+    }
     cache.invalidate_tenant_cache.assert_any_call("tenant_1", "housekeeping_room_status")
 
 def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_require_module, client):

@@ -7,6 +7,8 @@ from routers.reports_pkg.dashboard_lists import (
     _date_part,
     _guest_identity,
     _guest_link_active_on,
+    _nightly_booking_rate,
+    _payment_is_collection,
     _payment_is_effective,
     _payment_method,
 )
@@ -61,6 +63,24 @@ def test_payment_normalization_excludes_voided_and_failed_rows():
     assert _payment_is_effective({"status": "paid", "voided": False}) is True
     assert _payment_is_effective({"status": "failed"}) is False
     assert _payment_is_effective({"status": "paid", "voided": True}) is False
+
+
+def test_cashier_collection_excludes_non_cash_folio_settlements():
+    assert _payment_is_collection({"status": "paid", "method": "cash"}) is True
+    assert _payment_is_collection({"status": "paid", "method": "credit_card"}) is True
+    assert _payment_is_collection({"status": "paid", "method": "discount"}) is False
+    assert _payment_is_collection({"status": "paid", "method": "city_ledger"}) is False
+
+
+def test_nightly_rate_prefers_date_specific_reservation_rate():
+    booking = {
+        "check_in": "2026-09-22",
+        "check_out": "2026-09-24",
+        "base_rate": 100,
+        "total_amount": 200,
+    }
+    assert _nightly_booking_rate(booking, "2026-09-23", {"rate": 175}) == 175
+    assert _nightly_booking_rate(booking, "2026-09-23") == 100
 
 
 def test_date_part_accepts_date_only_and_datetime_values():

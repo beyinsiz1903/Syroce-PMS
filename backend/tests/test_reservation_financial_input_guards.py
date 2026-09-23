@@ -633,6 +633,7 @@ async def test_terminal_booking_cannot_receive_deposit(monkeypatch, status):
 
 @pytest.mark.asyncio
 async def test_deposit_is_linked_to_reservation_folio_and_refreshes_balance(monkeypatch):
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
     folio = {
         "id": "folio-a",
         "tenant_id": "tenant-a",

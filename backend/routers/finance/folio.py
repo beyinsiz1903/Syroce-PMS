@@ -19,6 +19,7 @@ try:
 except ImportError:
     Workbook = None
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
 from core.pagination import PaginationParams, paginate
@@ -716,6 +717,7 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
 
         charge_dict = charge.model_dump()
         charge_dict["date"] = charge_dict["date"].isoformat()
+        await stamp_open_business_date(db, current_user.tenant_id, charge_dict)
         await db.folio_charges.insert_one(charge_dict)
 
         # Persist the replay body immediately after the durable insert so a
@@ -841,6 +843,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         payment_dict = payment.model_dump()
         payment_dict["processed_at"] = payment_dict["processed_at"].isoformat()
         payment_dict["processed_by_name"] = current_user.name  # Add user name
+        await stamp_open_business_date(db, current_user.tenant_id, payment_dict)
         await db.payments.insert_one(payment_dict)
 
         # Update folio balance

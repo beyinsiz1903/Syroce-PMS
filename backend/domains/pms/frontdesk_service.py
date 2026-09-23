@@ -390,16 +390,27 @@ class FrontdeskService:
         )
         await self._db.rooms.update_one(
             {"id": booking["room_id"], "tenant_id": ctx.tenant_id},
-            {"$set": {"status": "dirty", "current_booking_id": None}},
+            {
+                "$set": {
+                    "status": "dirty",
+                    "current_booking_id": None,
+                    "housekeeping_status": "dirty",
+                    "hk_status": "dirty",
+                    "housekeeping_updated_at": checked_out_time.isoformat(),
+                    "housekeeping_updated_by": f"System (Check-out by {ctx.actor_id})",
+                }
+            },
         )
 
         hk_task = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
             "room_id": booking["room_id"],
-            "task_type": "cleaning",
+            "booking_id": booking_id,
+            "room_number": booking.get("room_number"),
+            "task_type": "checkout_cleaning",
             "priority": "high",
-            "status": "new",
+            "status": "pending",
             "notes": "Guest checked out - departure clean required",
             "created_at": datetime.now(UTC).isoformat(),
         }

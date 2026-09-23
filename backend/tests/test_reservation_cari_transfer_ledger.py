@@ -13,6 +13,7 @@ from routers import reservation_detail
 
 
 def _patch_atomic_financial_helpers(monkeypatch, *, dedup_status="acquired"):
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
     claim = AsyncMock(
         return_value={
             "status": dedup_status,

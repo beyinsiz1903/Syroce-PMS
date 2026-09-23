@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security = HTTPBearer()
 
-from core.business_date_service import ensure_business_date_initialized
+from core.business_date_service import accounting_day_match, ensure_business_date_initialized
 from core.database import db
 from core.email import send_email
 from core.helpers import require_module
@@ -185,13 +185,13 @@ async def get_flash_report(
     payments = await db.payments.find(
         {
             "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"business_date": target_key},
+            **accounting_day_match(
+                target_key,
                 {"payment_date": target_key},
                 {"date": target_key},
                 {"processed_at": {"$regex": f"^{target_key}"}},
                 {"created_at": {"$regex": f"^{target_key}"}},
-            ],
+            ),
         },
         {"_id": 0},
     ).to_list(10000)

@@ -64,6 +64,32 @@ describe('ReservationDetailModal operation URLs', () => {
 
   afterEach(() => cleanup());
 
+  it('sol kartta konaklama, ekstralar, genel toplam ve ön ödemeyi ayrı gösterir', async () => {
+    get.mockResolvedValue({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, total_amount: 1000 },
+        summary: {
+          balance: 950,
+          reservation_total_due: 950,
+          total_amount: 1000,
+          accommodation_total: 1000,
+          additional_charge_total: 150,
+          gross_total: 1150,
+          total_payments: 200,
+          prepayment_total: 200,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('financial-summary-card')).toBeInTheDocument();
+    expect(screen.getByTestId('additional-charge-total')).toHaveTextContent('Ekstralar');
+    expect(screen.getByTestId('gross-total')).toHaveTextContent('Genel toplam');
+    expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Ön ödeme');
+  });
+
   it('sends no-show to the single /api-prefixed axios base path', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 

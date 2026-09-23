@@ -19,7 +19,15 @@ async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
     payments = SimpleNamespace(insert_one=AsyncMock())
     folios = SimpleNamespace(update_one=AsyncMock())
     bookings = SimpleNamespace(update_one=AsyncMock())
-    fake_db = SimpleNamespace(payments=payments, folios=folios, bookings=bookings)
+    tenant_settings = SimpleNamespace(
+        find_one=AsyncMock(return_value={"tenant_id": "tenant-1", "business_date": "2026-09-22"})
+    )
+    fake_db = SimpleNamespace(
+        payments=payments,
+        folios=folios,
+        bookings=bookings,
+        tenant_settings=tenant_settings,
+    )
     monkeypatch.setattr(frontdesk_router, "db", fake_db)
 
     monkeypatch.setattr(

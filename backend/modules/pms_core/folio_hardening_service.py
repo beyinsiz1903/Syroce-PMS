@@ -5,6 +5,7 @@ Folio & Billing Hardening Service - Charge posting, payment, refund, split, void
 import uuid
 from datetime import UTC, datetime
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 
 
@@ -102,6 +103,7 @@ class FolioHardeningService:
             "voided": False,
         }
 
+        await stamp_open_business_date(db, tenant_id, payment_doc)
         await db.payments.insert_one(payment_doc)
         await self._recalculate_folio_balance(tenant_id, folio_id)
 
@@ -142,6 +144,7 @@ class FolioHardeningService:
             "voided": False,
         }
 
+        await stamp_open_business_date(db, tenant_id, refund_doc)
         await db.payments.insert_one(refund_doc)
         await self._recalculate_folio_balance(tenant_id, folio_id)
 

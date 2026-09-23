@@ -348,8 +348,15 @@ const CashierTab = () => {
     setReportLoading(false);
   };
 
-  const cashInTotal = transactions.filter(t => t.direction === 'in' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
-  const cashOutTotal = transactions.filter(t => t.direction === 'out' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
+  // The API intentionally returns only the latest 200 detail rows, while the
+  // shift counters cover the complete shift.  Never calculate handover from a
+  // truncated list; fall back to rows only for legacy responses.
+  const cashInTotal = shift && Number.isFinite(Number(shift.cash_in))
+    ? Number(shift.cash_in)
+    : transactions.filter(t => t.direction === 'in' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
+  const cashOutTotal = shift && Number.isFinite(Number(shift.cash_out))
+    ? Number(shift.cash_out)
+    : transactions.filter(t => t.direction === 'out' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
   const cardCount = transactions.filter(t => t.method === 'card').length;
   const cardTotal = transactions.filter(t => t.method === 'card').reduce((s, t) => s + (t.amount || 0), 0);
   const countedTotal = calcTotal(closingCounts);

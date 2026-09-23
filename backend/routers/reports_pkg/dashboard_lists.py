@@ -8,6 +8,7 @@ from datetime import date as date_type
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer
 
+from core.business_date_service import accounting_day_match
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
@@ -114,6 +115,31 @@ def _payment_method(payment: dict) -> str:
 def _payment_is_effective(payment: dict) -> bool:
     status = str(payment.get("status") or "paid").strip().lower()
     return not payment.get("voided") and status not in {"void", "voided", "failed", "cancelled", "rejected"}
+
+
+def _payment_is_collection(payment: dict) -> bool:
+    """Return whether a payment row represents money actually collected.
+
+    Discounts, complimentary stays and city-ledger transfers settle a folio but
+    never enter a physical/virtual cashier.  Mixing those rows into the cash
+    movements table made its row total disagree with the front-cashier cards.
+    """
+    return _payment_is_effective(payment) and _payment_method(payment) not in NON_CASH_PAYMENT_METHODS
+
+
+def _nightly_booking_rate(booking: dict, target_day: str, daily_rate: dict | None = None) -> float:
+    """Resolve the agreed nightly price without falling back to room rack rate."""
+    if daily_rate and daily_rate.get("rate") is not None:
+        return round(float(daily_rate.get("rate") or 0), 2)
+    if booking.get("base_rate") is not None:
+        return round(float(booking.get("base_rate") or 0), 2)
+    check_in = _date_part(booking.get("check_in"))
+    check_out = _date_part(booking.get("check_out"))
+    try:
+        nights = max(1, (datetime.fromisoformat(check_out) - datetime.fromisoformat(check_in)).days)
+    except (TypeError, ValueError):
+        nights = 1
+    return round(float(booking.get("total_amount") or 0) / nights, 2)
 
 
 def _guest_link_active_on(link: dict, target_date: str) -> bool:
@@ -445,13 +471,14 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         db.payments.find(
             {
                 "tenant_id": tenant_id,
-                "$or": [
+                **accounting_day_match(
+                    target_day,
                     {"processed_at": {"$regex": f"^{target_day}"}},
                     {"payment_date": target_day},
                     {"date": target_day},
                     {"created_at": {"$regex": f"^{target_day}"}},
                     {"created_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                ],
+                ),
             },
             {"_id": 0},
         ).to_list(10000),
@@ -484,6 +511,38 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         get_fnb(),
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, room_blocks, fnb_revenue = results
+
+    loaded_booking_ids = {str(booking.get("id")) for booking in all_bk if booking.get("id")}
+    missing_payment_booking_ids = list(
+        {
+            str(payment.get("booking_id"))
+            for payment in all_payments
+            if payment.get("booking_id") and str(payment.get("booking_id")) not in loaded_booking_ids
+        }
+    )
+    payment_only_bookings = (
+        await db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": missing_payment_booking_ids}},
+            {"_id": 0, "id": 1, "room_id": 1, "room_number": 1, "guest_id": 1, "guest_name": 1, "primary_guest_name": 1},
+        ).to_list(10000)
+        if missing_payment_booking_ids
+        else []
+    )
+
+    booking_ids = [str(booking.get("id")) for booking in all_bk if booking.get("id")]
+    daily_rate_rows = (
+        await db.daily_rates.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": {"$in": booking_ids},
+                "date": target_day,
+            },
+            {"_id": 0, "booking_id": 1, "date": 1, "rate": 1},
+        ).to_list(10000)
+        if booking_ids
+        else []
+    )
+    daily_rates_by_booking = {str(row.get("booking_id")): row for row in daily_rate_rows}
 
     charge_range_start = min(last_year_start, previous_start, trend_start).date().isoformat()
     period_charges = await db.folio_charges.find(
@@ -656,23 +715,54 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         for row in metric_rows
     ]
 
-    hk_completed = len([t for t in hk_tasks if str(t.get("status") or t.get("task_status") or "").strip().lower() == "completed"])
-    hk_pending = len([t for t in hk_tasks if str(t.get("status") or t.get("task_status") or "").strip().lower() in ["pending", "assigned", "open"]])
-    hk_in_progress = len([t for t in hk_tasks if str(t.get("status") or t.get("task_status") or "").strip().lower() in ["in_progress", "inprogress", "active"]])
-    housekeeping_rows = [
-        {
-            "id": task.get("id"),
-            "room_number": str(task.get("room_number") or room_map.get(str(task.get("room_id"))) or "?").strip() or "?",
-            "task_type": task.get("task_type") or "cleaning",
-            "status": task.get("status") or task.get("task_status") or "pending",
-            "assigned_to": task.get("assigned_to") or task.get("assigned_to_name"),
-            "priority": task.get("priority") or "normal",
-            "created_at": task.get("created_at"),
-            "started_at": task.get("started_at"),
-            "completed_at": task.get("completed_at"),
-        }
-        for task in hk_tasks
-    ]
+    tasks_by_room: dict[str, list[dict]] = {}
+    for task in hk_tasks:
+        if task.get("room_id"):
+            tasks_by_room.setdefault(str(task["room_id"]), []).append(task)
+    departures_by_room = {
+        str(booking.get("room_id")): booking
+        for booking in all_bk
+        if booking.get("room_id")
+        and _date_part(booking.get("check_out")) == target_day
+        and str(booking.get("status") or "").lower() not in {"cancelled", "no_show"}
+    }
+    housekeeping_rows = []
+    for room in active_rooms:
+        room_id = str(room.get("id"))
+        tasks = sorted(
+            tasks_by_room.get(room_id, []),
+            key=lambda task: str(task.get("completed_at") or task.get("started_at") or task.get("created_at") or ""),
+            reverse=True,
+        )
+        task = tasks[0] if tasks else {}
+        departure = departures_by_room.get(room_id)
+        room_status = str(room.get("housekeeping_status") or room.get("hk_status") or room.get("status") or "available").lower()
+        task_status = str(task.get("status") or task.get("task_status") or "").lower()
+        departed = bool(departure and (departure.get("checked_out_at") or departure.get("status") == "checked_out"))
+        housekeeping_rows.append(
+            {
+                "id": task.get("id") or f"room:{room_id}",
+                "room_id": room_id,
+                "room_number": str(room.get("room_number") or room.get("room_no") or "?").strip() or "?",
+                "room_type": room.get("room_type"),
+                "room_status": room_status,
+                "task_type": task.get("task_type") or ("checkout_cleaning" if departure else "room_status"),
+                "status": task_status or ("pending" if room_status in {"dirty", "cleaning"} else "ready"),
+                "assigned_to": task.get("assigned_to_name") or task.get("assigned_to"),
+                "priority": task.get("priority") or ("high" if departure else "normal"),
+                "created_at": task.get("created_at"),
+                "started_at": task.get("started_at"),
+                "completed_at": task.get("completed_at"),
+                "due_out": bool(departure),
+                "departed": departed,
+                "departure_guest": _guest_display_name(guests_by_id.get(str((departure or {}).get("guest_id"))), departure or {}) if departure else None,
+                "scheduled_checkout": (departure or {}).get("check_out"),
+                "actual_checkout": (departure or {}).get("checked_out_at"),
+            }
+        )
+    hk_completed = sum(1 for row in housekeeping_rows if row["status"] == "completed")
+    hk_pending = sum(1 for row in housekeeping_rows if row["status"] in {"pending", "assigned", "open", "new"})
+    hk_in_progress = sum(1 for row in housekeeping_rows if row["status"] in {"in_progress", "inprogress", "active", "cleaning"})
 
     source_distribution = {}
     source_revenue = {}
@@ -712,24 +802,31 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     for rt in room_type_occ:
         room_type_occ[rt]["revenue"] = round(room_type_occ[rt]["revenue"], 2)
 
+    booking_by_id = {
+        str(booking.get("id")): booking
+        for booking in [*all_bk, *payment_only_bookings]
+        if booking.get("id")
+    }
     payment_methods = {}
     total_paid = 0
     payment_rows = []
     for p in all_payments:
-        if not _payment_is_effective(p):
+        if not _payment_is_collection(p):
             continue
         method = _payment_method(p)
         amt = float(p.get("amount", 0) or 0)
         if str(p.get("payment_type") or "").lower() == "refund" and amt > 0:
             amt = -amt
         payment_methods[method] = payment_methods.get(method, 0) + amt
-        if method not in NON_CASH_PAYMENT_METHODS:
-            total_paid += amt
+        total_paid += amt
+        payment_booking = booking_by_id.get(str(p.get("booking_id"))) or {}
         payment_rows.append(
             {
                 "id": p.get("id"),
                 "booking_id": p.get("booking_id"),
                 "folio_id": p.get("folio_id"),
+                "room_number": str(p.get("room_number") or payment_booking.get("room_number") or room_map.get(str(payment_booking.get("room_id"))) or "?").strip() or "?",
+                "guest_name": _guest_display_name(guests_by_id.get(str(payment_booking.get("guest_id"))), payment_booking) if payment_booking else None,
                 "amount": round(amt, 2),
                 "method": method,
                 "payment_type": p.get("payment_type"),
@@ -746,8 +843,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         {
             "tenant_id": tenant_id,
             "voided": {"$ne": True},
-            "$or": [
-                {"business_date": target_day},
+            **accounting_day_match(
+                target_day,
                 {"date": target_day},
                 {"date": {"$regex": f"^{target_day}"}},
                 {"date": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
@@ -755,7 +852,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 {"posted_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
                 {"created_at": {"$regex": f"^{target_day}"}},
                 {"created_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-            ],
+            ),
         },
         {"_id": 0},
     ).to_list(10000)
@@ -767,23 +864,35 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     for booking in all_bk:
         if booking.get("id") not in occupied_booking_ids:
             continue
-        nights = max(1, (datetime.fromisoformat(_date_part(booking.get("check_out"))) - datetime.fromisoformat(_date_part(booking.get("check_in")))).days)
-        actual_rate = float(booking.get("base_rate") or 0)
-        if not actual_rate:
-            actual_rate = float(booking.get("total_amount") or 0) / nights
+        agreed_rate = _nightly_booking_rate(booking, target_day, daily_rates_by_booking.get(str(booking.get("id"))))
         room = next((r for r in rooms if str(r.get("id")) == str(booking.get("room_id"))), {})
-        base_rate = float(room.get("base_price") or room.get("price_per_night") or actual_rate or 0)
+        posted_rate = round(
+            sum(
+                charge_amount(charge)
+                for charge in daily_charges
+                if str(charge.get("booking_id")) == str(booking.get("id"))
+                and str(charge.get("charge_category") or charge.get("charge_type") or "").lower() in {"room", "accommodation", "room_charge"}
+            ),
+            2,
+        )
         room_rate_rows.append(
             {
                 "booking_id": booking.get("id"),
                 "room_number": str(booking.get("room_number") or room_map.get(str(booking.get("room_id"))) or "?").strip() or "?",
                 "room_type": booking.get("room_type") or room.get("room_type"),
                 "guest_name": _guest_display_name(guests_by_id.get(str(booking.get("guest_id"))), booking),
-                "base_rate": round(base_rate, 2),
-                "sold_rate": round(actual_rate, 2),
-                "variance": round(actual_rate - base_rate, 2),
+                "agreed_rate": agreed_rate,
+                "posted_rate": posted_rate,
+                "variance": round(posted_rate - agreed_rate, 2),
+                "posting_status": "posted" if posted_rate else "pending",
             }
         )
+
+    expected_room_revenue = round(sum(row["agreed_rate"] for row in room_rate_rows), 2)
+    analysis_room_revenue = today_room_revenue if today_room_revenue or not room_rate_rows else expected_room_revenue
+    analysis_revenue_source = "posted" if today_room_revenue or not room_rate_rows else "accrued"
+    analysis_adr = round(analysis_room_revenue / occupied_today, 2) if occupied_today else 0
+    analysis_revpar = round(analysis_room_revenue / available_rooms_today, 2) if available_rooms_today else 0
 
     prev_revenue = sum(charge_amount(charge) for charge in charges_between(previous_start, previous_end))
     prev_metrics = await load_stay_night_metrics(db, tenant_id, previous_start.date(), (previous_end - timedelta(days=1)).date())
@@ -850,7 +959,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "completed": hk_completed,
             "pending": hk_pending,
             "in_progress": hk_in_progress,
-            "total": len(hk_tasks),
+            "total": len(housekeeping_rows),
+            "dirty": sum(1 for row in housekeeping_rows if row["room_status"] == "dirty"),
+            "clean": sum(1 for row in housekeeping_rows if row["room_status"] in {"available", "clean", "inspected"}),
+            "due_out": sum(1 for row in housekeeping_rows if row["due_out"] and not row["departed"]),
+            "departed": sum(1 for row in housekeeping_rows if row["departed"]),
             "rows": sorted(housekeeping_rows, key=lambda row: (str(row.get("room_number") or ""), str(row.get("created_at") or ""))),
         },
         "front_cashier": {
@@ -858,7 +971,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "collection_total": round(total_paid, 2),
             "cash_total": cash_total,
             "non_cash_total": round(total_paid - cash_total, 2),
-            "net_movement": round(total_paid - charge_total, 2),
+            "net_cash_movement": cash_total,
+            "uncollected_charges": round(charge_total - total_paid, 2),
             "charge_count": len(daily_charges),
             "payment_count": len(payment_rows),
         },
@@ -871,9 +985,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "arrivals": arrivals,
             "departures": departures,
             "in_house_guests": len(daily_in_house),
-            "room_revenue": round(today_revenue, 2),
-            "adr": adr,
-            "revpar": revpar,
+            "room_revenue": analysis_room_revenue,
+            "posted_room_revenue": today_room_revenue,
+            "expected_room_revenue": expected_room_revenue,
+            "revenue_source": analysis_revenue_source,
+            "adr": analysis_adr,
+            "revpar": analysis_revpar,
             "collections": round(total_paid, 2),
         },
         "maintenance": {"open": maint_open, "completed_month": maint_completed},

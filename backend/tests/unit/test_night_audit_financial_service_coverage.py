@@ -119,7 +119,10 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
     daily_charge_match = charges.aggregate.call_args_list[0].args[0][0]["$match"]
     daily_payment_pipeline = payments.aggregate.call_args.args[0]
     assert daily_charge_match["business_date"] == "2026-08-25"
-    assert {"processed_at": {"$regex": "^2026-08-25"}} in daily_payment_pipeline[0]["$match"]["$or"]
+    payment_match = daily_payment_pipeline[0]["$match"]
+    assert payment_match["$or"][0] == {"business_date": "2026-08-25"}
+    legacy_date_match = payment_match["$or"][1]["$and"][1]["$or"]
+    assert {"processed_at": {"$regex": "^2026-08-25"}} in legacy_date_match
     assert daily_payment_pipeline[1]["$group"]["_id"] == {"$ifNull": ["$payment_method", "$method"]}
     assert result.data["payments"] == {
         "total": 550.0,
