@@ -250,6 +250,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   }, [location.pathname, location.state, navigate]);
   const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
   const [unassignedFilter, setUnassignedFilter] = useState('all');
+  const [allUnassignedBookings, setAllUnassignedBookings] = useState([]);
+  const [allUnassignedLoading, setAllUnassignedLoading] = useState(false);
   const unassignedListRef = useRef(null);
 
   // A previously scrolled drawer can keep its old offset when it is reopened or
@@ -265,7 +267,35 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     resetScroll();
     const frameId = window.requestAnimationFrame(resetScroll);
     return () => window.cancelAnimationFrame(frameId);
-  }, [showUnassignedPanel, unassignedFilter, bookings]);
+  }, [showUnassignedPanel, unassignedFilter, allUnassignedBookings]);
+
+  // Atanmamış panel açıldığında tarih bağımsız tüm atanmamışları çek
+  useEffect(() => {
+    if (!showUnassignedPanel) return;
+    let cancelled = false;
+    setAllUnassignedLoading(true);
+    axios.get('/api/channel-manager/conflict-queue?limit=200')
+      .then(res => {
+        if (!cancelled) {
+          // conflict-queue API'si + takvimde görünen ama room_id'siz diğerleri
+          const apiItems = res.data?.items || [];
+          // Takvimde görünüp henüz API'de olmayan pendingleri de dahil et
+          const calendarPending = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+          const apiIds = new Set(apiItems.map(b => b.id));
+          const merged = [...apiItems, ...calendarPending.filter(b => !apiIds.has(b.id))];
+          setAllUnassignedBookings(merged);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          // Fallback: sadece takvimde görünenleri göster
+          setAllUnassignedBookings(bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
+        }
+      })
+      .finally(() => { if (!cancelled) setAllUnassignedLoading(false); });
+    return () => { cancelled = true; };
+  }, [showUnassignedPanel, bookings]);
+
 
   // No-Show Reason Dialog
   const [showNoShowDialog, setShowNoShowDialog] = useState(false);
@@ -1757,7 +1787,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
       {/* Unassigned Bookings Panel — Enhanced with urgency + quick assign */}
       {showUnassignedPanel && (() => {
-        const allUnassigned = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+        const allUnassigned = allUnassignedBookings;
         const overdueList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'overdue');
         const todayList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'today');
         const tomorrowList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'tomorrow');
@@ -1787,7 +1817,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">{t('cm.pages_ReservationCalendar.atanmamis_rezervasyonlar')}</h3>
-                      <p className="text-xs text-gray-500">{allUnassigned.length} aktif rezervasyon</p>
+                      <p className="text-xs text-gray-500">
+                        {allUnassignedLoading ? 'Yükleniyor...' : `${allUnassigned.length} rezervasyon · Tüm tarihler`}
+                      </p>
                     </div>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => { setShowUnassignedPanel(false); setUnassignedFilter('all'); }} className="h-8 w-8 p-0" data-testid="close-unassigned-panel-btn">
@@ -1863,6 +1895,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         headers: { 'Idempotency-Key': idempotencyKey },
                       });
                       toast.success(`${guestName || 'Misafir'} odaya atandı`);
+                      // Anlık güncelleme: listeden kaldır
+                      setAllUnassignedBookings(prev => prev.filter(b => b.id !== bookingId));
                       loadCalendarData();
                     } catch (err) {
                       toast.error(err.response?.data?.detail || 'Atama başarısız');
