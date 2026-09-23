@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { normalizeFeatures } from '@/utils/featureFlags';
 import { useTranslation } from 'react-i18next';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 
 const Reports = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
@@ -37,6 +38,7 @@ const Reports = ({ user, tenant, onLogout }) => {
   const [selectedReports, setSelectedReports] = useState([]);
   const [showSelector, setShowSelector] = useState(false);
   const [activeSection, setActiveSection] = useState('excel'); // 'excel' | 'night_audit'
+  const businessDate = useBusinessDate();
 
   const plan =
     tenant?.subscription_plan ||
@@ -74,6 +76,7 @@ const Reports = ({ user, tenant, onLogout }) => {
       icon: DollarSign,
       endpoint: '/reports/daily-flash/excel',
       needsDateRange: false,
+      singleDateParam: 'date_str',
       description: t('reports.dailyFlashReport')
     },
     {
@@ -132,6 +135,7 @@ const Reports = ({ user, tenant, onLogout }) => {
       icon: Calendar,
       endpoint: '/reports/operations-daily-summary/excel',
       needsDateRange: false,
+      singleDateParam: 'date',
       description: t('reports.operationsDailySummary')
     },
 
@@ -167,8 +171,13 @@ const Reports = ({ user, tenant, onLogout }) => {
     if (report && !selectedReports.find(r => r.id === reportId)) {
       setSelectedReports([...selectedReports, {
         ...report,
-        startDate: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0]
+        startDate: (() => {
+          const date = new Date(`${businessDate}T12:00:00`);
+          date.setDate(date.getDate() - 29);
+          return date.toISOString().split('T')[0];
+        })(),
+        endDate: businessDate,
+        reportDate: businessDate
       }]);
     }
     setShowSelector(false);
@@ -192,6 +201,8 @@ const Reports = ({ user, tenant, onLogout }) => {
       // Add date parameters if needed
       if (report.needsDateRange) {
         url += `?start_date=${report.startDate}&end_date=${report.endDate}`;
+      } else if (report.singleDateParam) {
+        url += `?${report.singleDateParam}=${report.reportDate}`;
       }
       
       const response = await axios.get(url, {
@@ -461,6 +472,17 @@ const Reports = ({ user, tenant, onLogout }) => {
                                       className="mt-1 h-9"
                                     />
                                   </div>
+                                </div>
+                              )}
+                              {report.singleDateParam && (
+                                <div className="max-w-[12rem]">
+                                  <Label className="text-xs text-gray-600">Rapor Tarihi (PMS İş Günü)</Label>
+                                  <Input
+                                    type="date"
+                                    value={report.reportDate}
+                                    onChange={(e) => updateReportDate(report.id, 'reportDate', e.target.value)}
+                                    className="mt-1 h-9"
+                                  />
                                 </div>
                               )}
                             </div>

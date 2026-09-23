@@ -381,21 +381,41 @@ async def get_housekeeping_efficiency_report(
     """Housekeeping Efficiency Report"""
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
+    if start.date() > end.date():
+        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
+    start_key = start.date().isoformat()
+    end_exclusive = (end.date() + timedelta(days=1)).isoformat()
 
-    # Get completed housekeeping tasks in date range
-    tasks = await db.housekeeping_tasks.find({"tenant_id": current_user.tenant_id, "status": "completed", "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(10000)
+    # Efficiency belongs to the completion day, not the day a task happened to
+    # be created. Legacy rows without completed_at retain a created_at fallback.
+    tasks = await db.housekeeping_tasks.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "$and": [
+                {"$or": [{"status": "completed"}, {"task_status": "completed"}]},
+                {
+                    "$or": [
+                        {"completed_at": {"$gte": start_key, "$lt": end_exclusive}},
+                        {"completed_at": {"$exists": False}, "created_at": {"$gte": start_key, "$lt": end_exclusive}},
+                        {"completed_at": None, "created_at": {"$gte": start_key, "$lt": end_exclusive}},
+                    ]
+                },
+            ],
+        }
+    ).to_list(10000)
 
     # Aggregate by assigned staff
     staff_performance = {}
 
     for task in tasks:
-        assigned_to = task.get("assigned_to", "Unassigned")
+        assigned_to = task.get("assigned_to_name") or task.get("assigned_to") or "Atanmamış"
         task_type = task.get("task_type", "cleaning")
 
         if assigned_to not in staff_performance:
-            staff_performance[assigned_to] = {"tasks_completed": 0, "by_type": {}}
+            staff_performance[assigned_to] = {"tasks_completed": 0, "by_type": {}, "total_minutes": 0.0}
 
         staff_performance[assigned_to]["tasks_completed"] += 1
+        staff_performance[assigned_to]["total_minutes"] += float(task.get("duration_minutes") or 0)
 
         if task_type not in staff_performance[assigned_to]["by_type"]:
             staff_performance[assigned_to]["by_type"][task_type] = 0
@@ -406,6 +426,8 @@ async def get_housekeeping_efficiency_report(
 
     for staff in staff_performance:
         staff_performance[staff]["daily_average"] = round(staff_performance[staff]["tasks_completed"] / date_range_days, 2)
+        completed = staff_performance[staff]["tasks_completed"]
+        staff_performance[staff]["average_minutes"] = round(staff_performance[staff]["total_minutes"] / completed, 1) if completed else 0
 
     return {
         "start_date": start_date,
@@ -429,12 +451,12 @@ async def export_housekeeping_efficiency_excel(
     """Export Housekeeping Efficiency Report to Excel"""
     report_data = await get_housekeeping_efficiency_report(start_date, end_date, current_user)
 
-    headers = ["Staff Member", "Tasks Completed", "Daily Average", "Cleaning", "Maintenance", "Inspection"]
+    headers = ["Staff Member", "Tasks Completed", "Daily Average", "Average Minutes", "Cleaning", "Maintenance", "Inspection"]
     data = []
 
     for staff, performance in report_data["staff_performance"].items():
         by_type = performance["by_type"]
-        data.append([staff, performance["tasks_completed"], f"{performance['daily_average']:.2f}", by_type.get("cleaning", 0), by_type.get("maintenance", 0), by_type.get("inspection", 0)])
+        data.append([staff, performance["tasks_completed"], performance["daily_average"], performance["average_minutes"], by_type.get("cleaning", 0), by_type.get("maintenance", 0), by_type.get("inspection", 0)])
 
     wb = create_excel_workbook(title=f"Housekeeping Efficiency Report ({start_date} to {end_date})", headers=headers, data=data, sheet_name="HK Efficiency")
 

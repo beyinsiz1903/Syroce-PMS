@@ -10,18 +10,23 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.email import send_email
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
 router = APIRouter(prefix="/api/pms/eod-report", tags=["pms"])
 
 
-def _today_str() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%d")
+async def _report_business_date(tenant_id: str, requested: str | None) -> str:
+    if requested:
+        return datetime.fromisoformat(requested[:10]).date().isoformat()
+    state = await ensure_business_date_initialized(db, tenant_id)
+    return str(state["business_date"])[:10]
 
 
 async def _collect(tenant_id: str, business_date: str) -> dict:
@@ -30,45 +35,38 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     start = datetime.fromisoformat(business_date + "T00:00:00+00:00")
     end = start + timedelta(days=1)
 
-    rooms_total = await db.rooms.count_documents({"tenant_id": tenant_id})
-
-    # Is gunundeki aktif konaklamalar (occupancy).
-    # Whitelist: gercekte odayi isgal eden statuler. Gecmis is gunleri icin
-    # checked_out da sayilmali (tarihsel rapor); confirmed/guaranteed ise
-    # check-in yapilmamis ama o tarihte konaklamasi beklenen rezervasyon.
-    occupied = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
-            "check_in": {"$lte": business_date},
-            "check_out": {"$gt": business_date},
-        }
-    )
+    business_day = start.date()
+    metrics = await load_stay_night_metrics(db, tenant_id, business_day, business_day, actual_only=True)
+    metric = metrics[0] if metrics else {"total_rooms": 0, "occupied_rooms": 0, "occupancy_rate": 0}
+    rooms_total = metric["total_rooms"]
+    occupied = metric["occupied_rooms"]
 
     arrivals = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "check_in": business_date,
+            "check_in": {"$gte": business_date, "$lt": end.date().isoformat()},
+            "status": {"$nin": ["cancelled", "canceled", "no_show", "noshow"]},
         }
     )
     departures = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "check_out": business_date,
+            "check_out": {"$gte": business_date, "$lt": end.date().isoformat()},
+            "status": {"$nin": ["cancelled", "canceled", "no_show", "noshow"]},
         }
     )
     no_shows = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
             "status": "no_show",
-            "check_in": business_date,
+            "check_in": {"$gte": business_date, "$lt": end.date().isoformat()},
         }
     )
     cancels = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "status": "cancelled",
-            "check_in": business_date,
+            "status": {"$in": ["cancelled", "canceled"]},
+            "check_in": {"$gte": business_date, "$lt": end.date().isoformat()},
         }
     )
 
@@ -89,30 +87,30 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     # Tahsilatlar, front desk tarafinda ``processed_at`` ile; eski kayitlarda
     # ise ``payment_date``/``date`` ile tutulur. Bir gun sonu raporu bu
     # alanlardan yalniz birine bagli olmamali.
-    pay_pipeline = [
+    payments = await db.payments.find(
         {
-            "$match": {
-                "tenant_id": tenant_id,
-                "status": {"$ne": "voided"},
-                "$or": [
-                    {"payment_date": business_date},
-                    {"date": business_date},
-                    {"processed_at": {"$regex": f"^{business_date}"}},
-                ],
-            }
+            "tenant_id": tenant_id,
+            "$or": [
+                {"business_date": business_date},
+                {"payment_date": business_date},
+                {"date": business_date},
+                {"processed_at": {"$regex": f"^{business_date}"}},
+                {"created_at": {"$regex": f"^{business_date}"}},
+            ],
         },
-        {
-            "$group": {
-                "_id": {"$ifNull": ["$payment_method", "$method"]},
-                "total": {"$sum": "$amount"},
-            }
-        },
-    ]
-    pay = await db.payments.aggregate(pay_pipeline).to_list(100)
-    payments_by_method = {
-        str(row.get("_id") or "other"): round(float(row.get("total") or 0), 2)
-        for row in pay
-    }
+        {"_id": 0},
+    ).to_list(10000)
+    payments_by_method: dict[str, float] = {}
+    for payment in payments:
+        status = str(payment.get("status") or "paid").lower()
+        if payment.get("voided") or status in {"void", "voided", "failed", "cancelled", "rejected"}:
+            continue
+        method = str(payment.get("payment_method") or payment.get("method") or "other").lower()
+        amount = float(payment.get("amount") or 0)
+        if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
+            amount = -amount
+        payments_by_method[method] = payments_by_method.get(method, 0.0) + amount
+    payments_by_method = {method: round(amount, 2) for method, amount in payments_by_method.items()}
     payments_total = sum(payments_by_method.values())
 
     extra_pipeline = [
@@ -121,6 +119,20 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     ]
     ec = await db.extra_charges.aggregate(extra_pipeline).to_list(1)
     extras_total = float(ec[0]["total"]) if ec else 0.0
+
+    posted_charges = await db.folio_charges.find(
+        {
+            "tenant_id": tenant_id,
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": business_date},
+                {"business_date": {"$exists": False}, "date": {"$regex": f"^{business_date}"}},
+                {"business_date": None, "date": {"$regex": f"^{business_date}"}},
+            ],
+        },
+        {"_id": 0, "total": 1, "amount": 1},
+    ).to_list(10000)
+    revenue_total = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in posted_charges)
 
     # Acik folyolar (bakiye > 0)
     open_folios = await db.folios.count_documents(
@@ -141,8 +153,7 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
 
     # Cap %100: overbooking veya seed verisindeki cakisma durumlarinda
     # raporda imkansiz oran (ornegin %127) gostermemek icin.
-    raw_occ_rate = (occupied / rooms_total * 100.0) if rooms_total else 0.0
-    occ_rate = min(raw_occ_rate, 100.0)
+    occ_rate = metric["occupancy_rate"]
 
     return {
         "business_date": business_date,
@@ -159,7 +170,8 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
         "payments_by_method": payments_by_method,
         "cash_total": round(payments_by_method.get("cash", 0.0), 2),
         "extras_total": round(extras_total, 2),
-        "revenue_total": round(payments_total + extras_total, 2),
+        "revenue_total": round(revenue_total, 2),
+        "revenue_basis": "posted_folio_charges",
         "open_folios": open_folios,
         "open_handovers": open_handovers,
     }
@@ -245,7 +257,7 @@ async def preview(
     _: None = Depends(require_module("pms")),
     _perm=Depends(require_op("view_reports")),
 ):
-    bd = business_date or _today_str()
+    bd = await _report_business_date(current_user.tenant_id, business_date)
     data = await _collect(current_user.tenant_id, bd)
     return data
 
@@ -257,7 +269,7 @@ async def download_pdf(
     _: None = Depends(require_module("pms")),
     _perm=Depends(require_op("view_reports")),
 ):
-    bd = business_date or _today_str()
+    bd = await _report_business_date(current_user.tenant_id, business_date)
     data = await _collect(current_user.tenant_id, bd)
     html = _build_html(data, hotel_name=getattr(current_user, "tenant_name", None) or "Otel")
     pdf_bytes = _html_to_pdf(html)
@@ -278,7 +290,7 @@ async def send_eod(
 ):
     if not payload.recipients:
         raise HTTPException(400, "En az bir alici e-postasi gerekli")
-    bd = payload.business_date or _today_str()
+    bd = await _report_business_date(current_user.tenant_id, payload.business_date)
     data = await _collect(current_user.tenant_id, bd)
     html = _build_html(data, hotel_name=getattr(current_user, "tenant_name", None) or "Otel")
     subject = f"Gun Sonu Raporu — {bd}"

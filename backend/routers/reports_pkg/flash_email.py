@@ -10,12 +10,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security = HTTPBearer()
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.email import send_email
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, booking_occupies_night, load_stay_night_metrics
 
 try:
     from domains.pms.night_audit_module import AuditStatus, AutomaticPosting, NightAuditRecord
@@ -86,50 +88,35 @@ async def get_flash_report(
     Daily Flash Report - Günlük özet rapor
     5 yıldızlı otel yöneticileri için sabah raporu
     """
-    target_date = datetime.now(UTC) if not date else datetime.fromisoformat(date)
-    today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = target_date.replace(hour=23, minute=59, second=59)
+    if date:
+        target_day = datetime.fromisoformat(date[:10]).date()
+    else:
+        business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        target_day = datetime.fromisoformat(business_state["business_date"][:10]).date()
+    target_key = target_day.isoformat()
+    next_key = (target_day + timedelta(days=1)).isoformat()
 
-    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
+    metrics = await load_stay_night_metrics(db, current_user.tenant_id, target_day, target_day, actual_only=True)
+    metric = metrics[0] if metrics else {"occupied_rooms": 0, "total_rooms": 0, "occupancy_rate": 0}
+    total_rooms = metric["total_rooms"]
+    occupied_today = metric["occupied_rooms"]
+    occupancy_rate = metric["occupancy_rate"]
 
-    # Whitelist: gercekten odayi isgal eden statuler. Gecmis tarihli flash icin
-    # checked_out da sayilmali; gelecekteki rezervasyonlar icin confirmed/guaranteed.
-    occupied_today = await db.bookings.count_documents(
+    day_bookings = await db.bookings.find(
         {
             "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            "check_in": {"$lte": today_end.isoformat()},
-            "check_out": {"$gte": today_start.isoformat()},
-        }
-    )
-
-    # Cap %100 (overbooking/seed cakisma korumasi)
-    occupancy_rate = min((occupied_today / total_rooms * 100), 100.0) if total_rooms > 0 else 0
-
-    arrivals_today = await db.bookings.count_documents(
-        {"tenant_id": current_user.tenant_id, "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}, "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}
-    )
-
-    departures_today = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "check_out": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}})
-
-    inhouse_count = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": "checked_in"})
-
-    today_bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}},
-        {"_id": 0, "total_amount": 1, "base_rate": 1, "paid_amount": 1, "charges": 1, "channel": 1, "status": 1},
-    ).to_list(1000)
-
-
-    # BUG FIX: Calculate revenue correctly based on ALL in-house guests, splitting by nights
-    in_house_bookings = await db.bookings.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            "check_in": {"$lte": today_end.isoformat()},
-            "check_out": {"$gte": today_start.isoformat()}
+            "$or": [
+                {"check_in": {"$gte": target_key, "$lt": next_key}},
+                {"check_out": {"$gte": target_key, "$lt": next_key}},
+                {"check_in": {"$lte": target_key}, "check_out": {"$gt": target_key}},
+            ],
         },
-        {"_id": 0, "total_amount": 1, "paid_amount": 1, "charges": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "room_number": 1, "room_id": 1},
-    ).to_list(2000)
+        {"_id": 0},
+    ).to_list(10000)
+    arrivals_today = sum(1 for booking in day_bookings if as_date(booking.get("check_in")) == target_day and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
+    departures_today = sum(1 for booking in day_bookings if as_date(booking.get("check_out")) == target_day and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
+    in_house_bookings = [booking for booking in day_bookings if booking_occupies_night(booking, target_day, actual_only=True)]
+    inhouse_count = occupied_today
 
     room_ids = list({b.get("room_id") for b in in_house_bookings if b.get("room_id")})
     room_map = {}
@@ -148,10 +135,8 @@ async def get_flash_report(
 
     for b in in_house_bookings:
         try:
-            ci_str = b.get("check_in", "").replace("Z", "+00:00")[:10]
-            co_str = b.get("check_out", "").replace("Z", "+00:00")[:10]
-            ci = datetime.fromisoformat(ci_str).date()
-            co = datetime.fromisoformat(co_str).date()
+            ci = as_date(b.get("check_in"))
+            co = as_date(b.get("check_out"))
             nights = max(1, (co - ci).days)
         except Exception:
             nights = 1
@@ -176,36 +161,82 @@ async def get_flash_report(
             amt = float(c.get("amount") or 0) / nights
             charges_by_cat[cat] = charges_by_cat.get(cat, 0) + amt
 
+    # Accounting revenue is authoritative from posted, non-void folio charges.
+    # Reservation totals above are kept only for the per-room explanatory list.
+    posted_charges = await db.folio_charges.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": target_key},
+                {"business_date": {"$exists": False}, "date": {"$regex": f"^{target_key}"}},
+                {"business_date": None, "date": {"$regex": f"^{target_key}"}},
+            ],
+        },
+        {"_id": 0},
+    ).to_list(10000)
+    if posted_charges:
+        charges_by_cat = {}
+        for charge in posted_charges:
+            category = str(charge.get("charge_category") or charge.get("charge_type") or "other").lower()
+            charges_by_cat[category] = charges_by_cat.get(category, 0.0) + float(charge.get("total") or charge.get("amount") or 0)
+        total_revenue = sum(charges_by_cat.values())
+
+    payments = await db.payments.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "$or": [
+                {"business_date": target_key},
+                {"payment_date": target_key},
+                {"date": target_key},
+                {"processed_at": {"$regex": f"^{target_key}"}},
+                {"created_at": {"$regex": f"^{target_key}"}},
+            ],
+        },
+        {"_id": 0},
+    ).to_list(10000)
+    collected = 0.0
+    for payment in payments:
+        status = str(payment.get("status") or "paid").lower()
+        if payment.get("voided") or status in {"void", "voided", "failed", "cancelled", "rejected"}:
+            continue
+        amount = float(payment.get("amount") or 0)
+        if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
+            amount = -amount
+        collected += amount
+
     adr = total_revenue / occupied_today if occupied_today > 0 else 0
     revpar = total_revenue / total_rooms if total_rooms > 0 else 0
-    no_shows = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}, "status": "no_show"})
+    no_shows = sum(1 for booking in day_bookings if as_date(booking.get("check_in")) == target_day and str(booking.get("status") or "").lower() in {"no_show", "noshow"})
+    cancellations = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": {"$in": ["cancelled", "canceled"]}, "created_at": {"$regex": f"^{target_key}"}})
 
-    cancellations = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": "cancelled", "created_at": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}})
-
-    walk_ins = sum(1 for b in today_bookings if b.get("channel") == "walk_in")
+    walk_ins = sum(1 for b in day_bookings if as_date(b.get("check_in")) == target_day and str(b.get("channel") or b.get("booking_source") or "").lower() == "walk_in")
     overstays = 0
 
     fnb_revenue = 0
     try:
         fnb_orders = await db.pos_orders.find(
-            {"tenant_id": current_user.tenant_id, "created_at": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}}, {"_id": 0, "total_amount": 1}
+            {"tenant_id": current_user.tenant_id, "created_at": {"$regex": f"^{target_key}"}, "status": {"$nin": ["cancelled", "voided", "refunded"]}}, {"_id": 0, "total_amount": 1}
         ).to_list(1000)
         fnb_revenue = sum(o.get("total_amount", 0) for o in fnb_orders)
     except Exception:
         pass
 
-    room_revenue = charges_by_cat.get("room", charges_by_cat.get("accommodation", 0))
+    room_revenue = charges_by_cat.get("room", charges_by_cat.get("accommodation", charges_by_cat.get("room_charge", 0)))
     if not charges_by_cat:
         room_revenue = total_revenue
+    posted_fb_revenue = charges_by_cat.get("food", 0) + charges_by_cat.get("beverage", 0) + charges_by_cat.get("f&b", 0)
+    if posted_fb_revenue:
+        fnb_revenue = posted_fb_revenue
     spa_revenue = charges_by_cat.get("spa", 0)
     minibar_revenue = charges_by_cat.get("minibar", 0)
     laundry_revenue = charges_by_cat.get("laundry", 0)
 
-    grand_total = total_revenue + fnb_revenue
+    grand_total = total_revenue if posted_charges else total_revenue + fnb_revenue
     other_revenue = max(0, grand_total - room_revenue - fnb_revenue - spa_revenue - minibar_revenue - laundry_revenue)
 
     return {
-        "date": target_date.strftime("%Y-%m-%d"),
+        "date": target_key,
         "occupancy": {
             "rate": round(occupancy_rate, 2),
             "occupied": occupied_today,
@@ -227,6 +258,7 @@ async def get_flash_report(
             "collected": round(collected, 2),
             "outstanding": round(grand_total - collected, 2),
             "room_revenue_breakdown": room_revenue_breakdown,
+            "basis": "posted_folio_charges" if posted_charges else "allocated_reservation_value",
         },
         "operations": {
             "arrivals": arrivals_today,
@@ -257,12 +289,13 @@ async def get_daily_flash_pdf(
     """
     Export daily flash report as PDF
     """
-    from io import BytesIO
-
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import Response
 
     try:
         flash_data = await get_daily_flash_report(None, current_user)
+        from core.utils import get_tenant_currency
+
+        _, currency_symbol = await get_tenant_currency(current_user.tenant_id)
 
         html_content = f"""
         <html>
@@ -289,10 +322,10 @@ async def get_daily_flash_pdf(
 
             <div class="metric">
                 <h3>Revenue</h3>
-                <p>Room Revenue: ${flash_data["revenue"]["room_revenue"]:.2f}</p>
-                <p>Total Revenue: ${flash_data["revenue"]["total_revenue"]:.2f}</p>
-                <p>ADR: ${flash_data["revenue"]["adr"]:.2f}</p>
-                <p>RevPAR: ${flash_data["revenue"]["rev_par"]:.2f}</p>
+                <p>Room Revenue: {currency_symbol}{flash_data["revenue"]["room_revenue"]:.2f}</p>
+                <p>Total Revenue: {currency_symbol}{flash_data["revenue"]["total_revenue"]:.2f}</p>
+                <p>ADR: {currency_symbol}{flash_data["revenue"]["adr"]:.2f}</p>
+                <p>RevPAR: {currency_symbol}{flash_data["revenue"]["rev_par"]:.2f}</p>
             </div>
 
             <div class="metric">
@@ -305,15 +338,20 @@ async def get_daily_flash_pdf(
         </html>
         """
 
-        # Convert HTML to PDF using simple method (can upgrade to weasyprint later)
-        # For now, return HTML as PDF placeholder
-        pdf_buffer = BytesIO()
-        pdf_buffer.write(html_content.encode("utf-8"))
-        pdf_buffer.seek(0)
-
-        return StreamingResponse(pdf_buffer, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=daily-flash-{datetime.now(UTC).strftime('%Y%m%d')}.pdf"})
+        try:
+            from weasyprint import HTML  # type: ignore
+        except (ImportError, OSError) as exc:
+            raise HTTPException(status_code=503, detail="PDF oluşturucu bu ortamda kullanılamıyor") from exc
+        pdf_bytes = HTML(string=html_content).write_pdf()
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="daily-flash-{flash_data["date"]}.pdf"'},
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}") from e
 
 
 @sub_router.post("/reports/email-daily-flash")
@@ -402,53 +440,57 @@ async def get_daily_flash_report(
     _nocache: bool = Query(False, alias="nocache"),
 ):
     """Daily Flash Report - GM/CFO Dashboard"""
-    target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
-    start_of_day = datetime.combine(target_date, datetime.min.time())
-    end_of_day = datetime.combine(target_date, datetime.max.time())
-
-    # Get total rooms
-    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
-
-    # Get occupancy (whitelist: gercekte odayi isgal eden statuler)
-    occupied_rooms = await db.bookings.count_documents(
-        {
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            "check_in": {"$lte": end_of_day.isoformat()},
-            "check_out": {"$gte": start_of_day.isoformat()},
-        }
-    )
-
-    # Cap %100 (overbooking/seed cakisma korumasi)
-    occupancy_rate = round(min((occupied_rooms / total_rooms * 100), 100.0) if total_rooms > 0 else 0, 2)
-
-    # Get arrivals & departures count
-    arrivals = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "check_in": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}})
-
-    departures = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "check_out": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}})
+    if date_str:
+        target_date = datetime.fromisoformat(date_str[:10]).date()
+    else:
+        state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        target_date = datetime.fromisoformat(state["business_date"][:10]).date()
+    day_key = target_date.isoformat()
+    next_key = (target_date + timedelta(days=1)).isoformat()
+    metrics = await load_stay_night_metrics(db, current_user.tenant_id, target_date, target_date, actual_only=True)
+    metric = metrics[0] if metrics else {"occupied_rooms": 0, "total_rooms": 0, "occupancy_rate": 0}
+    total_rooms = metric["total_rooms"]
+    occupied_rooms = metric["occupied_rooms"]
+    occupancy_rate = metric["occupancy_rate"]
+    movement_bookings = await db.bookings.find(
+        {"tenant_id": current_user.tenant_id, "$or": [{"check_in": {"$gte": day_key, "$lt": next_key}}, {"check_out": {"$gte": day_key, "$lt": next_key}}]},
+        {"_id": 0, "check_in": 1, "check_out": 1, "status": 1},
+    ).to_list(10000)
+    arrivals = sum(1 for booking in movement_bookings if as_date(booking.get("check_in")) == target_date and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
+    departures = sum(1 for booking in movement_bookings if as_date(booking.get("check_out")) == target_date and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
 
     # Note: Revenue is calculated from folio charges, not bookings directly
 
     # Night-audit charges are posted after the business day closes.  Their
     # timestamp therefore belongs to the next calendar day; report by the
     # accounting business date instead.
-    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "business_date": target_date.isoformat(), "voided": {"$ne": True}}).to_list(10000)
+    charges = await db.folio_charges.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": day_key},
+                {"business_date": {"$exists": False}, "date": {"$regex": f"^{day_key}"}},
+                {"business_date": None, "date": {"$regex": f"^{day_key}"}},
+            ],
+        }
+    ).to_list(10000)
 
-    total_revenue = sum(c["total"] for c in charges)
+    total_revenue = sum(float(c.get("total") or c.get("amount") or 0) for c in charges)
 
     # Revenue breakdown by category
-    room_revenue = sum(c["total"] for c in charges if c["charge_category"] == "room")
-    fb_revenue = sum(c["total"] for c in charges if c["charge_category"] in ["food", "beverage"])
+    room_revenue = sum(float(c.get("total") or c.get("amount") or 0) for c in charges if c.get("charge_category") in ["room", "accommodation", "room_charge"])
+    fb_revenue = sum(float(c.get("total") or c.get("amount") or 0) for c in charges if c.get("charge_category") in ["food", "beverage", "f&b"])
     other_revenue = total_revenue - room_revenue - fb_revenue
 
     # Calculate ADR and RevPAR
     adr = round(room_revenue / occupied_rooms, 2) if occupied_rooms > 0 else 0
-    rev_par = round(total_revenue / total_rooms, 2) if total_rooms > 0 else 0
+    rev_par = round(room_revenue / total_rooms, 2) if total_rooms > 0 else 0
 
     return {
-        "date": target_date.isoformat(),
+        "date": day_key,
         "occupancy": {"occupied_rooms": occupied_rooms, "total_rooms": total_rooms, "occupancy_rate": occupancy_rate},
-        "movements": {"arrivals": arrivals, "departures": departures, "stayovers": occupied_rooms - arrivals},
+        "movements": {"arrivals": arrivals, "departures": departures, "stayovers": max(occupied_rooms - arrivals, 0)},
         "revenue": {
             "total_revenue": round(total_revenue, 2),
             "room_revenue": round(room_revenue, 2),
@@ -456,6 +498,7 @@ async def get_daily_flash_report(
             "other_revenue": round(other_revenue, 2),
             "adr": adr,
             "rev_par": rev_par,
+            "basis": "posted_folio_charges",
         },
     }
 
@@ -644,55 +687,63 @@ async def get_email_report_history(limit: int = 20, credentials: HTTPAuthorizati
 
 
 @sub_router.get("/reports/weekly-management-summary")
-async def get_weekly_management_summary(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_weekly_management_summary(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
+):
     """Get weekly management summary report"""
-    current_user = await get_current_user(credentials)
-
-    today = datetime.now(UTC)
-    week_start = today - timedelta(days=7)
+    state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    week_end = datetime.fromisoformat(str(state["business_date"])[:10]).date()
+    week_start = week_end - timedelta(days=6)
+    end_exclusive = week_end + timedelta(days=1)
 
     # Get key metrics for the week
-    total_bookings = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "created_at": {"$gte": week_start.isoformat()}})
-
-
-    room_ids = list({b.get("room_id") for b in in_house_bookings if b.get("room_id")})
-    room_map = {}
-    if room_ids:
-        rooms = await db.rooms.find(
-            {"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}},
-            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1, "name": 1}
-        ).to_list(None)
-        for r in rooms:
-            room_map[r.get("id")] = r.get("room_number") or r.get("room_no") or r.get("name") or "?"
-
-    total_revenue = 0
-    async for booking in db.bookings.find({"tenant_id": current_user.tenant_id, "check_in": {"$gte": week_start.date().isoformat()}}):
-        total_revenue += booking.get("total_amount", 0)
-
-    # B: gerçek haftalık ortalama doluluk (occupied_avg bug fix — eskiden daima 0 dönüyordu)
-    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
-    occ_pcts = []
-    if total_rooms > 0:
-        for d in range(7):
-            day = (week_start + timedelta(days=d)).date().isoformat()
-            occupied = await db.bookings.count_documents(
-                {"tenant_id": current_user.tenant_id, "check_in": {"$lte": day}, "check_out": {"$gt": day}, "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}}
-            )
-            occ_pcts.append(occupied / total_rooms * 100)
-    occupied_avg = sum(occ_pcts) / len(occ_pcts) if occ_pcts else 0
+    total_bookings = await db.bookings.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "created_at": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()},
+            "status": {"$nin": list(NON_COMMERCIAL_STATUSES)},
+        }
+    )
+    charges = await db.folio_charges.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}},
+                {"business_date": {"$exists": False}, "date": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()}},
+                {"business_date": None, "date": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()}},
+            ],
+        },
+        {"_id": 0, "total": 1, "amount": 1},
+    ).to_list(50000)
+    total_revenue = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in charges)
+    metrics = await load_stay_night_metrics(db, current_user.tenant_id, week_start, week_end, actual_only=True)
+    occupied_avg = sum(row["occupancy_rate"] for row in metrics) / len(metrics) if metrics else 0
 
     # Get maintenance tasks completed
-    completed_tasks = await db.maintenance_tasks.count_documents({"tenant_id": current_user.tenant_id, "status": "completed", "completed_at": {"$gte": week_start.isoformat()}})
+    completed_tasks = await db.maintenance_tasks.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": "completed",
+            "completed_at": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()},
+        }
+    )
 
     # B: gerçek misafir memnuniyeti (haftalık review rating ortalaması); review yoksa fail-closed (null)
-    sat_docs = await db.reviews.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": week_start.isoformat()}}, {"_id": 0, "rating": 1}).to_list(2000)
+    sat_docs = await db.reviews.find(
+        {"tenant_id": current_user.tenant_id, "created_at": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()}},
+        {"_id": 0, "rating": 1},
+    ).to_list(2000)
     sat_ratings = [r.get("rating") for r in sat_docs if isinstance(r.get("rating"), (int, float))]
     guest_satisfaction = round(sum(sat_ratings) / len(sat_ratings), 2) if sat_ratings else None
 
     return {
-        "week_ending": today.date().isoformat(),
+        "week_start": week_start.isoformat(),
+        "week_ending": week_end.isoformat(),
         "total_bookings": total_bookings,
         "total_revenue": round(total_revenue, 2),
+        "revenue_basis": "posted_folio_charges",
         "avg_occupancy_pct": round(occupied_avg, 2),
         "completed_maintenance": completed_tasks,
         "guest_satisfaction": guest_satisfaction,
