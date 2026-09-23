@@ -179,6 +179,7 @@ async def check_in_guest(
     return result.data
 
 
+@router.post("/pms/reservations/{booking_id}/checkout")
 @router.post("/frontdesk/checkout/{booking_id}")
 async def check_out_guest(
     booking_id: str,

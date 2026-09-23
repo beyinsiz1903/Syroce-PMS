@@ -136,9 +136,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     return () => { loadGenerationRef.current += 1; };
   }, [loadData]);
 
-  const finishOperation = useCallback(async (operation) => {
+  const finishOperation = useCallback(async (operation, operationBookingId = bookingId) => {
     if (typeof onOperationComplete === 'function') {
-      await onOperationComplete({ bookingId, operation });
+      await onOperationComplete({ bookingId: operationBookingId, operation });
       return;
     }
     await loadData();
@@ -816,12 +816,17 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     }
                     if (!await confirmDialog({ message: 'Çıkış yapılsın mı?', variant: 'danger' })) return;
                     try {
+                      // Mutasyonlarda ekranda gösterilen kısa RES-... referansını
+                      // veya liste state'indeki eski kimliği değil, full-detail
+                      // yanıtının kanonik rezervasyon kimliğini kullan. Böylece
+                      // detayı açılan kayıt ile çıkış yapılan kayıt aynıdır.
+                      const checkoutBookingId = data?.booking?.id || bookingId;
                       // Bakiye summary'den biliniyor → açık bakiye ASLA çevrimdışı
                       // kuyruğa alınmaz (ödeme çevrimdışı olamaz). Sıfır bakiye +
                       // ağ hatası → kuyruğa alınır; backend yine 402 ile guard eder.
-                      const result = await performCheckout(bookingId, {
+                      const result = await performCheckout(checkoutBookingId, {
                         balance: rawBalance,
-                        onlineRequest: () => axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`),
+                        onlineRequest: () => axios.post(`/pms/reservations/${checkoutBookingId}/checkout?auto_close_folios=true`),
                       });
                       if (result.blocked) {
                         toast.error('Açık bakiye var. Çıkış için lütfen önce ödeme alınız.');
@@ -835,7 +840,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       if (typeof total === 'number' && total > 0.01) {
                         toast.warning(`Açık bakiye ile çıkış yapıldı: ${total.toFixed(2)}`);
                       }
-                      await finishOperation('checked_out');
+                      await finishOperation('checked_out', checkoutBookingId);
                     } catch (e) {
                       const detail = e.response?.data?.detail || e.message;
                       if (e.response?.status === 402) {
