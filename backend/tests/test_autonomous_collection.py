@@ -303,6 +303,14 @@ def _seed_no_show(
 
 
 def _run(db, provider, *, tenant=TENANT):
+    # Financial writes are stamped with the hotel's open PMS day.  Seed the
+    # authoritative setting just like a real tenant so this unit test remains
+    # focused on autonomous collection rather than business-date bootstrap.
+    if not any(row.get("tenant_id") == tenant for row in db.tenant_settings.docs):
+        db.tenant_settings.docs.append(
+            {"tenant_id": tenant, "business_date": BUSINESS_DATE}
+        )
+
     async def _patched(_db, _tenant):
         return provider
     orig = ac.get_provider_for_tenant
