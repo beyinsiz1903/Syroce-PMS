@@ -218,7 +218,7 @@ export const FnBSection = ({
         <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrency(s.fnb_revenue)}</p>
         <p className="text-sm text-slate-500 mt-2">Bugünkü toplam yiyecek & içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrency(s.today_revenue)}</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrency(s.today_room_revenue)}</p></div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">F&B Payı</p><p className="font-bold text-slate-900">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>
         </div>
       </CardContent>

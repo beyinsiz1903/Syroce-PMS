@@ -343,6 +343,8 @@ const BasicReports = ({
       </div>
     </>;
   const s = data?.summary || {};
+  const periodMetrics = data?.period_metrics || {};
+  const periodActivity = data?.period_activity || {};
   const pc = data?.period_comparison || {};
   const roomTypeOcc = data?.room_type_occupancy || {};
   const roomStatus = data?.room_status || {};
@@ -463,17 +465,17 @@ const BasicReports = ({
       case 'flash_report':
         return <FlashReportContent showDatePicker={false} isEmbedded={true} targetDate={reportPeriod === 'daily' && reportDate ? reportDate : new Date().toISOString().split('T')[0]} />;
       case 'overview':
-        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
+        return <OverviewSection data={data} s={s} pc={pc} periodMetrics={periodMetrics} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
       case 'revenue':
-        return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} />;
+        return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} reportPeriod={reportPeriod} />;
       case 'adr_revpar':
-        return <AdrRevparSection data={data} s={s} pc={pc} />;
+        return <AdrRevparSection data={data} s={s} pc={pc} periodMetrics={periodMetrics} reportPeriod={reportPeriod} />;
       case 'forecast_reports':
         return <div data-testid="section-forecast-reports"><ForecastReportsPage /></div>;
       case 'period':
         return <PeriodSection data={data} pc={pc} />;
       case 'occupancy':
-        return <OccupancySection data={data} s={s} />;
+        return <OccupancySection data={data} s={s} periodMetrics={periodMetrics} reportPeriod={reportPeriod} />;
       case 'room_types':
         return <RoomTypesSection roomTypeData={roomTypeData} />;
       case 'guests':
@@ -485,7 +487,7 @@ const BasicReports = ({
       case 'front_office':
         return <FrontOfficeSection s={s} todayArrivals={todayArrivals} todayDepartures={todayDepartures} reportDate={selectedDate} />;
       case 'noshow':
-        return <NoShowSection s={s} noShowGuests={noShowGuests} cancelledGuests={cancelledGuests} />;
+        return <NoShowSection s={{ ...s, ...periodActivity }} noShowGuests={noShowGuests} cancelledGuests={cancelledGuests} />;
       case 'room_status':
         return <RoomStatusSection roomStatus={roomStatus} roomStatusData={roomStatusData} />;
       case 'housekeeping':
@@ -517,7 +519,7 @@ const BasicReports = ({
       case 'expenses':
         return <div data-testid="section-expenses"><CostAnalyticsView /></div>;
       default:
-        return <OverviewSection data={data} s={s} pc={pc} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
+        return <OverviewSection data={data} s={s} pc={pc} periodMetrics={periodMetrics} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
     }
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);

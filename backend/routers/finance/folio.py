@@ -754,7 +754,8 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
 
         # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge eklenince)
         if cache:
-            cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
 
         # Acente webhook: rezervasyon güncellendi (yeni charge → toplam değişti)
         from routers.webhook_retry_service import schedule_emit_reservation_updated
@@ -922,6 +923,8 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
             "payment_added",
             {"payment_id": payment.id, "amount": float(payment.amount), "method": method_str},
         )
+        if cache:
+            cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
 
         return payment
     except HTTPException:
@@ -940,7 +943,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
 
 
 @router.get("/folio/reports/revenue-by-category")
-@cached(ttl=300, key_prefix="folio_revenue_by_category")  # 5 dk cache; tarih+tenant key
+@cached(ttl=300, key_prefix="folio_revenue_by_category_v2")  # 5 dk cache; tarih+tenant key
 async def revenue_by_category(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -962,50 +965,67 @@ async def revenue_by_category(
     if dt_from > dt_to:
         raise HTTPException(status_code=400, detail="date_from > date_to olamaz")
 
-    # charge.date hem ISO string hem BSON datetime olarak depolanmış olabilir.
-    # ISO 8601 string'ler lexicographic olarak sıralanabilir; type-mismatch'ten
-    # kaçınmak için $expr + $cond ile her iki tipi de tek pipeline'da karşıla.
-    pipeline = [
-        {
-            "$match": {
-                "tenant_id": current_user.tenant_id,
-                "voided": {"$ne": True},
-                "$expr": {
-                    "$let": {
-                        "vars": {
-                            "d": {
-                                "$cond": [
-                                    {"$eq": [{"$type": "$date"}, "string"]},
-                                    {"$dateFromString": {"dateString": "$date", "onError": None, "onNull": None}},
-                                    "$date",
-                                ]
-                            }
-                        },
-                        "in": {
-                            "$and": [
-                                {"$ne": ["$$d", None]},
-                                {"$gte": ["$$d", dt_from]},
-                                {"$lte": ["$$d", dt_to]},
-                            ]
-                        },
-                    }
-                },
-            }
-        },
-        {
-            "$group": {
-                "_id": "$charge_category",
-                "count": {"$sum": 1},
-                "subtotal": {"$sum": {"$ifNull": ["$subtotal", "$amount"]}},
-                "discount": {"$sum": {"$ifNull": ["$discount_amount", 0]}},
-                "net": {"$sum": "$amount"},
-                "vat": {"$sum": {"$ifNull": ["$vat_amount", 0]}},
-                "city_tax": {"$sum": {"$ifNull": ["$tax_amount", 0]}},
-                "total": {"$sum": {"$ifNull": ["$total", "$amount"]}},
-            }
-        },
-    ]
-    rows_raw = await db.folio_charges.aggregate(pipeline).to_list(100)
+    projection = {
+        "_id": 0,
+        "business_date": 1,
+        "charge_date": 1,
+        "date": 1,
+        "posted_at": 1,
+        "created_at": 1,
+        "charge_category": 1,
+        "charge_type": 1,
+        "category": 1,
+        "subtotal": 1,
+        "discount_amount": 1,
+        "amount": 1,
+        "charge_amount": 1,
+        "quantity": 1,
+        "vat_amount": 1,
+        "tax_amount": 1,
+        "total": 1,
+    }
+    query = {"tenant_id": current_user.tenant_id, "voided": {"$ne": True}}
+    folio_rows, extra_rows = await asyncio.gather(
+        db.folio_charges.find(query, projection).to_list(50000),
+        db.extra_charges.find(query, projection).to_list(50000),
+    )
+
+    def report_day(row: dict) -> date | None:
+        value = row.get("business_date") or row.get("charge_date") or row.get("date") or row.get("posted_at") or row.get("created_at")
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        try:
+            return date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            return None
+
+    start_day, end_day = dt_from.date(), dt_to.date()
+    grouped: dict[str, dict[str, float | int | str]] = {}
+    for row, is_extra in [*((item, False) for item in folio_rows), *((item, True) for item in extra_rows)]:
+        row_day = report_day(row)
+        if row_day is None or not start_day <= row_day <= end_day:
+            continue
+        category = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "other").strip().lower()
+        quantity = float(row.get("quantity") or 1)
+        unit_amount = float(row.get("charge_amount") if row.get("charge_amount") is not None else row.get("amount") or 0)
+        total = float(row.get("total") if row.get("total") is not None else unit_amount * quantity)
+        subtotal = float(row.get("subtotal") if row.get("subtotal") is not None else (total if is_extra else unit_amount))
+        net = total if is_extra else float(row.get("amount") or total)
+        bucket = grouped.setdefault(
+            category,
+            {"_id": category, "count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
+        )
+        bucket["count"] = int(bucket["count"]) + 1
+        bucket["subtotal"] = float(bucket["subtotal"]) + subtotal
+        bucket["discount"] = float(bucket["discount"]) + float(row.get("discount_amount") or 0)
+        bucket["net"] = float(bucket["net"]) + net
+        bucket["vat"] = float(bucket["vat"]) + float(row.get("vat_amount") or 0)
+        bucket["city_tax"] = float(bucket["city_tax"]) + float(row.get("tax_amount") or 0)
+        bucket["total"] = float(bucket["total"]) + total
+
+    rows_raw = list(grouped.values())
 
     rows = []
     totals = {"count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0}
@@ -1136,7 +1156,8 @@ async def void_charge(folio_id: str, charge_id: str, void_reason: str, current_u
 
     # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void edilince)
     if cache:
-        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
+        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
+        cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
 
     # Acente webhook: rezervasyon güncellendi (charge iptal → toplam değişti)
     if charge.get("booking_id"):

@@ -9,6 +9,7 @@ const OverviewSection = ({
   data,
   s,
   pc,
+  periodMetrics,
   roomStatusData,
   reportPeriod
 }) => {
@@ -19,16 +20,17 @@ const OverviewSection = ({
   const isDaily = reportPeriod === 'daily';
   const labelSuffix = isDaily ? '(Seçili Gün)' : '(30 Gün)';
   const prevLabelSuffix = isDaily ? 'Önceki gün: ' : 'Önceki ay: ';
+  const metrics = periodMetrics || s;
 
   return <div className="space-y-6" data-testid="section-overview">
     <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" icon={LayoutDashboard} actions={<StatusBadge intent="success">Canlı</StatusBadge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <KPICard title={`Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="success" />
-      <KPICard title="Ortalama ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
-      <KPICard title="RevPAR" value={s.revpar} icon={BarChart3} color="warning" />
-      <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="info" />
+      <KPICard title={`Ortalama ADR ${labelSuffix}`} value={metrics.adr} prevValue={pc.prev_month_adr} prevLabel={prevLabelSuffix + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
+      <KPICard title={`RevPAR ${labelSuffix}`} value={metrics.revpar} icon={BarChart3} color="warning" />
+      <KPICard title={`Doluluk Oranı ${labelSuffix}`} value={formatPercent(metrics.occupancy_percentage)} icon={Hotel} color="info" />
       <KPICard title="Toplam Rezervasyon" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'Önceki ay: ' + (pc.prev_month_bookings || 0)} icon={BookOpen} color="info" />
-      <KPICard title="F&B Geliri (Bugün)" value={s.fnb_revenue} icon={Utensils} color="warning" />
+      <KPICard title="Yeme & İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} icon={Utensils} color="warning" />
     </div>
 
     <Card>

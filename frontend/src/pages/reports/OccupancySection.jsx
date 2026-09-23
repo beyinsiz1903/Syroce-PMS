@@ -8,17 +8,23 @@ import {
 } from 'recharts';
 import { formatPercent, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
 
-const OccupancySection = ({ data, s }) => (
+const OccupancySection = ({ data, s, periodMetrics, reportPeriod }) => {
+  const isDaily = reportPeriod === 'daily';
+  const metrics = periodMetrics || s;
+  const occupied = metrics.occupied_room_nights ?? s.occupied_rooms ?? 0;
+  const capacity = metrics.available_room_nights ?? s.total_rooms ?? 0;
+  const periodLabel = isDaily ? 'Seçili Gün' : '30 Gün';
+  return (
   <div className="space-y-6" data-testid="section-occupancy">
     <SectionHeader title="Doluluk Raporu" description="Doluluk oranları ve trendler" actions={<Badge className="bg-sky-100 text-sky-700 border-sky-200">Canlı</Badge>} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Toplam Oda" value={s.total_rooms} icon={Hotel} color="blue" />
-      <KPICard title="Dolu Oda" value={s.occupied_rooms} icon={BedDouble} color="green" />
-      <KPICard title="Doluluk" value={formatPercent(s.occupancy_percentage)} icon={TrendingUp} color="purple" />
-      <KPICard title="Müsait" value={(s.total_rooms || 0) - (s.occupied_rooms || 0)} icon={CheckCircle2} color="cyan" />
+      <KPICard title={isDaily ? 'Satılabilir Oda' : 'Satılabilir Oda-Gecesi'} value={capacity} icon={Hotel} color="blue" />
+      <KPICard title={isDaily ? 'Dolu Oda' : 'Dolu Oda-Gecesi'} value={occupied} icon={BedDouble} color="green" />
+      <KPICard title={`Doluluk (${periodLabel})`} value={formatPercent(metrics.occupancy_percentage)} icon={TrendingUp} color="purple" />
+      <KPICard title="Boş Kapasite" value={Math.max(capacity - occupied, 0)} icon={CheckCircle2} color="cyan" />
     </div>
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm">Doluluk Oranı (30 Gün)</CardTitle><CardDescription>Dolu oda sayısı ve doluluk yüzdesi</CardDescription></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Doluluk Oranı ({periodLabel})</CardTitle><CardDescription>Dolu oda sayısı ve doluluk yüzdesi</CardDescription></CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={320}>
           <ComposedChart data={data?.occupancy_trend || []}>
@@ -35,6 +41,7 @@ const OccupancySection = ({ data, s }) => (
       </CardContent>
     </Card>
   </div>
-);
+  );
+};
 
 export default OccupancySection;

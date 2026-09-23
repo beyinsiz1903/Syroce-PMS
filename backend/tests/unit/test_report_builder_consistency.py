@@ -188,3 +188,49 @@ async def test_fetch_report_data_applies_relations_dates_and_computed_filter(mon
             "total_amount": 2000,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_revenue_builder_includes_reservation_card_extra_charges(monkeypatch):
+    db = _DB(
+        bookings=_Collection([{"id": "b1", "tenant_id": "t1", "room_id": "r1"}]),
+        rooms=_Collection([{"id": "r1", "tenant_id": "t1", "room_number": "103"}]),
+        guests=_Collection([]),
+        folio_charges=_Collection([]),
+        extra_charges=_Collection(
+            [
+                {
+                    "id": "coffee-1",
+                    "tenant_id": "t1",
+                    "booking_id": "b1",
+                    "description": "Türk kahvesi",
+                    "category": "beverage",
+                    "amount": 100,
+                    "quantity": 2,
+                    "total": 200,
+                    "business_date": "2026-09-23",
+                    "voided": False,
+                }
+            ]
+        ),
+        payments=_Collection([]),
+    )
+    monkeypatch.setattr("routers.report_builder._db", db)
+    config = ReportConfig(
+        data_source="revenue",
+        columns=["description", "charge_type", "total", "room_number", "date"],
+        date_from="2026-09-23",
+        date_to="2026-09-23",
+    )
+
+    rows = await fetch_report_data(config, "t1", has_pii=True)
+
+    assert rows == [
+        {
+            "description": "Türk kahvesi",
+            "charge_type": "beverage",
+            "total": 200,
+            "room_number": "103",
+            "date": "2026-09-23",
+        }
+    ]

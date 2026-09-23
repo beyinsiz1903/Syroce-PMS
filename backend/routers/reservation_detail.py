@@ -2652,7 +2652,11 @@ async def early_checkin(
             "complimentary_original_amount": data.extra_charge if full_comp else None,
             "created_at": datetime.now(UTC).isoformat(),
         }
+        await stamp_open_business_date(db, tid, charge)
         await db.extra_charges.insert_one({**charge})
+        if _gb_cache:
+            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports:basic_dashboard:v2")
 
     await _log_activity(
         tid,
@@ -2722,7 +2726,11 @@ async def late_checkout(
             "complimentary_original_amount": data.extra_charge if full_comp else None,
             "created_at": datetime.now(UTC).isoformat(),
         }
+        await stamp_open_business_date(db, tid, charge)
         await db.extra_charges.insert_one({**charge})
+        if _gb_cache:
+            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports:basic_dashboard:v2")
 
     await _log_activity(
         tid,
@@ -2956,7 +2964,16 @@ async def add_extra_charge_detail(
         "created_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    # Report and cashier date filters are based on the hotel's open business
+    # date, not the server's UTC calendar day.  Without this stamp a charge
+    # posted after midnight (before night audit) disappears into the next
+    # day's reports.
+    await stamp_open_business_date(db, tid, charge)
     await db.extra_charges.insert_one({**charge})
+
+    if _gb_cache:
+        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+        _gb_cache.invalidate_tenant_cache(tid, "reports:basic_dashboard:v2")
 
     await _log_activity(
         tid,

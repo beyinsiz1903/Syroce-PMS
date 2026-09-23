@@ -12,6 +12,19 @@ const CATEGORY_LABELS = {
   room: 'Konaklama',
   food: 'Yiyecek',
   beverage: 'İçecek',
+  alcohol: 'Alkollü İçecek',
+  alcoholic_beverage: 'Alkollü İçecek',
+  appetizer: 'Başlangıç',
+  dessert: 'Tatlı',
+  drink: 'İçecek',
+  fb: 'Yeme & İçecek',
+  fnb: 'Yeme & İçecek',
+  'f&b': 'Yeme & İçecek',
+  food_beverage: 'Yeme & İçecek',
+  food_and_beverage: 'Yeme & İçecek',
+  cafe: 'Kafe',
+  restaurant: 'Restoran',
+  room_service: 'Oda Servisi',
   minibar: 'Minibar',
   spa: 'Spa',
   laundry: 'Çamaşır',
@@ -26,18 +39,19 @@ const fmt = n => Number(n || 0).toLocaleString('tr-TR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
-const isoDaysAgo = n => {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-};
 const isoToday = () => new Date().toISOString().slice(0, 10);
-const CategoryRevenueCard = () => {
+const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
   const {
     t
   } = useTranslation();
-  const [from, setFrom] = useState(isoDaysAgo(30));
-  const [to, setTo] = useState(isoToday());
+  const initialTo = reportDate || isoToday();
+  const initialFrom = reportPeriod === 'daily' ? initialTo : (() => {
+    const date = new Date(`${initialTo}T12:00:00`);
+    date.setDate(date.getDate() - 29);
+    return date.toISOString().slice(0, 10);
+  })();
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -61,6 +75,10 @@ const CategoryRevenueCard = () => {
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    setFrom(initialFrom);
+    setTo(initialTo);
+  }, [initialFrom, initialTo]);
   const rows = data?.rows || [];
   const totals = data?.totals;
   return <Card>
@@ -132,21 +150,23 @@ const RevenueSection = ({
   data,
   s,
   pc,
-  roomTypeData
+  roomTypeData,
+  reportPeriod
 }) => {
   const {
     t
   } = useTranslation();
+  const isDaily = reportPeriod === 'daily';
   return <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title={t('cm.pages_reports_RevenueSection.bugunku_gelir')} value={s.today_revenue} icon={DollarSign} color="green" />
-      <KPICard title={t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={pc.week_revenue} icon={Calendar} color="blue" />
-      <KPICard title={t('cm.pages_reports_RevenueSection.aylik_gelir')} value={pc.month_revenue} prevValue={pc.prev_month_revenue} icon={TrendingUp} color="purple" />
-      <KPICard title="F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />
+      <KPICard title="Seçili Gün Toplam Geliri" value={s.today_revenue} icon={DollarSign} color="green" />
+      <KPICard title={isDaily ? 'Seçili Gün Oda Geliri' : t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={isDaily ? s.today_room_revenue : pc.week_revenue} icon={Calendar} color="blue" />
+      <KPICard title={isDaily ? 'Önceki Gün Geliri' : t('cm.pages_reports_RevenueSection.aylik_gelir')} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} prevValue={isDaily ? undefined : pc.prev_month_revenue} icon={TrendingUp} color="purple" />
+      <KPICard title="Yeme & İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} icon={Utensils} color="amber" />
     </div>
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.30_gunluk_gelir_trendi')}</CardTitle></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">{isDaily ? 'Seçili Gün Gelir Trendi' : t('cm.pages_reports_RevenueSection.30_gunluk_gelir_trendi')}</CardTitle></CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={320}>
           <ComposedChart data={data?.revenue_trend || []}>
@@ -168,7 +188,7 @@ const RevenueSection = ({
         </ResponsiveContainer>
       </CardContent>
     </Card>
-    <CategoryRevenueCard />
+    <CategoryRevenueCard reportDate={data?.date} reportPeriod={reportPeriod} />
     {roomTypeData.length > 0 && <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.oda_tipi_bazli_gelir')}</CardTitle></CardHeader>
         <CardContent>

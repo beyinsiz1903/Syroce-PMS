@@ -25,7 +25,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
-from cache_manager import cached  # v95
+from cache_manager import cache, cached  # v95
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
@@ -391,9 +392,14 @@ async def add_extra_charge(
     # Create extra charge
     extra_charge = ExtraCharge(booking_id=booking_id, tenant_id=current_user.tenant_id, charge_name=data.charge_name, charge_amount=data.charge_amount, notes=data.notes)
 
-    await db.extra_charges.insert_one(extra_charge.model_dump())
+    extra_charge_doc = extra_charge.model_dump()
+    await stamp_open_business_date(db, current_user.tenant_id, extra_charge_doc)
+    await db.extra_charges.insert_one(extra_charge_doc)
+    if cache:
+        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
+        cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
 
-    return {"success": True, "message": "Extra charge added successfully", "extra_charge": extra_charge.model_dump()}
+    return {"success": True, "message": "Extra charge added successfully", "extra_charge": extra_charge_doc}
 
 
 @router.post("/reservations/multi-room")
