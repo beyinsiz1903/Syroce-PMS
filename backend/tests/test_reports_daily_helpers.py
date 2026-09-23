@@ -1,0 +1,74 @@
+import os
+
+os.environ.setdefault("JWT_SECRET", "test-secret-key-that-is-long-enough-for-tests")
+
+from routers.reports_pkg.dashboard_lists import (
+    _booking_occupied_on,
+    _date_part,
+    _guest_identity,
+    _guest_link_active_on,
+    _payment_is_effective,
+    _payment_method,
+)
+
+
+def test_occupied_night_uses_half_open_stay_interval():
+    booking = {
+        "status": "checked_out",
+        "check_in": "2026-09-21T14:00:00+03:00",
+        "check_out": "2026-09-23T11:00:00+03:00",
+    }
+
+    assert _booking_occupied_on(booking, "2026-09-21") is True
+    assert _booking_occupied_on(booking, "2026-09-22") is True
+    assert _booking_occupied_on(booking, "2026-09-23") is False
+
+
+def test_confirmed_booking_is_arrival_not_in_house():
+    booking = {
+        "status": "confirmed",
+        "check_in": "2026-09-22",
+        "check_out": "2026-09-24",
+    }
+
+    assert _booking_occupied_on(booking, "2026-09-22") is False
+
+
+def test_actual_checkout_prevents_false_historical_occupancy():
+    booking = {
+        "status": "checked_out",
+        "check_in": "2026-09-20",
+        "check_out": "2026-09-25",
+        "checked_in_at": "2026-09-20T15:00:00Z",
+        "checked_out_at": "2026-09-22T09:00:00Z",
+    }
+
+    assert _booking_occupied_on(booking, "2026-09-21") is True
+    assert _booking_occupied_on(booking, "2026-09-22") is False
+
+
+def test_guest_identity_supports_canonical_and_legacy_fields():
+    assert _guest_identity({"id_number": "11111111111"}, {}) == ("11111111111", None)
+    assert _guest_identity({"id_type": "passport", "id_number": "P1234"}, {}) == ("P1234", "P1234")
+    assert _guest_identity({}, {"tc_identity_number": "22222222222", "passport_number": "P9"}) == (
+        "22222222222",
+        "P9",
+    )
+
+
+def test_payment_normalization_excludes_voided_and_failed_rows():
+    assert _payment_method({"payment_method": "credit_card", "method": "cash"}) == "credit_card"
+    assert _payment_is_effective({"status": "paid", "voided": False}) is True
+    assert _payment_is_effective({"status": "failed"}) is False
+    assert _payment_is_effective({"status": "paid", "voided": True}) is False
+
+
+def test_date_part_accepts_date_only_and_datetime_values():
+    assert _date_part("2026-09-23") == "2026-09-23"
+    assert _date_part("2026-09-23T14:15:00+03:00") == "2026-09-23"
+
+
+def test_additional_guest_link_respects_its_checkout_date():
+    link = {"checkout_date": "2026-09-23T09:00:00Z"}
+    assert _guest_link_active_on(link, "2026-09-22") is True
+    assert _guest_link_active_on(link, "2026-09-23") is False

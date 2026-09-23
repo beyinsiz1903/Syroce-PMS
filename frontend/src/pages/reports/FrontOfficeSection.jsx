@@ -6,9 +6,10 @@ import { SectionHeader } from './ReportHelpers';
 const FrontOfficeSection = ({
   s,
   todayArrivals,
-  todayDepartures
+  todayDepartures,
+  reportDate
 }) => <div className="space-y-6" data-testid="section-front-office">
-    <SectionHeader title="Giriş / Çıkış Raporu" description="Bugünkü giriş, çıkış ve oteldeki misafirler" />
+    <SectionHeader title="Giriş / Çıkış Raporu" description={`${reportDate} tarihli giriş, çıkış ve konaklama hareketleri`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Beklenen Giriş" value={s.arrivals || 0} icon={ArrowUpRight} color="blue" />
       <KPICard title="Beklenen Çıkış" value={s.departures || 0} icon={ArrowDownRight} color="amber" />
@@ -16,7 +17,7 @@ const FrontOfficeSection = ({
       <KPICard title="Müsait Oda" value={(s.total_rooms || 0) - (s.occupied_rooms || 0)} icon={CheckCircle2} color="cyan" />
     </div>
     {todayArrivals.length > 0 && <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Bugünkü Beklenen Girişler ({todayArrivals.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Beklenen / Gerçekleşen Girişler ({todayArrivals.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-sky-50"><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Çıkış</th><th className="text-right py-2 px-3 text-xs font-semibold text-sky-700">Tutar</th></tr></thead>
@@ -25,7 +26,7 @@ const FrontOfficeSection = ({
         </CardContent>
       </Card>}
     {todayDepartures.length > 0 && <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Bugünkü Çıkışlar ({todayDepartures.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Beklenen / Gerçekleşen Çıkışlar ({todayDepartures.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-amber-50"><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Durum</th><th className="text-right py-2 px-3 text-xs font-semibold text-amber-700">Tutar</th></tr></thead>
@@ -33,6 +34,6 @@ const FrontOfficeSection = ({
           </table></div>
         </CardContent>
       </Card>}
-    {todayArrivals.length === 0 && todayDepartures.length === 0 && <Card><CardContent className="py-12"><EmptyState icon={ArrowLeftRight} message="Bugün için giriş/çıkış hareketi yok" /></CardContent></Card>}
+    {todayArrivals.length === 0 && todayDepartures.length === 0 && <Card><CardContent className="py-12"><EmptyState icon={ArrowLeftRight} message="Seçili tarih için giriş/çıkış hareketi yok" /></CardContent></Card>}
   </div>;
 export default FrontOfficeSection;

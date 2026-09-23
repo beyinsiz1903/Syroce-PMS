@@ -285,12 +285,13 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
               <CardContent className="pt-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-lg font-bold">Booking #{booking.id.substring(0, 8).toUpperCase()}</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-lg font-bold">{booking.guest_name || 'Misafir Bilgisi Eksik'}</h3>
                       {getVIPBadge(booking)}
                       {getGroupBadge(booking)}
                       {getOnlineCheckinBadge(booking)}
                     </div>
+                    <div className="text-xs text-gray-500 mb-2">Rezervasyon #{booking.id.substring(0, 8).toUpperCase()}</div>
                     
                     <div className="grid grid-cols-3 gap-4 text-sm">
                       <div>

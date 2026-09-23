@@ -22,7 +22,9 @@ import FrontOfficeSection from './reports/FrontOfficeSection';
 import { NoShowSection, RoomStatusSection, HousekeepingSection, PaymentsSection, DepartmentsSection, FnBSection } from './reports/OperationsSection';
 import { ChannelsSection, SourcesSection } from './reports/ChannelsSection';
 import { OfficialSection, PoliceSection } from './reports/OfficialSection';
+import ManagerDailyReports from './reports/ManagerDailyReports';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 const BACKEND_URL = "";
 const REPORT_MENU = [{
   type: 'header',
@@ -139,6 +141,26 @@ const REPORT_MENU = [{
   icon: CreditCard,
   desc: 'Tahsilat ve ödeme yöntemleri'
 }, {
+  id: 'front_cashier',
+  label: 'Ön Kasa Raporu',
+  icon: DollarSign,
+  desc: 'Günlük ön kasa özeti'
+}, {
+  id: 'cash_movements',
+  label: 'Kasa Hareketleri',
+  icon: ArrowLeftRight,
+  desc: 'Günlük tahsilat hareketleri'
+}, {
+  id: 'rate_control',
+  label: 'Oda Fiyat Kontrol Listesi',
+  icon: BedDouble,
+  desc: 'Satılan ve tanımlı fiyat farkları'
+}, {
+  id: 'daily_analysis',
+  label: 'Günlük Analiz Raporu',
+  icon: BarChart3,
+  desc: 'Doluluk, gelir ve hareket özeti'
+}, {
   id: 'expenses',
   label: 'Gider Analitiği',
   icon: TrendingUp,
@@ -185,9 +207,11 @@ const BasicReports = ({
   onLogout
 }) => {
   const { t, i18n } = useTranslation();
+  const businessDate = useBusinessDate();
   const [data, setData] = useState(null);
   const [reportPeriod, setReportPeriod] = useState("monthly");
-  const [reportDate, setReportDate] = useState("");
+  const [reportDate, setReportDate] = useState(businessDate);
+  const reportDateEditedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -207,16 +231,20 @@ const BasicReports = ({
     });
   }, [searchParams, setSearchParams]);
   const [searchGuest, setSearchGuest] = useState('');
-  const [officialDate, setOfficialDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [officialDate, setOfficialDate] = useState(businessDate);
+  const officialDateEditedRef = useRef(false);
   const [officialRows, setOfficialRows] = useState([]);
   const [officialLoading, setOfficialLoading] = useState(false);
   const [officialError, setOfficialError] = useState(null);
   const [officialSearch, setOfficialSearch] = useState('');
+  useEffect(() => {
+    if (!reportDateEditedRef.current && businessDate) setReportDate(businessDate);
+    if (!officialDateEditedRef.current && businessDate) setOfficialDate(businessDate);
+  }, [businessDate]);
   const needsDashboard = useMemo(() => !SELF_CONTAINED_SECTIONS.has(activeSection), [activeSection]);
-  const inFlightRef = useRef(false);
+  const requestSequenceRef = useRef(0);
   const fetchData = useCallback(async () => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+    const requestSequence = ++requestSequenceRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -226,12 +254,11 @@ const BasicReports = ({
       const json = await fetchJsonWithRetry(BACKEND_URL + `/api/reports/basic-dashboard?${urlParams.toString()}`, {
         credentials: 'include',
       });
-      setData(json);
+      if (requestSequence === requestSequenceRef.current) setData(json);
     } catch (err) {
-      setError(err && err.status ? 'Veri yüklenemedi' : err.message || 'Veri yüklenemedi');
+      if (requestSequence === requestSequenceRef.current) setError(err && err.status ? 'Veri yüklenemedi' : err.message || 'Veri yüklenemedi');
     } finally {
-      setLoading(false);
-      inFlightRef.current = false;
+      if (requestSequence === requestSequenceRef.current) setLoading(false);
     }
   }, [reportPeriod, reportDate]);
 
@@ -322,6 +349,7 @@ const BasicReports = ({
   const bookingSources = data?.booking_sources || {};
   const countryDist = data?.country_distribution || {};
   const payments = data?.payments || {};
+  const dailyLists = data?.daily_lists || {};
   const guestList = data?.guest_list || [];
   const hk = data?.housekeeping || {};
   const maint = data?.maintenance || {};
@@ -351,9 +379,9 @@ const BasicReports = ({
     count: value,
     revenue: bookingSources.revenue?.[key] || 0
   }));
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayArrivals = guestList.filter(g => g.check_in?.startsWith(todayStr) && ['confirmed', 'guaranteed'].includes(g.status));
-  const todayDepartures = guestList.filter(g => g.check_out?.startsWith(todayStr));
+  const selectedDate = data?.date || reportDate;
+  const todayArrivals = dailyLists.arrivals || [];
+  const todayDepartures = dailyLists.departures || [];
   const noShowGuests = guestList.filter(g => g.status === 'no_show');
   const cancelledGuests = guestList.filter(g => g.status === 'cancelled');
   const filteredGuests = guestList.filter(g => {
@@ -361,13 +389,12 @@ const BasicReports = ({
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
   });
-    const inHouseGuests = guestList.filter(g => {
-    // Check if the target date is between check_in and check_out
-    const targetDate = reportDate || new Date().toISOString().split('T')[0];
+  const fallbackInHouseGuests = guestList.filter(g => {
     const ci = g.check_in ? g.check_in.substring(0, 10) : '';
     const co = g.check_out ? g.check_out.substring(0, 10) : '';
-    return ci && co && ci <= targetDate && co >= targetDate && g.status !== 'cancelled' && g.status !== 'no_show';
-  }).filter(g => {
+    return ci && co && ci <= selectedDate && selectedDate < co && ['checked_in', 'checked_out'].includes(g.status);
+  });
+  const selectedInHouseGuests = (Array.isArray(dailyLists.in_house) ? dailyLists.in_house : fallbackInHouseGuests).filter(g => {
     if (!searchGuest) return true;
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
@@ -452,27 +479,35 @@ const BasicReports = ({
       case 'guests':
         return <div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Tüm Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'inhouse':
-        return <div data-testid="section-inhouse"><GuestTable guests={inHouseGuests} title="Konaklayanlar (In-House)" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} title={`Konaklayanlar (In-House) · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'nationality':
         return <NationalitySection countryData={countryData} />;
       case 'front_office':
-        return <FrontOfficeSection s={s} todayArrivals={todayArrivals} todayDepartures={todayDepartures} />;
+        return <FrontOfficeSection s={s} todayArrivals={todayArrivals} todayDepartures={todayDepartures} reportDate={selectedDate} />;
       case 'noshow':
         return <NoShowSection s={s} noShowGuests={noShowGuests} cancelledGuests={cancelledGuests} />;
       case 'room_status':
         return <RoomStatusSection roomStatus={roomStatus} roomStatusData={roomStatusData} />;
       case 'housekeeping':
-        return <HousekeepingSection hk={hk} />;
+        return <HousekeepingSection hk={hk} reportDate={selectedDate} />;
       case 'channels':
         return <ChannelsSection sourceData={sourceData} />;
       case 'sources':
         return <SourcesSection sourceData={sourceData} />;
       case 'payments':
-        return <PaymentsSection payments={payments} paymentData={paymentData} />;
+        return <PaymentsSection payments={payments} paymentData={paymentData} reportDate={selectedDate} />;
+      case 'front_cashier':
+      case 'cash_movements':
+      case 'rate_control':
+      case 'daily_analysis':
+        return <ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />;
       case 'trial_balance':
         return <div data-testid="section-trial-balance"><TrialBalancePage /></div>;
       case 'official':
-        return <OfficialSection officialDate={officialDate} setOfficialDate={setOfficialDate} officialRows={officialRows} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
+        return <OfficialSection officialDate={officialDate} setOfficialDate={value => {
+          officialDateEditedRef.current = true;
+          setOfficialDate(value);
+        }} officialRows={officialRows} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
       case 'police':
         return <PoliceSection filteredGuests={filteredGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />;
       case 'departments':
@@ -553,14 +588,19 @@ const BasicReports = ({
                   <option value="daily">Günlük (Seçili Tarih)</option>
                 </select>
                 )}
-                {(reportPeriod === 'daily' || activeSection === 'flash_report') && (
-                  <input 
-                    type="date" 
-                    className="border rounded px-2 py-1 text-sm bg-white print:hidden"
-                    value={reportDate || new Date().toISOString().split('T')[0]}
-                    onChange={(e) => setReportDate(e.target.value)}
+                <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
+                  Rapor tarihi
+                  <input
+                    type="date"
+                    className="border rounded px-2 py-1 text-sm bg-white text-gray-900"
+                    value={reportDate}
+                    onChange={(e) => {
+                      reportDateEditedRef.current = true;
+                      setReportDate(e.target.value);
+                    }}
+                    data-testid="report-date-input"
                   />
-                )}
+                </label>
                 <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
                 </Button>
