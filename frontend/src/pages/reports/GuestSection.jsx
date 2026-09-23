@@ -33,7 +33,7 @@ const GuestTable = ({
           </tr></thead>
           <tbody>
             {guests.length > 0 ? guests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-sky-50/30 transition-colors">
-                <td className="py-2 px-3"><div className="font-medium text-gray-900">{g.guest_name || '-'}</div><div className="text-[11px] text-gray-400">{g.guest_email || ''}</div></td>
+                <td className="py-2 px-3"><div className="font-medium text-gray-900">{g.guest_name || '-'}</div><div className="text-[11px] text-gray-400">{g.guest_email && g.guest_email.includes('@') ? g.guest_email : ''}</div></td>
                 <td className="py-2 px-3 font-medium">{g.room_number || '-'}</td>
                 {showId && <td className="py-2 px-3 text-xs font-mono">{g.id_number || g.passport_number || '-'}</td>}
                 <td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td>

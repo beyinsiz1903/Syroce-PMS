@@ -76,6 +76,8 @@ async def get_official_guest_list(
             "guest_name": 1,
             "room_number": 1,
             "room_id": 1,
+            "id_number": 1,
+            "passport_number": 1,
             "check_in": 1,
             "check_out": 1,
             "adults": 1,
@@ -89,6 +91,17 @@ async def get_official_guest_list(
     )
 
     bookings = await bookings_cursor.to_list(5000)
+
+    # Fetch rooms to map room_id to room_number for official report
+    room_ids = list({b.get("room_id") for b in bookings if b.get("room_id")})
+    room_map = {}
+    if room_ids:
+        rooms = await db.rooms.find(
+            {"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1, "name": 1}
+        ).to_list(None)
+        for r in rooms:
+            room_map[str(r.get("id"))] = str(r.get("room_number") or r.get("room_no") or r.get("name") or "?").strip()
 
     # Misafir bilgilerini toplamak için guest_id set'i
     guest_ids = {b["guest_id"] for b in bookings if b.get("guest_id")}
@@ -125,12 +138,12 @@ async def get_official_guest_list(
         row = {
             "booking_id": b.get("id"),
             "guest_name": full_name,
-            "national_id": _mask_pii((g or {}).get("national_id")) if not has_pii else (g or {}).get("national_id"),
-            "passport_number": _mask_pii((g or {}).get("passport_number")) if not has_pii else (g or {}).get("passport_number"),
+            "national_id": _mask_pii((g or {}).get("national_id") or b.get("id_number")) if not has_pii else ((g or {}).get("national_id") or b.get("id_number")),
+            "passport_number": _mask_pii((g or {}).get("passport_number") or b.get("passport_number")) if not has_pii else ((g or {}).get("passport_number") or b.get("passport_number")),
             "country": (g or {}).get("country"),
             "city": (g or {}).get("city"),
             "date_of_birth": (g or {}).get("date_of_birth"),
-            "room_number": b.get("room_number"),
+            "room_number": str(b.get("room_number") or room_map.get(str(b.get("room_id"))) or "?").strip() or "?",
             "check_in": b.get("check_in"),
             "check_out": b.get("check_out"),
             "adults": b.get("adults", 1),
@@ -278,6 +291,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, fnb_revenue = results
 
+    # FIX: Room Mapping
+    room_map = {}
+    for r in rooms:
+        room_map[str(r.get("id"))] = r.get("room_number") or r.get("room_no") or r.get("name") or "?"
+
     active_rooms = [room for room in rooms if room.get("is_active") is not False]
     total_rooms = len(active_rooms)
     room_types = {}
@@ -326,7 +344,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     "guest_name": bk.get("guest_name"),
                     "guest_email": bk.get("guest_email"),
                     "guest_phone": bk.get("guest_phone"),
-                    "room_number": bk.get("room_number"),
+                    "room_number": str(bk.get("room_number") or room_map.get(str(bk.get("room_id"))) or "?").strip() or "?",
                     "room_type": bk.get("room_type"),
                     "check_in": ci,
                     "check_out": co,
