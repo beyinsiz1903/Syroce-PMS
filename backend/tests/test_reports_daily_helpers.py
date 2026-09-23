@@ -11,6 +11,7 @@ from routers.reports_pkg.dashboard_lists import (
     _payment_is_collection,
     _payment_is_effective,
     _payment_method,
+    _period_performance,
 )
 
 
@@ -92,3 +93,29 @@ def test_additional_guest_link_respects_its_checkout_date():
     link = {"checkout_date": "2026-09-23T09:00:00Z"}
     assert _guest_link_active_on(link, "2026-09-22") is True
     assert _guest_link_active_on(link, "2026-09-23") is False
+
+
+def test_period_performance_uses_accrued_revenue_until_all_room_nights_are_posted():
+    metrics = [
+        {"date": "2026-09-22", "occupied_rooms": 2, "total_rooms": 10, "revenue": 2000},
+        {"date": "2026-09-23", "occupied_rooms": 1, "total_rooms": 10, "revenue": 1500},
+    ]
+
+    result = _period_performance(metrics, {"2026-09-22": 2000})
+
+    assert result["revenue_source"] == "accrued"
+    assert result["room_revenue"] == 3500
+    assert result["posting_gap_days"] == ["2026-09-23"]
+    assert result["adr"] == 1166.67
+    assert result["revpar"] == 175
+
+
+def test_period_performance_uses_posted_revenue_when_period_is_complete():
+    metrics = [{"date": "2026-09-23", "occupied_rooms": 2, "total_rooms": 10, "revenue": 2000}]
+
+    result = _period_performance(metrics, {"2026-09-23": 2400})
+
+    assert result["revenue_source"] == "posted"
+    assert result["room_revenue"] == 2400
+    assert result["adr"] == 1200
+    assert result["revpar"] == 240

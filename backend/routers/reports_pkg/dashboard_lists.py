@@ -48,6 +48,27 @@ sub_router = APIRouter()
 NON_CASH_PAYMENT_METHODS = {"discount", "city_ledger", "complimentary", "correction", "ar"}
 IN_HOUSE_STATUSES = {"checked_in", "checked_out"}
 ARRIVAL_STATUSES = {"confirmed", "guaranteed", "checked_in", "checked_out"}
+ROOM_CHARGE_CATEGORIES = {"room", "accommodation", "room_charge"}
+FNB_CHARGE_CATEGORIES = {
+    "alcohol",
+    "alcoholic_beverage",
+    "appetizer",
+    "bar",
+    "beverage",
+    "cafe",
+    "dessert",
+    "drink",
+    "fb",
+    "f&b",
+    "fnb",
+    "food",
+    "food_and_beverage",
+    "food_beverage",
+    "mini_bar",
+    "minibar",
+    "restaurant",
+    "room_service",
+}
 
 
 def _date_part(value) -> str:
@@ -145,6 +166,42 @@ def _nightly_booking_rate(booking: dict, target_day: str, daily_rate: dict | Non
 def _guest_link_active_on(link: dict, target_date: str) -> bool:
     checkout_date = _date_part(link.get("checkout_date"))
     return not checkout_date or checkout_date > target_date
+
+
+def _period_performance(metric_rows: list[dict], room_charges_by_day: dict[str, float]) -> dict:
+    """Build one internally consistent occupancy/ADR/RevPAR period.
+
+    Financial postings are authoritative only when every occupied day in the
+    requested period has a room posting.  Before night audit, the current day
+    commonly has no posting yet; returning zero ADR in that case is misleading,
+    so the canonical accrued room-night revenue is used until posting completes.
+    """
+    occupied_room_nights = sum(int(row.get("occupied_rooms") or 0) for row in metric_rows)
+    available_room_nights = sum(int(row.get("total_rooms") or 0) for row in metric_rows)
+    accrued_room_revenue = round(sum(float(row.get("revenue") or 0) for row in metric_rows), 2)
+    posted_room_revenue = round(sum(float(room_charges_by_day.get(str(row.get("date")), 0) or 0) for row in metric_rows), 2)
+    posting_gap_days = [
+        str(row.get("date"))
+        for row in metric_rows
+        if int(row.get("occupied_rooms") or 0) > 0
+        and float(room_charges_by_day.get(str(row.get("date")), 0) or 0) == 0
+    ]
+    use_posted = bool(occupied_room_nights) and not posting_gap_days
+    room_revenue = posted_room_revenue if use_posted else accrued_room_revenue
+    return {
+        "start_date": str(metric_rows[0].get("date")) if metric_rows else None,
+        "end_date": str(metric_rows[-1].get("date")) if metric_rows else None,
+        "occupied_room_nights": occupied_room_nights,
+        "available_room_nights": available_room_nights,
+        "occupancy_percentage": round(occupied_room_nights / available_room_nights * 100, 2) if available_room_nights else 0,
+        "posted_room_revenue": posted_room_revenue,
+        "accrued_room_revenue": accrued_room_revenue,
+        "room_revenue": round(room_revenue, 2),
+        "revenue_source": "posted" if use_posted else "accrued",
+        "posting_gap_days": posting_gap_days,
+        "adr": round(room_revenue / occupied_room_nights, 2) if occupied_room_nights else 0,
+        "revpar": round(room_revenue / available_room_nights, 2) if available_room_nights else 0,
+    }
 
 
 @sub_router.get("/reports/official-guest-list")
@@ -343,7 +400,7 @@ async def get_basic_reports_dashboard(
     return await _basic_dashboard_impl(current_user, has_pii, date, period)
 
 
-@cached(ttl=120, key_prefix="reports:basic_dashboard", role_aware=True)
+@cached(ttl=120, key_prefix="reports:basic_dashboard:v2", role_aware=True)
 async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: str = None, period: str = "monthly"):
     if target_date:
         try:
@@ -374,14 +431,36 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         last_year_start = trend_start - timedelta(days=365)
         last_year_end = today_start - timedelta(days=364)
 
+    charge_range_start = min(last_year_start, previous_start, trend_start).date().isoformat()
+    charge_range_start_dt = datetime.fromisoformat(charge_range_start).replace(tzinfo=UTC)
 
     # ALL queries in parallel
-    async def get_fnb():
+    async def get_fnb_orders():
         try:
-            orders = await db.pos_orders.find({"tenant_id": tenant_id, "created_at": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}}, {"_id": 0, "total_amount": 1}).to_list(1000)
-            return sum(o.get("total_amount", 0) for o in orders)
+            return await db.pos_orders.find(
+                {
+                    "tenant_id": tenant_id,
+                    "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
+                    "$or": [
+                        {"business_date": {"$gte": charge_range_start, "$lte": target_day}},
+                        {"closed_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                        {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                    ],
+                },
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "business_date": 1,
+                    "closed_at": 1,
+                    "created_at": 1,
+                    "total_amount": 1,
+                    "grand_total": 1,
+                    "status": 1,
+                    "payment_status": 1,
+                },
+            ).to_list(5000)
         except Exception:
-            return 0.0
+            return []
 
     results = await asyncio.gather(
         db.rooms.find({"tenant_id": tenant_id}).to_list(1000),
@@ -392,6 +471,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     {"check_in": {"$gte": trend_start.date().isoformat(), "$lt": next_day.date().isoformat()}},
                     {"check_out": {"$gte": trend_start.date().isoformat(), "$lt": next_day.date().isoformat()}},
                     {"check_in": {"$lt": trend_start.date().isoformat()}, "check_out": {"$gt": target_day}},
+                    {"status": "cancelled", "cancelled_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
+                    {"status": "cancelled", "updated_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
                 ],
             },
             {
@@ -403,6 +484,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "booking_source": 1,
                 "room_type": 1,
                 "created_at": 1,
+                "updated_at": 1,
+                "cancelled_at": 1,
                 "id": 1,
                 "guest_id": 1,
                 "guest_name": 1,
@@ -508,9 +591,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             },
             {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "status": 1, "allow_sell": 1},
         ).to_list(10000),
-        get_fnb(),
+        get_fnb_orders(),
     )
-    rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, room_blocks, fnb_revenue = results
+    rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, room_blocks, fnb_orders = results
 
     loaded_booking_ids = {str(booking.get("id")) for booking in all_bk if booking.get("id")}
     missing_payment_booking_ids = list(
@@ -544,7 +627,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     )
     daily_rates_by_booking = {str(row.get("booking_id")): row for row in daily_rate_rows}
 
-    charge_range_start = min(last_year_start, previous_start, trend_start).date().isoformat()
     period_charges = await db.folio_charges.find(
         {
             "tenant_id": tenant_id,
@@ -553,10 +635,92 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 {"business_date": {"$gte": charge_range_start, "$lte": target_day}},
                 {"business_date": {"$exists": False}, "date": {"$gte": charge_range_start, "$lt": next_day.date().isoformat()}},
                 {"business_date": None, "date": {"$gte": charge_range_start, "$lt": next_day.date().isoformat()}},
+                {"business_date": {"$exists": False}, "date": {"$gte": charge_range_start_dt, "$lt": next_day}},
+                {"business_date": None, "date": {"$gte": charge_range_start_dt, "$lt": next_day}},
+                {"business_date": {"$exists": False}, "date": {"$exists": False}, "created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                {"business_date": {"$exists": False}, "date": {"$exists": False}, "created_at": {"$gte": charge_range_start_dt, "$lt": next_day}},
             ],
         },
-        {"_id": 0, "business_date": 1, "date": 1, "total": 1, "amount": 1, "charge_category": 1, "charge_type": 1, "booking_id": 1},
+        {
+            "_id": 0,
+            "id": 1,
+            "business_date": 1,
+            "date": 1,
+            "created_at": 1,
+            "total": 1,
+            "amount": 1,
+            "charge_category": 1,
+            "charge_type": 1,
+            "booking_id": 1,
+            "source_pos_order_id": 1,
+        },
     ).to_list(50000)
+    period_charges = [
+        {**row, "date": row.get("business_date") or row.get("date") or row.get("created_at")}
+        for row in period_charges
+    ]
+
+    # Reservation-card extras live in ``extra_charges`` until they are moved to
+    # a folio.  Reports previously ignored that collection entirely, which made
+    # room-posted coffee/minibar/etc. disappear from both revenue and F&B.
+    extra_charge_rows = await db.extra_charges.find(
+        {
+            "tenant_id": tenant_id,
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": {"$gte": charge_range_start, "$lte": target_day}},
+                {"charge_date": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                {"charge_date": {"$gte": charge_range_start_dt, "$lt": next_day}},
+                {"date": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                {"date": {"$gte": charge_range_start_dt, "$lt": next_day}},
+                {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                {"created_at": {"$gte": charge_range_start_dt, "$lt": next_day}},
+            ],
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "business_date": 1,
+            "charge_date": 1,
+            "date": 1,
+            "created_at": 1,
+            "total": 1,
+            "charge_amount": 1,
+            "amount": 1,
+            "category": 1,
+            "charge_category": 1,
+            "charge_type": 1,
+            "booking_id": 1,
+        },
+    ).to_list(20000)
+    period_charges.extend(
+        {
+            **row,
+            "date": row.get("business_date") or row.get("charge_date") or row.get("date") or row.get("created_at"),
+            "total": row.get("total") if row.get("total") is not None else row.get("charge_amount", row.get("amount", 0)),
+            "charge_category": row.get("charge_category") or row.get("category") or row.get("charge_type") or "extra",
+            "_source": "extra_charge",
+        }
+        for row in extra_charge_rows
+    )
+    represented_pos_order_ids = {
+        str(charge.get("source_pos_order_id"))
+        for charge in period_charges
+        if charge.get("source_pos_order_id")
+    }
+    period_charges.extend(
+        {
+            "id": f"pos:{order.get('id')}",
+            "date": order.get("business_date") or order.get("closed_at") or order.get("created_at"),
+            "total": order.get("total_amount") or order.get("grand_total") or 0,
+            "charge_category": "fnb",
+            "source_pos_order_id": order.get("id"),
+            "_source": "direct_pos",
+        }
+        for order in fnb_orders
+        if str(order.get("id") or "") not in represented_pos_order_ids
+        and str(order.get("status") or "").lower() in {"closed", "completed", "served", "paid"}
+    )
 
     def charge_amount(charge: dict) -> float:
         return float(charge.get("total") or charge.get("amount") or 0)
@@ -632,19 +796,19 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     active_rooms = [room for room in rooms if room.get("is_active") is not False]
     total_rooms = len(active_rooms)
     room_types = {}
-    for r in rooms:
+    for r in active_rooms:
         rt = r.get("room_type", "Standard")
         room_types[rt] = room_types.get(rt, 0) + 1
 
     room_status_counts = {"available": 0, "occupied": 0, "dirty": 0, "maintenance": 0, "out_of_order": 0}
-    for r in rooms:
+    for r in active_rooms:
         st = r.get("current_status", r.get("status", "available"))
-        room_status_counts[st] = room_status_counts.get(st, room_status_counts.get("available", 0)) + 1
+        room_status_counts[st] = room_status_counts.get(st, 0) + 1
 
     ts_s, ts_e = today_start.isoformat(), today_end.isoformat()
-    ms_s = month_start.isoformat()
     month_day, week_day = month_start.date().isoformat(), week_start.date().isoformat()
     occupied_today = arrivals = departures = no_shows = cancellations = today_revenue = 0
+    period_arrivals = period_departures = period_no_shows = period_cancellations = 0
     recent_bookings = []
     week_bookings = []
     month_bookings = []
@@ -657,7 +821,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     for bk in all_bk:
         ci, co, status = bk.get("check_in", ""), bk.get("check_out", ""), bk.get("status", "")
         amt = bk.get("total_amount", 0) or 0
-        created = bk.get("created_at", "")
+        created = str(bk.get("created_at") or "")
         ci_day, co_day = _date_part(ci), _date_part(co)
         if ci_day == target_day and status in ARRIVAL_STATUSES:
             arrivals += 1
@@ -671,16 +835,30 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             no_shows += 1
         if status == "cancelled" and created >= ts_s and created <= ts_e:
             cancellations += 1
-        if created >= ms_s:
+        if trend_start.date().isoformat() <= ci_day <= target_day:
+            if status in ARRIVAL_STATUSES:
+                period_arrivals += 1
+            if status == "no_show":
+                period_no_shows += 1
+        if trend_start.date().isoformat() <= co_day <= target_day and status not in ("cancelled", "no_show"):
+            period_departures += 1
+        cancellation_day = _date_part(bk.get("cancelled_at") or bk.get("updated_at") or created)
+        if status == "cancelled" and trend_start.date().isoformat() <= cancellation_day <= target_day:
+            period_cancellations += 1
+        if month_day <= ci_day <= target_day and status in ALL_REVENUE_STATUSES:
             recent_bookings.append(bk)
         if ci_day >= week_day and status in ALL_REVENUE_STATUSES:
             week_bookings.append(bk)
-        # P1 fix: ay listesi — cancelled / no_show da dahil edilmeli; aksi
-        # halde "No-Show & İptaller" sekmesi recent_guests_data filtresinden
-        # geçemediği için boş görünür.
-        if ci_day >= month_day and status in (*ALL_REVENUE_STATUSES, "cancelled", "no_show"):
+        # Rapor dönemi listeleri aynı tarih tanımını kullanır. İptaller giriş
+        # tarihine değil iptal hareketinin tarihine aittir.
+        include_in_period_list = False
+        if month_day <= ci_day <= target_day and status in (*ALL_REVENUE_STATUSES, "no_show"):
+            include_in_period_list = True
             if status in ALL_REVENUE_STATUSES:
                 month_bookings.append(bk)
+        elif status == "cancelled" and month_day <= cancellation_day <= target_day:
+            include_in_period_list = True
+        if include_in_period_list:
             recent_guests_data.extend(booking_guest_rows(bk))
 
     # Summary uses occupied rooms, while lists contain every occupant.
@@ -701,19 +879,41 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         category = str(charge.get("charge_category") or charge.get("charge_type") or "").lower()
         if category in {"room", "accommodation", "room_charge"}:
             room_charges_by_day[charge_day] = room_charges_by_day.get(charge_day, 0.0) + amount
-    today_revenue = round(charges_by_day.get(target_day, 0.0), 2)
     today_room_revenue = round(room_charges_by_day.get(target_day, 0.0), 2)
-    occupancy_pct = today_metric.get("occupancy_rate", 0)
-    adr = round(today_room_revenue / occupied_today, 2) if occupied_today else 0
+    daily_period_charges = charges_between(today_start, next_day)
+    fnb_revenue = round(sum(
+        charge_amount(charge)
+        for charge in daily_period_charges
+        if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() in FNB_CHARGE_CATEGORIES
+    ), 2)
+    daily_performance = _period_performance([today_metric] if today_metric else [], room_charges_by_day)
+    period_performance = _period_performance(metric_rows, room_charges_by_day)
+    daily_non_room_revenue = sum(
+        charge_amount(charge)
+        for charge in daily_period_charges
+        if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES
+    )
+    today_revenue = round(daily_non_room_revenue + daily_performance["room_revenue"], 2)
+    occupancy_pct = daily_performance["occupancy_percentage"]
+    adr = daily_performance["adr"]
     available_rooms_today = int(today_metric.get("total_rooms", total_rooms) or 0)
-    revpar = round(today_room_revenue / available_rooms_today, 2) if available_rooms_today else 0
+    revpar = daily_performance["revpar"]
     occupancy_trend = [
         {"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "occupancy": row["occupancy_rate"], "rooms_occupied": row["occupied_rooms"]} for row in metric_rows
     ]
-    revenue_trend = [
-        {"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "revenue": round(charges_by_day.get(row["date"], 0.0), 2)}
-        for row in metric_rows
-    ]
+    revenue_trend = []
+    for row in metric_rows:
+        day = row["date"]
+        posted_total = charges_by_day.get(day, 0.0)
+        posted_room = room_charges_by_day.get(day, 0.0)
+        effective_room = posted_room if posted_room else float(row.get("revenue") or 0)
+        revenue_trend.append(
+            {
+                "date": day,
+                "label": datetime.fromisoformat(day).strftime("%d %b"),
+                "revenue": round(posted_total - posted_room + effective_room, 2),
+            }
+        )
 
     tasks_by_room: dict[str, list[dict]] = {}
     for task in hk_tasks:
@@ -766,33 +966,65 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
 
     source_distribution = {}
     source_revenue = {}
+    source_booking_ids: dict[str, set[str]] = {}
     for bk in recent_bookings:
         src = bk.get("booking_source", "direct")
-        source_distribution[src] = source_distribution.get(src, 0) + 1
-        source_revenue[src] = source_revenue.get(src, 0) + (bk.get("total_amount", 0) or 0)
+        source_booking_ids.setdefault(src, set()).add(str(bk.get("id") or f"arrival:{len(source_booking_ids.get(src, set()))}"))
+    booking_source_by_id = {
+        str(booking.get("id")): booking.get("booking_source") or "direct"
+        for booking in all_bk
+        if booking.get("id")
+    }
+    for charge in charges_between(trend_start, today_start + timedelta(days=1)):
+        src = booking_source_by_id.get(str(charge.get("booking_id")))
+        if src:
+            source_revenue[src] = source_revenue.get(src, 0) + charge_amount(charge)
+            source_booking_ids.setdefault(src, set()).add(str(charge.get("booking_id")))
+    source_distribution = {src: len(ids) for src, ids in source_booking_ids.items()}
 
     report_end = today_start + timedelta(days=1)
-    week_revenue = sum(charge_amount(charge) for charge in charges_between(week_start, report_end))
-    month_revenue = sum(charge_amount(charge) for charge in charges_between(trend_start, report_end))
+    week_charges = charges_between(week_start, report_end)
+    month_charges = charges_between(trend_start, report_end)
+    week_metrics = [row for row in metric_rows if row["date"] >= week_start.date().isoformat()]
+    week_performance = _period_performance(week_metrics, room_charges_by_day)
+    week_non_room_revenue = sum(
+        charge_amount(charge)
+        for charge in week_charges
+        if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES
+    )
+    month_non_room_revenue = sum(
+        charge_amount(charge)
+        for charge in month_charges
+        if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES
+    )
+    week_revenue = week_non_room_revenue + week_performance["room_revenue"]
+    month_revenue = month_non_room_revenue + period_performance["room_revenue"]
 
-    # P1 fix: Milliyet dağılımı tüm zamanlar yerine SADECE bu ayın
-    # rezervasyonlarından (month_bookings) türetilir. Booking üstünde
-    # nationality yoksa guest dokümanından lookup yapılır.
-    guests_by_id = {g.get("id"): g for g in all_guests if g.get("id")}
+    # Milliyet dağılımı rezervasyon sayısını değil, rapor dönemindeki tüm
+    # konaklayan kişileri (ek misafirler dahil) sayar.
     country_dist = {}
-    for bk in month_bookings:
-        c = bk.get("nationality")
-        if not c:
-            g = guests_by_id.get(bk.get("guest_id"))
-            if g:
-                c = g.get("nationality") or g.get("country")
-        c = c or "Belirtilmemiş"
+    for guest_row in recent_guests_data:
+        c = guest_row.get("nationality") or "Belirtilmemiş"
         country_dist[c] = country_dist.get(c, 0) + 1
 
+    blocked_room_ids = {
+        str(block.get("room_id"))
+        for block in room_blocks
+        if block.get("room_id")
+        and _date_part(block.get("start_date")) <= target_day
+        and (not block.get("end_date") or target_day < _date_part(block.get("end_date")))
+    }
+    occupied_room_ids = {
+        str(booking.get("room_id"))
+        for booking in all_bk
+        if booking.get("room_id") and _booking_occupied_on(booking, target_day)
+    }
     room_type_occ = {}
-    for rt_name, rt_count in room_types.items():
-        rt_rooms = [r for r in rooms if r.get("room_type") == rt_name]
-        rt_occ = len([r for r in rt_rooms if r.get("current_status") == "occupied"])
+    for rt_name in room_types:
+        rt_rooms = [r for r in active_rooms if r.get("room_type", "Standard") == rt_name and str(r.get("id")) not in blocked_room_ids]
+        rt_room_ids = {str(r.get("id")) for r in rt_rooms if r.get("id")}
+        rt_count = len(rt_rooms)
+        rt_occ = len(rt_room_ids & occupied_room_ids)
         room_type_occ[rt_name] = {"total": rt_count, "occupied": rt_occ, "occupancy": round((rt_occ / rt_count * 100), 1) if rt_count > 0 else 0, "revenue": 0}
     booking_room_types = {str(booking.get("id")): booking.get("room_type", "Standard") for booking in all_bk if booking.get("id")}
     for charge in charges_between(trend_start, report_end):
@@ -839,23 +1071,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         )
     payment_methods = {k: round(v, 2) for k, v in payment_methods.items()}
 
-    daily_charges = await db.folio_charges.find(
-        {
-            "tenant_id": tenant_id,
-            "voided": {"$ne": True},
-            **accounting_day_match(
-                target_day,
-                {"date": target_day},
-                {"date": {"$regex": f"^{target_day}"}},
-                {"date": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                {"posted_at": {"$regex": f"^{target_day}"}},
-                {"posted_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                {"created_at": {"$regex": f"^{target_day}"}},
-                {"created_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-            ),
-        },
-        {"_id": 0},
-    ).to_list(10000)
+    daily_charges = daily_period_charges
     charge_total = round(sum(float(c.get("total") or c.get("amount") or 0) for c in daily_charges), 2)
     cash_total = round(payment_methods.get("cash", 0), 2)
 
@@ -889,26 +1105,41 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         )
 
     expected_room_revenue = round(sum(row["agreed_rate"] for row in room_rate_rows), 2)
-    analysis_room_revenue = today_room_revenue if today_room_revenue or not room_rate_rows else expected_room_revenue
-    analysis_revenue_source = "posted" if today_room_revenue or not room_rate_rows else "accrued"
-    analysis_adr = round(analysis_room_revenue / occupied_today, 2) if occupied_today else 0
-    analysis_revpar = round(analysis_room_revenue / available_rooms_today, 2) if available_rooms_today else 0
+    analysis_room_revenue = daily_performance["room_revenue"]
+    analysis_revenue_source = daily_performance["revenue_source"]
+    analysis_adr = daily_performance["adr"]
+    analysis_revpar = daily_performance["revpar"]
 
-    prev_revenue = sum(charge_amount(charge) for charge in charges_between(previous_start, previous_end))
-    prev_metrics = await load_stay_night_metrics(db, tenant_id, previous_start.date(), (previous_end - timedelta(days=1)).date())
-    prev_room_nights = sum(row["occupied_rooms"] for row in prev_metrics)
-    prev_room_revenue = sum(
-        charge_amount(charge)
-        for charge in charges_between(previous_start, previous_end)
-        if str(charge.get("charge_category") or charge.get("charge_type") or "").lower() in {"room", "accommodation", "room_charge"}
+    previous_charges = charges_between(previous_start, previous_end)
+    prev_metrics = await load_stay_night_metrics(
+        db,
+        tenant_id,
+        previous_start.date(),
+        (previous_end - timedelta(days=1)).date(),
+        actual_only=True,
     )
-    prev_adr = round(prev_room_revenue / prev_room_nights, 2) if prev_room_nights > 0 else 0
+    prev_room_charges_by_day: dict[str, float] = {}
+    for charge in charges_between(previous_start, previous_end):
+        category = str(charge.get("charge_category") or charge.get("charge_type") or "").lower()
+        if category in ROOM_CHARGE_CATEGORIES:
+            day = _date_part(charge.get("business_date") or charge.get("date"))
+            prev_room_charges_by_day[day] = prev_room_charges_by_day.get(day, 0.0) + charge_amount(charge)
+    prev_performance = _period_performance(prev_metrics, prev_room_charges_by_day)
+    prev_non_room_revenue = sum(
+        charge_amount(charge)
+        for charge in previous_charges
+        if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES
+    )
+    prev_revenue = prev_non_room_revenue + prev_performance["room_revenue"]
+    prev_adr = prev_performance["adr"]
     ly_revenue = sum(charge_amount(charge) for charge in charges_between(last_year_start, last_year_end))
 
     return {
         "date": today.strftime("%Y-%m-%d"),
         "summary": {
-            "total_rooms": total_rooms,
+            "total_rooms": available_rooms_today,
+            "physical_rooms": total_rooms,
+            "blocked_rooms": max(total_rooms - available_rooms_today, 0),
             "occupied_rooms": occupied_today,
             "occupancy_percentage": occupancy_pct,
             "arrivals": arrivals,
@@ -917,9 +1148,19 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "no_shows": no_shows,
             "cancellations": cancellations,
             "today_revenue": round(today_revenue, 2),
+            "today_room_revenue": daily_performance["room_revenue"],
+            "posted_room_revenue": today_room_revenue,
+            "room_revenue_source": daily_performance["revenue_source"],
             "adr": adr,
             "revpar": revpar,
             "fnb_revenue": round(fnb_revenue, 2),
+        },
+        "period_metrics": period_performance,
+        "period_activity": {
+            "arrivals": period_arrivals,
+            "departures": period_departures,
+            "no_shows": period_no_shows,
+            "cancellations": period_cancellations,
         },
         "period_comparison": {
             "week_revenue": round(week_revenue, 2),
@@ -929,6 +1170,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "prev_month_revenue": round(prev_revenue, 2),
             "prev_month_bookings": len(prev_bookings),
             "prev_month_adr": prev_adr,
+            "prev_period_occupancy": prev_performance["occupancy_percentage"],
+            "prev_period_revpar": prev_performance["revpar"],
             "last_year_revenue": round(ly_revenue, 2),
             "last_year_bookings": len(ly_bookings),
         },
@@ -980,7 +1223,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         "daily_analysis": {
             "date": target_day,
             "occupied_rooms": occupied_today,
-            "total_rooms": total_rooms,
+            "total_rooms": available_rooms_today,
+            "physical_rooms": total_rooms,
+            "blocked_rooms": max(total_rooms - available_rooms_today, 0),
             "occupancy_percentage": occupancy_pct,
             "arrivals": arrivals,
             "departures": departures,

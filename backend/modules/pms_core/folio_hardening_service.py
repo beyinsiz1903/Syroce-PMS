@@ -63,7 +63,8 @@ class FolioHardeningService:
             from cache_manager import cache as _cache
 
             if _cache:
-                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
+                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category_v2")
+                _cache.invalidate_tenant_cache(tenant_id, "reports:basic_dashboard:v2")
         except ImportError:
             pass
 
@@ -109,6 +110,14 @@ class FolioHardeningService:
 
         await self._log_audit(tenant_id, "payment", payment_id, "payment_posted", processed_by, {"folio_id": folio_id, "amount": amount, "method": payment_data.get("method")})
 
+        try:
+            from cache_manager import cache as _cache
+
+            if _cache:
+                _cache.invalidate_tenant_cache(tenant_id, "reports:basic_dashboard:v2")
+        except ImportError:
+            pass
+
         payment_doc.pop("_id", None)
         return {"success": True, "payment": payment_doc}
 
@@ -150,6 +159,14 @@ class FolioHardeningService:
 
         await self._log_audit(tenant_id, "refund", refund_id, "refund_posted", processed_by, {"folio_id": folio_id, "amount": amount, "reason": reason})
 
+        try:
+            from cache_manager import cache as _cache
+
+            if _cache:
+                _cache.invalidate_tenant_cache(tenant_id, "reports:basic_dashboard:v2")
+        except ImportError:
+            pass
+
         refund_doc.pop("_id", None)
         return {"success": True, "refund": refund_doc}
 
@@ -182,7 +199,8 @@ class FolioHardeningService:
             from cache_manager import cache as _cache
 
             if _cache:
-                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
+                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category_v2")
+                _cache.invalidate_tenant_cache(tenant_id, "reports:basic_dashboard:v2")
         except ImportError:
             pass
 

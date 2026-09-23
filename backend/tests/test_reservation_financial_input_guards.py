@@ -444,6 +444,7 @@ async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock())
     from routers import webhook_retry_service
     monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", lambda *_args, **_kwargs: None)
 

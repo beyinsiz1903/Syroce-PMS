@@ -233,7 +233,9 @@ SOURCE_FIELD_MAP: dict[str, dict[str, list[str]]] = {
         "max_occupancy": ["capacity", "max_occupancy"],
     },
     "revenue": {
-        "charge_type": ["charge_category", "charge_type"],
+        "description": ["description", "charge_name"],
+        "amount": ["amount", "charge_amount", "total"],
+        "charge_type": ["charge_category", "category", "charge_type"],
         "date": ["business_date", "charge_date", "date", "posted_at", "created_at"],
         "room_number": ["room_number", "room_no"],
     },
@@ -744,6 +746,12 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
 
     cursor = collection.find(query, projection).sort(sort_field_db, sort_dir).limit(MAX_LIMIT)
     raw = await cursor.to_list(length=MAX_LIMIT)
+    if config.data_source == "revenue":
+        # Reservation-card extras are financially real before they are moved
+        # onto a folio.  Include them in custom revenue reports as well; the
+        # move operation deletes the source row, so this does not double count.
+        extra_raw = await db.extra_charges.find(query, projection).to_list(length=MAX_LIMIT)
+        raw.extend(extra_raw)
     raw = await _enrich_report_docs(db, config.data_source, tenant_id, raw)
     raw = [doc for doc in raw if _within_requested_dates(config, source_def, doc)]
     raw = [doc for doc in raw if all(_matches_report_filter(config.data_source, source_def, doc, item) for item in (config.filters or []))]
