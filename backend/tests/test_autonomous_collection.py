@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 from pymongo.errors import DuplicateKeyError
 
 from core import autonomous_collection as ac
