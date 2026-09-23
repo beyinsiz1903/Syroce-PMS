@@ -238,11 +238,11 @@ const BasicReports = ({
   // Only fetch the heavy dashboard payload when the active section actually
   // needs it. Self-contained sections (expenses, official) load their own
   // data and shouldn't block on the dashboard aggregate.
-  useEffect(() => {
-    if (needsDashboard && data === null && !error) {
+    useEffect(() => {
+    if (needsDashboard && !error) {
       fetchData();
     }
-  }, [needsDashboard, data, error, fetchData]);
+  }, [needsDashboard, fetchData, error]);
   const fetchOfficialGuests = useCallback(async dateParam => {
     setOfficialLoading(true);
     setOfficialError(null);
@@ -361,7 +361,13 @@ const BasicReports = ({
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
   });
-  const inHouseGuests = guestList.filter(g => g.status === 'checked_in').filter(g => {
+    const inHouseGuests = guestList.filter(g => {
+    // Check if the target date is between check_in and check_out
+    const targetDate = reportDate || new Date().toISOString().split('T')[0];
+    const ci = g.check_in ? g.check_in.substring(0, 10) : '';
+    const co = g.check_out ? g.check_out.substring(0, 10) : '';
+    return ci && co && ci <= targetDate && co >= targetDate && g.status !== 'cancelled' && g.status !== 'no_show';
+  }).filter(g => {
     if (!searchGuest) return true;
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
