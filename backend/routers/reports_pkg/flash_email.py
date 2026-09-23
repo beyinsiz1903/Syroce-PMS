@@ -128,8 +128,19 @@ async def get_flash_report(
             "check_in": {"$lte": today_end.isoformat()},
             "check_out": {"$gte": today_start.isoformat()}
         },
-        {"_id": 0, "total_amount": 1, "paid_amount": 1, "charges": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "room_number": 1},
+        {"_id": 0, "total_amount": 1, "paid_amount": 1, "charges": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "room_number": 1, "room_id": 1},
     ).to_list(2000)
+
+
+    room_ids = list({b.get("room_id") for b in in_house_bookings if b.get("room_id")})
+    room_map = {}
+    if room_ids:
+        rooms = await db.rooms.find(
+            {"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1, "name": 1}
+        ).to_list(None)
+        for r in rooms:
+            room_map[r.get("id")] = r.get("room_number") or r.get("room_no") or r.get("name") or "?"
 
     total_revenue = 0
     collected = 0
@@ -154,7 +165,7 @@ async def get_flash_report(
         
         room_revenue_breakdown.append({
             "guest_name": b.get("guest_name", "Misafir"),
-            "room_number": b.get("room_number", "?"),
+            "room_number": str(b.get("room_number") or room_map.get(b.get("room_id")) or "?").strip() or "?",
             "daily_rate": round(daily_amount, 2),
             "total_stay_amount": b.get("total_amount", 0),
             "nights": nights
@@ -580,6 +591,17 @@ async def send_weekly_management_email(
 
     total_bookings = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "created_at": {"$gte": week_start.isoformat()}})
 
+
+    room_ids = list({b.get("room_id") for b in in_house_bookings if b.get("room_id")})
+    room_map = {}
+    if room_ids:
+        rooms = await db.rooms.find(
+            {"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1, "name": 1}
+        ).to_list(None)
+        for r in rooms:
+            room_map[r.get("id")] = r.get("room_number") or r.get("room_no") or r.get("name") or "?"
+
     total_revenue = 0
     async for booking in db.bookings.find({"tenant_id": current_user.tenant_id, "check_in": {"$gte": week_start.date().isoformat()}}):
         total_revenue += booking.get("total_amount", 0)
@@ -631,6 +653,17 @@ async def get_weekly_management_summary(credentials: HTTPAuthorizationCredential
 
     # Get key metrics for the week
     total_bookings = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "created_at": {"$gte": week_start.isoformat()}})
+
+
+    room_ids = list({b.get("room_id") for b in in_house_bookings if b.get("room_id")})
+    room_map = {}
+    if room_ids:
+        rooms = await db.rooms.find(
+            {"tenant_id": current_user.tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1, "name": 1}
+        ).to_list(None)
+        for r in rooms:
+            room_map[r.get("id")] = r.get("room_number") or r.get("room_no") or r.get("name") or "?"
 
     total_revenue = 0
     async for booking in db.bookings.find({"tenant_id": current_user.tenant_id, "check_in": {"$gte": week_start.date().isoformat()}}):
