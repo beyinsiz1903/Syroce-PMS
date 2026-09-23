@@ -473,6 +473,7 @@ class FrontdeskServiceV2:
                             "status": "dirty",
                             "current_booking_id": None,
                             "housekeeping_status": "dirty",
+                            "hk_status": "dirty",
                             "housekeeping_updated_at": checked_out_at.isoformat(),
                             "housekeeping_updated_by": f"System (Check-out by {ctx.actor_id})",
                         }

@@ -677,7 +677,16 @@ async def update_room_status_hk(
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    update_data = {"status": new_status, "updated_at": datetime.now(UTC).isoformat()}
+    now = datetime.now(UTC).isoformat()
+    housekeeping_status = "clean" if new_status in {"available", "inspected"} else new_status
+    update_data = {
+        "status": new_status,
+        "housekeeping_status": housekeeping_status,
+        "hk_status": housekeeping_status,
+        "housekeeping_updated_at": now,
+        "housekeeping_updated_by": str(current_user.id),
+        "updated_at": now,
+    }
 
     if notes:
         update_data["hk_notes"] = notes

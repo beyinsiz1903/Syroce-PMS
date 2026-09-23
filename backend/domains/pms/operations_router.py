@@ -866,11 +866,58 @@ async def dayuse_auto_checkout(
 ):
     now = datetime.utcnow()
     today = now.strftime("%Y-%m-%d")
-    result = await db.bookings.update_many(
+    due_bookings = await db.bookings.find(
         {"tenant_id": current_user.tenant_id, "booking_type": "day_use", "status": "checked_in", "check_out": {"$lte": now.isoformat()}},
-        {"$set": {"status": "checked_out", "actual_check_out": now.isoformat(), "auto_checkout": True}},
-    )
-    return {"checked_out_count": result.modified_count, "date": today}
+        {"_id": 0, "id": 1, "room_id": 1, "room_number": 1},
+    ).to_list(1000)
+    checked_out_count = 0
+    for booking in due_bookings:
+        result = await db.bookings.update_one(
+            {"tenant_id": current_user.tenant_id, "id": booking["id"], "status": "checked_in"},
+            {"$set": {"status": "checked_out", "checked_out_at": now.isoformat(), "actual_check_out": now.isoformat(), "auto_checkout": True}},
+        )
+        if result.modified_count != 1:
+            continue
+        checked_out_count += 1
+        if booking.get("room_id"):
+            await db.rooms.update_one(
+                {"tenant_id": current_user.tenant_id, "id": booking["room_id"]},
+                {
+                    "$set": {
+                        "status": "dirty",
+                        "current_booking_id": None,
+                        "housekeeping_status": "dirty",
+                        "hk_status": "dirty",
+                        "housekeeping_updated_at": now.isoformat(),
+                        "housekeeping_updated_by": "system:dayuse-auto-checkout",
+                    }
+                },
+            )
+            await db.housekeeping_tasks.update_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "booking_id": booking["id"],
+                    "task_type": "checkout_cleaning",
+                    "status": {"$nin": ["cancelled"]},
+                },
+                {
+                    "$setOnInsert": {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": current_user.tenant_id,
+                        "booking_id": booking["id"],
+                        "room_id": booking["room_id"],
+                        "room_number": booking.get("room_number"),
+                        "task_type": "checkout_cleaning",
+                        "priority": "high",
+                        "status": "pending",
+                        "notes": "Day-use auto checkout - departure clean required",
+                        "created_at": now.isoformat(),
+                        "created_by": "system",
+                    }
+                },
+                upsert=True,
+            )
+    return {"checked_out_count": checked_out_count, "date": today}
 
 
 @router.get("/pms/loyalty/tiers")

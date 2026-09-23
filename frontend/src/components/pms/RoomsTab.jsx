@@ -297,6 +297,22 @@ const RoomsTab = ({
     }
   }, [onDataRefresh]);
 
+  const handleRoomHousekeepingStatus = useCallback(async (room, newStatus) => {
+    setRoomContextMenu(null);
+    setMarkingCleanRoomId(room.id);
+    try {
+      await axios.put(`/housekeeping/room/${room.id}/status`, null, {
+        params: { new_status: newStatus },
+      });
+      toast.success(`Oda ${room.room_number} ${newStatus === 'dirty' ? 'kirli' : 'temiz'} olarak işaretlendi`);
+      await Promise.resolve(onDataRefresh?.());
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Oda durumu güncellenemedi');
+    } finally {
+      setMarkingCleanRoomId(null);
+    }
+  }, [onDataRefresh]);
+
   // Handle checkout with balance check
   const handleCheckOutClick = useCallback(async (e, guestInfo) => {
     e.stopPropagation();
@@ -610,8 +626,9 @@ const RoomsTab = ({
                   room,
                   roomBlock,
                   canCreateReservation,
+                  isOccupied,
                   x: Math.min(event.clientX, window.innerWidth - 224),
-                  y: Math.min(event.clientY, window.innerHeight - 180),
+                  y: Math.min(event.clientY, window.innerHeight - 280),
                 });
               }}
             >
@@ -836,6 +853,26 @@ const RoomsTab = ({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
             >
               <Plus className="h-4 w-4 text-amber-600" /> Rezervasyon oluştur
+            </button>
+          )}
+          {!roomContextMenu.isOccupied && roomContextMenu.room.status !== 'dirty' && roomContextMenu.room.status !== 'cleaning' && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => handleRoomHousekeepingStatus(roomContextMenu.room, 'dirty')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-800 hover:bg-amber-50"
+            >
+              <SprayCan className="h-4 w-4" /> Kirli olarak işaretle
+            </button>
+          )}
+          {!roomContextMenu.isOccupied && ['dirty', 'cleaning'].includes(roomContextMenu.room.status) && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => handleRoomHousekeepingStatus(roomContextMenu.room, 'available')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50"
+            >
+              <UserCheck className="h-4 w-4" /> Temiz / hazır olarak işaretle
             </button>
           )}
           <button

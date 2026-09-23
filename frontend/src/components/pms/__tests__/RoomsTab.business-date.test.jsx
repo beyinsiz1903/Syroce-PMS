@@ -106,4 +106,31 @@ describe('RoomsTab PMS business date', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Odayı blokla / arıza bildir' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Odayı satışa kapat');
   });
+
+  it('marks a vacant room dirty from the room-card context menu', async () => {
+    const axios = (await import('axios')).default;
+    axios.put.mockResolvedValueOnce({ data: { success: true } });
+    const onDataRefresh = vi.fn();
+
+    render(
+      <RoomsTab
+        rooms={[room]}
+        bookings={[]}
+        businessDate="2026-08-28"
+        onDataRefresh={onDataRefresh}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('room-card-208'), { clientX: 120, clientY: 180 });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Kirli olarak işaretle' }));
+
+    await waitFor(() => {
+      expect(axios.put).toHaveBeenCalledWith(
+        '/housekeeping/room/room-208/status',
+        null,
+        { params: { new_status: 'dirty' } },
+      );
+      expect(onDataRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
 });
