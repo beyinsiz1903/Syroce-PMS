@@ -159,6 +159,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [selectedGuest360, setSelectedGuest360] = useState(null);
   const [guest360Data, setGuest360Data] = useState(null);
   const [loadingGuest360, setLoadingGuest360] = useState(false);
+  const [guest360InitialSection, setGuest360InitialSection] = useState('profile');
   const [selectedBookingDetail, setSelectedBookingDetail] = useState(null);
   const [reservationDetailId, setReservationDetailId] = useState(null);
   const [guestTag, setGuestTag] = useState('');
@@ -892,8 +893,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     } catch (error) { toast.error(error.response?.data?.detail || 'Failed to cancel block'); }
   };
 
-  const loadGuest360 = async (guestId) => {
+  const loadGuest360 = async (guestId, initialSection = 'profile') => {
     setLoadingGuest360(true);
+    setGuest360InitialSection(initialSection);
     try { const response = await axios.get(`/crm/guest/${guestId}`, { timeout: 15000 }); setGuest360Data(response.data); setOpenDialog('guest360');
     } catch (error) {
       if (error.code === 'ECONNABORTED') toast.error('Request timeout - Guest profile has too much data.');
@@ -1109,6 +1111,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               open={openDialog === 'guest360'}
               onClose={() => { setOpenDialog(null); setGuest360Data(null); }}
               guest360Data={guest360Data}
+              loadingGuest360={loadingGuest360}
+              selectedGuest360={selectedGuest360}
+              loadGuest360={loadGuest360}
+              initialSection={guest360InitialSection}
               guestTag={guestTag}
               setGuestTag={setGuestTag}
               guestNote={guestNote}

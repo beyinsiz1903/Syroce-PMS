@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -25,11 +25,40 @@ const Guest360Dialog = ({
   loadingGuest360,
   selectedGuest360,
   loadGuest360,
+  initialSection = 'profile',
 }) => {
   const { t } = useTranslation();
   const [newNote, setNewNote] = useState('');
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
+  const historySectionRef = useRef(null);
+  const stayHistory = guest360Data?.stay_history || guest360Data?.recent_bookings || [];
+  const formatMoney = (value) => new Intl.NumberFormat('tr-TR', {
+    style: 'currency',
+    currency: 'TRY',
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+  const statusLabels = {
+    checked_out: 'Çıkış yapıldı',
+    checked_in: 'Konaklıyor',
+    confirmed: 'Onaylı',
+    reserved: 'Rezerve',
+    cancelled: 'İptal',
+    no_show: 'Gelmedi',
+  };
+  const formatChannel = (booking) => {
+    const channel = booking?.ota_channel || booking?.channel;
+    if (channel && typeof channel === 'object') return channel.name || channel.code || 'Doğrudan';
+    return channel || 'Doğrudan';
+  };
+
+  useEffect(() => {
+    if (!open || loadingGuest360 || initialSection !== 'history' || !guest360Data) return;
+    const frame = window.requestAnimationFrame(() => {
+      historySectionRef.current?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [guest360Data, initialSection, loadingGuest360, open]);
 
   const addNote = async () => {
     if (!newNote.trim() || !selectedGuest360) return;
@@ -377,21 +406,20 @@ const Guest360Dialog = ({
         </Card>
 
         {/* Booking History - Enhanced Timeline */}
-        <Card>
+        <Card ref={historySectionRef}>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              Stay History Timeline
+              Konaklama Geçmişi
             </CardTitle>
             <CardDescription>
-              {guest360Data.profile?.total_stays || 0} total stays • 
-              ${(guest360Data.profile?.total_spending || 0).toFixed(0)} lifetime value
+              {stayHistory.length} rezervasyon kaydı • Toplam değer {formatMoney(guest360Data.stats?.lifetime_value)}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {guest360Data.recent_bookings && guest360Data.recent_bookings.length > 0 ? (
-                guest360Data.recent_bookings.map((booking, idx) => {
+              {stayHistory.length > 0 ? (
+                stayHistory.map((booking, idx) => {
                   const nights = Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24));
                   const adr = nights > 0 ? (booking.total_amount / nights).toFixed(0) : 0;
                   
@@ -416,7 +444,7 @@ const Guest360Dialog = ({
                               })}
                             </div>
                             <div className="text-xs text-gray-600">
-                              {nights} nights • Room {booking.room_number || '?'}
+                              {nights} gece • Oda {booking.room_number || 'Atanmamış'}
                             </div>
                           </div>
                           <Badge variant={
@@ -424,22 +452,22 @@ const Guest360Dialog = ({
                             booking.status === 'checked_in' ? 'default' :
                             'outline'
                           }>
-                            {booking.status}
+                            {statusLabels[booking.status] || booking.status || 'Bilinmiyor'}
                           </Badge>
                         </div>
                         
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div>
-                            <div className="text-gray-600">Total</div>
-                            <div className="font-bold text-green-600">${booking.total_amount?.toFixed(2)}</div>
+                            <div className="text-gray-600">Toplam</div>
+                            <div className="font-bold text-green-600">{formatMoney(booking.total_amount)}</div>
                           </div>
                           <div>
                             <div className="text-gray-600">ADR</div>
-                            <div className="font-bold">${adr}</div>
+                            <div className="font-bold">{formatMoney(adr)}</div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Channel</div>
-                            <div className="font-bold capitalize">{booking.ota_channel || booking.channel || 'Direct'}</div>
+                            <div className="text-gray-600">Kanal</div>
+                            <div className="font-bold capitalize">{formatChannel(booking)}</div>
                           </div>
                         </div>
                         
@@ -453,7 +481,7 @@ const Guest360Dialog = ({
                   );
                 })
               ) : (
-                <div className="text-center text-gray-400 py-8">No booking history available</div>
+                <div className="text-center text-gray-400 py-8">Kayıtlı konaklama geçmişi bulunamadı.</div>
               )}
             </div>
           </CardContent>
