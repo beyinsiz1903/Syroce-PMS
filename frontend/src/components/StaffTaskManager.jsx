@@ -162,7 +162,8 @@ const StaffTaskManager = ({ currentUser }) => {
     if (filterSource === 'manual' && t.source === 'guest_qr') return false;
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
-      return (t.description || '').toLowerCase().includes(s)
+      return (t.title || '').toLowerCase().includes(s)
+        || (t.description || '').toLowerCase().includes(s)
         || (t.room_number || t.room_id || '').toString().toLowerCase().includes(s)
         || (t.assigned_to || '').toLowerCase().includes(s);
     }
