@@ -616,6 +616,8 @@ async def update_guest_preferences(
         update_fields["id_number"] = body["id_number"]
     if "birth_date" in body:
         update_fields["birth_date"] = body["birth_date"]
+    if "nationality" in body:
+        update_fields["nationality"] = str(body["nationality"] or "").strip().upper()
     update_fields["preferences_updated_at"] = datetime.now(UTC).isoformat()
 
     # Encrypt PII (id_number) + _hash_ token before persistence. No name field

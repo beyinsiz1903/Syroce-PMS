@@ -1062,7 +1062,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'cashier' && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
           {activeTab === 'upsell' && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
           {activeTab === 'reports' && <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>}
-          {activeTab === 'flash' && <TabsContent value="flash" className="space-y-4"><FlashReportContent rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {activeTab === 'flash' && <TabsContent value="flash" className="space-y-4"><FlashReportContent businessDate={businessDate} rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
           {activeTab === 'tasks' && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager currentUser={user} /></TabsContent>}
           {activeTab === 'feedback' && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
           {activeTab === 'allotment' && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid rooms={rooms} /></TabsContent>}
@@ -1071,7 +1071,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'concierge' && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
           {activeTab === 'revenue' && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}
           {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
-          {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
+          {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification tenantId={tenant?.id || tenant?._id || tenant?.tenant_id} bookings={bookings} guests={guests} /></TabsContent>}
           {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
           </Suspense>}
             </div>

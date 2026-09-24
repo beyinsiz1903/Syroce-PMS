@@ -7,10 +7,112 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useTranslation } from 'react-i18next';
 const PIE_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6366f1'];
+
+const dateKey = value => value ? String(value).slice(0, 10) : '';
+const localDateKey = (value = new Date()) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const bookingArrival = booking => dateKey(booking.check_in || booking.arrival_date || booking.start_date);
+const bookingDeparture = booking => dateKey(booking.check_out || booking.departure_date || booking.end_date);
+const bookingStatus = booking => String(booking.status || '').toLowerCase();
+const nonCommercialStatuses = new Set(['cancelled', 'canceled', 'no_show', 'noshow']);
+const fnbCategories = new Set(['fnb', 'food_beverage', 'food', 'beverage', 'restaurant', 'bar', 'room_service']);
+
+const bookingNights = booking => {
+  const arrival = new Date(`${bookingArrival(booking)}T12:00:00`);
+  const departure = new Date(`${bookingDeparture(booking)}T12:00:00`);
+  const nights = Math.round((departure - arrival) / 86400000);
+  return Number.isFinite(nights) && nights > 0 ? nights : 1;
+};
+
+const activeOnDate = (booking, targetDate) => (
+  bookingArrival(booking) <= targetDate
+  && bookingDeparture(booking) > targetDate
+  && !nonCommercialStatuses.has(bookingStatus(booking))
+);
+
+export const buildFallbackFlashReport = ({ targetDate, rooms = [], bookings = [], arrivals = [], departures = [], inhouse = [] }) => {
+  const activeBookings = bookings.filter(booking => activeOnDate(booking, targetDate));
+  const occupiedIdentifiers = new Set(activeBookings.map(booking => booking.room_id || booking.room_number || booking.room_no).filter(Boolean));
+  const occupiedRooms = occupiedIdentifiers.size || activeBookings.length || inhouse.filter(booking => activeOnDate(booking, targetDate)).length;
+  const totalRooms = rooms.length;
+  const roomRevenue = activeBookings.reduce((sum, booking) => {
+    const stayTotal = Number(booking.accommodation_total ?? booking.room_total ?? booking.total_amount ?? booking.total_price ?? 0) || 0;
+    return sum + stayTotal / bookingNights(booking);
+  }, 0);
+  const collected = activeBookings.reduce((sum, booking) => (
+    sum + (Number(booking.paid_amount ?? booking.total_paid ?? 0) || 0) / bookingNights(booking)
+  ), 0);
+  const categoryRevenue = { fb: 0, spa: 0, minibar: 0, laundry: 0, other: 0 };
+  activeBookings.forEach(booking => {
+    (booking.charges || booking.folio_charges || []).forEach(charge => {
+      if (charge.voided) return;
+      const chargeDate = dateKey(charge.business_date || charge.date || charge.created_at);
+      if (chargeDate && chargeDate !== targetDate) return;
+      const category = String(charge.charge_category || charge.charge_type || 'other').toLowerCase();
+      const amount = Number(charge.total ?? charge.amount ?? 0) || 0;
+      if (fnbCategories.has(category)) categoryRevenue.fb += amount;
+      else if (category === 'spa') categoryRevenue.spa += amount;
+      else if (category === 'minibar') categoryRevenue.minibar += amount;
+      else if (category === 'laundry') categoryRevenue.laundry += amount;
+      else if (!['room', 'accommodation', 'room_charge'].includes(category)) categoryRevenue.other += amount;
+    });
+  });
+  const ancillaryRevenue = Object.values(categoryRevenue).reduce((sum, amount) => sum + amount, 0);
+  const totalRevenue = roomRevenue + ancillaryRevenue;
+  const datedArrivals = bookings.filter(booking => bookingArrival(booking) === targetDate && !nonCommercialStatuses.has(bookingStatus(booking))).length;
+  const datedDepartures = bookings.filter(booking => bookingDeparture(booking) === targetDate && !nonCommercialStatuses.has(bookingStatus(booking))).length;
+  const fallbackArrivals = datedArrivals || arrivals.filter(booking => bookingArrival(booking) === targetDate).length;
+  const fallbackDepartures = datedDepartures || departures.filter(booking => bookingDeparture(booking) === targetDate).length;
+  const fallbackInhouse = inhouse.filter(booking => activeOnDate(booking, targetDate)).length;
+
+  return {
+    date: targetDate,
+    occupancy: {
+      rate: totalRooms > 0 ? occupiedRooms / totalRooms * 100 : 0,
+      occupied: occupiedRooms,
+      total: totalRooms,
+      available: Math.max(0, totalRooms - occupiedRooms),
+    },
+    revenue: {
+      total: totalRevenue,
+      room: roomRevenue,
+      ...categoryRevenue,
+      collected,
+      outstanding: totalRevenue - collected,
+    },
+    kpi: {
+      adr: occupiedRooms > 0 ? roomRevenue / occupiedRooms : 0,
+      revpar: totalRooms > 0 ? roomRevenue / totalRooms : 0,
+    },
+    operations: {
+      arrivals: fallbackArrivals,
+      departures: fallbackDepartures,
+      inhouse: activeBookings.length || fallbackInhouse,
+      no_shows: bookings.filter(booking => ['no_show', 'noshow'].includes(bookingStatus(booking)) && bookingArrival(booking) === targetDate).length,
+      walk_ins: bookings.filter(booking => bookingArrival(booking) === targetDate && ['walk_in', 'walkin'].includes(String(booking.channel || booking.booking_source || '').toLowerCase())).length,
+      cancellations: bookings.filter(booking => ['cancelled', 'canceled'].includes(bookingStatus(booking)) && dateKey(booking.cancelled_at || booking.canceled_at || booking.updated_at) === targetDate).length,
+      overstays: 0,
+    },
+    departments: [
+      { name: 'Oda Geliri', amount: roomRevenue },
+      { name: 'Yiyecek & İçecek', amount: categoryRevenue.fb },
+      { name: 'Spa & Wellness', amount: categoryRevenue.spa },
+      { name: 'Minibar', amount: categoryRevenue.minibar },
+      { name: 'Çamaşırhane', amount: categoryRevenue.laundry },
+      { name: 'Diğer', amount: categoryRevenue.other },
+    ],
+  };
+};
+
 const FlashReportContent = ({
   showDatePicker = false,
   isEmbedded = false,
   targetDate = null,
+  businessDate = null,
   rooms,
   bookings,
   arrivals,
@@ -25,7 +127,7 @@ const FlashReportContent = ({
     symbol: currencySymbol,
     code: currencyCode
   } = useCurrency();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(targetDate || businessDate || localDateKey());
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [usingFallback, setUsingFallback] = useState(false);
@@ -38,7 +140,7 @@ const FlashReportContent = ({
     setLoading(true);
     setUsingFallback(false);
     setError(null);
-    const effectiveDate = targetDate || (showDatePicker ? selectedDate : new Date().toISOString().split('T')[0]);
+    const effectiveDate = targetDate || (showDatePicker ? selectedDate : businessDate) || localDateKey();
     try {
       const url = targetDate || showDatePicker ? `/reports/flash-report?date=${targetDate || selectedDate}` : '/reports/flash-report';
       const res = await axios.get(url);
@@ -55,70 +157,19 @@ const FlashReportContent = ({
         return;
       }
       // PMS sekmesi: gerçek prop'lardan offline fallback
-      const totalRooms = rooms?.length || 0;
-      const occupiedRooms = rooms?.filter(r => r.status === 'occupied').length || 0;
-      const occRate = totalRooms > 0 ? occupiedRooms / totalRooms * 100 : 0;
-      const totalRevenue = bookings?.reduce((s, b) => s + (b.total_amount || 0), 0) || 0;
-      const paidRevenue = bookings?.reduce((s, b) => s + (b.paid_amount || 0), 0) || 0;
-      const adr = occupiedRooms > 0 ? totalRevenue / occupiedRooms : 0;
-      const revpar = totalRooms > 0 ? totalRevenue / totalRooms : 0;
-      setReportData({
-        date: effectiveDate,
-        occupancy: {
-          rate: occRate,
-          occupied: occupiedRooms,
-          total: totalRooms,
-          available: totalRooms - occupiedRooms
-        },
-        revenue: {
-          total: totalRevenue,
-          room: totalRevenue,
-          fb: 0,
-          spa: 0,
-          minibar: 0,
-          laundry: 0,
-          other: 0,
-          collected: paidRevenue,
-          outstanding: totalRevenue - paidRevenue
-        },
-        kpi: {
-          adr,
-          revpar
-        },
-        operations: {
-          arrivals: arrivals?.length || 0,
-          departures: departures?.length || 0,
-          inhouse: inhouse?.length || 0,
-          no_shows: bookings?.filter(b => b.status === 'no_show').length || 0,
-          walk_ins: bookings?.filter(b => b.channel === 'walk_in').length || 0,
-          cancellations: bookings?.filter(b => b.status === 'cancelled').length || 0,
-          overstays: 0
-        },
-        departments: [{
-          name: 'Oda Geliri',
-          amount: totalRevenue
-        }, {
-          name: 'Yiyecek & İçecek',
-          amount: 0
-        }, {
-          name: 'Spa & Wellness',
-          amount: 0
-        }, {
-          name: 'Minibar',
-          amount: 0
-        }, {
-          name: 'Çamaşırhane',
-          amount: 0
-        }, {
-          name: 'Diğer',
-          amount: 0
-        }]
-      });
+      setReportData(buildFallbackFlashReport({
+        targetDate: effectiveDate,
+        rooms,
+        bookings,
+        arrivals,
+        departures,
+        inhouse,
+      }));
       setUsingFallback(true);
     } finally {
       setLoading(false);
     }
-  }, [showDatePicker, selectedDate, targetDate, rooms, bookings, arrivals, departures, inhouse, hasFallbackData]);
+  }, [showDatePicker, selectedDate, targetDate, businessDate, rooms, bookings, arrivals, departures, inhouse, hasFallbackData]);
   useEffect(() => {
     loadFlashReport();
   }, [loadFlashReport]);
