@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -22,7 +22,7 @@ const REQUEST_TYPE_KEYS = ['access', 'erasure', 'rectification', 'portability', 
 
 const KVKKManager = () => {
   const { t } = useTranslation();
-  const tv = (k) => t(`pmsComponents.kvkk.${k}`);
+  const tv = useCallback((k) => t(`pmsComponents.kvkk.${k}`), [t]);
 
   const [activeTab, setActiveTab] = useState('policies');
   const [requests, setRequests] = useState([]);
@@ -31,30 +31,29 @@ const KVKKManager = () => {
   const [consents, setConsents] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { loadData(); }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
-    try {
-      const [reqRes, consentRes, auditRes] = await Promise.allSettled([
-        axios.get('/kvkk/requests'),
-        axios.get('/kvkk/consents'),
-        axios.get('/kvkk/audit-log'),
-      ]);
-      if (reqRes.status === 'fulfilled') setRequests(reqRes.value.data.requests || []);
-      if (consentRes.status === 'fulfilled') setConsents(consentRes.value.data.consents || []);
-      if (auditRes.status === 'fulfilled') setAuditLogs(auditRes.value.data.logs || []);
-    } catch {
+    const [reqRes, consentRes, auditRes] = await Promise.allSettled([
+      axios.get('/kvkk/requests'),
+      axios.get('/kvkk/consents'),
+      axios.get('/kvkk/audit-log'),
+    ]);
+    setRequests(reqRes.status === 'fulfilled' ? reqRes.value.data.requests || [] : []);
+    setConsents(consentRes.status === 'fulfilled' ? consentRes.value.data.consents || [] : []);
+    setAuditLogs(auditRes.status === 'fulfilled' ? auditRes.value.data.logs || [] : []);
+    if ([reqRes, consentRes, auditRes].some(result => result.status === 'rejected')) {
       toast.error(tv('loadError'));
-    } finally {
-      setLoading(false);
     }
-  };
+    setLoading(false);
+  }, [tv]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   const createRequest = async () => {
     if (!newRequest.guest_name || !newRequest.type) return;
+    setSubmitting(true);
     try {
       const res = await axios.post('/kvkk/requests', newRequest);
       setRequests(prev => [res.data, ...prev]);
@@ -63,6 +62,8 @@ const KVKKManager = () => {
       toast.success(tv('requestCreated'));
     } catch {
       toast.error(tv('createError'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -78,14 +79,14 @@ const KVKKManager = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <Shield className="h-5 w-5" /> {tv('title')}
         </h2>
         <Button onClick={() => setShowNewRequest(true)}>{tv('newRequest')}</Button>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{requests.length}</div><div className="text-xs text-muted-foreground">{tv('totalRequests')}</div></CardContent></Card>
         <Card className="border-yellow-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{requests.filter(r => r.status === 'pending').length}</div><div className="text-xs text-muted-foreground">{tv('pending')}</div></CardContent></Card>
         <Card className="border-green-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{requests.filter(r => r.status === 'completed').length}</div><div className="text-xs text-muted-foreground">{tv('completed')}</div></CardContent></Card>
@@ -93,11 +94,11 @@ const KVKKManager = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="policies">{tv('policiesTab')}</TabsTrigger>
-          <TabsTrigger value="requests">{tv('requestsTab')} ({requests.length})</TabsTrigger>
-          <TabsTrigger value="consents">{tv('consentsTab')} ({consents.length})</TabsTrigger>
-          <TabsTrigger value="audit">{tv('auditTab')} ({auditLogs.length})</TabsTrigger>
+        <TabsList className="flex w-full justify-start overflow-x-auto">
+          <TabsTrigger className="shrink-0" value="policies">{tv('policiesTab')}</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="requests">{tv('requestsTab')} ({requests.length})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="consents">{tv('consentsTab')} ({consents.length})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="audit">{tv('auditTab')} ({auditLogs.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="policies">
@@ -127,9 +128,9 @@ const KVKKManager = () => {
           {!loading && requests.length === 0 && <p className="text-center text-muted-foreground py-8">{tv('noRequests')}</p>}
           {requests.map(req => (
             <Card key={req.id}>
-              <CardContent className="p-3 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
+              <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{req.guest_name}</span>
                     <Badge variant="outline">{tv(`requestTypes.${req.type}`)}</Badge>
                     <Badge variant={req.status === 'completed' ? 'default' : req.status === 'pending' ? 'secondary' : 'outline'}>
@@ -150,9 +151,9 @@ const KVKKManager = () => {
         </TabsContent>
 
         <TabsContent value="consents">
-          <Card>
+          <Card className="overflow-hidden">
             <CardContent className="p-0">
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
                 <thead className="bg-muted"><tr><th className="p-3 text-left">{tv('guestLabel')}</th><th className="p-3 text-center">{tv('emailMarketing')}</th><th className="p-3 text-center">{tv('smsMarketing')}</th><th className="p-3 text-center">{tv('dataSharing')}</th><th className="p-3 text-left">{tv('date')}</th></tr></thead>
                 <tbody>
                   {consents.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-muted-foreground">{tv('noConsents')}</td></tr>}
@@ -166,7 +167,7 @@ const KVKKManager = () => {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -210,7 +211,7 @@ const KVKKManager = () => {
               </Select>
             </div>
             <div><Label>{tv('details')}</Label><Textarea value={newRequest.details} onChange={e => setNewRequest(p => ({ ...p, details: e.target.value }))} placeholder={tv('detailsPlaceholder')} /></div>
-            <Button className="w-full" onClick={createRequest}>{tv('createRequest')}</Button>
+            <Button className="w-full" onClick={createRequest} disabled={submitting || !newRequest.guest_name.trim() || !newRequest.type}>{tv('createRequest')}</Button>
           </div>
         </DialogContent>
       </Dialog>
