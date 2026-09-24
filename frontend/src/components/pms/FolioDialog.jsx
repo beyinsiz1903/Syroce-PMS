@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { formatCurrency } from '@/lib/currency';
 
 const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
   const { t } = useTranslation();
@@ -59,7 +60,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
       await axios.post(`/frontdesk/folio/${bookingId}/payment`, newPayment, {
         headers: { 'Idempotency-Key': idempotencyKey },
       });
-      toast.success('Payment processed');
+      toast.success('Ödeme işlendi');
       await onFolioUpdated?.();
       setNewPayment({ amount: 0, method: 'card', reference: '', notes: '' });
     } catch (error) {
@@ -74,12 +75,12 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t('pms.guestFolio', 'Guest Folio')}</DialogTitle>
+          <DialogTitle>{t('pms.guestFolio', 'Misafir Folyosu')}</DialogTitle>
         </DialogHeader>
         {folio && (
           <div className="space-y-6">
             <div>
-              <h3 className="font-semibold mb-2">{t('pms.charges', 'Charges')}</h3>
+              <h3 className="font-semibold mb-2">{t('pms.charges', 'Harcamalar')}</h3>
               <div className="space-y-2">
                 {folio.charges.map((charge, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b pb-2">
@@ -88,8 +89,8 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                       <div className="text-xs text-gray-500 capitalize">{charge.charge_type}</div>
                     </div>
                     <div className="text-right">
-                      <div>{charge.total.toFixed(2)} ₺</div>
-                      <div className="text-xs text-gray-500">{charge.quantity} × {charge.amount} ₺</div>
+                      <div>{formatCurrency(charge.total, 'TRY', { decimals: 2 })}</div>
+                      <div className="text-xs text-gray-500">{charge.quantity} × {formatCurrency(charge.amount, 'TRY', { decimals: 2 })}</div>
                     </div>
                   </div>
                 ))}
@@ -133,7 +134,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
             </div>
 
             <div>
-              <h3 className="font-semibold mb-2">{t('pms.payments', 'Payments')}</h3>
+              <h3 className="font-semibold mb-2">{t('pms.payments', 'Ödemeler')}</h3>
               <div className="space-y-2">
                 {folio.payments.map((payment, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b pb-2">
@@ -141,7 +142,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                       <div className="font-medium capitalize">{payment.method}</div>
                       {payment.reference && <div className="text-xs text-gray-500">Ref: {payment.reference}</div>}
                     </div>
-                    <div className="text-green-600 font-medium">{payment.amount.toFixed(2)} ₺</div>
+                    <div className="text-green-600 font-medium">{formatCurrency(payment.amount, 'TRY', { decimals: 2 })}</div>
                   </div>
                 ))}
               </div>
@@ -183,15 +184,15 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
             <div className="border-t pt-4">
               <div className="flex justify-between text-lg font-bold">
                 <span>{t('pms.totalCharges', 'Total Charges')}:</span>
-                <span>{folio.total_charges.toFixed(2)} ₺</span>
+                <span>{formatCurrency(folio.total_charges, 'TRY', { decimals: 2 })}</span>
               </div>
               <div className="flex justify-between text-lg font-bold text-green-600">
                 <span>{t('pms.totalPayments', 'Total Payments')}:</span>
-                <span>{folio.total_paid.toFixed(2)} ₺</span>
+                <span>{formatCurrency(folio.total_paid, 'TRY', { decimals: 2 })}</span>
               </div>
               <div className={`flex justify-between text-2xl font-bold ${folio.balance > 0 ? 'text-red-600' : 'text-gray-600'}`}>
                 <span>{t('pms.balance', 'Balance')}:</span>
-                <span>{folio.balance.toFixed(2)} ₺</span>
+                <span>{formatCurrency(folio.balance, 'TRY', { decimals: 2 })}</span>
               </div>
             </div>
           </div>

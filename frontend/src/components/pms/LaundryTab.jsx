@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const SERVICE_TYPES = [{
   code: 'wash_iron',
-  name: 'Yikama + Utuleme',
+  name: 'Yıkama + Ütüleme',
   multiplier: 1
 }, {
   code: 'dry_clean',
@@ -23,7 +23,7 @@ const SERVICE_TYPES = [{
   multiplier: 1.5
 }, {
   code: 'iron_only',
-  name: 'Sadece Utuleme',
+  name: 'Sadece Ütüleme',
   multiplier: 0.5
 }, {
   code: 'express',
@@ -125,7 +125,7 @@ const LaundryTab = () => {
   const addItem = () => {
     const item = activeItems.find(i => i.code === itemToAdd.code);
     if (!item) {
-      toast.error('Urun secin');
+      toast.error('Ürün seçin');
       return;
     }
     const svc = SERVICE_TYPES.find(s => s.code === orderForm.service_type);
@@ -220,7 +220,7 @@ const LaundryTab = () => {
         name,
         price
       });
-      toast.success('Urun eklendi');
+      toast.success('Ürün eklendi');
       setNewItem({
         code: '',
         name: '',
@@ -228,7 +228,7 @@ const LaundryTab = () => {
       });
       loadItems();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || 'Urun eklenemedi');
+      toast.error(e?.response?.data?.detail || 'Ürün eklenemedi');
     }
   };
   const startEdit = it => {
@@ -389,7 +389,7 @@ const LaundryTab = () => {
                         <div>
                           <p className="text-sm font-medium text-gray-800">
                             {order.guest_name}
-                            {order.folio_charged && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">Folio'ya yansidi</Badge>}
+                            {order.folio_charged && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">Folyoya yansıdı</Badge>}
                           </p>
                           <p className="text-xs text-gray-400">
                             {order.items?.map(i => `${i.name} x${i.quantity}`).join(', ')}
@@ -400,7 +400,7 @@ const LaundryTab = () => {
                         <Badge className={sc.color}>{sc.label}</Badge>
                         <span className="text-sm font-bold text-gray-700">{formatCurrency(order.total, order.currency || currency)}</span>
                         <div className="flex gap-1">
-                          {order.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Basla</Button>}
+                          {order.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Başla</Button>}
                           {order.status === 'in_progress' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>{t('cm.components_pms_LaundryTab.hazir_04e6f')}</Button>}
                           {order.status === 'ready' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'delivered')}>Teslim Et</Button>}
                         </div>
@@ -424,7 +424,7 @@ const LaundryTab = () => {
               ...p,
               code: e.target.value
             }))} />
-              <Input placeholder="Ad (orn: Gomlek)" value={newItem.name} onChange={e => setNewItem(p => ({
+              <Input placeholder="Ad (örn. Gömlek)" value={newItem.name} onChange={e => setNewItem(p => ({
               ...p,
               name: e.target.value
             }))} />
@@ -438,7 +438,7 @@ const LaundryTab = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Urun Fiyat Listesi ({items.length})</CardTitle>
+              <CardTitle className="text-base">Ürün Fiyat Listesi ({items.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -541,7 +541,7 @@ const LaundryTab = () => {
                 ...p,
                 code: v
               }))}>
-                  <SelectTrigger className="flex-1"><SelectValue placeholder="Urun secin" /></SelectTrigger>
+                  <SelectTrigger className="flex-1"><SelectValue placeholder="Ürün seçin" /></SelectTrigger>
                   <SelectContent>
                     {activeItems.map(i => <SelectItem key={i.code} value={i.code}>{i.name} ({formatCurrency(i.price, i.currency || currency)})</SelectItem>)}
                   </SelectContent>

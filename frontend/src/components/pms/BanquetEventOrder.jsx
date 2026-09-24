@@ -14,31 +14,32 @@ import {
   Calendar, Plus, Users, Clock, Printer, CheckCircle, AlertCircle
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const SETUP_TYPES = [
   { value: 'theater', label: 'Tiyatro', capacity_factor: 1.0 },
-  { value: 'classroom', label: 'Sinif', capacity_factor: 0.6 },
-  { value: 'u_shape', label: 'U Duzeni', capacity_factor: 0.35 },
-  { value: 'boardroom', label: 'Toplanti', capacity_factor: 0.25 },
+  { value: 'classroom', label: 'Sınıf', capacity_factor: 0.6 },
+  { value: 'u_shape', label: 'U Düzeni', capacity_factor: 0.35 },
+  { value: 'boardroom', label: 'Toplantı', capacity_factor: 0.25 },
   { value: 'banquet', label: 'Ziyafet', capacity_factor: 0.7 },
   { value: 'cocktail', label: 'Kokteyl', capacity_factor: 0.9 },
-  { value: 'hollow_square', label: 'Icki Kare', capacity_factor: 0.3 },
+  { value: 'hollow_square', label: 'İçi Boş Kare', capacity_factor: 0.3 },
 ];
 
 const MENU_TYPES = [
-  { value: 'breakfast', label: 'Kahvalti' },
-  { value: 'lunch', label: 'Ogle Yemegi' },
-  { value: 'dinner', label: 'Akşam Yemegi' },
-  { value: 'coffee_break', label: 'Kahve Molasi' },
+  { value: 'breakfast', label: 'Kahvaltı' },
+  { value: 'lunch', label: 'Öğle Yemeği' },
+  { value: 'dinner', label: 'Akşam Yemeği' },
+  { value: 'coffee_break', label: 'Kahve Molası' },
   { value: 'cocktail', label: 'Kokteyl' },
-  { value: 'gala', label: 'Gala Yemegi' },
-  { value: 'buffet', label: 'Açık Bufe' },
+  { value: 'gala', label: 'Gala Yemeği' },
+  { value: 'buffet', label: 'Açık Büfe' },
 ];
 
 const AV_EQUIPMENT = [
-  'Projektor', 'LED Ekran', 'Ses Sistemi', 'Mikrofon (Kablosuz)', 'Mikrofon (Yakalı)',
-  'Video Konferans', 'Sahne', 'Isik Sistemi', 'Flipchart', 'Beyaz Tahta',
-  'Simultane Ceviri', 'Kayıt Sistemi', 'DJ Masasi', 'Canli Muzik Sahnesi'
+  'Projektör', 'LED Ekran', 'Ses Sistemi', 'Mikrofon (Kablosuz)', 'Mikrofon (Yakalı)',
+  'Video Konferans', 'Sahne', 'Işık Sistemi', 'Flipchart', 'Beyaz Tahta',
+  'Simultane Çeviri', 'Kayıt Sistemi', 'DJ Masası', 'Canlı Müzik Sahnesi'
 ];
 
 const EMPTY_EVENT = {
@@ -52,6 +53,8 @@ const EMPTY_EVENT = {
 
 const BanquetEventOrder = () => {
   const { t } = useTranslation();
+  const currency = cachedTenantCurrency();
+  const money = (value) => formatCurrency(value, currency, { decimals: 2 });
   const [events, setEvents] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -74,15 +77,27 @@ const BanquetEventOrder = () => {
   };
 
   const createEvent = async () => {
-    if (!newEvent.event_name || !newEvent.date) return;
+    if (!newEvent.event_name || !newEvent.date) {
+      toast.error('Etkinlik adı ve tarih zorunludur');
+      return;
+    }
     try {
+      const guaranteedPax = parseInt(newEvent.guaranteed_pax) || parseInt(newEvent.attendees) || 0;
+      const pricePerPerson = parseFloat(newEvent.price_per_person) || 0;
+      const calculatedTotal = guaranteedPax * pricePerPerson;
+      const totalPrice = newEvent.total_price === '' ? calculatedTotal : (parseFloat(newEvent.total_price) || 0);
+      const depositAmount = parseFloat(newEvent.deposit_amount) || 0;
+      if (depositAmount > totalPrice) {
+        toast.error('Kapora toplam etkinlik tutarını aşamaz');
+        return;
+      }
       const payload = {
         ...newEvent,
         attendees: parseInt(newEvent.attendees) || 0,
-        guaranteed_pax: parseInt(newEvent.guaranteed_pax) || 0,
-        price_per_person: parseFloat(newEvent.price_per_person) || 0,
-        total_price: parseFloat(newEvent.total_price) || 0,
-        deposit_amount: parseFloat(newEvent.deposit_amount) || 0,
+        guaranteed_pax: guaranteedPax,
+        price_per_person: pricePerPerson,
+        total_price: totalPrice,
+        deposit_amount: depositAmount,
       };
       const res = await axios.post('/banquet/events', payload);
       setEvents(prev => [res.data, ...prev]);
@@ -104,13 +119,13 @@ const BanquetEventOrder = () => {
     w.document.write(`<html><head><title>BEO - ${esc(event.event_name)}</title><style>body{font-family:Arial;padding:40px;font-size:13px}h1{text-align:center;border-bottom:2px solid #333;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin:15px 0}td,th{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5}.header{display:flex;justify-content:space-between;margin-bottom:20px}.section{margin:20px 0}.label{font-weight:bold;color:#555;min-width:150px;display:inline-block}@media print{body{padding:20px}}</style></head><body>`);
     w.document.write(`<h1>BANQUET EVENT ORDER (BEO)</h1>`);
     w.document.write(`<div class="header"><div><span class="label">Etkinlik:</span> ${esc(event.event_name)}<br><span class="label">Firma:</span> ${esc(event.company || '-')}<br><span class="label">İletişim:</span> ${esc(event.contact_name)} - ${esc(event.contact_phone)}</div><div><span class="label">Tarih:</span> ${esc(event.date)}<br><span class="label">Saat:</span> ${esc(event.start_time)} - ${esc(event.end_time)}<br><span class="label">Salon:</span> ${esc(event.room_name)}</div></div>`);
-    w.document.write(`<div class="section"><table><tr><th>Duzen</th><th>Katilimci</th><th>Garanti</th><th>Menu</th><th>Kisi Basi</th><th>Toplam</th></tr><tr><td>${esc(SETUP_TYPES.find(s=>s.value===event.setup_type)?.label || event.setup_type)}</td><td>${esc(event.attendees)}</td><td>${esc(event.guaranteed_pax)}</td><td>${esc(MENU_TYPES.find(m=>m.value===event.menu_type)?.label || event.menu_type)}</td><td>${esc(event.price_per_person)} TL</td><td>${esc(event.total_price)} TL</td></tr></table></div>`);
-    if (event.menu_details) w.document.write(`<div class="section"><span class="label">Menu Detaylari:</span><p>${esc(event.menu_details)}</p></div>`);
+    w.document.write(`<div class="section"><table><tr><th>Düzen</th><th>Katılımcı</th><th>Garanti</th><th>Menü</th><th>Kişi Başı</th><th>Toplam</th></tr><tr><td>${esc(SETUP_TYPES.find(s=>s.value===event.setup_type)?.label || event.setup_type)}</td><td>${esc(event.attendees)}</td><td>${esc(event.guaranteed_pax)}</td><td>${esc(MENU_TYPES.find(m=>m.value===event.menu_type)?.label || event.menu_type)}</td><td>${esc(money(event.price_per_person))}</td><td>${esc(money(event.total_price))}</td></tr></table></div>`);
+    if (event.menu_details) w.document.write(`<div class="section"><span class="label">Menü Detayları:</span><p>${esc(event.menu_details)}</p></div>`);
     if (event.av_equipment?.length) w.document.write(`<div class="section"><span class="label">AV Ekipman:</span><p>${esc(event.av_equipment.join(', '))}</p></div>`);
     if (event.decorations) w.document.write(`<div class="section"><span class="label">Dekorasyon:</span><p>${esc(event.decorations)}</p></div>`);
-    if (event.special_requests) w.document.write(`<div class="section"><span class="label">Özel Istekler:</span><p>${esc(event.special_requests)}</p></div>`);
+    if (event.special_requests) w.document.write(`<div class="section"><span class="label">Özel İstekler:</span><p>${esc(event.special_requests)}</p></div>`);
     if (event.billing_instructions) w.document.write(`<div class="section"><span class="label">Faturalama:</span><p>${esc(event.billing_instructions)}</p></div>`);
-    w.document.write(`<div style="margin-top:40px;display:flex;justify-content:space-between"><div>Satış Md: _______________</div><div>Mutfak Sefi: _______________</div><div>Banket Md: _______________</div></div>`);
+    w.document.write(`<div style="margin-top:40px;display:flex;justify-content:space-between"><div>Satış Müdürü: _______________</div><div>Mutfak Şefi: _______________</div><div>Banket Müdürü: _______________</div></div>`);
     w.document.write('</body></html>');
     w.document.close();
     w.print();
@@ -157,7 +172,7 @@ const BanquetEventOrder = () => {
         </Card>
         <Card className="border-green-200">
           <CardContent className="p-3 text-center">
-            <div className="text-2xl font-bold text-green-600">{events.reduce((s, e) => s + (e.total_price || 0), 0).toLocaleString()} TL</div>
+            <div className="text-2xl font-bold text-green-600">{money(events.filter(e => e.status === 'confirmed').reduce((s, e) => s + Number(e.total_price || 0), 0))}</div>
             <div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.toplam_gelir')}</div>
           </CardContent>
         </Card>
@@ -184,7 +199,7 @@ const BanquetEventOrder = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-green-600">{event.total_price?.toLocaleString()} TL</span>
+                  <span className="font-bold text-green-600">{money(event.total_price)}</span>
                   <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); printBEO(event); }}>
                     <Printer className="h-3 w-3 mr-1" /> BEO
                   </Button>
@@ -216,9 +231,9 @@ const BanquetEventOrder = () => {
                 {selectedEvent.decorations && <div><Label className="text-xs text-muted-foreground">Dekorasyon</Label><p className="text-sm">{selectedEvent.decorations}</p></div>}
                 {selectedEvent.special_requests && <div><Label className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.ozel_istekler')}</Label><p className="text-sm">{selectedEvent.special_requests}</p></div>}
                 <div className="grid grid-cols-3 gap-4 bg-muted p-3 rounded-lg">
-                  <div className="text-center"><div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.kisi_basi')}</div><div className="font-bold">{selectedEvent.price_per_person} TL</div></div>
-                  <div className="text-center"><div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.toplam')}</div><div className="font-bold text-green-600">{selectedEvent.total_price?.toLocaleString()} TL</div></div>
-                  <div className="text-center"><div className="text-xs text-muted-foreground">Kapora</div><div className="font-bold text-blue-600">{selectedEvent.deposit_amount?.toLocaleString()} TL</div></div>
+                  <div className="text-center"><div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.kisi_basi')}</div><div className="font-bold">{money(selectedEvent.price_per_person)}</div></div>
+                  <div className="text-center"><div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.toplam')}</div><div className="font-bold text-green-600">{money(selectedEvent.total_price)}</div></div>
+                  <div className="text-center"><div className="text-xs text-muted-foreground">Kalan</div><div className="font-bold text-amber-700">{money(Math.max(0, Number(selectedEvent.total_price || 0) - Number(selectedEvent.deposit_amount || 0)))}</div></div>
                 </div>
                 <Button className="w-full" onClick={() => { printBEO(selectedEvent); }}><Printer className="h-4 w-4 mr-1" /> {t('cm.components_pms_BanquetEventOrder.beo_yazdir')}</Button>
               </div>

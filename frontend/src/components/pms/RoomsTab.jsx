@@ -17,6 +17,8 @@ import { parseBookingConflict } from '@/lib/bookingConflict';
 import { classifyGuestPayment } from '@/utils/paymentClassification';
 import { deduplicateGuestSearchResults, maskGuestDocument } from '@/pages/calendar/guestIdentity';
 import { getRoomBlockForDate, normalizeRoomBlocksResponse } from '@/pages/calendar/calendarHelpers';
+import { bookingFinancials } from '@/lib/bookingFinancials';
+import { formatCurrency } from '@/lib/currency';
 
 const RoomsTab = ({
   rooms,
@@ -156,7 +158,7 @@ const RoomsTab = ({
       const ci = (b.check_in || '').slice(0, 10);
       const co = (b.check_out || '').slice(0, 10);
       if (ci <= today && co > today) {
-        const balance = Math.max(0, (b.total_amount || 0) - (b.paid_amount || 0));
+        const financials = bookingFinancials(b);
         // Determine guest category
         let category = 'pending_checkin'; // confirmed/guaranteed but not checked in
         if (b.status === 'checked_in') {
@@ -169,10 +171,10 @@ const RoomsTab = ({
           check_in: ci,
           check_out: co,
           status: b.status,
-          total_amount: b.total_amount || 0,
-          paid_amount: b.paid_amount || 0,
-          balance: Math.round(balance * 100) / 100,
-          currency: b.currency || "TL",
+          total_amount: financials.total,
+          paid_amount: financials.paid,
+          balance: financials.balance,
+          currency: financials.currency,
           isCheckInToday: ci === today,
           isCheckOutToday: co === today,
           category,
@@ -180,7 +182,7 @@ const RoomsTab = ({
       }
       // Also handle check-out today for checked_in guests whose co == today
       if (b.status === 'checked_in' && co === today && !map[String(b.room_number)]) {
-        const balance = Math.max(0, (b.total_amount || 0) - (b.paid_amount || 0));
+        const financials = bookingFinancials(b);
         map[String(b.room_number)] = {
           booking_id: b.id,
           guest_id: b.guest_id,
@@ -188,10 +190,10 @@ const RoomsTab = ({
           check_in: ci,
           check_out: co,
           status: b.status,
-          total_amount: b.total_amount || 0,
-          paid_amount: b.paid_amount || 0,
-          balance: Math.round(balance * 100) / 100,
-          currency: b.currency || "TL",
+          total_amount: financials.total,
+          paid_amount: financials.paid,
+          balance: financials.balance,
+          currency: financials.currency,
           isCheckInToday: ci === today,
           isCheckOutToday: true,
           category: 'departing_today',
@@ -748,7 +750,7 @@ const RoomsTab = ({
                       <div className="flex items-center gap-1 mt-1" data-testid={`room-balance-${room.room_number}`}>
                         <AlertTriangle className="w-3 h-3 text-amber-600" />
                         <span className="text-[11px] font-semibold text-amber-700">
-                          Bakiye: {guestInfo.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {guestInfo.currency}
+                          Bakiye: {formatCurrency(guestInfo.balance, guestInfo.currency, { decimals: 2 })}
                         </span>
                       </div>
                     )}
@@ -911,10 +913,10 @@ const RoomsTab = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-700">
               <AlertTriangle className="w-5 h-5" />
-              Açık Bakiye Uyarisi
+              Açık Bakiye Uyarısı
             </DialogTitle>
             <DialogDescription>
-              Misafirin açık bakiyesi bulunmaktadir
+              Misafirin açık bakiyesi bulunmaktadır
             </DialogDescription>
           </DialogHeader>
           {checkoutBooking && (
@@ -924,20 +926,20 @@ const RoomsTab = ({
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Tutar:</span>
-                    <span className="font-medium">{checkoutBooking.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {checkoutBooking.currency}</span>
+                    <span className="font-medium">{formatCurrency(checkoutBooking.total_amount, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Odenen:</span>
-                    <span className="font-medium text-green-700">{checkoutBooking.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {checkoutBooking.currency}</span>
+                    <span className="text-gray-600">Ödenen:</span>
+                    <span className="font-medium text-green-700">{formatCurrency(checkoutBooking.paid_amount, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
                     <span className="text-amber-800 font-semibold">Kalan Bakiye:</span>
-                    <span className="font-bold text-amber-800">{checkoutBooking.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {checkoutBooking.currency}</span>
+                    <span className="font-bold text-amber-800">{formatCurrency(checkoutBooking.balance, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                 </div>
               </div>
               <p className="text-sm text-gray-600">
-                Bakiyeyi sifirlamadan check-out yapilamaz. Lutfen once ödeme aliniz.
+                Bakiye sıfırlanmadan çıkış yapılamaz. Lütfen önce ödeme alınız.
               </p>
               <div className="flex gap-2">
                 <Button
@@ -1017,15 +1019,15 @@ const RoomsTab = ({
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Tutar:</span>
-                    <span className="font-medium">{paymentTarget.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {paymentTarget.currency}</span>
+                    <span className="font-medium">{formatCurrency(paymentTarget.total_amount, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Odenen:</span>
-                    <span className="font-medium text-green-700">{paymentTarget.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {paymentTarget.currency}</span>
+                    <span className="text-gray-600">Ödenen:</span>
+                    <span className="font-medium text-green-700">{formatCurrency(paymentTarget.paid_amount, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
                     <span className="text-sky-800 font-semibold">Kalan Bakiye:</span>
-                    <span className="font-bold text-sky-800">{paymentTarget.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {paymentTarget.currency}</span>
+                    <span className="font-bold text-sky-800">{formatCurrency(paymentTarget.balance, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                 </div>
               </div>

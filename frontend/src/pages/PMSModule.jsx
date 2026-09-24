@@ -1066,7 +1066,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'tasks' && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager currentUser={user} /></TabsContent>}
           {activeTab === 'feedback' && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
           {activeTab === 'allotment' && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid rooms={rooms} /></TabsContent>}
-          {activeTab === 'pos' && <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>}
+          {activeTab === 'pos' && <TabsContent value="pos" className="space-y-4"><POSTab businessDate={businessDate} /></TabsContent>}
           {activeTab === 'laundry' && <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>}
           {activeTab === 'concierge' && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
           {activeTab === 'revenue' && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}

@@ -18,6 +18,7 @@ import {
   Landmark, CalendarRange, KeyRound
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
 
 const DIFF_THRESHOLD = 50;
 const CURRENCIES = [
@@ -29,6 +30,7 @@ const CURRENCIES = [
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const monthAgoIso = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
+const formatTry = value => formatCurrency(value, 'TRY', { decimals: 2 });
 
 const CashierTab = () => {
   const { t } = useTranslation();
@@ -523,32 +525,32 @@ const CashierTab = () => {
             <Card className="bg-emerald-50 border-emerald-200">
               <CardContent className="p-3">
                 <p className="text-xs text-emerald-600">{t('cm.components_pms_CashierTab.acilis_tutari')}</p>
-                <p className="text-lg font-bold text-emerald-700">{(shift.opening_amount || 0).toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-emerald-700">{formatTry(shift.opening_amount)}</p>
               </CardContent>
             </Card>
             <Card className="bg-blue-50 border-blue-200">
               <CardContent className="p-3">
                 <p className="text-xs text-blue-600">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
-                <p className="text-lg font-bold text-blue-700">{cashInTotal.toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-blue-700">{formatTry(cashInTotal)}</p>
               </CardContent>
             </Card>
             <Card className="bg-amber-50 border-amber-200">
               <CardContent className="p-3">
                 <p className="text-xs text-amber-600">{t('cm.components_pms_CashierTab.nakit_cikis')}</p>
-                <p className="text-lg font-bold text-amber-700">{cashOutTotal.toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-amber-700">{formatTry(cashOutTotal)}</p>
               </CardContent>
             </Card>
             <Card className="bg-indigo-50 border-indigo-200">
               <CardContent className="p-3">
                 <p className="text-xs text-indigo-600">{t('cm.components_pms_CashierTab.kredi_karti')}</p>
-                <p className="text-lg font-bold text-indigo-700">{cardTotal.toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-indigo-700">{formatTry(cardTotal)}</p>
                 <p className="text-[10px] text-indigo-500">{cardCount} {t('cm.components_pms_CashierTab.islem')}</p>
               </CardContent>
             </Card>
             <Card className="bg-gray-50 border-gray-200">
               <CardContent className="p-3">
                 <p className="text-xs text-gray-600">Beklenen Kasa</p>
-                <p className="text-lg font-bold text-gray-800">{expectedCash.toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-gray-800">{formatTry(expectedCash)}</p>
               </CardContent>
             </Card>
           </div>
@@ -605,7 +607,7 @@ const CashierTab = () => {
                       <div className="flex items-center gap-3">
                         <span className="text-gray-400">{(t.timestamp || t.created_at || '').slice(11, 16)}</span>
                         <span className={`font-medium ${t.direction === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>
-                          {t.direction === 'in' ? '+' : '-'}{(t.amount || 0).toFixed(2)} TL
+                          {t.direction === 'in' ? '+' : '-'}{formatTry(t.amount)}
                         </span>
                       </div>
                     </div>
@@ -742,15 +744,15 @@ const CashierTab = () => {
             <div className="bg-gray-50 rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">{t('cm.components_pms_CashierTab.sayilan_tutar')}</span>
-                <span className="font-bold">{countedTotal.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(countedTotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">{t('cm.components_pms_CashierTab.beklenen_tutar')}</span>
-                <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(expectedCash)}</span>
               </div>
               <div className={`flex justify-between text-sm pt-1 border-t ${Math.abs(difference) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>
                 <span>Fark:</span>
-                <span className="font-bold">{difference.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(difference)}</span>
               </div>
             </div>
             {Math.abs(difference) >= DIFF_THRESHOLD && (
@@ -792,7 +794,7 @@ const CashierTab = () => {
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Mevcut Kasa:</span>
-                <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(expectedCash)}</span>
               </div>
             </div>
             <div className="border rounded-lg p-4 space-y-3">
