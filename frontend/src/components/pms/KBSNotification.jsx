@@ -119,7 +119,14 @@ const kbsDeliveryKey = (row) => {
   return bookingId ? `${bookingId}:${action}` : '';
 };
 
-const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
+const readTenantKbsSetting = (name, tenantId) => {
+  const scoped = localStorage.getItem(`${name}:${tenantId || 'default'}`);
+  // Eski surumlerde ayar otel baglamindan bagimsiz tutuluyordu. Ilk okumada
+  // geriye donuk uyumluluk sagla; bundan sonraki yazmalar tenant'a ozeldir.
+  return scoped ?? localStorage.getItem(name);
+};
+
+const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId = '' }) => {
   const { t } = useTranslation();
   const tk = (k) => t(`pmsComponents.kbs.${k}`);
 
@@ -143,16 +150,26 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   // Secili makam: 'polis' (Emniyet/EGM) | 'jandarma'. Otel adresine gore secilir.
   const [authority, setAuthority] = useState(() => {
     try {
-      return localStorage.getItem('kbs_ext_authority') === 'jandarma' ? 'jandarma' : 'polis';
+      return readTenantKbsSetting('kbs_ext_authority', tenantId) === 'jandarma' ? 'jandarma' : 'polis';
     } catch { return 'polis'; }
   });
   const [downloadingExt, setDownloadingExt] = useState(false);
   const [autoSend, setAutoSend] = useState(() => {
-    try { return localStorage.getItem('kbs_ext_autosend') === '1'; } catch { return false; }
+    try { return readTenantKbsSetting('kbs_ext_autosend', tenantId) === '1'; } catch { return false; }
   });
   const [draining, setDraining] = useState(false);
   const [lastDrain, setLastDrain] = useState(null);
   const drainingRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      setAuthority(readTenantKbsSetting('kbs_ext_authority', tenantId) === 'jandarma' ? 'jandarma' : 'polis');
+      setAutoSend(readTenantKbsSetting('kbs_ext_autosend', tenantId) === '1');
+    } catch {
+      setAuthority('polis');
+      setAutoSend(false);
+    }
+  }, [tenantId]);
 
   const fetchQueue = useCallback(async () => {
     setQueueLoading(true);
@@ -433,7 +450,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const toggleAutoSend = () => {
     setAutoSend((prev) => {
       const next = !prev;
-      try { localStorage.setItem('kbs_ext_autosend', next ? '1' : '0'); } catch { /* yoksay */ }
+      try { localStorage.setItem(`kbs_ext_autosend:${tenantId || 'default'}`, next ? '1' : '0'); } catch { /* yoksay */ }
       return next;
     });
   };
@@ -441,7 +458,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const changeAuthority = (a) => {
     const next = a === 'jandarma' ? 'jandarma' : 'polis';
     setAuthority(next);
-    try { localStorage.setItem('kbs_ext_authority', next); } catch { /* yoksay */ }
+    try { localStorage.setItem(`kbs_ext_authority:${tenantId || 'default'}`, next); } catch { /* yoksay */ }
   };
 
   // KBS tarayici eklenti paketini (ZIP) backend'den indir.
@@ -616,7 +633,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     a.href = url;
     a.download = `kbs_notification_${new Date().toISOString().split('T')[0]}.xml`;
     a.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast.success(tk('xmlDownloaded'));
   };
 
@@ -632,10 +649,12 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       const normalizedForm = {
         id_number: editForm.id_number.trim(),
         birth_date: editForm.birth_date,
+        nationality: String(editForm.nationality || '').trim().toUpperCase(),
       };
       await axios.patch(`/pms/guests/${editDialog.guest_id}/preferences`, {
         id_number: normalizedForm.id_number,
         birth_date: normalizedForm.birth_date,
+        nationality: normalizedForm.nationality,
       });
       setPendingGuests(prev => prev.map(p =>
         p.id === editDialog.id ? { ...p, ...normalizedForm } : p
@@ -673,11 +692,11 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <Shield className="h-5 w-5" /> {tk('title')}
         </h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={downloadXML} disabled={pendingGuests.filter(p => p.id_number).length === 0}>
             <Download className="h-4 w-4 mr-1" /> {tk('downloadXml')}
           </Button>
@@ -730,7 +749,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
             <RefreshCw className={`w-3 h-3 mr-1 ${queueLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <div className="text-center bg-white rounded border-yellow-200 border p-2">
             <Clock className="w-4 h-4 mx-auto text-yellow-600" />
             <p className="text-lg font-bold text-yellow-700">{visibleQueueStats.pending}</p>
@@ -835,11 +854,11 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="pending">{tk('pendingTab')} ({pendingGuests.length})</TabsTrigger>
-          <TabsTrigger value="sent">{tk('sentTab')} ({sentHistory.length})</TabsTrigger>
-          <TabsTrigger value="missing">{tk('missingTab')} ({missingData.length})</TabsTrigger>
-          <TabsTrigger value="queue">{tk('queueTab')} ({visibleQueueJobs.length})</TabsTrigger>
+        <TabsList className="flex w-full justify-start overflow-x-auto">
+          <TabsTrigger className="shrink-0" value="pending">{tk('pendingTab')} ({pendingGuests.length})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="sent">{tk('sentTab')} ({sentHistory.length})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="missing">{tk('missingTab')} ({missingData.length})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="queue">{tk('queueTab')} ({visibleQueueJobs.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="space-y-2">
