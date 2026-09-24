@@ -83,6 +83,29 @@ def _norm_dt(value: str) -> str:
     return f"{base}T00:00:00+00:00"
 
 
+def _active_hold_query(tenant_id: str, external_id: str) -> dict[str, Any]:
+    """Match both current and legacy unmatched-hold representations.
+
+    Older HotelRunner reconciliation code projected provider fields onto the
+    temporary booking.  That could change ``booking_source`` and ``status``
+    even though the durable hold markers remained in ``source.kind``,
+    ``is_inventory_hold`` or ``allocation_source``.  Restricting cleanup to
+    ``booking_source=ota_unmatched_hold`` then left the temporary room claim in
+    place and the real import was created as a second, unassigned booking.
+    """
+    return {
+        "tenant_id": tenant_id,
+        "external_reservation_id": external_id,
+        "$or": [
+            {"booking_source": UNMATCHED_HOLD_SOURCE},
+            {"source.kind": UNMATCHED_HOLD_SOURCE},
+            {"is_inventory_hold": True},
+            {"allocation_source": UNMATCHED_HOLD_SOURCE},
+        ],
+        "status": {"$ne": "cancelled"},
+    }
+
+
 async def create_unmatched_reservation_hold(
     *,
     provider: str,
@@ -125,12 +148,7 @@ async def create_unmatched_reservation_hold(
     # ── Idempotency: aktif bir tutma zaten var mi? ──────────────────
     with tenant_context(tenant_id):
         existing = await db.bookings.find_one(
-            {
-                "tenant_id": tenant_id,
-                "external_reservation_id": external_id,
-                "booking_source": UNMATCHED_HOLD_SOURCE,
-                "status": {"$ne": "cancelled"},
-            },
+            _active_hold_query(tenant_id, external_id),
             {"_id": 0, "id": 1},
         )
     if existing:
@@ -295,13 +313,8 @@ async def release_unmatched_reservation_hold(
 
     with tenant_context(tenant_id):
         hold = await db.bookings.find_one(
-            {
-                "tenant_id": tenant_id,
-                "external_reservation_id": external_id,
-                "booking_source": UNMATCHED_HOLD_SOURCE,
-                "status": {"$ne": "cancelled"},
-            },
-            {"_id": 0, "id": 1},
+            _active_hold_query(tenant_id, external_id),
+            {"_id": 0, "id": 1, "room_id": 1, "room_number": 1},
         )
     if not hold:
         return {"released": False, "booking_id": None, "nights_released": 0}
@@ -355,6 +368,8 @@ async def release_unmatched_reservation_hold(
     return {
         "released": release_ok,
         "booking_id": booking_id,
+        "room_id": hold.get("room_id"),
+        "room_number": hold.get("room_number"),
         "nights_released": released,
         "deleted": deleted,
     }

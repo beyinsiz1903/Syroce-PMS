@@ -179,6 +179,64 @@ async def test_release_rebind_deletes_hold_and_locks():
     assert remaining == 0
 
 
+async def test_release_rebind_recognizes_legacy_hotelrunner_hold():
+    """A provider sync must not make an old hold invisible to promotion.
+
+    Production records created by the historical catch-up path retained the
+    durable hold markers but had ``booking_source=hotelrunner`` and
+    ``status=confirmed``.  The real import then became a duplicate unassigned
+    booking because cleanup only matched the modern booking_source value.
+    """
+    ext = _ext_id()
+    booking_id = str(uuid.uuid4())
+    room_id = str(uuid.uuid4())
+    with tenant_context(TEST_TENANT):
+        await db.bookings.insert_one(
+            {
+                "id": booking_id,
+                "tenant_id": TEST_TENANT,
+                "external_reservation_id": ext,
+                "booking_source": "hotelrunner",
+                "status": "confirmed",
+                "room_id": room_id,
+                "room_number": "208",
+                "source": {"provider": "hotelrunner", "kind": UNMATCHED_HOLD_SOURCE, "hold": True},
+                "is_inventory_hold": True,
+                "allocation_source": UNMATCHED_HOLD_SOURCE,
+            }
+        )
+        await db.room_night_locks.insert_one(
+            {
+                "tenant_id": TEST_TENANT,
+                "room_id": room_id,
+                "night_date": CHECK_IN,
+                "booking_id": booking_id,
+                "lock_type": "booking",
+            }
+        )
+
+    rel = await release_unmatched_reservation_hold(
+        tenant_id=TEST_TENANT,
+        external_id=ext,
+        reason="mapping_resolved",
+        delete_hold=True,
+    )
+
+    assert rel == {
+        "released": True,
+        "booking_id": booking_id,
+        "room_id": room_id,
+        "room_number": "208",
+        "nights_released": 1,
+        "deleted": True,
+    }
+    with tenant_context(TEST_TENANT):
+        assert await db.bookings.find_one({"id": booking_id, "tenant_id": TEST_TENANT}) is None
+        assert await db.room_night_locks.count_documents(
+            {"tenant_id": TEST_TENANT, "booking_id": booking_id}
+        ) == 0
+
+
 async def test_release_cancel_marks_cancelled_and_frees_locks():
     ext = _ext_id()
     created = await create_unmatched_reservation_hold(

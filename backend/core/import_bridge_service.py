@@ -30,7 +30,10 @@ from core.import_decision import (
     check_booking_source_exists,
     rate_code_belongs_to_room,
 )
-from core.room_auto_assignment import create_booking_with_auto_assignment
+from core.room_auto_assignment import (
+    assign_pending_booking_with_auto_assignment,
+    create_booking_with_auto_assignment,
+)
 
 logger = logging.getLogger("core.import_bridge_service")
 
@@ -822,8 +825,9 @@ async def auto_import_reservation_to_pms(
             release_unmatched_reservation_hold,
         )
 
+        release_result = {"released": False, "room_id": None}
         try:
-            await release_unmatched_reservation_hold(
+            release_result = await release_unmatched_reservation_hold(
                 tenant_id=tenant_id,
                 external_id=ext_res_id,
                 reason="mapping_resolved",
@@ -834,6 +838,27 @@ async def auto_import_reservation_to_pms(
                 "[IMPORT-BRIDGE] unmatched hold release raised %s",
                 type(exc).__name__,
             )
+
+        # Historical HotelRunner holds sometimes claimed the physical room
+        # before their mapping was repaired.  The first allocation pass above
+        # then produced an unassigned duplicate.  After the durable hold is
+        # safely released, retry the normal candidate/atomic-lock path once.
+        if assigned_room is None and release_result.get("released") and release_result.get("room_id"):
+            created_booking, assigned_room = await assign_pending_booking_with_auto_assignment(
+                database=db,
+                tenant_id=tenant_id,
+                booking_doc={
+                    **created_booking,
+                    "preferred_room_number": release_result.get("room_number")
+                    or booking_doc.get("preferred_room_number", ""),
+                },
+            )
+            if assigned_room:
+                logger.info(
+                    "[IMPORT-BRIDGE] OTA reservation %s assigned after legacy hold release to room %s",
+                    ext_res_id,
+                    assigned_room.get("room_number") or assigned_room.get("id"),
+                )
 
         # ── 7. Update import record → imported ───────────────────
         imported_at = _utc_now()
