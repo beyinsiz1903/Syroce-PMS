@@ -213,6 +213,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // Core state
   const [rooms, setRooms] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const bookingsRef = useRef(bookings);
+  bookingsRef.current = bookings;
   const [guests, setGuests] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [roomBlocks, setRoomBlocks] = useState([]);
@@ -324,7 +326,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           // conflict-queue API'si + takvimde görünen ama room_id'siz diğerleri
           const apiItems = res.data?.items || [];
           // Takvimde görünüp henüz API'de olmayan pendingleri de dahil et
-          const calendarPending = bookings.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+          const calendarPending = bookingsRef.current.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
           const apiIds = new Set(apiItems.map(b => b.id));
           const merged = [...apiItems, ...calendarPending.filter(b => !apiIds.has(b.id))];
           setAllUnassignedBookings(merged);
@@ -333,12 +335,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       .catch(() => {
         if (!cancelled) {
           // Fallback: sadece takvimde görünenleri göster
-          setAllUnassignedBookings(bookings.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
+          setAllUnassignedBookings(bookingsRef.current.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
         }
       })
       .finally(() => { if (!cancelled) setAllUnassignedLoading(false); });
     return () => { cancelled = true; };
-  }, [showUnassignedPanel, bookings]);
+  }, [showUnassignedPanel]);
 
 
   // No-Show Reason Dialog
