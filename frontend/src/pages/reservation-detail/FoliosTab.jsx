@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   CreditCard, ArrowRightLeft, Building2, DollarSign, ArrowDownUp,
-  Plus, Receipt, FileText, Loader2, Split
+  Plus, Receipt, FileText, Loader2, Split, Printer
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, fmtTL, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
+import PrintableFolio from '@/components/PrintableFolio';
 import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
@@ -37,6 +38,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [newCariForm, setNewCariForm] = useState({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [showSplit, setShowSplit] = useState(false);
+  const [showPrintableFolio, setShowPrintableFolio] = useState(false);
   const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
   const [reconcilingRoomCharge, setReconcilingRoomCharge] = useState(false);
@@ -148,11 +150,19 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
 
   const exec = async (fn) => { setLoading(true); try { await fn(); onRefresh?.(); } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); } setLoading(false); };
 
-  const allItems = [
-    ...(charges || []).map(c => ({ ...c, _type: 'charge', _source: 'folio' })),
-    ...(extra_charges || []).map(c => ({ ...c, _type: 'charge', _source: 'extra' })),
-    ...(payments || []).map(p => ({ ...p, _type: 'payment' })),
-  ].sort((a, b) => new Date(b.created_at || b.processed_at || 0) - new Date(a.created_at || a.processed_at || 0));
+  const allItems = useMemo(() => {
+    const seen = new Set();
+    return [
+      ...(charges || []).map(c => ({ ...c, _type: 'charge', _source: 'folio' })),
+      ...(extra_charges || []).map(c => ({ ...c, _type: 'charge', _source: 'extra' })),
+      ...(payments || []).map(p => ({ ...p, _type: 'payment' })),
+    ].filter(item => {
+      const key = `${item._type}:${item.id || item.charge_id || item.payment_id || `${item.description || item.charge_name}:${item.amount || item.total}:${item.created_at}`}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).sort((a, b) => new Date(b.created_at || b.processed_at || 0) - new Date(a.created_at || a.processed_at || 0));
+  }, [charges, extra_charges, payments]);
 
   const itemKind = (item) => {
     if (item._type === 'payment') {
@@ -204,16 +214,17 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={pricingReconciliationRequired} onClick={() => { const bal = summary?.balance || 0; setPayForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowPayment(!showPayment); }} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
-        <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setCariForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
-        <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setAgencyForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowAgency(!showAgency); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
-        <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
-        <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
-        <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol">
-          <Split className="w-3 h-3 mr-1" /> Folyo Böl
-        </Button>
+        {!readOnly && <>
+          <Button size="sm" disabled={pricingReconciliationRequired} onClick={() => { const bal = reservationTotalDue; setPayForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowPayment(!showPayment); }} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
+          <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setCariForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
+          <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setAgencyForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowAgency(!showAgency); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
+          <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
+          <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
+          <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol"><Split className="w-3 h-3 mr-1" /> Folyo Böl</Button>
+        </>}
+        <Button size="sm" variant="outline" onClick={() => setShowPrintableFolio(true)} className="h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-50" data-testid="btn-folyo-yazdir"><Printer className="w-3 h-3 mr-1" /> Folyo Yazdır</Button>
         <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
-          <FileText className="w-3 h-3 mr-1" /> Fatura Olustur
+          <FileText className="w-3 h-3 mr-1" /> {readOnly ? 'Faturayı Görüntüle' : 'Fatura Oluştur'}
         </Button>
         {hasHistoricalRoomCredit && (
           <Button size="sm" variant="outline" onClick={completePendingRoomCharge} disabled={reconcilingRoomCharge} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-complete-pending-room-charge">
@@ -252,7 +263,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
               ...payForm,
               amount,
-              payment_type: classifyGuestPayment(amount, summary?.balance),
+              payment_type: classifyGuestPayment(amount, reservationTotalDue),
               ...(useCurrencyConverter && foreignAmount && exchangeRate ? {
                 notes: `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`
               } : {}),
@@ -267,7 +278,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
           </div>
-          <FormField label={payForm.method === 'discount' ? 'İndirim Sebebi / Not' : 'Referans'} value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder={payForm.method === 'discount' ? 'İndirimin nedeni (Zorunlu)' : 'Fis/Dekont No'} />
+          <FormField label={payForm.method === 'discount' ? 'İndirim Sebebi / Not' : 'Referans'} value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder={payForm.method === 'discount' ? 'İndirimin nedeni (zorunlu)' : 'Fiş / dekont no'} />
           {/* Currency Converter */}
           <div className="mt-4 border-t pt-3 border-slate-100">
             <div className="flex items-center space-x-2">
@@ -276,7 +287,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                 if (checked && foreignCurrency && tcmbRates[foreignCurrency]) {
                   const newRate = exchangeRate || tcmbRates[foreignCurrency].toFixed(4);
                   if (!exchangeRate) setExchangeRate(newRate);
-                  const baseAmt = parseFloat(payForm.amount) || summary?.balance || 0;
+                  const baseAmt = parseFloat(payForm.amount) || reservationTotalDue || 0;
                   if (baseAmt > 0) setForeignAmount((baseAmt * parseFloat(newRate)).toFixed(2));
                 }
               }} />
@@ -330,7 +341,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             )}
           </div>
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
-            <div className="font-medium">{guestPaymentClassificationLabel(payForm.amount, summary?.balance)}</div>
+            <div className="font-medium">{guestPaymentClassificationLabel(payForm.amount, reservationTotalDue)}</div>
             <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>
           </div>
         </FormPanel>
@@ -340,7 +351,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <FormPanel color="amber" title="Cariye Aktar" testid="cari-transfer-form" onClose={() => setShowCari(false)} loading={loading}
           onSubmit={() => exec(async () => {
             await axios.post(`/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount: parseFloat(cariForm.amount) });
-            toast.success('Cariye aktarildi'); setShowCari(false); setCariForm({ amount: '', cari_account_id: '', description: '' });
+            toast.success('Cariye aktarıldı'); setShowCari(false); setCariForm({ amount: '', cari_account_id: '', description: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label={`Tutar (${currency})`} type="number" value={cariForm.amount} onChange={v => setCariForm(p => ({ ...p, amount: v }))} />
@@ -359,7 +370,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           })}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label={`Tutar (${currency})`} type="number" value={agencyForm.amount} onChange={v => setAgencyForm(p => ({ ...p, amount: v }))} />
-            <FormField label="Acente Adi" value={agencyForm.agency_name} onChange={v => setAgencyForm(p => ({ ...p, agency_name: v }))} />
+            <FormField label="Acente Adı" value={agencyForm.agency_name} onChange={v => setAgencyForm(p => ({ ...p, agency_name: v }))} />
           </div>
           <FormField label="Referans" value={agencyForm.reference} onChange={v => setAgencyForm(p => ({ ...p, reference: v }))} placeholder="Voucher No" />
         </FormPanel>
@@ -368,14 +379,14 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showCariTransfer && (
         <FormPanel color="indigo" title="Cariyi Acenteye Aktar" testid="cari-agency-transfer-form" onClose={() => setShowCariTransfer(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            if (!cariTransferForm.source_id || !cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap seciniz'); return; }
+            if (!cariTransferForm.source_id || !cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap seçiniz'); return; }
             if (cariTransferForm.source_id === cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap farklı olmalı'); return; }
             await axios.post(`/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, {
               amount: parseFloat(cariTransferForm.amount),
               cari_account_id: cariTransferForm.target_id,
-              description: cariTransferForm.description || 'Acenteye aktarim'
+              description: cariTransferForm.description || 'Acenteye aktarım'
             });
-            toast.success('Cari bakiye acenteye aktarildi');
+            toast.success('Cari bakiye acenteye aktarıldı');
             setShowCariTransfer(false);
             setCariTransferForm({ source_id: '', target_id: '', amount: '', description: '' });
           })}>
@@ -383,9 +394,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             <SelectField label="Kaynak Cari Hesap" value={cariTransferForm.source_id} onChange={v => setCariTransferForm(p => ({ ...p, source_id: v }))}
               options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
             <div>
-              <SelectField label="Hedef Acente Hesabi" value={cariTransferForm.target_id} onChange={v => setCariTransferForm(p => ({ ...p, target_id: v }))}
+              <SelectField label="Hedef Acente Hesabı" value={cariTransferForm.target_id} onChange={v => setCariTransferForm(p => ({ ...p, target_id: v }))}
                 options={[['','Acente Seçiniz...'], ...cariAccounts.filter(a => a.account_type === 'agency').map(a => [a.id, a.name])]} />
-              <Button size="sm" variant="ghost" className="h-6 text-xs text-indigo-600 mt-1 px-0" onClick={() => setShowNewCari(true)} data-testid="btn-new-cari"><Plus className="w-3 h-3 mr-1" /> Yeni Cari Olustur</Button>
+              <Button size="sm" variant="ghost" className="h-6 text-xs text-indigo-600 mt-1 px-0" onClick={() => setShowNewCari(true)} data-testid="btn-new-cari"><Plus className="w-3 h-3 mr-1" /> Yeni Cari Oluştur</Button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -397,7 +408,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
 
       {showNewCari && (
         <div className="border rounded-lg p-4 bg-indigo-50/50 space-y-3" data-testid="new-cari-form">
-          <div className="text-sm font-semibold text-indigo-800">Yeni Cari Hesap Olustur</div>
+          <div className="text-sm font-semibold text-indigo-800">Yeni Cari Hesap Oluştur</div>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Hesap Adi *" value={newCariForm.name} onChange={v => setNewCariForm(p => ({ ...p, name: v }))} placeholder="Acente / Şirket adi" />
             <SelectField label="Hesap Tipi" value={newCariForm.account_type} onChange={v => setNewCariForm(p => ({ ...p, account_type: v }))}
@@ -410,7 +421,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <FormField label="Adres" value={newCariForm.address} onChange={v => setNewCariForm(p => ({ ...p, address: v }))} placeholder="Adres" />
           <div className="flex gap-2">
             <Button size="sm" onClick={async () => {
-              if (!newCariForm.name) { toast.error('Hesap adi zorunlu'); return; }
+              if (!newCariForm.name) { toast.error('Hesap adı zorunlu'); return; }
               setLoading(true);
               try {
                 await axios.post(`/pms/cari-accounts/create`, newCariForm);
@@ -421,7 +432,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
               setLoading(false);
             }} disabled={loading} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="create-cari-btn">
-              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Olustur'}
+              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Oluştur'}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setShowNewCari(false)} className="h-8 text-xs">İptal</Button>
           </div>
@@ -429,14 +440,14 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
 
       {showReconcile && (
-        <FormPanel color="teal" title="Mahsuplastirma (Cari Ödeme)" testid="reconcile-form" onClose={() => setShowReconcile(false)} loading={loading}
+        <FormPanel color="teal" title="Mahsuplaştırma (Cari Ödeme)" testid="reconcile-form" onClose={() => setShowReconcile(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            if (!reconcileForm.cari_account_id) { toast.error('Cari hesap seciniz'); return; }
+            if (!reconcileForm.cari_account_id) { toast.error('Cari hesap seçiniz'); return; }
             await axios.post(`/pms/cari-accounts/${reconcileForm.cari_account_id}/reconcile`, {
               amount: parseFloat(reconcileForm.amount),
-              description: reconcileForm.description || 'Mahsuplastirma'
+              description: reconcileForm.description || 'Mahsuplaştırma'
             });
-            toast.success('Mahsuplastirma kaydedildi');
+            toast.success('Mahsuplaştırma kaydedildi');
             setShowReconcile(false);
             setReconcileForm({ cari_account_id: '', amount: '', description: '' });
           })}>
@@ -445,8 +456,26 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
             <FormField label={`Tutar (${currency})`} type="number" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
           </div>
-          <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplastirma açıklaması" />
+          <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplaştırma açıklaması" />
         </FormPanel>
+      )}
+
+      {showPrintableFolio && (
+        <PrintableFolio
+          folioData={{
+            ...(folioList[0] || {}),
+            folio_number: folioList.map(item => item.folio_number).filter(Boolean).join(', ') || undefined,
+            booking,
+            charges,
+            extra_charges,
+            payments,
+            currency,
+            balance: reservationTotalDue,
+          }}
+          guest={guest}
+          room={room}
+          onClose={() => setShowPrintableFolio(false)}
+        />
       )}
 
       <div className="space-y-2">

@@ -1,374 +1,95 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Printer, X } from 'lucide-react';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Printer, Download, X } from 'lucide-react';
-import { alertDialog } from '@/lib/dialogs';
-const PrintableFolio = ({
-  folioData,
-  onClose
-}) => {
-  const [guestData, setGuestData] = useState(null);
-  const [roomData, setRoomData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    if (folioData) {
-      fetchAdditionalData();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [folioData]);
-  const fetchAdditionalData = async () => {
-    try {
-      // Fetch guest info
-      const guestResponse = await fetch(`/api/guests/${folioData.booking.guest_id}`, {
-        headers: {},
-        credentials: "include"
-      });
-      const guestData = await guestResponse.json();
-      setGuestData(guestData.guest);
+import { Card, CardContent, CardHeader } from './ui/card';
 
-      // Fetch room info
-      const roomsResponse = await fetch(`/api/pms/rooms`, {
-        headers: {},
-        credentials: "include"
-      });
-      const roomsData = await roomsResponse.json();
-      const room = roomsData.rooms.find(r => r.id === folioData.booking.room_id);
-      setRoomData(room);
-    } catch (error) {
-      console.error('Error fetching additional data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  const handlePrint = () => {
-    window.print();
-  };
-  const handleDownloadPDF = () => {
-    // For actual PDF generation, you would use a library like jsPDF or html2pdf
-    alertDialog({
-      message: 'PDF download functionality - integrate with PDF library like html2pdf.js'
-    });
-  };
-  const formatDate = date => {
-    if (!date) return 'N/A';
-    try {
-      return new Date(date).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    } catch {
-      return date;
-    }
-  };
-  const formatDateTime = date => {
-    if (!date) return 'N/A';
-    try {
-      return new Date(date).toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return date;
-    }
-  };
-  if (loading) {
-    return <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <Card className="w-full max-w-4xl">
-          <CardContent className="p-6">
-            <div className="animate-pulse space-y-4">
-              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>;
-  }
-  const {
-    charges,
-    payments
-  } = folioData;
-  const totalCharges = charges.reduce((sum, c) => sum + (c.total || c.amount || 0), 0);
-  const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-  const balance = totalCharges - totalPayments;
-  return <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-auto">
-      <Card className="w-full max-w-5xl max-h-[95vh] overflow-auto bg-white">
-        <CardHeader className="border-b-2 print:border-black">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <div className="text-center mb-4">
-                <h1 className="text-3xl font-bold mb-2">GUEST FOLIO</h1>
-                <div className="text-sm text-gray-600">
-                  Hotel Management System
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-semibold">Folio Number:</span> {folioData.folio_number}
-                </div>
-                <div>
-                  <span className="font-semibold">Date Printed:</span> {formatDate(new Date())}
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 print:hidden">
-              <Button onClick={handlePrint} variant="outline" size="sm">
-                <Printer className="w-4 h-4 mr-2" />
-                Print
-              </Button>
-              <Button onClick={handleDownloadPDF} variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                PDF
-              </Button>
-              <Button onClick={onClose} variant="outline" size="sm">
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-8 space-y-6">
-          {/* Guest and Stay Information */}
-          <div className="grid grid-cols-2 gap-8">
-            <div>
-              <h2 className="text-lg font-bold mb-3 pb-2 border-b-2 border-gray-300">GUEST INFORMATION</h2>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="font-semibold">Name:</span>
-                  <div className="text-base">{guestData?.name || 'N/A'}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">Email:</span>
-                  <div>{guestData?.email || 'N/A'}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">Phone:</span>
-                  <div>{guestData?.phone || 'N/A'}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">ID Number:</span>
-                  <div>{guestData?.id_number || 'N/A'}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">Nationality:</span>
-                  <div>{guestData?.nationality || 'N/A'}</div>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h2 className="text-lg font-bold mb-3 pb-2 border-b-2 border-gray-300">STAY DETAILS</h2>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="font-semibold">Room Number:</span>
-                  <div className="text-2xl font-bold text-blue-600">{roomData?.room_number || 'N/A'}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">Room Type:</span>
-                  <div>{roomData?.room_type || 'N/A'}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">Check-in:</span>
-                  <div>{formatDate(folioData.booking.check_in)}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">Check-out:</span>
-                  <div>{formatDate(folioData.booking.check_out)}</div>
-                </div>
-                <div>
-                  <span className="font-semibold">Number of Nights:</span>
-                  <div>
-                    {(() => {
-                    try {
-                      const checkin = new Date(folioData.booking.check_in);
-                      const checkout = new Date(folioData.booking.check_out);
-                      return Math.ceil((checkout - checkin) / (1000 * 60 * 60 * 24));
-                    } catch {
-                      return 'N/A';
-                    }
-                  })()}
-                  </div>
-                </div>
-                <div>
-                  <span className="font-semibold">Guests:</span>
-                  <div>{folioData.booking.adults || 0} Adult(s){folioData.booking.children > 0 && `, ${folioData.booking.children} Child(ren)`}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Charges */}
-          <div>
-            <h2 className="text-lg font-bold mb-3 pb-2 border-b-2 border-gray-300">CHARGES</h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-gray-400">
-                  <th className="text-left py-2 font-semibold">Date</th>
-                  <th className="text-left py-2 font-semibold">Description</th>
-                  <th className="text-center py-2 font-semibold">Category</th>
-                  <th className="text-right py-2 font-semibold">Qty</th>
-                  <th className="text-right py-2 font-semibold">Unit Price</th>
-                  <th className="text-right py-2 font-semibold">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {charges.length === 0 ? <tr>
-                    <td colSpan="6" className="text-center py-4 text-gray-500">No charges</td>
-                  </tr> : charges.map((charge, idx) => <tr key={idx} className="border-b border-gray-200">
-                      <td className="py-2">
-                        {charge.posted_at ? formatDateTime(charge.posted_at).split(',')[0] : 'N/A'}
-                      </td>
-                      <td className="py-2">{charge.description}</td>
-                      <td className="py-2 text-center">
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                          {charge.charge_category}
-                        </span>
-                      </td>
-                      <td className="py-2 text-right">{charge.quantity || 1}</td>
-                      <td className="py-2 text-right">${(charge.unit_price || charge.amount || 0).toFixed(2)}</td>
-                      <td className="py-2 text-right font-semibold">${(charge.total || charge.amount || 0).toFixed(2)}</td>
-                    </tr>)}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-gray-400">
-                  <td colSpan="5" className="py-2 text-right font-semibold">Subtotal:</td>
-                  <td className="py-2 text-right font-semibold">${totalCharges.toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          {/* Payments */}
-          <div>
-            <h2 className="text-lg font-bold mb-3 pb-2 border-b-2 border-gray-300">PAYMENTS</h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-gray-400">
-                  <th className="text-left py-2 font-semibold">Date</th>
-                  <th className="text-left py-2 font-semibold">Payment Method</th>
-                  <th className="text-left py-2 font-semibold">Reference</th>
-                  <th className="text-right py-2 font-semibold">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.length === 0 ? <tr>
-                    <td colSpan="4" className="text-center py-4 text-gray-500">No payments</td>
-                  </tr> : payments.map((payment, idx) => <tr key={idx} className="border-b border-gray-200">
-                      <td className="py-2">
-                        {payment.posted_at ? formatDateTime(payment.posted_at).split(',')[0] : 'N/A'}
-                      </td>
-                      <td className="py-2">
-                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
-                          {payment.payment_method}
-                        </span>
-                      </td>
-                      <td className="py-2">{payment.reference || 'N/A'}</td>
-                      <td className="py-2 text-right font-semibold text-green-600">
-                        ${payment.amount.toFixed(2)}
-                      </td>
-                    </tr>)}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-gray-400">
-                  <td colSpan="3" className="py-2 text-right font-semibold">Total Payments:</td>
-                  <td className="py-2 text-right font-semibold text-green-600">${totalPayments.toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          {/* Summary */}
-          <div className="border-t-4 border-gray-400 pt-4">
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-2 text-sm">
-                <h3 className="font-bold mb-2">PAYMENT SUMMARY</h3>
-                <div className="flex justify-between">
-                  <span>Total Charges:</span>
-                  <span className="font-semibold">${totalCharges.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Total Payments:</span>
-                  <span className="font-semibold text-green-600">${totalPayments.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between pt-2 border-t-2 border-gray-300">
-                  <span className="font-bold text-lg">Balance Due:</span>
-                  <span className={`font-bold text-xl ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    ${Math.abs(balance).toFixed(2)}
-                  </span>
-                </div>
-                {balance <= 0 && <div className="mt-2 p-2 bg-green-100 text-green-800 rounded text-center font-semibold">
-                    PAID IN FULL
-                  </div>}
-              </div>
-
-              <div className="text-xs text-gray-600 space-y-2">
-                <h3 className="font-bold mb-2 text-sm">NOTES</h3>
-                <p>• All prices are in USD unless otherwise stated</p>
-                <p>• Tax is included in the total charges</p>
-                <p>• Check-out time is 12:00 PM</p>
-                <p>• Late check-out is subject to availability and charges</p>
-                <p>• Please retain this folio for your records</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="border-t-2 border-gray-300 pt-6 mt-6">
-            <div className="grid grid-cols-2 gap-8">
-              <div>
-                <div className="border-t-2 border-gray-400 pt-2 mt-16">
-                  <p className="text-center font-semibold">Guest Signature</p>
-                  <p className="text-center text-sm text-gray-600">
-                    By signing, I acknowledge that all charges are correct
-                  </p>
-                </div>
-              </div>
-              <div>
-                <div className="border-t-2 border-gray-400 pt-2 mt-16">
-                  <p className="text-center font-semibold">Hotel Representative</p>
-                  <p className="text-center text-sm text-gray-600">Date: {formatDate(new Date())}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer Note */}
-          <div className="text-center text-xs text-gray-500 mt-6 pt-4 border-t border-gray-200">
-            <p>Thank you for staying with us!</p>
-            <p className="mt-1">This is a computer-generated document</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Print-specific styles */}
-      <style jsx>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          .fixed, .fixed * {
-            visibility: visible;
-          }
-          .fixed {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background: white;
-          }
-          button {
-            display: none !important;
-          }
-          .print\\:hidden {
-            display: none !important;
-          }
-        }
-      `}</style>
-    </div>;
+const EMPTY = '—';
+const currencyCode = value => value === 'TL' ? 'TRY' : (value || 'TRY');
+const money = (value, currency) => new Intl.NumberFormat('tr-TR', {
+  style: 'currency', currency: currencyCode(currency), minimumFractionDigits: 2,
+}).format(Number(value) || 0);
+const dateText = (value, withTime = false) => {
+  if (!value) return EMPTY;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return withTime
+    ? date.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })
+    : date.toLocaleDateString('tr-TR');
 };
+const paymentLabel = value => ({ cash: 'Nakit', card: 'Kredi kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme', agency: 'Acente', discount: 'İndirim' }[value] || value || EMPTY);
+const categoryLabel = value => ({ room: 'Konaklama', room_charge: 'Konaklama', food_beverage: 'Yiyecek & İçecek', food_and_beverage: 'Yiyecek & İçecek', restaurant: 'Yiyecek & İçecek', minibar: 'Minibar', spa: 'Spa', laundry: 'Çamaşırhane', tax: 'Vergi' }[value] || value || 'Ek hizmet');
+
+const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
+  const booking = folioData.booking || {};
+  const [guestData, setGuestData] = useState(guest || null);
+  const [roomData, setRoomData] = useState(room || null);
+  const [loading, setLoading] = useState(Boolean(!guest && booking.guest_id) || Boolean(!room && booking.room_id));
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const requests = [];
+        if (!guest && booking.guest_id) requests.push(fetch(`/api/guests/${booking.guest_id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).then(data => { if (active) setGuestData(data?.guest || data || null); }));
+        if (!room && booking.room_id) requests.push(fetch('/api/pms/rooms', { credentials: 'include' }).then(r => r.ok ? r.json() : null).then(data => {
+          const rooms = Array.isArray(data) ? data : (data?.rooms || []);
+          if (active) setRoomData(rooms.find(item => item.id === booking.room_id) || null);
+        }));
+        await Promise.all(requests);
+      } catch (error) {
+        console.error('Folyo ek bilgileri alınamadı:', error);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => { active = false; };
+  }, [booking.guest_id, booking.room_id, guest, room]);
+
+  const currency = folioData.currency || booking.currency || 'TL';
+  const charges = useMemo(() => [...(Array.isArray(folioData.charges) ? folioData.charges : []), ...(Array.isArray(folioData.extra_charges) ? folioData.extra_charges : [])].filter(item => !item.voided), [folioData.charges, folioData.extra_charges]);
+  const payments = useMemo(() => (Array.isArray(folioData.payments) ? folioData.payments : []).filter(item => !item.voided), [folioData.payments]);
+  const totalCharges = charges.reduce((sum, item) => sum + Number(item.total ?? item.charge_amount ?? item.amount ?? 0), 0);
+  const totalPayments = payments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const balance = Number(folioData.balance ?? (totalCharges - totalPayments));
+  const start = new Date(booking.check_in || booking.check_in_date);
+  const end = new Date(booking.check_out || booking.check_out_date);
+  const nights = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) ? EMPTY : Math.max(0, Math.round((end - start) / 86400000));
+  const guestName = guestData?.name || guestData?.full_name || booking.guest_name || EMPTY;
+  const roomNumber = roomData?.room_number || roomData?.number || booking.room_number || EMPTY;
+  const roomType = roomData?.room_type || roomData?.type_name || booking.room_type || EMPTY;
+
+  if (loading) return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4"><div className="rounded-xl bg-white px-8 py-6 text-sm text-slate-600 shadow-xl">Folyo hazırlanıyor…</div></div>;
+
+  return <div className="printable-folio-overlay fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 p-4 sm:p-8" role="dialog" aria-modal="true" aria-label="Folyo yazdırma önizlemesi">
+    <Card className="printable-folio-sheet mx-auto w-full max-w-5xl overflow-hidden bg-white shadow-2xl">
+      <CardHeader className="border-b bg-slate-50 px-5 py-4 sm:px-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">{folioData.hotel_name || folioData.property_name || 'Syroce PMS'}</p><h1 className="mt-1 text-2xl font-bold text-slate-900">Misafir Folyosu</h1><p className="mt-1 text-sm text-slate-500">Rezervasyon: {booking.reservation_number || booking.confirmation_number || booking.id || EMPTY}</p></div>
+          <div className="print:hidden flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => window.print()} data-testid="print-folio"><Printer className="mr-2 h-4 w-4" /> Yazdır / PDF Kaydet</Button><Button type="button" variant="outline" size="icon" onClick={onClose} aria-label="Kapat"><X className="h-4 w-4" /></Button></div>
+        </div>
+        <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2"><div><b>Folyo no:</b> {folioData.folio_number || EMPTY}</div><div className="sm:text-right"><b>Düzenlenme:</b> {dateText(new Date(), true)}</div></div>
+      </CardHeader>
+      <CardContent className="space-y-6 p-5 sm:p-8">
+        <section className="grid gap-6 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
+          <Info title="Misafir Bilgileri" rows={[["Ad soyad", guestName], ["Telefon", guestData?.phone], ["E-posta", guestData?.email], ["Kimlik no", guestData?.id_number || guestData?.identity_number], ["Uyruk", guestData?.nationality]]} />
+          <Info title="Konaklama Bilgileri" rows={[["Oda", roomNumber], ["Oda tipi", roomType], ["Giriş", dateText(booking.check_in || booking.check_in_date)], ["Çıkış", dateText(booking.check_out || booking.check_out_date)], ["Süre", nights === EMPTY ? EMPTY : `${nights} gece`], ["Kişi", `${Number(booking.adults || 0)} yetişkin${Number(booking.children || 0) > 0 ? `, ${booking.children} çocuk` : ''}`]]} />
+        </section>
+        <FolioTable title="Harcama ve Tahakkuklar" columns={["Tarih", "Açıklama", "Tür", "Adet", "Tutar"]} empty="Kayıtlı harcama bulunmuyor." rows={charges.map(item => [dateText(item.posted_at || item.created_at || item.date), item.description || item.charge_name || 'Harcama', categoryLabel(item.charge_category || item.category || item.charge_type), item.quantity || 1, money(item.total ?? item.charge_amount ?? item.amount, currency)])} totalLabel="Toplam harcama" total={money(totalCharges, currency)} />
+        <FolioTable title="Tahsilatlar" columns={["Tarih", "Ödeme yöntemi", "Referans", "Tutar"]} empty="Kayıtlı tahsilat bulunmuyor." rows={payments.map(item => [dateText(item.posted_at || item.processed_at || item.created_at), paymentLabel(item.payment_method || item.method), item.reference || EMPTY, money(item.amount, currency)])} totalLabel="Toplam tahsilat" total={money(totalPayments, currency)} />
+        <section className="ml-auto max-w-md rounded-xl border-2 border-slate-300 p-4">
+          <div className="flex justify-between text-sm"><span>Toplam harcama</span><b>{money(totalCharges, currency)}</b></div><div className="mt-2 flex justify-between text-sm"><span>Toplam tahsilat</span><b className="text-emerald-700">{money(totalPayments, currency)}</b></div>
+          <div className="mt-3 flex justify-between border-t pt-3 text-lg"><b>{balance > 0 ? 'Kalan bakiye' : balance < 0 ? 'Misafir alacağı' : 'Bakiye'}</b><b className={balance > 0 ? 'text-red-700' : 'text-emerald-700'}>{money(Math.abs(balance), currency)}</b></div>
+          {Math.abs(balance) < 0.01 && <p className="mt-3 rounded-md bg-emerald-50 p-2 text-center text-sm font-semibold text-emerald-800">Hesap kapandı</p>}
+        </section>
+        <footer className="border-t pt-4 text-center text-xs text-slate-500">Bu belge Syroce PMS tarafından elektronik olarak oluşturulmuştur.</footer>
+      </CardContent>
+    </Card>
+    <style>{`@media print { body * { visibility: hidden !important; } .printable-folio-sheet, .printable-folio-sheet * { visibility: visible !important; } .printable-folio-overlay { position: static !important; padding: 0 !important; background: white !important; } .printable-folio-sheet { position: absolute !important; inset: 0 !important; max-width: none !important; box-shadow: none !important; border: 0 !important; } @page { size: A4; margin: 10mm; } }`}</style>
+  </div>;
+};
+
+const Info = ({ title, rows }) => <div><h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">{title}</h2><dl className="grid grid-cols-[7rem_1fr] gap-y-2 text-sm">{rows.map(([label, value]) => <React.Fragment key={label}><dt className="text-slate-500">{label}</dt><dd className="min-w-0 break-words font-medium">{value || EMPTY}</dd></React.Fragment>)}</dl></div>;
+const FolioTable = ({ title, columns, rows, empty, totalLabel, total }) => <section><h2 className="mb-3 text-base font-bold text-slate-900">{title}</h2><div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[560px] text-sm"><thead className="bg-slate-50 text-slate-600"><tr>{columns.map((column, index) => <th key={column} className={`p-2 ${index === columns.length - 1 ? 'text-right' : 'text-left'}`}>{column}</th>)}</tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={columns.length} className="p-6 text-center text-slate-500">{empty}</td></tr> : rows.map((row, rowIndex) => <tr key={rowIndex} className="border-t">{row.map((cell, index) => <td key={index} className={`p-2 ${index === row.length - 1 ? 'text-right font-medium' : ''}`}>{cell}</td>)}</tr>)}</tbody><tfoot><tr className="border-t-2 bg-slate-50 font-semibold"><td colSpan={columns.length - 1} className="p-2 text-right">{totalLabel}</td><td className="p-2 text-right">{total}</td></tr></tfoot></table></div></section>;
+
 export default PrintableFolio;
