@@ -33,6 +33,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
@@ -807,7 +808,8 @@ async def get_builder_config(
     _perm=Depends(require_op("view_reports")),
 ):
     """Rapor oluşturucu için mevcut veri kaynaklarını ve sütun tanımlarını döndürür."""
-    del current_user
+    tenant_id = getattr(current_user, "tenant_id", None)
+    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
     sources = {}
     for key, src in DATA_SOURCES.items():
         sources[key] = {
@@ -816,7 +818,12 @@ async def get_builder_config(
             "date_field": src.get("date_field"),
             "pii_columns": sorted(PII_COLUMNS.get(key, set())),
         }
-    return {"data_sources": sources, "max_limit": MAX_LIMIT}
+    return {
+        "data_sources": sources,
+        "max_limit": MAX_LIMIT,
+        "currency_code": currency_code,
+        "currency_symbol": currency_symbol,
+    }
 
 
 @router.post("/generate")
@@ -993,7 +1000,8 @@ async def export_report_excel(
     has_pii = _user_has_pii_access(current_user)
 
     try:
-        return await _build_excel_response(config, tenant_id, has_pii)
+        _, currency_symbol = await get_tenant_currency(tenant_id)
+        return await _build_excel_response(config, tenant_id, has_pii, currency_symbol)
     except HTTPException:
         raise
     except Exception:
@@ -1006,7 +1014,7 @@ async def export_report_excel(
         raise HTTPException(status_code=500, detail="report_export_failed")
 
 
-async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii: bool):
+async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii: bool, currency_symbol: str = "₺"):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -1077,7 +1085,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
 
             if col_type == "currency" and is_numeric:
                 cell.value = coerced
-                cell.number_format = "#,##0.00 ₺"
+                cell.number_format = f'#,##0.00 "{currency_symbol}"'
             elif col_type == "number" and is_numeric:
                 cell.value = coerced
                 cell.number_format = "#,##0"
@@ -1123,7 +1131,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
                     cell.font = Font(bold=True, size=11)
                     cell.border = Border(top=Side(style="double"))
                     if col_type == "currency":
-                        cell.number_format = "#,##0.00 ₺"
+                        cell.number_format = f'#,##0.00 "{currency_symbol}"'
 
     # Task #253 (tur-2): belt-and-suspenders save retry. If, despite the
     # _coerce_excel_value sanitization, openpyxl still raises (future seed
@@ -1171,6 +1179,7 @@ async def export_report_pdf(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
+    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
 
     data = await fetch_report_data(config, tenant_id, has_pii)
     source_def = DATA_SOURCES.get(config.data_source, {})
@@ -1199,7 +1208,7 @@ async def export_report_pdf(
             val = row.get(col_key, "")
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
             if col_type == "currency" and isinstance(val, (int, float)) and not isinstance(val, bool):
-                display = f"₺{val:,.2f}"
+                display = f"{currency_symbol}{val:,.2f} {currency_code}"
             elif col_type == "boolean":
                 display = "Evet" if val else "Hayır"
             elif isinstance(val, list):

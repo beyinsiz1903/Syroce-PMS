@@ -39,7 +39,14 @@ const fmt = n => Number(n || 0).toLocaleString('tr-TR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
-const isoToday = () => new Date().toISOString().slice(0, 10);
+const localIsoDate = value => {
+  const date = value || new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const isoToday = () => localIsoDate(new Date());
 const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
   const {
     t
@@ -48,7 +55,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
   const initialFrom = reportPeriod === 'daily' ? initialTo : (() => {
     const date = new Date(`${initialTo}T12:00:00`);
     date.setDate(date.getDate() - 29);
-    return date.toISOString().slice(0, 10);
+    return localIsoDate(date);
   })();
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);
@@ -126,7 +133,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
                   <td className="p-2 text-right">{fmt(r.net)}</td>
                   <td className="p-2 text-right">{fmt(r.vat)}</td>
                   <td className="p-2 text-right">{fmt(r.city_tax)}</td>
-                  <td className="p-2 text-right font-semibold">{fmt(r.total)} ₺</td>
+                  <td className="p-2 text-right font-semibold">{formatCurrency(r.total)}</td>
                 </tr>)}
             </tbody>
             {totals && rows.length > 0 && <tfoot className="bg-gray-100 font-semibold">
@@ -138,7 +145,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
                   <td className="p-2 text-right">{fmt(totals.net)}</td>
                   <td className="p-2 text-right">{fmt(totals.vat)}</td>
                   <td className="p-2 text-right">{fmt(totals.city_tax)}</td>
-                  <td className="p-2 text-right">{fmt(totals.total)} ₺</td>
+                  <td className="p-2 text-right">{formatCurrency(totals.total)}</td>
                 </tr>
               </tfoot>}
           </table>
@@ -151,7 +158,8 @@ const RevenueSection = ({
   s,
   pc,
   roomTypeData,
-  reportPeriod
+  reportPeriod,
+  reportDate
 }) => {
   const {
     t
@@ -188,7 +196,7 @@ const RevenueSection = ({
         </ResponsiveContainer>
       </CardContent>
     </Card>
-    <CategoryRevenueCard reportDate={data?.date} reportPeriod={reportPeriod} />
+    <CategoryRevenueCard reportDate={reportDate || data?.date} reportPeriod={reportPeriod} />
     {roomTypeData.length > 0 && <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.oda_tipi_bazli_gelir')}</CardTitle></CardHeader>
         <CardContent>

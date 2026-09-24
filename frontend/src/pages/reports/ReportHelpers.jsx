@@ -2,27 +2,31 @@ import { Card } from '@/components/ui/card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { BarChart3 } from 'lucide-react';
+import { cachedTenantCurrency, formatCurrency as formatCurrencyValue } from '@/lib/currency';
 
 // Sprint A DS palette: sky / emerald / amber / rose / indigo / slate.
 // Recharts grafikleri için hex tonları (mavi/yeşil yerine sky/emerald):
 export const COLORS = ['#0284C7', '#059669', '#D97706', '#E11D48', '#4F46E5', '#0EA5E9', '#10B981', '#F59E0B', '#F43F5E', '#6366F1'];
 
 export const formatCurrency = (val) => {
-  if (val === undefined || val === null || isNaN(val)) return '₺0';
-  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
+  return formatCurrencyValue(val, cachedTenantCurrency(), { decimals: 0, compactDecimals: false });
 };
 
 export const formatNumber = (val) => {
-  if (val === undefined || val === null) return '0';
-  return new Intl.NumberFormat('tr-TR').format(val);
+  const number = Number(val);
+  if (val === undefined || val === null || !Number.isFinite(number)) return '0';
+  return new Intl.NumberFormat('tr-TR').format(number);
 };
 
-export const formatPercent = (val) => '%' + (val || 0).toFixed(1);
+export const formatPercent = (val) => {
+  const number = Number(val);
+  return '%' + (Number.isFinite(number) ? number : 0).toFixed(1);
+};
 
 export const calcChange = (current, prev) => {
   if (!prev || prev === 0) return { pct: 0, direction: 'neutral' };
-  const pct = ((current - prev) / prev * 100);
-  return { pct: Math.abs(pct).toFixed(1), direction: pct >= 0 ? 'up' : 'down' };
+  const pct = ((Number(current || 0) - Number(prev)) / Number(prev) * 100);
+  return { pct: Math.abs(pct).toFixed(1), direction: pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral' };
 };
 
 // Eski color → Sprint A intent eşlemesi (geriye dönük uyumluluk için).
@@ -38,7 +42,7 @@ const COLOR_TO_INTENT = {
 
 export const KPICard = ({ title, value, prevValue, prevLabel, icon: Icon, color = 'default' }) => {
   const intent = COLOR_TO_INTENT[color] || 'default';
-  const isCurrency = /gelir|adr|rev|ciro|ödeme|tutar/i.test(title);
+  const isCurrency = /gelir|adr|rev|ciro|ödeme|tutar|tahsilat|fiyat|bakiye/i.test(title);
   const displayVal = typeof value === 'number' ? (isCurrency ? formatCurrency(value) : formatNumber(value)) : value;
   let sub = prevLabel;
   if (!sub && prevValue !== undefined && typeof value === 'number') {

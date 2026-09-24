@@ -29,7 +29,7 @@ const NationalitySection = ({
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_NationalitySection.ulke_detaylari')}</CardTitle></CardHeader>
           <CardContent>
-            {countryData.length > 0 ? <div className="space-y-2 max-h-[300px] overflow-y-auto">{countryData.slice(0, 20).map((c, i) => {
+            {countryData.length > 0 ? <div className="space-y-2 max-h-[300px] overflow-y-auto">{countryData.map((c, i) => {
               const pct = totalGuests > 0 ? (c.count / totalGuests * 100).toFixed(1) : 0;
               return <div key={c.id || i} className="flex items-center gap-3">
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{

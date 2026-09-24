@@ -11,6 +11,14 @@ const PeriodSection = ({ data, pc }) => {
   const { t } = useTranslation();
   const revChange = calcChange(pc.month_revenue, pc.prev_month_revenue);
   const bookChange = calcChange(pc.month_bookings, pc.prev_month_bookings);
+  const changeClasses = change => change.direction === 'up'
+    ? 'border-emerald-200 bg-emerald-50/30 text-emerald-700'
+    : change.direction === 'down'
+      ? 'border-rose-200 bg-rose-50/30 text-rose-700'
+      : 'border-slate-200 bg-slate-50/30 text-slate-600';
+  const changeText = change => change.direction === 'neutral'
+    ? 'Değişim yok'
+    : `${change.direction === 'up' ? '+' : '-'}${change.pct}%`;
   return (
     <div className="space-y-6" data-testid="section-period">
       <SectionHeader title={t('cm.pages_reports_PeriodSection.donem_karsilastirma')} description={t('cm.pages_reports_PeriodSection.haftalik_aylik_ve_onceki_donem_karsilast')} />
@@ -52,20 +60,20 @@ const PeriodSection = ({ data, pc }) => {
         </CardContent>
       </Card>
       <div className="grid md:grid-cols-2 gap-4">
-        <Card className={`border-2 ${Number(revChange.pct) > 0 && revChange.direction === 'up' ? 'border-emerald-200 bg-emerald-50/30' : 'border-rose-200 bg-rose-50/30'}`}>
+        <Card className={`border-2 ${changeClasses(revChange)}`}>
           <CardContent className="p-5 text-center">
             <p className="text-sm font-medium text-gray-600">{t('cm.pages_reports_PeriodSection.gelir_degisimi_onceki_aya_gore')}</p>
-            <p className={`text-3xl font-bold mt-2 ${revChange.direction === 'up' ? 'text-emerald-700' : 'text-rose-700'}`}>
-              {revChange.direction === 'up' ? '+' : '-'}{revChange.pct}%
+            <p className="text-3xl font-bold mt-2">
+              {changeText(revChange)}
             </p>
             <p className="text-xs text-gray-500 mt-1">{formatCurrency(pc.month_revenue)} vs {formatCurrency(pc.prev_month_revenue)}</p>
           </CardContent>
         </Card>
-        <Card className={`border-2 ${Number(bookChange.pct) > 0 && bookChange.direction === 'up' ? 'border-emerald-200 bg-emerald-50/30' : 'border-rose-200 bg-rose-50/30'}`}>
+        <Card className={`border-2 ${changeClasses(bookChange)}`}>
           <CardContent className="p-5 text-center">
             <p className="text-sm font-medium text-gray-600">{t('cm.pages_reports_PeriodSection.rezervasyon_degisimi_onceki_aya_gore')}</p>
-            <p className={`text-3xl font-bold mt-2 ${bookChange.direction === 'up' ? 'text-emerald-700' : 'text-rose-700'}`}>
-              {bookChange.direction === 'up' ? '+' : '-'}{bookChange.pct}%
+            <p className="text-3xl font-bold mt-2">
+              {changeText(bookChange)}
             </p>
             <p className="text-xs text-gray-500 mt-1">{pc.month_bookings} vs {pc.prev_month_bookings}</p>
           </CardContent>

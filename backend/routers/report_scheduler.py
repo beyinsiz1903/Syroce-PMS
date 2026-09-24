@@ -22,6 +22,7 @@ import re as _re
 import traceback
 import uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -195,8 +196,33 @@ def _validate_schedule_fields(data: dict):
         raise HTTPException(status_code=400, detail="Aylık frekans için 'ayın günü' zorunludur")
 
 
-def _compute_next_run(frequency: str, send_time: str, day_of_week: str | None, day_of_month: int | None) -> str:
-    now = datetime.now(UTC)
+async def _get_tenant_timezone(tenant_id: str) -> str:
+    settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
+    timezone_name = settings.get("timezone") or "Europe/Istanbul"
+    try:
+        ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError, OSError):
+        timezone_name = "Europe/Istanbul"
+    return timezone_name
+
+
+def _compute_next_run(
+    frequency: str,
+    send_time: str,
+    day_of_week: str | None,
+    day_of_month: int | None,
+    timezone_name: str = "Europe/Istanbul",
+    *,
+    now_utc: datetime | None = None,
+) -> str:
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError, OSError):
+        timezone = ZoneInfo("Europe/Istanbul")
+    reference = now_utc or datetime.now(UTC)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+    now = reference.astimezone(timezone)
     hour, minute = (int(x) for x in send_time.split(":"))
 
     if frequency == "daily":
@@ -206,7 +232,8 @@ def _compute_next_run(frequency: str, send_time: str, day_of_week: str | None, d
     elif frequency == "weekly":
         target_day = DAYS_OF_WEEK.index(day_of_week or "monday")
         days_ahead = target_day - now.weekday()
-        if days_ahead <= 0:
+        candidate = (now + timedelta(days=days_ahead)).replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate <= now:
             days_ahead += 7
         next_run = (now + timedelta(days=days_ahead)).replace(hour=hour, minute=minute, second=0, microsecond=0)
     elif frequency == "monthly":
@@ -222,7 +249,7 @@ def _compute_next_run(frequency: str, send_time: str, day_of_week: str | None, d
     else:
         next_run = now + timedelta(days=1)
 
-    return next_run.isoformat()
+    return next_run.astimezone(UTC).isoformat()
 
 
 @router.get("/report-types")
@@ -245,16 +272,25 @@ async def create_schedule(
 
     data = body.model_dump()
     _validate_schedule_fields(data)
+    tenant_id = _get_tenant_id(current_user)
+    timezone_name = await _get_tenant_timezone(tenant_id)
 
     schedule = {
         "_id": str(uuid.uuid4()),
-        "tenant_id": _get_tenant_id(current_user),
+        "tenant_id": tenant_id,
+        "timezone": timezone_name,
         "created_by": current_user.email,
         "created_by_name": getattr(current_user, "name", current_user.email),
         "created_at": datetime.now(UTC).isoformat(),
         "updated_at": datetime.now(UTC).isoformat(),
         "is_active": True,
-        "next_run": _compute_next_run(data["frequency"], data["send_time"], data.get("day_of_week"), data.get("day_of_month")),
+        "next_run": _compute_next_run(
+            data["frequency"],
+            data["send_time"],
+            data.get("day_of_week"),
+            data.get("day_of_month"),
+            timezone_name,
+        ),
         "total_sent": 0,
         "total_failed": 0,
         "last_sent_at": None,
@@ -314,12 +350,15 @@ async def update_schedule(
         st = updates.get("send_time", schedule["send_time"])
         dow = updates.get("day_of_week", schedule.get("day_of_week"))
         dom = updates.get("day_of_month", schedule.get("day_of_month"))
-        updates["next_run"] = _compute_next_run(freq, st, dow, dom)
+        timezone_name = schedule.get("timezone") or await _get_tenant_timezone(_get_tenant_id(current_user))
+        updates["timezone"] = timezone_name
+        updates["next_run"] = _compute_next_run(freq, st, dow, dom, timezone_name)
 
     updates["updated_at"] = datetime.now(UTC).isoformat()
-    await db.report_schedules.update_one({"_id": schedule_id}, {"$set": updates})
+    tenant_filter = {"_id": schedule_id, "tenant_id": _get_tenant_id(current_user)}
+    await db.report_schedules.update_one(tenant_filter, {"$set": updates})
 
-    updated = await db.report_schedules.find_one({"_id": schedule_id})
+    updated = await db.report_schedules.find_one(tenant_filter)
     _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return {"message": "Zamanlama guncellendi", "schedule": updated}
 
@@ -333,9 +372,10 @@ async def delete_schedule(
     _require_manager_role(current_user)
 
     await _get_schedule_for_tenant(schedule_id, current_user)
-    await db.report_schedules.delete_one({"_id": schedule_id})
+    tenant_filter = {"_id": schedule_id, "tenant_id": _get_tenant_id(current_user)}
+    await db.report_schedules.delete_one(tenant_filter)
 
-    await db.report_schedule_history.delete_many({"schedule_id": schedule_id})
+    await db.report_schedule_history.delete_many({"schedule_id": schedule_id, "tenant_id": _get_tenant_id(current_user)})
     _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return {"message": "Zamanlama silindi"}
 
@@ -358,9 +398,13 @@ async def toggle_schedule(
             schedule["send_time"],
             schedule.get("day_of_week"),
             schedule.get("day_of_month"),
+            schedule.get("timezone") or await _get_tenant_timezone(_get_tenant_id(current_user)),
         )
 
-    await db.report_schedules.update_one({"_id": schedule_id}, {"$set": updates})
+    await db.report_schedules.update_one(
+        {"_id": schedule_id, "tenant_id": _get_tenant_id(current_user)},
+        {"$set": updates},
+    )
     _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return {"message": f"Zamanlama {'aktif' if new_status else 'pasif'} edildi", "is_active": new_status}
 
@@ -431,7 +475,7 @@ async def retry_send(
     schedule = await _get_schedule_for_tenant(entry["schedule_id"], current_user)
 
     await db.report_schedule_history.update_one(
-        {"_id": history_id},
+        {"_id": history_id, "tenant_id": _get_tenant_id(current_user)},
         {"$set": {"status": "retrying", "retry_count": entry.get("retry_count", 0) + 1}},
     )
 
@@ -444,14 +488,21 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
     """Rapor tipi başına gerçek veri toplar.
 
     Döner: {rows: [{label, value}], generated_at, range, notes}
-    Hata olursa boş rows + notes döner — gönderim yine yapılır (kullanıcıya
-    boş "veri yok" raporu yerine mock gönderilmesin diye).
+    Veri toplama hataları çağırana aktarılır; hatalı/boş rapor başarıyla
+    gönderilmiş gibi kaydedilmez.
     """
+    from core.business_date_service import accounting_day_match, ensure_business_date_initialized
     from core.database import _raw_db as raw_db
+    from core.tenant_currency import get_tenant_currency
+    from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
     tenant_id = schedule.get("tenant_id") or "default"
     rtype = schedule.get("report_type", "")
-    today_iso = now.date().isoformat()
+    business_state = await ensure_business_date_initialized(raw_db, tenant_id)
+    today_iso = str(business_state["business_date"])[:10]
+    day_start = datetime.fromisoformat(today_iso).replace(tzinfo=UTC)
+    day_end = day_start + timedelta(days=1)
+    currency_code, _ = await get_tenant_currency(tenant_id)
     rows: list[dict] = []
     notes: str | None = None
 
@@ -460,27 +511,31 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
             arrivals = await raw_db.bookings.count_documents(
                 {
                     "tenant_id": tenant_id,
-                    "check_in_date": today_iso,
-                    "status": {"$in": ["confirmed", "checked_in", "arriving"]},
+                    "$or": [
+                        {"check_in": today_iso},
+                        {"check_in": {"$gte": day_start, "$lt": day_end}},
+                        {"check_in": {"$gte": day_start.isoformat(), "$lt": day_end.isoformat()}},
+                    ],
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "arriving"]},
                 }
             )
             departures = await raw_db.bookings.count_documents(
                 {
                     "tenant_id": tenant_id,
-                    "check_out_date": today_iso,
-                    "status": {"$in": ["checked_in", "checked_out", "departing"]},
+                    "$or": [
+                        {"check_out": today_iso},
+                        {"check_out": {"$gte": day_start, "$lt": day_end}},
+                        {"check_out": {"$gte": day_start.isoformat(), "$lt": day_end.isoformat()}},
+                    ],
+                    "status": {"$in": ["checked_in", "in_house", "checked_out", "departing"]},
                 }
             )
-            in_house = await raw_db.bookings.count_documents(
-                {
-                    "tenant_id": tenant_id,
-                    "status": "checked_in",
-                }
-            )
-            total_rooms = await raw_db.rooms.count_documents({"tenant_id": tenant_id})
-            occ = round((in_house / total_rooms) * 100, 1) if total_rooms else 0
+            metrics = (await load_stay_night_metrics(raw_db, tenant_id, day_start.date(), day_start.date(), actual_only=True))[0]
+            in_house = metrics["occupied_rooms"]
+            total_rooms = metrics["total_rooms"]
+            occ = metrics["occupancy_rate"]
             rows = [
-                {"label": "Tarih", "value": now.strftime("%d.%m.%Y")},
+                {"label": "PMS iş tarihi", "value": day_start.strftime("%d.%m.%Y")},
                 {"label": "Bugün gelen (arrivals)", "value": arrivals},
                 {"label": "Bugün çıkan (departures)", "value": departures},
                 {"label": "Evde olan (in-house)", "value": in_house},
@@ -488,26 +543,39 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
                 {"label": "Doluluk %", "value": occ},
             ]
         elif rtype in ("revenue", "adr_revpar", "financial"):
-            pipeline = [
-                {"$match": {"tenant_id": tenant_id, "created_at": {"$regex": f"^{today_iso}"}}},
-                {"$group": {"_id": None, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
-            ]
-            agg = await raw_db.folio_entries.aggregate(pipeline).to_list(length=1)
-            total = agg[0]["total"] if agg else 0
-            count = agg[0]["count"] if agg else 0
-            in_house = await raw_db.bookings.count_documents(
+            charges = await raw_db.folio_charges.find(
                 {
                     "tenant_id": tenant_id,
-                    "status": "checked_in",
-                }
+                    "voided": {"$ne": True},
+                    **accounting_day_match(
+                        today_iso,
+                        {"date": today_iso},
+                        {"date": {"$gte": day_start, "$lt": day_end}},
+                        {"created_at": {"$gte": day_start.isoformat(), "$lt": day_end.isoformat()}},
+                    ),
+                },
+                {"_id": 0, "total": 1, "amount": 1, "charge_category": 1, "charge_type": 1},
+            ).to_list(50000)
+            total = round(sum(float(item.get("total") or item.get("amount") or 0) for item in charges), 2)
+            room_revenue = round(
+                sum(
+                    float(item.get("total") or item.get("amount") or 0)
+                    for item in charges
+                    if str(item.get("charge_category") or item.get("charge_type") or "").lower()
+                    in {"room", "room_charge", "accommodation", "lodging", "konaklama"}
+                ),
+                2,
             )
-            adr = round(total / in_house, 2) if in_house else 0
-            total_rooms = await raw_db.rooms.count_documents({"tenant_id": tenant_id})
-            revpar = round(total / total_rooms, 2) if total_rooms else 0
+            metrics = (await load_stay_night_metrics(raw_db, tenant_id, day_start.date(), day_start.date(), actual_only=True))[0]
+            occupied_rooms = metrics["occupied_rooms"]
+            total_rooms = metrics["total_rooms"]
+            effective_room_revenue = room_revenue if room_revenue else metrics["revenue"]
+            adr = round(effective_room_revenue / occupied_rooms, 2) if occupied_rooms else 0
+            revpar = round(effective_room_revenue / total_rooms, 2) if total_rooms else 0
             rows = [
-                {"label": "Tarih", "value": now.strftime("%d.%m.%Y")},
-                {"label": "Toplam gelir (TRY)", "value": f"{total:,.2f}".replace(",", ".")},
-                {"label": "Folio kayıt sayısı", "value": count},
+                {"label": "PMS iş tarihi", "value": day_start.strftime("%d.%m.%Y")},
+                {"label": f"Toplam gelir ({currency_code})", "value": f"{total:,.2f}".replace(",", ".")},
+                {"label": "Folyo kayıt sayısı", "value": len(charges)},
                 {"label": "ADR (Ortalama Günlük Fiyat)", "value": adr},
                 {"label": "RevPAR (Oda Başı Gelir)", "value": revpar},
             ]
@@ -515,7 +583,10 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
             new_guests = await raw_db.guests.count_documents(
                 {
                     "tenant_id": tenant_id,
-                    "created_at": {"$regex": f"^{today_iso}"},
+                    "$or": [
+                        {"created_at": {"$regex": f"^{today_iso}"}},
+                        {"created_at": {"$gte": day_start, "$lt": day_end}},
+                    ],
                 }
             )
             total_guests = await raw_db.guests.count_documents({"tenant_id": tenant_id})
@@ -552,10 +623,10 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
             )
             rows = [{"label": "Acente kanalı rezervasyon (toplam)", "value": cnt}]
         else:
-            notes = f"'{rtype}' için özet hazırlayıcı tanımlı değil; e-posta gönderildi."
-    except Exception as exc:
-        logger.warning("[report-scheduler] payload build failed (%s): %s", rtype, exc)
-        notes = f"Veri toplanırken hata: {exc}"
+            raise ValueError(f"'{rtype}' için zamanlanmış rapor hazırlayıcı tanımlı değil")
+    except Exception:
+        logger.exception("[report-scheduler] payload build failed (%s)", rtype)
+        raise
 
     return {
         "rows": rows,
@@ -633,9 +704,14 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
 
         # 1) Rapor verisini topla
         payload = await _build_report_payload(schedule, now)
+        report_date = str(payload.get("range") or now.date().isoformat())[:10]
+        try:
+            report_date_label = datetime.fromisoformat(report_date).strftime("%d.%m.%Y")
+        except ValueError:
+            report_date_label = report_date
 
         # 2) E-posta içeriği
-        subject = f"Syroce Rapor: {report_label} — {now.strftime('%d.%m.%Y')}"
+        subject = f"Syroce Rapor: {report_label} — {report_date_label}"
         app_url = _resolve_app_url(schedule["_id"])
         html_content = _build_report_email_html(schedule, report_label, now, payload, app_url)
         text_lines = [
@@ -653,7 +729,7 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
 
         # 3) Ek (CSV/PDF) üret
         attachments: list = []
-        date_tag = now.strftime("%Y%m%d")
+        date_tag = report_date.replace("-", "")
         if fmt == "csv":
             attachments.append(
                 (
@@ -729,7 +805,7 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
             error_msg = None
 
         await db.report_schedule_history.update_one(
-            {"_id": hid},
+            {"_id": hid, "tenant_id": schedule.get("tenant_id", "default")},
             {
                 "$set": {
                     "status": status,
@@ -749,7 +825,7 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
 
         # KPI'yı sadece gerçekten gönderilen sayısı kadar artır.
         await db.report_schedules.update_one(
-            {"_id": schedule["_id"]},
+            {"_id": schedule["_id"], "tenant_id": schedule.get("tenant_id", "default")},
             {
                 "$set": {
                     "last_sent_at": now.isoformat(),
@@ -777,11 +853,11 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
         logger.error(f"Schedule execution failed: {e}\n{traceback.format_exc()}")
 
         await db.report_schedule_history.update_one(
-            {"_id": hid},
+            {"_id": hid, "tenant_id": schedule.get("tenant_id", "default")},
             {"$set": {"status": "failed", "error_message": error_msg}},
         )
         await db.report_schedules.update_one(
-            {"_id": schedule["_id"]},
+            {"_id": schedule["_id"], "tenant_id": schedule.get("tenant_id", "default")},
             {"$set": {"last_status": "failed", "updated_at": now.isoformat()}, "$inc": {"total_failed": 1}},
         )
 

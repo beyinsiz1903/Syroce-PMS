@@ -9,7 +9,7 @@ import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shie
 import ForecastReportsPage from './ForecastReportsPage';
 import FlashReportContent from '@/components/pms/FlashReportContent';
 import TrialBalancePage from './TrialBalancePage';
-import { ROOM_STATUS_COLORS, ROOM_STATUS_LABELS, formatPercent } from './reports/ReportHelpers';
+import { ROOM_STATUS_COLORS, ROOM_STATUS_LABELS, formatCurrency, formatPercent } from './reports/ReportHelpers';
 import OverviewSection from './reports/OverviewSection';
 import RevenueSection from './reports/RevenueSection';
 import AdrRevparSection from './reports/AdrRevparSection';
@@ -26,12 +26,18 @@ import ManagerDailyReports from './reports/ManagerDailyReports';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 const BACKEND_URL = "";
+const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
+const csvCell = value => {
+  let text = value === undefined || value === null ? '' : String(value);
+  if (CSV_FORMULA_PREFIX.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+};
 const REPORT_MENU = [{
   type: 'header',
   label: 'GENEL'
 }, {
   id: 'flash_report',
-  label: 'Bugünün Özeti (Flash)',
+  label: 'Gün Özeti (Flash)',
   icon: Activity,
   desc: 'Anlık kasa ve tesis durumu'
 }, {
@@ -201,12 +207,14 @@ const REPORT_MENU = [{
   desc: 'Yiyecek & içecek'
 }];
 const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official', 'forecast_reports', 'trial_balance']);
+const REPORT_SECTION_IDS = new Set(REPORT_MENU.filter(item => item.id).map(item => item.id));
+const TABLE_EXPORT_SECTIONS = new Set(['guests', 'inhouse', 'front_office', 'noshow', 'housekeeping', 'payments', 'cash_movements', 'rate_control', 'official', 'police']);
 const BasicReports = ({
   user,
   tenant,
   onLogout
 }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const businessDate = useBusinessDate();
   const [data, setData] = useState(null);
   const [reportPeriod, setReportPeriod] = useState("monthly");
@@ -215,7 +223,8 @@ const BasicReports = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlSection = searchParams.get('section') || 'overview';
+  const requestedSection = searchParams.get('section') || 'overview';
+  const urlSection = REPORT_SECTION_IDS.has(requestedSection) ? requestedSection : 'overview';
   const [activeSection, setActiveSectionState] = useState(urlSection);
   // Keep tab state in sync with the URL so browser back/forward and external
   // navigations land on the right section (e.g. /app/cost-management redirect).
@@ -266,10 +275,10 @@ const BasicReports = ({
   // needs it. Self-contained sections (expenses, official) load their own
   // data and shouldn't block on the dashboard aggregate.
     useEffect(() => {
-    if (needsDashboard && !error) {
+    if (needsDashboard) {
       fetchData();
     }
-  }, [needsDashboard, fetchData, error]);
+  }, [needsDashboard, fetchData]);
   const fetchOfficialGuests = useCallback(async dateParam => {
     setOfficialLoading(true);
     setOfficialError(null);
@@ -287,9 +296,9 @@ const BasicReports = ({
   const handleOfficialExportCsv = () => {
     if (!officialRows.length) return;
     const headers = ['booking_id', 'guest_name', 'national_id', 'passport_number', 'country', 'city', 'date_of_birth', 'room_number', 'check_in', 'check_out', 'adults', 'children', 'total_amount', 'billing_tax_number', 'billing_address', 'company_id', 'market_segment'];
-    const lines = [headers.join(',')];
+    const lines = [headers.map(csvCell).join(',')];
     officialRows.forEach(r => {
-      lines.push([r.booking_id || '', (r.guest_name || '').replace(/,/g, ' '), r.national_id || '', r.passport_number || '', (r.country || '').replace(/,/g, ' '), (r.city || '').replace(/,/g, ' '), r.date_of_birth || '', r.room_number || '', r.check_in || '', r.check_out || '', String(r.adults ?? ''), String(r.children ?? ''), String(r.total_amount ?? ''), r.billing_tax_number || '', (r.billing_address || '').replace(/,/g, ' '), r.company_id || '', r.market_segment || ''].join(','));
+      lines.push([r.booking_id, r.guest_name, r.national_id, r.passport_number, r.country, r.city, r.date_of_birth, r.room_number, r.check_in, r.check_out, r.adults, r.children, r.total_amount, r.billing_tax_number, r.billing_address, r.company_id, r.market_segment].map(csvCell).join(','));
     });
     const blob = new Blob([lines.join('\n')], {
       type: 'text/csv;charset=utf-8;'
@@ -311,10 +320,7 @@ const BasicReports = ({
     w.document.write('<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f5f5f5;font-weight:600}h1{font-size:18px;margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:12px}</style>');
     w.document.write('</head><body>');
     w.document.write('<h1>Resmi Müşteri Listesi</h1>');
-    w.document.write('<p>Tarih: ' + new Date(officialDate).toLocaleDateString('tr-TR') + ' | Toplam kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Toplam tutar: ' + officialTotalRevenue.toLocaleString(i18n.language, {
-      style: 'currency',
-      currency: 'TRY'
-    }) + '</p>');
+    w.document.write('<p>Tarih: ' + new Date(officialDate).toLocaleDateString('tr-TR') + ' | Toplam kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Toplam tutar: ' + formatCurrency(officialTotalRevenue) + '</p>');
     w.document.write(tableEl.outerHTML);
     w.document.write('</body></html>');
     w.document.close();
@@ -380,12 +386,12 @@ const BasicReports = ({
     name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal Yöneticisi (OTA)' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
     revenue: bookingSources.revenue?.[key] || 0
-  }));
+  })).sort((a, b) => b.count - a.count || b.revenue - a.revenue || a.name.localeCompare(b.name, 'tr'));
   const selectedDate = data?.date || reportDate;
   const todayArrivals = dailyLists.arrivals || [];
   const todayDepartures = dailyLists.departures || [];
-  const noShowGuests = guestList.filter(g => g.status === 'no_show');
-  const cancelledGuests = guestList.filter(g => g.status === 'cancelled');
+  const noShowGuests = guestList.filter(g => ['no_show', 'noshow'].includes(String(g.status || '').toLowerCase()));
+  const cancelledGuests = guestList.filter(g => ['cancelled', 'canceled'].includes(String(g.status || '').toLowerCase()));
   const filteredGuests = guestList.filter(g => {
     if (!searchGuest) return true;
     const term = searchGuest.toLowerCase();
@@ -394,7 +400,7 @@ const BasicReports = ({
   const fallbackInHouseGuests = guestList.filter(g => {
     const ci = g.check_in ? g.check_in.substring(0, 10) : '';
     const co = g.check_out ? g.check_out.substring(0, 10) : '';
-    return ci && co && ci <= selectedDate && selectedDate < co && ['checked_in', 'checked_out'].includes(g.status);
+    return ci && co && ci <= selectedDate && selectedDate < co && ['checked_in', 'in_house', 'checked_out'].includes(g.status);
   });
   const selectedInHouseGuests = (Array.isArray(dailyLists.in_house) ? dailyLists.in_house : fallbackInHouseGuests).filter(g => {
     if (!searchGuest) return true;
@@ -434,11 +440,7 @@ const BasicReports = ({
         const rowData = [];
         const cells = row.querySelectorAll('th, td');
         cells.forEach(cell => {
-          let text = (cell.innerText || "").replace(/(\r\n|\n|\r)/gm, " ").trim();
-          if (text.includes(',') || text.includes('"')) {
-            text = `"${text.replace(/"/g, '""')}"`;
-          }
-          rowData.push(text);
+          rowData.push(csvCell((cell.innerText || '').trim()));
         });
         csvContent += rowData.join(',') + "\n";
       });
@@ -448,7 +450,7 @@ const BasicReports = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `rapor_${activeSection}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `rapor_${activeSection}_${reportDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -463,11 +465,11 @@ const BasicReports = ({
 
     switch (activeSection) {
       case 'flash_report':
-        return <FlashReportContent showDatePicker={false} isEmbedded={true} targetDate={reportPeriod === 'daily' && reportDate ? reportDate : new Date().toISOString().split('T')[0]} />;
+        return <FlashReportContent showDatePicker={false} isEmbedded={true} targetDate={reportDate} />;
       case 'overview':
         return <OverviewSection data={data} s={s} pc={pc} periodMetrics={periodMetrics} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
       case 'revenue':
-        return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} reportPeriod={reportPeriod} />;
+        return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} reportPeriod={reportPeriod} reportDate={selectedDate} />;
       case 'adr_revpar':
         return <AdrRevparSection data={data} s={s} pc={pc} periodMetrics={periodMetrics} reportPeriod={reportPeriod} />;
       case 'forecast_reports':
@@ -511,11 +513,11 @@ const BasicReports = ({
           setOfficialDate(value);
         }} officialRows={officialRows} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
       case 'police':
-        return <PoliceSection filteredGuests={filteredGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />;
+        return <PoliceSection filteredGuests={selectedInHouseGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} reportDate={selectedDate} />;
       case 'departments':
         return <DepartmentsSection s={s} hk={hk} maint={maint} finance={finance} />;
       case 'fnb':
-        return <FnBSection s={s} />;
+        return <FnBSection s={s} reportDate={selectedDate} />;
       case 'expenses':
         return <div data-testid="section-expenses"><CostAnalyticsView /></div>;
       default:
@@ -531,11 +533,11 @@ const BasicReports = ({
               <BarChart3 className="w-5 h-5 text-sky-600" />
               <h1 className="text-base font-bold text-gray-900">Rapor Merkezi</h1>
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">{new Date().toLocaleDateString('tr-TR', {
+            <p className="text-[11px] text-gray-400 mt-1">{businessDate || reportDate ? new Date((businessDate || reportDate) + 'T12:00:00').toLocaleDateString('tr-TR', {
               day: 'numeric',
               month: 'long',
               year: 'numeric'
-            })}</p>
+            }) : 'PMS tarihi yükleniyor'}</p>
           </div>
           <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {REPORT_MENU.map((item, idx) => {
@@ -567,6 +569,13 @@ const BasicReports = ({
             <select value={activeSection} onChange={e => setActiveSection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" data-testid="mobile-report-selector">
               {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id}`, m.label)}</option>)}
             </select>
+            {needsDashboard && <div className="grid grid-cols-2 gap-2 mt-2">
+              <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
+                <option value="monthly">Son 30 Gün</option>
+                <option value="daily">Günlük</option>
+              </select>
+              <input type="date" className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportDate} onChange={e => { reportDateEditedRef.current = true; setReportDate(e.target.value); }} />
+            </div>}
           </div>
           <div className="p-4" data-testid="reports-mobile-content">{renderContent()}</div>
         </div>
@@ -580,7 +589,7 @@ const BasicReports = ({
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
                             <div className="flex items-center gap-2">
-                {activeSection !== 'flash_report' && (
+                {needsDashboard && activeSection !== 'flash_report' && (
                 <select 
                   className="border rounded px-2 py-1 text-sm bg-white print:hidden"
                   value={reportPeriod}
@@ -590,7 +599,7 @@ const BasicReports = ({
                   <option value="daily">Günlük (Seçili Tarih)</option>
                 </select>
                 )}
-                <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
+                {needsDashboard && <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
                   Rapor tarihi
                   <input
                     type="date"
@@ -602,16 +611,16 @@ const BasicReports = ({
                     }}
                     data-testid="report-date-input"
                   />
-                </label>
-                <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                </label>}
+                {activeSection !== 'official' && <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
-                </Button>
-                <Button onClick={handleGenericExportCsv} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                </Button>}
+                {TABLE_EXPORT_SECTIONS.has(activeSection) && activeSection !== 'official' && <Button onClick={handleGenericExportCsv} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Download className="w-3.5 h-3.5 mr-1.5" />Excel/CSV
-                </Button>
-                <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
+                </Button>}
+                {needsDashboard && <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
                   <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile
-                </Button>
+                </Button>}
               </div>
             </div>
             {renderContent()}
