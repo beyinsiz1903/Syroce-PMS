@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -12,13 +12,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   Building2, Plus, RefreshCw, Calendar, BedDouble, Percent, AlertTriangle
 } from 'lucide-react';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const ROOM_TYPE_KEYS = ['standard', 'superior', 'deluxe', 'suite', 'family', 'king'];
 
-const AllotmentGrid = () => {
+const AllotmentGrid = ({ rooms = [] }) => {
   const { t, i18n } = useTranslation();
   const ta = useCallback((k) => t(`pmsComponents.allotment.${k}`), [t]);
-  const cur = t('pmsComponents.common.currency');
+  const currency = cachedTenantCurrency();
+  const roomTypes = useMemo(() => {
+    const actual = [...new Set(rooms.map(room => room.room_type || room.type).filter(Boolean))];
+    return actual.length ? actual.sort((a, b) => a.localeCompare(b, i18n.language)) : ROOM_TYPE_KEYS;
+  }, [rooms, i18n.language]);
 
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -27,6 +32,12 @@ const AllotmentGrid = () => {
     tour_operator: '', room_type: 'standard', allocated_rooms: '',
     start_date: '', end_date: '', rate: '', release_days: '7'
   });
+
+  useEffect(() => {
+    setFormData(prev => roomTypes.includes(prev.room_type)
+      ? prev
+      : { ...prev, room_type: roomTypes[0] || 'standard' });
+  }, [roomTypes]);
 
   const loadContracts = useCallback(async () => {
     setLoading(true);
@@ -72,11 +83,9 @@ const AllotmentGrid = () => {
     }
   };
 
-  const fmt = (v) => (v || 0).toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
   const totalAllocated = contracts.reduce((s, c) => s + (c.allocated_rooms || 0), 0);
   const totalUsed = contracts.reduce((s, c) => s + (c.used_rooms || 0), 0);
-  const totalAvailable = totalAllocated - totalUsed;
+  const totalAvailable = Math.max(0, totalAllocated - totalUsed);
 
   return (
     <div className="space-y-6">
@@ -147,9 +156,10 @@ const AllotmentGrid = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {contracts.map((contract) => {
-            const available = (contract.allocated_rooms || 0) - (contract.used_rooms || 0);
+            const available = Math.max(0, (contract.allocated_rooms || 0) - (contract.used_rooms || 0));
             const usagePct = contract.allocated_rooms > 0 ? Math.round((contract.used_rooms || 0) / contract.allocated_rooms * 100) : 0;
-            const isExpiring = contract.end_date && new Date(contract.end_date) < new Date(Date.now() + 7 * 86400000);
+            const endDate = contract.end_date ? new Date(contract.end_date) : null;
+            const isExpiring = endDate && endDate >= new Date() && endDate < new Date(Date.now() + 7 * 86400000);
             return (
               <Card key={contract.id} className="hover:shadow-lg transition">
                 <CardHeader className="pb-2">
@@ -190,12 +200,12 @@ const AllotmentGrid = () => {
                     {(contract.bookings_count > 0 || contract.total_revenue > 0) && (
                       <div className="flex justify-between border-t pt-2">
                         <span className="text-gray-600">{ta('matchedRevenue')}</span>
-                        <span className="font-semibold text-emerald-600">{fmt(contract.total_revenue)} {cur}</span>
+                        <span className="font-semibold text-emerald-600">{formatCurrency(contract.total_revenue, contract.currency || currency)}</span>
                       </div>
                     )}
                     <div className="flex justify-between">
                       <span className="text-gray-600">{ta('price')}</span>
-                      <span className="font-semibold">{fmt(contract.rate)} {cur}{ta('perNight')}</span>
+                      <span className="font-semibold">{formatCurrency(contract.rate, contract.currency || currency)}{ta('perNight')}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">{ta('period')}</span>
@@ -235,8 +245,8 @@ const AllotmentGrid = () => {
                 <Select value={formData.room_type} onValueChange={(v) => setFormData({ ...formData, room_type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {ROOM_TYPE_KEYS.map(r => (
-                      <SelectItem key={r} value={r}>{ta(`roomTypes.${r}`)}</SelectItem>
+                    {roomTypes.map(r => (
+                      <SelectItem key={r} value={r}>{ROOM_TYPE_KEYS.includes(r) ? ta(`roomTypes.${r}`) : r}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -258,7 +268,7 @@ const AllotmentGrid = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>{ta('nightlyRate')} ({cur})</Label>
+                <Label>{ta('nightlyRate')} ({currency})</Label>
                 <Input type="number" min="0" step="0.01" value={formData.rate} onChange={(e) => setFormData({ ...formData, rate: e.target.value })} placeholder="500.00" />
               </div>
               <div>

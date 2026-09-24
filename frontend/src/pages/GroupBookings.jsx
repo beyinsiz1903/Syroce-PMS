@@ -24,6 +24,7 @@ import {
   Trash2, RefreshCw, BedDouble, Wallet, CreditCard,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const tomorrowISO = () => {
@@ -88,6 +89,7 @@ function showBulkErrors(title, errors) {
 
 export default function GroupBookings({ user, tenant, onLogout }) {
   const { t } = useTranslation();
+  const currency = cachedTenantCurrency();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -341,8 +343,8 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                     <h3 className="font-bold text-slate-800">{g.group_name}</h3>
                     <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
                       <span>{g.total_rooms || g.booking_ids?.length || 0} oda</span>
-                      <span>{(g.total_amount || 0).toLocaleString('tr-TR')} TL</span>
-                      <span>{t('cm.pages_GroupBookings.odenen')} {(g.total_paid || 0).toLocaleString('tr-TR')} TL</span>
+                      <span>{formatCurrency(g.total_amount, g.currency || currency)}</span>
+                      <span>{t('cm.pages_GroupBookings.odenen')} {formatCurrency(g.total_paid, g.currency || currency)}</span>
                     </div>
                   </div>
                 </div>
@@ -421,7 +423,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                             {t('cm.pages_GroupBookings.oda')} {b.room_number || '?'} · {b.check_in?.toString().slice(0, 10)} → {b.check_out?.toString().slice(0, 10)}
                           </div>
                         </div>
-                        <span className="text-sm font-medium text-slate-600">{(b.total_amount || 0).toLocaleString('tr-TR')} TL</span>
+                        <span className="text-sm font-medium text-slate-600">{formatCurrency(b.total_amount, b.currency || currency)}</span>
                       </div>
                     ))
                   )}
@@ -504,7 +506,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                   </div>
                 </div>
                 <p className="text-xs text-slate-500">
-                  {t('cm.pages_GroupBookings.toplam_tutar')} <strong>{newRows.reduce((s, r) => s + (parseFloat(r.total_amount) || 0), 0).toLocaleString('tr-TR')} TL</strong>
+                  {t('cm.pages_GroupBookings.toplam_tutar')} <strong>{formatCurrency(newRows.reduce((s, r) => s + (parseFloat(r.total_amount) || 0), 0), currency)}</strong>
                   {' · '}{t('cm.pages_GroupBookings.misafir_adlari_placeholder_olarak_kayded')}
                 </p>
               </>
@@ -529,8 +531,8 @@ export default function GroupBookings({ user, tenant, onLogout }) {
               {/* B5: KpiCard Sprint A intent paleti (sky/emerald/amber) */}
               <div className="grid grid-cols-3 gap-3">
                 <KpiCard icon={BedDouble} label={t('cm.pages_GroupBookings.toplam_oda')} value={detailRoomCount} intent="info" />
-                <KpiCard icon={Wallet} label={t('cm.pages_GroupBookings.toplam_tutar_d7437')} value={`${(showDetail.total_amount || 0).toLocaleString('tr-TR')} TL`} intent="success" />
-                <KpiCard icon={CreditCard} label={t('cm.pages_GroupBookings.odenen_2beb0')} value={`${(showDetail.total_paid || 0).toLocaleString('tr-TR')} TL`} intent="warning" />
+                <KpiCard icon={Wallet} label={t('cm.pages_GroupBookings.toplam_tutar_d7437')} value={formatCurrency(showDetail.total_amount, showDetail.currency || currency)} intent="success" />
+                <KpiCard icon={CreditCard} label={t('cm.pages_GroupBookings.odenen_2beb0')} value={formatCurrency(showDetail.total_paid, showDetail.currency || currency)} intent="warning" />
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => requestBulkAction('checkin', showDetail)} className="h-8 text-xs" disabled={bulkSubmitting}>
@@ -565,7 +567,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                           {/* B4: full status i18n */}
                           <StatusBadge intent={intentStatus(b.status)}>{labelStatus(b.status)}</StatusBadge>
                         </td>
-                        <td className="py-2 px-3 text-right font-medium">{(b.total_amount || 0).toLocaleString('tr-TR')} TL</td>
+                        <td className="py-2 px-3 text-right font-medium">{formatCurrency(b.total_amount, b.currency || showDetail.currency || currency)}</td>
                       </tr>
                     ))}
                   </tbody>

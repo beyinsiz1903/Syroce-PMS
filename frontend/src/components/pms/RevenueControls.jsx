@@ -34,7 +34,7 @@ const RevenueControls = ({ rooms = [] }) => {
   const [activeTab, setActiveTab] = useState('hurdle');
   const [hurdleRates, setHurdleRates] = useState(defaultHurdle());
   const [dayPricing, setDayPricing] = useState(defaultDayPricing());
-  const [overbooking, setOverbooking] = useState(defaultOverbooking(rooms.length || 30));
+  const [overbooking, setOverbooking] = useState(defaultOverbooking(rooms.length));
   const [showWalkDialog, setShowWalkDialog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -244,7 +244,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   <div className="text-sm text-muted-foreground">{tr('currentOverbook')}</div>
                   <div className="text-xs mt-1">{tr('capacity')} {overbooking.total_rooms} + {Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)} = {overbooking.total_rooms + Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)}</div>
                 </div>
-                <Button className="w-full" variant="destructive" onClick={() => setShowWalkDialog(true)}>
+                <Button className="w-full" variant="destructive" onClick={() => setShowWalkDialog(true)} disabled={rooms.length === 0}>
                   <Users className="h-4 w-4 mr-1" /> {tr('startWalkOut')}
                 </Button>
               </CardContent>

@@ -11,19 +11,16 @@ import {
   UtensilsCrossed, RefreshCw, ShoppingCart, CreditCard, TrendingUp, Clock,
   Plus, Monitor, AlertCircle, ExternalLink,
 } from 'lucide-react';
-
-const fmt = (v, lang) => (v || 0).toLocaleString(
-  lang === 'tr' ? 'tr-TR' : lang === 'de' ? 'de-DE' : lang === 'fr' ? 'fr-FR' : lang === 'es' ? 'es-ES' : lang === 'it' ? 'it-IT' : lang === 'pt' ? 'pt-BR' : lang === 'ru' ? 'ru-RU' : lang === 'ar' ? 'ar-SA' : lang === 'zh' ? 'zh-CN' : 'en-US',
-  { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-);
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-const POSTab = () => {
+const POSTab = ({ businessDate }) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const tc = (k) => t(`pmsComponents.pos.${k}`);
-  const cur = t('pmsComponents.common.currency');
+  const tc = useCallback((k) => t(`pmsComponents.pos.${k}`), [t]);
+  const currency = cachedTenantCurrency();
+  const money = (value) => formatCurrency(value, currency, { decimals: 2 });
 
   const STATUS_MAP = {
     completed: { label: t('pmsComponents.housekeeping.completed'), color: 'bg-green-100 text-green-700' },
@@ -43,7 +40,7 @@ const POSTab = () => {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const today = todayIso();
+    const today = businessDate || todayIso();
     try {
       const [breakdownRes, historyRes, activeRes] = await Promise.allSettled([
         axios.get(`/pos/outlet-sales-breakdown?start_date=${today}&end_date=${today}`),
@@ -80,7 +77,7 @@ const POSTab = () => {
       toast.error(tc('dataLoadFailed'));
     }
     setLoading(false);
-  }, [tc]);
+  }, [businessDate, tc]);
 
   useEffect(() => { loadData(); }, [loadData, i18n.language]);
 
@@ -117,7 +114,7 @@ const POSTab = () => {
           icon={CreditCard}
           intent="success"
           label={tc('totalSales')}
-          value={`${fmt(summary.total_sales, i18n.language)} ${cur}`}
+          value={money(summary.total_sales)}
           sub={tc('today')}
         />
         <KpiCard
@@ -131,7 +128,7 @@ const POSTab = () => {
           icon={TrendingUp}
           intent="default"
           label={tc('avgTransaction')}
-          value={`${fmt(summary.average_transaction, i18n.language)} ${cur}`}
+          value={money(summary.average_transaction)}
           sub={tc('perOrder')}
         />
         <KpiCard
@@ -193,7 +190,7 @@ const POSTab = () => {
                       </div>
                     </div>
                     <div className="text-right ml-3 flex-shrink-0">
-                      <div className="font-bold">{fmt(order.total_amount, i18n.language)} {cur}</div>
+                      <div className="font-bold">{money(order.total_amount)}</div>
                       <Badge className={st.color}>{st.label}</Badge>
                     </div>
                   </div>

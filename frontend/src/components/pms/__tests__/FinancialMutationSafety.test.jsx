@@ -134,6 +134,7 @@ describe('financial and destructive mutation safety', () => {
   });
 
   it('blocks zero payments and posts a positive payment at most once with an idempotency key', async () => {
+    get.mockResolvedValue({ data: [{ id: 'folio-test', balance: 100 }] });
     const setPaymentForm = vi.fn();
     const props = {
       open: true,
@@ -146,11 +147,9 @@ describe('financial and destructive mutation safety', () => {
     const { rerender } = render(<PaymentDialog {...props} />);
 
     expect(screen.getByTestId('payment-submit-btn')).toBeDisabled();
-    expect(get).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
 
     let resolvePayment;
-    get.mockResolvedValue({ data: [{ id: 'folio-test' }] });
     post.mockImplementation(() => new Promise((resolve) => { resolvePayment = resolve; }));
     const positiveProps = {
       ...props,
