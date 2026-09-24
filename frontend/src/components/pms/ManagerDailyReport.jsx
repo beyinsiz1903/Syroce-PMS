@@ -10,49 +10,81 @@ import {
 } from 'lucide-react';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
+const localDateKey = () => {
+  const now = new Date();
+  const pad = value => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+};
+
 const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departures = [], inhouse = [] }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const tm = (k) => t(`pmsComponents.managerReport.${k}`);
   const currency = cachedTenantCurrency();
   const money = value => formatCurrency(value, currency, { decimals: 0 });
 
-  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reportDate, setReportDate] = useState(localDateKey);
 
+  const dateKey = value => value ? String(value).slice(0, 10) : '';
+  const bookingArrival = booking => dateKey(booking.check_in || booking.arrival_date || booking.start_date);
+  const bookingDeparture = booking => dateKey(booking.check_out || booking.departure_date || booking.end_date);
+  const isCancelled = booking => ['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase());
+  const isNoShow = booking => String(booking.status || '').toLowerCase() === 'no_show';
+  const isReportableStay = booking => {
+    const status = String(booking.status || '').toLowerCase();
+    return !status || ['confirmed', 'guaranteed', 'checked_in', 'checked_out', 'completed'].includes(status);
+  };
+  const isActiveOnDate = booking => {
+    const arrival = bookingArrival(booking);
+    const departure = bookingDeparture(booking);
+    return arrival && departure && arrival <= reportDate && reportDate < departure && isReportableStay(booking) && !isCancelled(booking) && !isNoShow(booking);
+  };
+  const nightsFor = booking => {
+    const arrival = new Date(`${bookingArrival(booking)}T12:00:00`);
+    const departure = new Date(`${bookingDeparture(booking)}T12:00:00`);
+    const nights = Math.round((departure - arrival) / 86400000);
+    return Number.isFinite(nights) && nights > 0 ? nights : 1;
+  };
+  const dailyRevenueFor = booking => {
+    const explicit = booking.daily_rate ?? booking.nightly_rate ?? booking.rate_per_night ?? booking.base_rate;
+    if (explicit !== undefined && explicit !== null && explicit !== '') return Number(explicit) || 0;
+    return (Number(booking.total_amount ?? booking.total_price ?? booking.rate ?? 0) || 0) / nightsFor(booking);
+  };
+
+  const activeBookings = bookings.filter(isActiveOnDate);
   const totalRooms = rooms.length;
   const oooRooms = rooms.filter(r => r.status === 'out_of_order' || r.status === 'maintenance').length;
   const availableRooms = totalRooms - oooRooms;
-  const occupiedRooms = rooms.filter(r => r.status === 'occupied').length;
+  const assignedOccupiedRooms = new Set(activeBookings.map(b => b.room_id || b.room_number || b.room_no).filter(Boolean)).size;
+  const occupiedRooms = assignedOccupiedRooms || activeBookings.length;
   const occupancy = availableRooms > 0 ? ((occupiedRooms / availableRooms) * 100).toFixed(1) : 0;
 
-  const confirmedBookings = bookings.filter(b => b.status === 'checked_in' || b.status === 'confirmed');
-  const totalRevenue = confirmedBookings.reduce((sum, booking) => (
-    sum + Number(booking.total_amount ?? booking.total_price ?? booking.rate ?? 0)
-  ), 0);
+  const totalRevenue = activeBookings.reduce((sum, booking) => sum + dailyRevenueFor(booking), 0);
   const adr = occupiedRooms > 0 ? (totalRevenue / occupiedRooms).toFixed(0) : 0;
   const revpar = availableRooms > 0 ? (totalRevenue / availableRooms).toFixed(0) : 0;
 
-  const todayArrivals = arrivals.length;
-  const todayDepartures = departures.length;
-  const inhouseGuests = inhouse.length;
-  const vipGuests = inhouse.filter(b => b.vip || b.guest_vip).length;
-  const groupBookings = bookings.filter(b => b.group_id || b.is_group).length;
+  const datedArrivals = bookings.filter(b => bookingArrival(b) === reportDate && !isCancelled(b) && !isNoShow(b));
+  const datedDepartures = bookings.filter(b => bookingDeparture(b) === reportDate && !isCancelled(b) && !isNoShow(b));
+  const todayKey = localDateKey();
+  const todayArrivals = datedArrivals.length || (reportDate === todayKey ? arrivals.length : 0);
+  const todayDepartures = datedDepartures.length || (reportDate === todayKey ? departures.length : 0);
+  const inhouseGuests = activeBookings.length || (reportDate === todayKey ? inhouse.length : 0);
+  const vipGuests = activeBookings.filter(b => b.vip || b.guest_vip).length;
+  const groupBookings = activeBookings.filter(b => b.group_id || b.is_group).length;
 
-  const noShows = bookings.filter(b => b.status === 'no_show').length;
-  const cancellations = bookings.filter(b => b.status === 'cancelled').length;
-  const walkIns = bookings.filter(b => b.source === 'walk_in' || b.channel === 'walk_in').length;
+  const noShows = bookings.filter(b => isNoShow(b) && bookingArrival(b) === reportDate).length;
+  const cancellations = bookings.filter(b => isCancelled(b) && dateKey(b.cancelled_at || b.canceled_at || b.updated_at || b.check_in || b.arrival_date) === reportDate).length;
+  const walkIns = activeBookings.filter(b => ['walk_in', 'walkin'].includes(String(b.source || b.channel || '').toLowerCase())).length;
 
   const nationality = {};
-  bookings.filter(b => b.status === 'checked_in').forEach(b => {
+  activeBookings.forEach(b => {
     const nat = b.guest_nationality || b.nationality || tm('notSpecified');
     nationality[nat] = (nationality[nat] || 0) + 1;
   });
   const topNationalities = Object.entries(nationality).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   const losDistribution = { '1': 0, '2-3': 0, '4-7': 0, '7+': 0 };
-  bookings.filter(b => b.check_in && b.check_out).forEach(b => {
-    const ci = new Date(b.check_in);
-    const co = new Date(b.check_out);
-    const nights = Math.ceil((co - ci) / 86400000);
+  activeBookings.filter(b => bookingArrival(b) && bookingDeparture(b)).forEach(b => {
+    const nights = nightsFor(b);
     if (nights <= 1) losDistribution['1']++;
     else if (nights <= 3) losDistribution['2-3']++;
     else if (nights <= 7) losDistribution['4-7']++;
@@ -61,9 +93,10 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
 
   const printReport = () => {
     const w = window.open('', '_blank');
+    if (!w) return;
     w.document.write(`<html><head><title>${tm('printTitle')} - ${reportDate}</title><style>body{font-family:Arial;padding:30px;font-size:12px}h1{text-align:center;font-size:18px;border-bottom:2px solid #333;padding-bottom:8px}h2{font-size:14px;margin-top:20px;border-bottom:1px solid #999;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}.box{border:1px solid #ddd;padding:10px;text-align:center;border-radius:4px}.box .val{font-size:20px;font-weight:bold}.box .lbl{font-size:10px;color:#666}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:11px}th{background:#f5f5f5}.footer{margin-top:30px;font-size:10px;color:#999;text-align:center}@media print{body{padding:15px}}</style></head><body>`);
     w.document.write(`<h1>${tm('printTitle')}</h1><p style="text-align:center">${reportDate}</p>`);
-    w.document.write(`<h2>${tm('roomStatus')}</h2><div class="grid"><div class="box"><div class="val">${totalRooms}</div><div class="lbl">${tm('totalRooms')}</div></div><div class="box"><div class="val">${occupiedRooms}</div><div class="lbl">${tm('occupied')}</div></div><div class="box"><div class="val">${availableRooms - occupiedRooms}</div><div class="lbl">${tm('empty')}</div></div><div class="box"><div class="val">%${occupancy}</div><div class="lbl">${tm('occupancy')}</div></div></div>`);
+    w.document.write(`<h2>${tm('roomStatus')}</h2><div class="grid"><div class="box"><div class="val">${totalRooms}</div><div class="lbl">${tm('totalRooms')}</div></div><div class="box"><div class="val">${occupiedRooms}</div><div class="lbl">${tm('occupied')}</div></div><div class="box"><div class="val">${Math.max(0, availableRooms - occupiedRooms)}</div><div class="lbl">${tm('empty')}</div></div><div class="box"><div class="val">%${occupancy}</div><div class="lbl">${tm('occupancy')}</div></div></div>`);
     w.document.write(`<h2>${tm('revenueSection')}</h2><div class="grid"><div class="box"><div class="val">${money(totalRevenue)}</div><div class="lbl">${tm('totalRevenue')}</div></div><div class="box"><div class="val">${money(adr)}</div><div class="lbl">${tm('adr')}</div></div><div class="box"><div class="val">${money(revpar)}</div><div class="lbl">${tm('revpar')}</div></div><div class="box"><div class="val">${oooRooms}</div><div class="lbl">${tm('oooOos')}</div></div></div>`);
     w.document.write(`<h2>${tm('guestMovementSection')}</h2><table><tr><th></th><th>#</th></tr><tr><td>${tm('arrivals')}</td><td>${todayArrivals}</td></tr><tr><td>${tm('departures')}</td><td>${todayDepartures}</td></tr><tr><td>${tm('inHouse')}</td><td>${inhouseGuests}</td></tr><tr><td>${tm('vip')}</td><td>${vipGuests}</td></tr><tr><td>${tm('group')}</td><td>${groupBookings}</td></tr><tr><td>${tm('walkIn')}</td><td>${walkIns}</td></tr><tr><td>${tm('noShow')}</td><td>${noShows}</td></tr><tr><td>${tm('cancellation')}</td><td>${cancellations}</td></tr></table>`);
     if (topNationalities.length > 0) { w.document.write(`<h2>${tm('nationalitySection')}</h2><table><tr><th></th><th>#</th></tr>`); topNationalities.forEach(([nat, count]) => w.document.write(`<tr><td>${nat}</td><td>${count}</td></tr>`)); w.document.write('</table>'); }
@@ -88,12 +121,12 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <FileText className="h-5 w-5" /> {tm('title')}
         </h2>
-        <div className="flex items-center gap-2">
-          <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="w-40" />
+        <div className="flex flex-wrap items-center gap-2">
+          <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="min-w-40 flex-1 sm:flex-none" />
           <Button onClick={printReport}><Printer className="h-4 w-4 mr-1" /> {tm('print')}</Button>
         </div>
       </div>
@@ -101,7 +134,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <Card><CardContent className="p-3"><Metric label={tm('occupancy')} value={occupancy} suffix="%" /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('occupiedRooms')} value={occupiedRooms} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label={tm('emptyRooms')} value={availableRooms - occupiedRooms} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label={tm('emptyRooms')} value={Math.max(0, availableRooms - occupiedRooms)} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('adr')} value={money(adr)} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('revpar')} value={money(revpar)} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('totalRevenue')} value={money(totalRevenue)} /></CardContent></Card>
@@ -142,7 +175,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
                 <span>{key} {tm('nights')}</span>
                 <div className="flex items-center gap-2">
                   <div className="w-20 bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${bookings.length > 0 ? (val / bookings.length * 100) : 0}%` }} />
+                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${activeBookings.length > 0 ? (val / activeBookings.length * 100) : 0}%` }} />
                   </div>
                   <Badge variant="outline">{val}</Badge>
                 </div>
