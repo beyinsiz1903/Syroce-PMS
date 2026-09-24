@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from celery_runtime_role import should_import_task_implementations
+from core.celery_runtime_role import should_import_task_implementations
 
 
 def test_four_gb_profile_uses_single_python_process_per_service():

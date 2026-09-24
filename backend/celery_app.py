@@ -9,7 +9,7 @@ from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
-from celery_runtime_role import should_import_task_implementations
+from core.celery_runtime_role import should_import_task_implementations
 from redis_ssl import (
     celery_ssl_conf,
     normalize_redis_url_for_redis_py,

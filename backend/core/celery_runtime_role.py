@@ -1,6 +1,6 @@
 """Small process-role helpers shared by Celery entry points.
 
-Celery Beat only needs the static task names in ``beat_schedule``.  Importing
+Celery Beat only needs the static task names in ``beat_schedule``. Importing
 ``celery_tasks`` in that process loads the complete worker dependency graph for
 no operational benefit, which is expensive on the 4 GiB Droplet profile.
 """
