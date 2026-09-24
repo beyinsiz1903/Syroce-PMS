@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
 import { fetchJsonWithRetry, fetchWithRetry } from '@/lib/fetchRetry';
+import { formatCurrency as formatCurrencyValue } from '@/lib/currency';
 import { Database, Columns, Filter, Play, FileSpreadsheet, FileText, Plus, X, Trash2, Save, FolderOpen, Loader2, ChevronDown, ChevronUp, BarChart3, Table2, ArrowUpDown, Settings2, BookmarkPlus, RefreshCw } from 'lucide-react';
 
 // Yerel tarih (UTC değil) — Türkiye saat dilimine göre "Bugün" doğru gelir.
@@ -125,16 +126,12 @@ const OPERATORS = [{
   value: 'in',
   label: 'Listede'
 }];
-const formatCurrency = v => new Intl.NumberFormat('tr-TR', {
-  style: 'currency',
-  currency: 'TRY',
-  minimumFractionDigits: 0
-}).format(v || 0);
 const ReportBuilder = () => {
   const { t, i18n } = useTranslation();
   // Config state
   const [dataSources, setDataSources] = useState({});
   const [maxLimit, setMaxLimit] = useState(5000);
+  const [currencyCode, setCurrencyCode] = useState('TRY');
   const [selectedSource, setSelectedSource] = useState('');
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [filters, setFilters] = useState([]);
@@ -171,6 +168,7 @@ const ReportBuilder = () => {
         });
         setDataSources(data.data_sources || {});
         if (data.max_limit) setMaxLimit(data.max_limit);
+        if (data.currency_code) setCurrencyCode(data.currency_code);
       } catch {
         toast.error(t('reportBuilder.configError'));
       } finally {
@@ -241,6 +239,10 @@ const ReportBuilder = () => {
     sort_by: sortBy && selectedColumns.includes(sortBy) ? sortBy : null,
     sort_order: sortOrder,
     limit: Math.max(1, Math.min(parseInt(limit, 10) || 500, maxLimit))
+  });
+  const formatCurrency = value => formatCurrencyValue(value, currencyCode, {
+    decimals: 2,
+    compactDecimals: false
   });
   const generateReport = async () => {
     if (!selectedSource) return toast.error(t('reportBuilder.selectSource'));

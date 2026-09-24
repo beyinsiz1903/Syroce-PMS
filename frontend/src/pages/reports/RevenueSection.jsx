@@ -133,7 +133,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
                   <td className="p-2 text-right">{fmt(r.net)}</td>
                   <td className="p-2 text-right">{fmt(r.vat)}</td>
                   <td className="p-2 text-right">{fmt(r.city_tax)}</td>
-                  <td className="p-2 text-right font-semibold">{fmt(r.total)} ₺</td>
+                  <td className="p-2 text-right font-semibold">{formatCurrency(r.total)}</td>
                 </tr>)}
             </tbody>
             {totals && rows.length > 0 && <tfoot className="bg-gray-100 font-semibold">
@@ -145,7 +145,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
                   <td className="p-2 text-right">{fmt(totals.net)}</td>
                   <td className="p-2 text-right">{fmt(totals.vat)}</td>
                   <td className="p-2 text-right">{fmt(totals.city_tax)}</td>
-                  <td className="p-2 text-right">{fmt(totals.total)} ₺</td>
+                  <td className="p-2 text-right">{formatCurrency(totals.total)}</td>
                 </tr>
               </tfoot>}
           </table>

@@ -345,7 +345,7 @@ async def get_daily_flash_pdf(
 
     try:
         flash_data = await get_daily_flash_report(None, current_user)
-        from core.utils import get_tenant_currency
+        from core.tenant_currency import get_tenant_currency
 
         _, currency_symbol = await get_tenant_currency(current_user.tenant_id)
 
@@ -422,7 +422,7 @@ async def email_daily_flash(
 
     try:
         flash_data = await get_daily_flash_report(None, current_user)
-        from core.utils import get_tenant_currency
+        from core.tenant_currency import get_tenant_currency
 
         _, currency_symbol = await get_tenant_currency(current_user.tenant_id)
 
@@ -593,7 +593,7 @@ async def export_daily_flash_excel(
     target_date = report_data["date"]
 
     # Dynamically fetch currency symbol for the tenant
-    from core.utils import get_tenant_currency
+    from core.tenant_currency import get_tenant_currency
     _, currency_symbol = await get_tenant_currency(current_user.tenant_id)
 
     # Try using our enhanced openpyxl logic if available, else fallback

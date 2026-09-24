@@ -29,6 +29,18 @@ export function localeForCurrency(code) {
   return LOCALE_BY_CURRENCY[String(code).toUpperCase()] || 'tr-TR';
 }
 
+export function cachedTenantCurrency() {
+  if (typeof localStorage === 'undefined') return 'TRY';
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    const tenantId = user?.tenant_id || user?.tenantId || 'anon';
+    const cached = JSON.parse(localStorage.getItem(`tenant_currency:${tenantId}`) || 'null');
+    return String(cached?.code || 'TRY').toUpperCase();
+  } catch {
+    return 'TRY';
+  }
+}
+
 export function formatCurrency(amount, currency = 'TRY', opts = {}) {
   const value = Number(amount);
   const safeValue = Number.isFinite(value) ? value : 0;

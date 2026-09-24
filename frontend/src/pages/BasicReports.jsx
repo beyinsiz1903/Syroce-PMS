@@ -9,7 +9,7 @@ import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shie
 import ForecastReportsPage from './ForecastReportsPage';
 import FlashReportContent from '@/components/pms/FlashReportContent';
 import TrialBalancePage from './TrialBalancePage';
-import { ROOM_STATUS_COLORS, ROOM_STATUS_LABELS, formatPercent } from './reports/ReportHelpers';
+import { ROOM_STATUS_COLORS, ROOM_STATUS_LABELS, formatCurrency, formatPercent } from './reports/ReportHelpers';
 import OverviewSection from './reports/OverviewSection';
 import RevenueSection from './reports/RevenueSection';
 import AdrRevparSection from './reports/AdrRevparSection';
@@ -26,6 +26,12 @@ import ManagerDailyReports from './reports/ManagerDailyReports';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 const BACKEND_URL = "";
+const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
+const csvCell = value => {
+  let text = value === undefined || value === null ? '' : String(value);
+  if (CSV_FORMULA_PREFIX.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+};
 const REPORT_MENU = [{
   type: 'header',
   label: 'GENEL'
@@ -208,7 +214,7 @@ const BasicReports = ({
   tenant,
   onLogout
 }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const businessDate = useBusinessDate();
   const [data, setData] = useState(null);
   const [reportPeriod, setReportPeriod] = useState("monthly");
@@ -290,9 +296,9 @@ const BasicReports = ({
   const handleOfficialExportCsv = () => {
     if (!officialRows.length) return;
     const headers = ['booking_id', 'guest_name', 'national_id', 'passport_number', 'country', 'city', 'date_of_birth', 'room_number', 'check_in', 'check_out', 'adults', 'children', 'total_amount', 'billing_tax_number', 'billing_address', 'company_id', 'market_segment'];
-    const lines = [headers.join(',')];
+    const lines = [headers.map(csvCell).join(',')];
     officialRows.forEach(r => {
-      lines.push([r.booking_id || '', (r.guest_name || '').replace(/,/g, ' '), r.national_id || '', r.passport_number || '', (r.country || '').replace(/,/g, ' '), (r.city || '').replace(/,/g, ' '), r.date_of_birth || '', r.room_number || '', r.check_in || '', r.check_out || '', String(r.adults ?? ''), String(r.children ?? ''), String(r.total_amount ?? ''), r.billing_tax_number || '', (r.billing_address || '').replace(/,/g, ' '), r.company_id || '', r.market_segment || ''].join(','));
+      lines.push([r.booking_id, r.guest_name, r.national_id, r.passport_number, r.country, r.city, r.date_of_birth, r.room_number, r.check_in, r.check_out, r.adults, r.children, r.total_amount, r.billing_tax_number, r.billing_address, r.company_id, r.market_segment].map(csvCell).join(','));
     });
     const blob = new Blob([lines.join('\n')], {
       type: 'text/csv;charset=utf-8;'
@@ -314,10 +320,7 @@ const BasicReports = ({
     w.document.write('<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f5f5f5;font-weight:600}h1{font-size:18px;margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:12px}</style>');
     w.document.write('</head><body>');
     w.document.write('<h1>Resmi Müşteri Listesi</h1>');
-    w.document.write('<p>Tarih: ' + new Date(officialDate).toLocaleDateString('tr-TR') + ' | Toplam kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Toplam tutar: ' + officialTotalRevenue.toLocaleString(i18n.language, {
-      style: 'currency',
-      currency: 'TRY'
-    }) + '</p>');
+    w.document.write('<p>Tarih: ' + new Date(officialDate).toLocaleDateString('tr-TR') + ' | Toplam kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Toplam tutar: ' + formatCurrency(officialTotalRevenue) + '</p>');
     w.document.write(tableEl.outerHTML);
     w.document.write('</body></html>');
     w.document.close();
@@ -437,11 +440,7 @@ const BasicReports = ({
         const rowData = [];
         const cells = row.querySelectorAll('th, td');
         cells.forEach(cell => {
-          let text = (cell.innerText || "").replace(/(\r\n|\n|\r)/gm, " ").trim();
-          if (text.includes(',') || text.includes('"')) {
-            text = `"${text.replace(/"/g, '""')}"`;
-          }
-          rowData.push(text);
+          rowData.push(csvCell((cell.innerText || '').trim()));
         });
         csvContent += rowData.join(',') + "\n";
       });

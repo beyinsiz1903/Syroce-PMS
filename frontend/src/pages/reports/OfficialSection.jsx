@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar, Loader2, Search, Download, Printer, Shield } from 'lucide-react';
-import { SectionHeader } from './ReportHelpers';
+import { formatCurrency, SectionHeader } from './ReportHelpers';
 import { GuestTable } from './GuestSection';
 import { reservationLabel } from '@/utils/displayIdentifiers';
 
@@ -54,7 +54,7 @@ export const OfficialSection = ({
         </div>
         <div className="p-3 bg-amber-50 rounded-lg border border-amber-100 text-center">
           <p className="text-xs text-amber-600 font-medium">Toplam Tutar</p>
-          <p className="text-xl font-bold text-amber-800">{officialTotalRevenue.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</p>
+          <p className="text-xl font-bold text-amber-800">{formatCurrency(officialTotalRevenue)}</p>
         </div>
         <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 text-center">
           <p className="text-xs text-indigo-600 font-medium">Seçili Tarih</p>
@@ -106,7 +106,7 @@ export const OfficialSection = ({
                   <td className="px-3 py-2 font-medium">{r.room_number || '-'}</td>
                   <td className="px-3 py-2 text-[11px] text-gray-700"><div>{r.check_in ? new Date(r.check_in).toLocaleDateString('tr-TR') : '-'}</div><div>{r.check_out ? new Date(r.check_out).toLocaleDateString('tr-TR') : '-'}</div></td>
                   <td className="px-3 py-2 text-center">{(r.adults || 0)} + {(r.children || 0)}</td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(r.total_amount || 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</td>
+                  <td className="px-3 py-2 text-right font-medium">{formatCurrency(r.total_amount)}</td>
                 </tr>
               )) : (
                 <tr><td colSpan={7} className="py-10 text-center text-gray-400 text-xs">
