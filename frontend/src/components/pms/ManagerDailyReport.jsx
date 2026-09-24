@@ -8,22 +8,26 @@ import {
   FileText, Printer, Users, BedDouble,
   Calendar, ArrowUpRight, ArrowDownRight, Minus
 } from 'lucide-react';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departures = [], inhouse = [] }) => {
   const { t, i18n } = useTranslation();
   const tm = (k) => t(`pmsComponents.managerReport.${k}`);
-  const cur = t('pmsComponents.common.currency');
+  const currency = cachedTenantCurrency();
+  const money = value => formatCurrency(value, currency, { decimals: 0 });
 
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const totalRooms = rooms.length || 30;
+  const totalRooms = rooms.length;
   const oooRooms = rooms.filter(r => r.status === 'out_of_order' || r.status === 'maintenance').length;
   const availableRooms = totalRooms - oooRooms;
   const occupiedRooms = rooms.filter(r => r.status === 'occupied').length;
   const occupancy = availableRooms > 0 ? ((occupiedRooms / availableRooms) * 100).toFixed(1) : 0;
 
   const confirmedBookings = bookings.filter(b => b.status === 'checked_in' || b.status === 'confirmed');
-  const totalRevenue = confirmedBookings.reduce((s, b) => s + (b.total_price || b.rate || 0), 0);
+  const totalRevenue = confirmedBookings.reduce((sum, booking) => (
+    sum + Number(booking.total_amount ?? booking.total_price ?? booking.rate ?? 0)
+  ), 0);
   const adr = occupiedRooms > 0 ? (totalRevenue / occupiedRooms).toFixed(0) : 0;
   const revpar = availableRooms > 0 ? (totalRevenue / availableRooms).toFixed(0) : 0;
 
@@ -60,7 +64,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
     w.document.write(`<html><head><title>${tm('printTitle')} - ${reportDate}</title><style>body{font-family:Arial;padding:30px;font-size:12px}h1{text-align:center;font-size:18px;border-bottom:2px solid #333;padding-bottom:8px}h2{font-size:14px;margin-top:20px;border-bottom:1px solid #999;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}.box{border:1px solid #ddd;padding:10px;text-align:center;border-radius:4px}.box .val{font-size:20px;font-weight:bold}.box .lbl{font-size:10px;color:#666}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:11px}th{background:#f5f5f5}.footer{margin-top:30px;font-size:10px;color:#999;text-align:center}@media print{body{padding:15px}}</style></head><body>`);
     w.document.write(`<h1>${tm('printTitle')}</h1><p style="text-align:center">${reportDate}</p>`);
     w.document.write(`<h2>${tm('roomStatus')}</h2><div class="grid"><div class="box"><div class="val">${totalRooms}</div><div class="lbl">${tm('totalRooms')}</div></div><div class="box"><div class="val">${occupiedRooms}</div><div class="lbl">${tm('occupied')}</div></div><div class="box"><div class="val">${availableRooms - occupiedRooms}</div><div class="lbl">${tm('empty')}</div></div><div class="box"><div class="val">%${occupancy}</div><div class="lbl">${tm('occupancy')}</div></div></div>`);
-    w.document.write(`<h2>${tm('revenueSection')}</h2><div class="grid"><div class="box"><div class="val">${totalRevenue.toLocaleString()} ${cur}</div><div class="lbl">${tm('totalRevenue')}</div></div><div class="box"><div class="val">${adr} ${cur}</div><div class="lbl">${tm('adr')}</div></div><div class="box"><div class="val">${revpar} ${cur}</div><div class="lbl">${tm('revpar')}</div></div><div class="box"><div class="val">${oooRooms}</div><div class="lbl">${tm('oooOos')}</div></div></div>`);
+    w.document.write(`<h2>${tm('revenueSection')}</h2><div class="grid"><div class="box"><div class="val">${money(totalRevenue)}</div><div class="lbl">${tm('totalRevenue')}</div></div><div class="box"><div class="val">${money(adr)}</div><div class="lbl">${tm('adr')}</div></div><div class="box"><div class="val">${money(revpar)}</div><div class="lbl">${tm('revpar')}</div></div><div class="box"><div class="val">${oooRooms}</div><div class="lbl">${tm('oooOos')}</div></div></div>`);
     w.document.write(`<h2>${tm('guestMovementSection')}</h2><table><tr><th></th><th>#</th></tr><tr><td>${tm('arrivals')}</td><td>${todayArrivals}</td></tr><tr><td>${tm('departures')}</td><td>${todayDepartures}</td></tr><tr><td>${tm('inHouse')}</td><td>${inhouseGuests}</td></tr><tr><td>${tm('vip')}</td><td>${vipGuests}</td></tr><tr><td>${tm('group')}</td><td>${groupBookings}</td></tr><tr><td>${tm('walkIn')}</td><td>${walkIns}</td></tr><tr><td>${tm('noShow')}</td><td>${noShows}</td></tr><tr><td>${tm('cancellation')}</td><td>${cancellations}</td></tr></table>`);
     if (topNationalities.length > 0) { w.document.write(`<h2>${tm('nationalitySection')}</h2><table><tr><th></th><th>#</th></tr>`); topNationalities.forEach(([nat, count]) => w.document.write(`<tr><td>${nat}</td><td>${count}</td></tr>`)); w.document.write('</table>'); }
     w.document.write(`<h2>${tm('stayDurationSection')}</h2><table><tr><th></th><th>#</th></tr>`); Object.entries(losDistribution).forEach(([k, v]) => w.document.write(`<tr><td>${k} ${tm('nights')}</td><td>${v}</td></tr>`)); w.document.write('</table>');
@@ -98,9 +102,9 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], arrivals = [], departur
         <Card><CardContent className="p-3"><Metric label={tm('occupancy')} value={occupancy} suffix="%" /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('occupiedRooms')} value={occupiedRooms} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('emptyRooms')} value={availableRooms - occupiedRooms} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label={tm('adr')} value={adr} suffix={` ${cur}`} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label={tm('revpar')} value={revpar} suffix={` ${cur}`} /></CardContent></Card>
-        <Card><CardContent className="p-3"><Metric label={tm('totalRevenue')} value={totalRevenue.toLocaleString()} suffix={` ${cur}`} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label={tm('adr')} value={money(adr)} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label={tm('revpar')} value={money(revpar)} /></CardContent></Card>
+        <Card><CardContent className="p-3"><Metric label={tm('totalRevenue')} value={money(totalRevenue)} /></CardContent></Card>
         <Card><CardContent className="p-3"><Metric label={tm('oooOos')} value={oooRooms} /></CardContent></Card>
       </div>
 

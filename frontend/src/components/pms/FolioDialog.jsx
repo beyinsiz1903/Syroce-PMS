@@ -34,11 +34,11 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
       await axios.post(`/frontdesk/folio/${bookingId}/charge`, newCharge, {
         headers: { 'Idempotency-Key': idempotencyKey },
       });
-      toast.success('Charge added');
+      toast.success('Harcama eklendi');
       await onFolioUpdated?.();
       setNewCharge({ charge_type: 'food', description: '', amount: 0, quantity: 1 });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to add charge');
+      toast.error(error.response?.data?.detail || 'Harcama eklenemedi');
     } finally {
       chargeSubmittingRef.current = false;
       setChargeSubmitting(false);
@@ -63,7 +63,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
       await onFolioUpdated?.();
       setNewPayment({ amount: 0, method: 'card', reference: '', notes: '' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to process payment');
+      toast.error(error.response?.data?.detail || 'Ödeme işlenemedi');
     } finally {
       paymentSubmittingRef.current = false;
       setPaymentSubmitting(false);

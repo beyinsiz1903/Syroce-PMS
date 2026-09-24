@@ -68,7 +68,7 @@ const Guest360Dialog = ({
         note: newNote,
         category: 'general'
       });
-      toast.success('Note added!');
+      toast.success('Not eklendi');
       setNewNote('');
       loadGuest360(selectedGuest360);
     } catch {
@@ -80,7 +80,7 @@ const Guest360Dialog = ({
     if (!guestTag.trim() || !selectedGuest360) return;
     try {
       await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`);
-      toast.success('Tag added');
+      toast.success('Etiket eklendi');
       setGuestTag('');
       loadGuest360(selectedGuest360);
     } catch {
@@ -92,7 +92,7 @@ const Guest360Dialog = ({
     if (!guestNote.trim() || !selectedGuest360) return;
     try {
       await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`);
-      toast.success('Note added');
+      toast.success('Not eklendi');
       setGuestNote('');
       loadGuest360(selectedGuest360);
     } catch {
@@ -139,7 +139,7 @@ const Guest360Dialog = ({
               // Scroll to notes section or auto-focus note input
               const noteInput = document.querySelector('textarea[placeholder*="note"]');
               if (noteInput) noteInput.focus();
-              toast.info('Note section ready - add your note below');
+              toast.info('Not alanı hazır; notunuzu aşağıya ekleyebilirsiniz.');
             }}
             variant="outline"
             className="flex-1 border-blue-400 hover:bg-blue-50"
@@ -153,7 +153,7 @@ const Guest360Dialog = ({
                 const preference = await promptDialog({ message: 'Enter room preference (e.g., High Floor, Sea View, Quiet Room):' });
                 if (preference) {
                   await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=PREF: ${preference}`);
-                  toast.success('Room preference saved!');
+                  toast.success('Oda tercihi kaydedildi');
                   loadGuest360(selectedGuest360);
                 }
               } catch (error) {

@@ -78,11 +78,11 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
         charge_category: 'minibar',
         quantity: 1
       });
-      toast.success(`Minibar ucreti eklendi: ${total} TL`);
+      toast.success(`Minibar ücreti eklendi: ${total} TL`);
       setMinibarItems([]);
       setShowMinibar(false);
     } catch {
-      toast.error('Minibar ucreti eklenemedi');
+      toast.error('Minibar ücreti eklenemedi');
     }
   };
 
