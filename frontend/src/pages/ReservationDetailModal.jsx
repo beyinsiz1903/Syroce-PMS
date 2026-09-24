@@ -907,11 +907,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <div className="flex-1 overflow-y-auto p-6">
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} onStayEdit={openStayEditor} canEditStay={canEditStayDates} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
-                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
-                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
+                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>
                 <TabsContent value="voucher" className="mt-0"><VoucherTab booking={booking} bookingId={bookingId} /></TabsContent>

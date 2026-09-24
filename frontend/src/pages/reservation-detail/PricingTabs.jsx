@@ -169,7 +169,8 @@ export function ExtraChargesTab({
   charges,
   booking,
   onRefresh,
-  allBookings
+  allBookings,
+  readOnly = false,
 }) {
   const currency = booking?.currency || "TL";
   const {
@@ -192,6 +193,9 @@ export function ExtraChargesTab({
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState('');
   const isFullComp = booking?.is_complimentary && booking?.complimentary_scope === 'full';
+  const lifecycleStatus = String(booking?.status || '').toLowerCase();
+  const canAddEarlyCheckin = ['pending', 'confirmed', 'guaranteed'].includes(lifecycleStatus);
+  const canAddLateCheckout = ['checked_in', 'in_house'].includes(lifecycleStatus);
   const allCharges = [...(extra_charges || []), ...(charges || [])].filter(c => !c.voided);
   const cats = {
     room_service: 'Oda Servisi',
@@ -269,9 +273,11 @@ export function ExtraChargesTab({
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.ek_ucretler')}</span>
         <div className="flex gap-1.5">
-          <Button size="sm" variant="outline" onClick={() => setElDirection('early_checkin')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.erken_giris')}</Button>
-          <Button size="sm" variant="outline" onClick={() => setElDirection('late_checkout')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.gec_cikis')}</Button>
-          <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.ekle')}</Button>
+          {!readOnly && <>
+            {canAddEarlyCheckin && <Button size="sm" variant="outline" onClick={() => setElDirection('early_checkin')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.erken_giris')}</Button>}
+            {canAddLateCheckout && <Button size="sm" variant="outline" onClick={() => setElDirection('late_checkout')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.gec_cikis')}</Button>}
+            <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.ekle')}</Button>
+          </>}
         </div>
       </div>
       <EarlyLateChargeModal open={!!elDirection} onClose={() => setElDirection(null)} bookingId={booking?.id} direction={elDirection || 'early_checkin'} defaultHour={elDirection === 'late_checkout' ? 14 : 10} onApplied={onRefresh} />
@@ -310,7 +316,7 @@ export function ExtraChargesTab({
                   <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtCurrency(c.complimentary_original_amount, currency)}</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
                 <div className="text-sm font-bold text-amber-700">{fmtCurrency(c.total ?? c.charge_amount ?? c.amount, currency)}</div>
-                {!c.is_complimentary && <Button
+                {!readOnly && !c.is_complimentary && <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => setShowSplit(showSplit === c.id ? null : c.id)}

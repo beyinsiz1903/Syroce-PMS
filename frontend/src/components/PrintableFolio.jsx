@@ -47,7 +47,17 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
   }, [booking.guest_id, booking.room_id, guest, room]);
 
   const currency = folioData.currency || booking.currency || 'TL';
-  const charges = useMemo(() => [...(Array.isArray(folioData.charges) ? folioData.charges : []), ...(Array.isArray(folioData.extra_charges) ? folioData.extra_charges : [])].filter(item => !item.voided), [folioData.charges, folioData.extra_charges]);
+  const charges = useMemo(() => {
+    const seen = new Set();
+    return [...(Array.isArray(folioData.charges) ? folioData.charges : []), ...(Array.isArray(folioData.extra_charges) ? folioData.extra_charges : [])]
+      .filter(item => !item.voided)
+      .filter(item => {
+        const key = String(item.id || item.charge_id || `${item.description || item.charge_name}:${item.amount ?? item.total ?? item.charge_amount}:${item.created_at || item.posted_at}`);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [folioData.charges, folioData.extra_charges]);
   const payments = useMemo(() => (Array.isArray(folioData.payments) ? folioData.payments : []).filter(item => !item.voided), [folioData.payments]);
   const totalCharges = charges.reduce((sum, item) => sum + Number(item.total ?? item.charge_amount ?? item.amount ?? 0), 0);
   const totalPayments = payments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
@@ -65,7 +75,7 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
     <Card className="printable-folio-sheet mx-auto w-full max-w-5xl overflow-hidden bg-white shadow-2xl">
       <CardHeader className="border-b bg-slate-50 px-5 py-4 sm:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">{folioData.hotel_name || folioData.property_name || 'Syroce PMS'}</p><h1 className="mt-1 text-2xl font-bold text-slate-900">Misafir Folyosu</h1><p className="mt-1 text-sm text-slate-500">Rezervasyon: {booking.reservation_number || booking.confirmation_number || booking.id || EMPTY}</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">{folioData.hotel_name || folioData.property_name || 'Syroce PMS'}</p><h1 className="mt-1 text-2xl font-bold text-slate-900">{folioData.document_title || 'Misafir Folyosu'}</h1><p className="mt-1 text-sm text-slate-500">Rezervasyon: {booking.reservation_number || booking.confirmation_number || booking.id || EMPTY}</p></div>
           <div className="print:hidden flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => window.print()} data-testid="print-folio"><Printer className="mr-2 h-4 w-4" /> Yazdır / PDF Kaydet</Button><Button type="button" variant="outline" size="icon" onClick={onClose} aria-label="Kapat"><X className="h-4 w-4" /></Button></div>
         </div>
         <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2"><div><b>Folyo no:</b> {folioData.folio_number || EMPTY}</div><div className="sm:text-right"><b>Düzenlenme:</b> {dateText(new Date(), true)}</div></div>

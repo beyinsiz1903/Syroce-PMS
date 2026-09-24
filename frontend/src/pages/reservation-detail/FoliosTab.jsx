@@ -39,6 +39,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [showSplit, setShowSplit] = useState(false);
   const [showPrintableFolio, setShowPrintableFolio] = useState(false);
+  const [printFolioId, setPrintFolioId] = useState('all');
   const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
   const [reconcilingRoomCharge, setReconcilingRoomCharge] = useState(false);
@@ -222,6 +223,15 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
           <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol"><Split className="w-3 h-3 mr-1" /> Folyo Böl</Button>
         </>}
+        {folioList.length > 1 && (
+          <UiSelect value={printFolioId} onValueChange={setPrintFolioId}>
+            <SelectTrigger className="h-8 w-auto min-w-44 text-xs" aria-label="Yazdırılacak folyo"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tüm folyolar (konsolide)</SelectItem>
+              {folioList.map(item => <SelectItem key={item.id} value={item.id}>{item.folio_number || item.id}</SelectItem>)}
+            </SelectContent>
+          </UiSelect>
+        )}
         <Button size="sm" variant="outline" onClick={() => setShowPrintableFolio(true)} className="h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-50" data-testid="btn-folyo-yazdir"><Printer className="w-3 h-3 mr-1" /> Folyo Yazdır</Button>
         <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
           <FileText className="w-3 h-3 mr-1" /> {readOnly ? 'Faturayı Görüntüle' : 'Fatura Oluştur'}
@@ -463,14 +473,19 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showPrintableFolio && (
         <PrintableFolio
           folioData={{
-            ...(folioList[0] || {}),
-            folio_number: folioList.map(item => item.folio_number).filter(Boolean).join(', ') || undefined,
+            ...((printFolioId === 'all' ? folioList[0] : folioList.find(item => item.id === printFolioId)) || {}),
+            document_title: printFolioId === 'all' && folioList.length > 1 ? 'Konsolide Misafir Folyosu' : 'Misafir Folyosu',
+            folio_number: printFolioId === 'all'
+              ? folioList.map(item => item.folio_number).filter(Boolean).join(', ') || undefined
+              : folioList.find(item => item.id === printFolioId)?.folio_number,
             booking,
-            charges,
-            extra_charges,
-            payments,
+            charges: printFolioId === 'all' ? charges : (charges || []).filter(item => item.folio_id === printFolioId),
+            extra_charges: printFolioId === 'all' ? extra_charges : (extra_charges || []).filter(item => item.folio_id === printFolioId),
+            payments: printFolioId === 'all' ? payments : (payments || []).filter(item => !item.folio_id || item.folio_id === printFolioId),
             currency,
-            balance: reservationTotalDue,
+            balance: printFolioId === 'all'
+              ? reservationTotalDue
+              : folioList.find(item => item.id === printFolioId)?.balance,
           }}
           guest={guest}
           room={room}
