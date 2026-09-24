@@ -30,6 +30,7 @@ export const bookingSourceLabel = (booking = {}) => {
     online: 'Online', etstur: 'Etstur', ets: 'Etstur', hotelrunner: 'HotelRunner',
     exely: 'Exely', expedia: 'Expedia', agoda: 'Agoda', booking: 'Booking.com',
     'booking.com': 'Booking.com', jolly: 'Jolly', tatilbudur: 'Tatilbudur',
+    seturapi: 'Setur', setur: 'Setur', etsapi: 'Etstur', tatilbudurapi: 'Tatilbudur',
   };
   return labels[normalized] || (String(raw || '').trim() || 'Belirtilmemiş');
 };
@@ -70,12 +71,16 @@ const BookingRow = memo(({ index, style, data }) => {
     <div style={style} className="px-2">
       <Card className="p-3 mb-2 hover:shadow-md transition-shadow">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1 grid grid-cols-2 xl:grid-cols-5 gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1 grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2">
             <div>
               <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.misafir')}</div>
               <div className="font-medium flex items-center gap-1 min-w-0 truncate">
                 <User className="w-3 h-3" />
                 {booking.guest_name || (booking.guest_id ? `Walk-in Misafir #${booking.guest_id.replace(/-/g,'').slice(-4).toUpperCase()}` : 'Bilinmiyor')}
+              </div>
+              <div className="mt-0.5 text-xs text-gray-500 flex items-center gap-1 truncate" title={`Rezervasyon kaynağı: ${bookingSourceLabel(booking)}`}>
+                <Radio className="w-3 h-3 shrink-0" />
+                <span>Kaynak: {bookingSourceLabel(booking)}</span>
               </div>
             </div>
             
@@ -102,13 +107,6 @@ const BookingRow = memo(({ index, style, data }) => {
               </div>
             </div>
 
-            <div>
-              <div className="text-xs text-gray-500">Rezervasyon kaynağı</div>
-              <div className="text-sm font-medium flex items-center gap-1 truncate" title={bookingSourceLabel(booking)}>
-                <Radio className="w-3 h-3 shrink-0" />
-                {bookingSourceLabel(booking)}
-              </div>
-            </div>
           </div>
           
           <div className="flex items-center gap-2">
@@ -153,7 +151,7 @@ const VirtualizedBookingList = ({ bookings, onSelectBooking, height = 600 }) => 
       <List
         height={height}
         itemCount={bookings.length}
-        itemSize={116}
+        itemSize={124}
         width="100%"
         itemData={{
           bookings,

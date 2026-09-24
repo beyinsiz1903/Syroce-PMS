@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import Layout from '@/components/Layout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown } from 'lucide-react';
+import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -296,6 +296,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         (res.data?.reconciled || []).forEach(item => reconciledBookingIds.add(item.booking_id));
         if (!cancelled && count > 0) {
           toast.success(`${count} mükerrer OTA rezervasyonu güvenle temizlendi`);
+          setBookings(current => current.map(item => (
+            reconciledBookingIds.has(item.id)
+              ? { ...item, status: 'cancelled', allocation_source: 'legacy_duplicate_reconciled' }
+              : item
+          )));
         }
       })
       .catch(() => null)
@@ -1910,6 +1915,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               {/* Natural scrolling prevents the first card from being clipped by
                   a viewport/header height mismatch and keeps variable metadata visible. */}
               {(() => {
+                if (allUnassignedLoading) {
+                  return (
+                    <div className="min-h-[50vh] flex items-center justify-center" role="status">
+                      <div className="text-center py-12 text-gray-500">
+                        <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-blue-600" />
+                        <p className="text-sm font-medium">Atanmamış rezervasyonlar doğrulanıyor</p>
+                        <p className="text-xs mt-1">Mükerrer kayıtlar ve güncel oda müsaitliği kontrol ediliyor.</p>
+                      </div>
+                    </div>
+                  );
+                }
                 if (sorted.length === 0) {
                   return (
                   <div className="min-h-[50vh] flex items-center justify-center">
