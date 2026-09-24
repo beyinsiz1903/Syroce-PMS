@@ -31,7 +31,7 @@ const RevenueControls = ({ rooms = [] }) => {
   const [activeTab, setActiveTab] = useState('hurdle');
   const [hurdleRates, setHurdleRates] = useState(defaultHurdle());
   const [dayPricing, setDayPricing] = useState(defaultDayPricing());
-  const [overbooking, setOverbooking] = useState(defaultOverbooking(rooms.length || 30));
+  const [overbooking, setOverbooking] = useState(defaultOverbooking(rooms.length));
   const [showWalkDialog, setShowWalkDialog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [walkData, setWalkData] = useState({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
@@ -44,11 +44,15 @@ const RevenueControls = ({ rooms = [] }) => {
       const res = await axios.get('/revenue/settings');
       if (res.data.hurdle_rates && Object.keys(res.data.hurdle_rates).length > 0) setHurdleRates(res.data.hurdle_rates);
       if (res.data.day_pricing && Object.keys(res.data.day_pricing).length > 0) setDayPricing(res.data.day_pricing);
-      if (res.data.overbooking) setOverbooking(prev => ({ ...prev, ...res.data.overbooking, total_rooms: rooms.length || prev.total_rooms }));
+      if (res.data.overbooking) setOverbooking(prev => ({ ...prev, ...res.data.overbooking, total_rooms: rooms.length }));
     } catch {
       /* use defaults */
     }
   };
+
+  useEffect(() => {
+    setOverbooking(prev => ({ ...prev, total_rooms: rooms.length }));
+  }, [rooms.length]);
 
   const updateHurdle = (rt, field, value) => {
     setHurdleRates(prev => ({ ...prev, [rt]: { ...prev[rt], [field]: field === 'active' ? value : parseFloat(value) || 0 } }));
@@ -225,7 +229,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   <div className="text-sm text-muted-foreground">{tr('currentOverbook')}</div>
                   <div className="text-xs mt-1">{tr('capacity')} {overbooking.total_rooms} + {Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)} = {overbooking.total_rooms + Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)}</div>
                 </div>
-                <Button className="w-full" variant="destructive" onClick={() => setShowWalkDialog(true)}>
+                <Button className="w-full" variant="destructive" onClick={() => setShowWalkDialog(true)} disabled={rooms.length === 0}>
                   <Users className="h-4 w-4 mr-1" /> {tr('startWalkOut')}
                 </Button>
               </CardContent>

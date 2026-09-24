@@ -42,7 +42,7 @@ describe('RoomBlockCreateDialog', () => {
     );
 
     fireEvent.click(screen.getAllByRole('combobox')[0]);
-    fireEvent.click(await screen.findByRole('option', { name: 'Room QT2ED0 (standard)' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Oda QT2ED0 (standard)' }));
 
     expect(setSelectedRoom).toHaveBeenCalledWith(room);
   });

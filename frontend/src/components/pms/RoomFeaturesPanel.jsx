@@ -12,7 +12,7 @@ import {
   BellOff, Wine, Plus, Trash2, Clock, CheckCircle, AlertTriangle, DoorOpen
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const MINIBAR_ITEMS = [
   { code: 'water', name: 'Su (500ml)', price: 5 },
@@ -37,6 +37,7 @@ const CHECKOUT_RULES = [
 
 const RoomFeaturesPanel = ({ room, onUpdate }) => {
   const { t } = useTranslation();
+  const money = (value) => formatCurrency(value, cachedTenantCurrency(), { decimals: 2 });
   const [dndEnabled, setDndEnabled] = useState(room?.dnd || false);
   const [minibarItems, setMinibarItems] = useState([]);
   const [showMinibar, setShowMinibar] = useState(false);
@@ -49,7 +50,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
     try {
       await axios.patch(`/pms/rooms/${room._id || room.id}/features`, { dnd: newVal });
       setDndEnabled(newVal);
-      toast.success(newVal ? 'DND aktif' : 'DND kapatıldı');
+      toast.success(newVal ? 'Rahatsız etmeyin etkinleştirildi' : 'Rahatsız etmeyin kapatıldı');
       onUpdate?.();
     } catch {
       toast.error('DND durumu güncellenemedi');
@@ -71,15 +72,20 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
 
   const postMinibarCharges = async () => {
     if (minibarItems.length === 0) return;
+    if (!room?.booking_id) {
+      toast.error('Minibar ücreti için odada aktif bir konaklama bulunmalıdır');
+      return;
+    }
     const total = minibarItems.reduce((sum, i) => sum + i.total, 0);
     try {
-      await axios.post(`/frontdesk/folio/${room.booking_id}/charge`, {
+      await axios.post('/frontdesk/v2/post-charge', {
+        booking_id: room.booking_id,
+        charge_type: 'minibar',
         description: 'Minibar - ' + minibarItems.map(i => `${i.quantity}x ${i.name}`).join(', '),
         amount: total,
         charge_category: 'minibar',
-        quantity: 1
       });
-      toast.success(`Minibar ücreti eklendi: ${formatCurrency(total, 'TRY', { decimals: 2 })}`);
+      toast.success(`Minibar ücreti eklendi: ${money(total)}`);
       setMinibarItems([]);
       setShowMinibar(false);
     } catch {
@@ -164,7 +170,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                 <SelectContent>
                   {MINIBAR_ITEMS.map(item => (
                     <SelectItem key={item.code} value={item.code}>
-                      {item.name} - {formatCurrency(item.price, 'TRY', { decimals: 2 })}
+                      {item.name} - {money(item.price)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -189,7 +195,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                     <div key={idx} className="flex items-center justify-between p-2 text-sm">
                       <span>{item.quantity}x {item.name}</span>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{formatCurrency(item.total, 'TRY', { decimals: 2 })}</span>
+                        <span className="font-medium">{money(item.total)}</span>
                         <Button size="sm" variant="ghost" onClick={() => removeMinibarItem(idx)}>
                           <Trash2 className="h-3 w-3 text-red-500" />
                         </Button>
@@ -199,13 +205,13 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                 </div>
                 <div className="border-t p-2 flex justify-between font-bold">
                   <span>{t('cm.components_pms_RoomFeaturesPanel.toplam')}</span>
-                  <span>{formatCurrency(minibarTotal, 'TRY', { decimals: 2 })}</span>
+                  <span>{money(minibarTotal)}</span>
                 </div>
               </div>
             )}
 
-            <Button className="w-full" onClick={postMinibarCharges} disabled={minibarItems.length === 0}>
-              <CheckCircle className="h-4 w-4 mr-1" /> {t('cm.components_pms_RoomFeaturesPanel.folyoya_ekle')} ({formatCurrency(minibarTotal, 'TRY', { decimals: 2 })})
+            <Button className="w-full" onClick={postMinibarCharges} disabled={minibarItems.length === 0 || !room?.booking_id}>
+              <CheckCircle className="h-4 w-4 mr-1" /> {t('cm.components_pms_RoomFeaturesPanel.folyoya_ekle')} ({money(minibarTotal)})
             </Button>
           </div>
         </DialogContent>
