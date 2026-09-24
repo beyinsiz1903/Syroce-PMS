@@ -50,6 +50,7 @@ describe('moduleAccess', () => {
     expect(moduleScopesForPath('/maintenance/work-orders')).toEqual(['maintenance']);
     expect(moduleScopesForPath('/app/cashier')).toEqual(['cashier']);
     expect(moduleScopesForPath('/app/tasks')).toEqual(['tasks']);
+    expect(moduleScopesForPath('/agency-requests')).toEqual(['frontdesk']);
     expect(moduleScopesForPath('/app/dashboard')).toEqual([]);
   });
 
@@ -66,6 +67,7 @@ describe('moduleAccess', () => {
   it('maps navigation items and PMS tabs to user scopes', () => {
     expect(moduleScopesForNavItem({ key: 'invoices', path: '/app/invoices' })).toEqual(['invoice']);
     expect(moduleScopesForNavItem({ key: 'shift_handover', path: '/shift-handover', moduleKey: 'pms' })).toEqual(['frontdesk']);
+    expect(moduleScopesForNavItem({ key: 'agency_requests', path: '/agency-requests', moduleKey: 'agency_requests' })).toEqual(['frontdesk']);
     expect(moduleScopesForPmsTab('housekeeping')).toEqual(['housekeeping']);
     expect(moduleScopesForPmsTab('cashier')).toEqual(['cashier']);
     expect(moduleScopesForPmsTab('unknown-tab')).toEqual(['frontdesk']);

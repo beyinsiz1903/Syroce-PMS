@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 export const validateCityLedgerPayment = (amountValue, balanceValue) => {
   const amount = Number(amountValue);
@@ -72,6 +73,7 @@ const EMPTY_ACCOUNT = {
 
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const currency = tenant?.currency || cachedTenantCurrency();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -125,7 +127,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const filteredAccounts = accounts.filter((account) => {
     const term = searchTerm.toLowerCase();
     return (
-      account.account_name.toLowerCase().includes(term) ||
+      (account.account_name || '').toLowerCase().includes(term) ||
       (account.company_name || '').toLowerCase().includes(term)
     );
   });
@@ -211,7 +213,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       });
       const res = await axios.post(`/cashiering/city-ledger-adjustment?${params.toString()}`);
       if (res.data?.success) {
-        toast.success(`Ayarlama kaydedildi. Yeni bakiye: ₺${res.data.new_balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`);
+        toast.success(`Ayarlama kaydedildi. Yeni bakiye: ${formatCurrency(res.data.new_balance, adjustAccount.currency || currency)}`);
         setAdjustDialogOpen(false);
         await loadAccounts();
       } else {
@@ -310,7 +312,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
     <>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Building2 className="w-8 h-8 text-blue-600" />
@@ -318,7 +320,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
             </h1>
             <p className="text-gray-600 mt-1">Kurumsal ve acente partnerlerine ait doğrudan faturalama hesapları</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button variant="outline" onClick={loadAccounts}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Yenile
@@ -357,7 +359,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
             <CardContent className="pt-6">
               <div className="text-sm text-gray-600">Toplam Bakiye</div>
               <div className="text-2xl font-bold text-red-600 mt-1">
-                ₺{accounts.reduce((sum, a) => sum + (a.current_balance || 0), 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                {formatCurrency(accounts.reduce((sum, a) => sum + Number(a.current_balance || 0), 0), currency)}
               </div>
             </CardContent>
           </Card>
@@ -398,7 +400,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   if (utilization > 90) statusColor = 'bg-red-100 text-red-800';
                   else if (utilization > 70) statusColor = 'bg-yellow-100 text-yellow-800';
 
-                  const fmt = (n) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+                  const accountCurrency = account.currency || currency;
 
                   return (
                     <div
@@ -414,7 +416,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                           )}
                         </div>
                         <div className="text-sm text-gray-600 mb-2">
-                          Kredi Limiti: ₺{fmt(creditLimit)} &nbsp;|&nbsp; Bakiye: ₺{fmt(balance)} &nbsp;|&nbsp; Kullanılabilir: ₺{fmt(available)}
+                          Kredi Limiti: {formatCurrency(creditLimit, accountCurrency)} &nbsp;|&nbsp; Bakiye: {formatCurrency(balance, accountCurrency)} &nbsp;|&nbsp; Kullanılabilir: {formatCurrency(available, accountCurrency)}
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
                           <div
@@ -434,7 +436,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                         <Badge className={statusColor}>
                           Kullanım {creditLimit > 0 ? `${utilization.toFixed(0)}%` : 'Limitsiz'}
                         </Badge>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button
                             variant="outline"
                             size="sm"
@@ -524,7 +526,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                   <div>
-                    <label className="text-sm text-gray-600">Kredi Limiti (₺)</label>
+                    <label className="text-sm text-gray-600">Kredi Limiti ({currency})</label>
                     <Input
                       type="number"
                       value={newAccountData.credit_limit}
@@ -621,14 +623,14 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div className="font-semibold">{selectedAccount.account_name}</div>
                   <div className="text-gray-500">{selectedAccount.company_name}</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Mevcut Bakiye: ₺{selectedAccount.current_balance?.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) || '0,00'} &nbsp;|&nbsp;
-                    Kredi Limiti: ₺{selectedAccount.credit_limit?.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) || '0,00'}
+                    Mevcut Bakiye: {formatCurrency(selectedAccount.current_balance, selectedAccount.currency || currency)} &nbsp;|&nbsp;
+                    Kredi Limiti: {formatCurrency(selectedAccount.credit_limit, selectedAccount.currency || currency)}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm text-gray-600">Tutar (₺)</label>
+                    <label className="text-sm text-gray-600">Tutar ({selectedAccount.currency || currency})</label>
                     <Input
                       type="number"
                       value={paymentAmount}
@@ -678,7 +680,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                           <div className="min-w-0">
                             <div className="text-sm font-medium truncate">Oda {item.room_number} · {item.guest_name}</div>
                             <div className="text-xs text-gray-500">
-                              Açık: ₺{Number(item.open_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                              Açık: {formatCurrency(item.open_amount, item.currency || selectedAccount.currency || currency)}
                               {item.check_in && ` · ${String(item.check_in).slice(0, 10)}`}
                             </div>
                           </div>
@@ -698,7 +700,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   )}
                   {Object.values(paymentAllocations).some((value) => Number(value) > 0) && (
                     <div className="text-xs text-gray-600 pt-1 border-t">
-                      Oda dağıtım toplamı: <strong>₺{Object.values(paymentAllocations).reduce((sum, value) => sum + (Number(value) || 0), 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong>
+                      Oda dağıtım toplamı: <strong>{formatCurrency(Object.values(paymentAllocations).reduce((sum, value) => sum + (Number(value) || 0), 0), selectedAccount.currency || currency)}</strong>
                     </div>
                   )}
                 </div>
@@ -739,22 +741,22 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                         </div>
                       </div>
                       <Badge variant={Number(item.open_amount) > 0 ? 'destructive' : 'secondary'}>
-                        Açık ₺{Number(item.open_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                        Açık {formatCurrency(item.open_amount, item.currency || openItemsAccount?.currency || currency)}
                       </Badge>
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-600">
-                      <div>Tahakkuk: ₺{Number(item.charged_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</div>
-                      <div>Odaya işlenen tahsilat: ₺{Number(item.allocated_payment_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</div>
+                      <div>Tahakkuk: {formatCurrency(item.charged_amount, item.currency || openItemsAccount?.currency || currency)}</div>
+                      <div>Odaya işlenen tahsilat: {formatCurrency(item.allocated_payment_amount, item.currency || openItemsAccount?.currency || currency)}</div>
                     </div>
                   </div>
                 ))}
                 {openItems.length === 0 && <div className="py-6 text-center text-sm text-gray-500">Oda bağlantılı cari hareketi bulunmuyor.</div>}
                 {openItemsSummary && (
                   <div className="rounded-md bg-slate-50 border p-3 text-sm space-y-1">
-                    <div>Odaların açık toplamı: <strong>₺{Number(openItemsSummary.room_open_total || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong></div>
-                    {Number(openItemsSummary.unallocated_payment_total || 0) > 0 && <div className="text-amber-700">Oda atanmamış eski tahsilat: ₺{Number(openItemsSummary.unallocated_payment_total).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</div>}
-                    {Number(openItemsSummary.adjustment_total || 0) > 0 && <div className="text-amber-700">Komisyon / fark düşümü: ₺{Number(openItemsSummary.adjustment_total).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</div>}
-                    {Math.abs(Number(openItemsSummary.balance_difference || 0)) > 0.005 && <div className="text-amber-700">Cari bakiyesi ile oda dağılımı arasında ₺{Number(openItemsSummary.balance_difference).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} fark var. Eski hareketleri oda seçmeden kaydetmiş olabilirsiniz.</div>}
+                    <div>Odaların açık toplamı: <strong>{formatCurrency(openItemsSummary.room_open_total, openItemsAccount?.currency || currency)}</strong></div>
+                    {Number(openItemsSummary.unallocated_payment_total || 0) > 0 && <div className="text-amber-700">Oda atanmamış eski tahsilat: {formatCurrency(openItemsSummary.unallocated_payment_total, openItemsAccount?.currency || currency)}</div>}
+                    {Number(openItemsSummary.adjustment_total || 0) > 0 && <div className="text-amber-700">Komisyon / fark düşümü: {formatCurrency(openItemsSummary.adjustment_total, openItemsAccount?.currency || currency)}</div>}
+                    {Math.abs(Number(openItemsSummary.balance_difference || 0)) > 0.005 && <div className="text-amber-700">Cari bakiyesi ile oda dağılımı arasında {formatCurrency(openItemsSummary.balance_difference, openItemsAccount?.currency || currency)} fark var. Eski hareketleri oda seçmeden kaydetmiş olabilirsiniz.</div>}
                   </div>
                 )}
               </div>
@@ -780,13 +782,13 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div className="font-semibold">{adjustAccount.account_name}</div>
                   <div className="text-gray-500">{adjustAccount.company_name}</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Mevcut Bakiye: <span className="font-medium text-red-600">₺{(adjustAccount.current_balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    Mevcut Bakiye: <span className="font-medium text-red-600">{formatCurrency(adjustAccount.current_balance, adjustAccount.currency || currency)}</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm text-gray-600">Tutar (₺)</label>
+                    <label className="text-sm text-gray-600">Tutar ({adjustAccount.currency || currency})</label>
                     <Input
                       type="number"
                       value={adjustAmount}
@@ -814,13 +816,13 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <Input
                     value={adjustDescription}
                     onChange={(e) => setAdjustDescription(e.target.value)}
-                    placeholder="ör. Etstur Ağustos komisyonu %15 — 750 TL"
+                    placeholder={`ör. Acenta komisyonu %15 — 750 ${adjustAccount.currency || currency}`}
                   />
                 </div>
 
                 {adjustAmount && parseFloat(adjustAmount) > 0 && (
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-800">
-                    Bakiye <strong>₺{(adjustAccount.current_balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong> → <strong>₺{Math.max(0, (adjustAccount.current_balance || 0) - parseFloat(adjustAmount || 0)).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong> olacak.
+                    Bakiye <strong>{formatCurrency(adjustAccount.current_balance, adjustAccount.currency || currency)}</strong> → <strong>{formatCurrency(Math.max(0, (adjustAccount.current_balance || 0) - parseFloat(adjustAmount || 0)), adjustAccount.currency || currency)}</strong> olacak.
                   </div>
                 )}
 
