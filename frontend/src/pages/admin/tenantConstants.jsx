@@ -103,6 +103,7 @@ export const MODULE_GROUPS = [
     color: 'emerald',
     description: 'Mini\'nin tümü + günlük operasyonu büyüten ek modüller.',
     items: [
+      { key: 'agency_requests', label: 'Acenta Talepleri', hint: 'Acentalardan gelen rezervasyon taleplerini inceleme ve onaylama', tier: 'basic' },
       { key: 'mailing', label: 'Mailing & Kampanya', hint: 'E-posta şablonları, kampanyalar, otomasyon', tier: 'basic' },
       { key: 'guest_advanced', label: 'Gelişmiş Misafir Profili', hint: 'VIP, tercihler, LTV', tier: 'basic' },
       { key: 'housekeeping_advanced', label: 'Housekeeping (Gelişmiş)', hint: 'Atama, görev kuyruğu, performans', tier: 'basic' },
