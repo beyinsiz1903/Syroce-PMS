@@ -21,6 +21,7 @@ from core.database import db
 from core.helpers import create_audit_log
 from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user
+from core.utils import calculate_folio_balance
 from models.schemas import (
     User,
 )
@@ -483,23 +484,50 @@ async def update_upsell_offer(
     if action == "accepted":
         existing_charge = await db.folio_charges.find_one({"upsell_offer_id": offer_id, "tenant_id": current_user.tenant_id})
         if not existing_charge:
+            folio = await db.folios.find_one(
+                {
+                    "booking_id": offer["booking_id"],
+                    "tenant_id": current_user.tenant_id,
+                    "status": "open",
+                },
+                {"_id": 0, "id": 1},
+            )
+            if not folio:
+                raise HTTPException(status_code=409, detail="Teklif kabul edilemedi: rezervasyonun açık folyosu bulunamadı")
+            amount = round(float(offer.get("price", 0) or 0), 2)
             folio_charge = {
                 "id": str(uuid.uuid4()),
                 "upsell_offer_id": offer_id,
                 "booking_id": offer["booking_id"],
+                "folio_id": folio["id"],
                 "tenant_id": current_user.tenant_id,
                 "description": f"Upsell: {offer.get('target_item', offer.get('type', 'Ek Hizmet'))}",
-                "amount": offer.get("price", 0),
+                "charge_category": "other",
                 "charge_type": "upsell",
+                "quantity": 1,
+                "unit_price": amount,
+                "amount": amount,
+                "subtotal": amount,
+                "discount_amount": 0,
+                "vat_rate": 0,
+                "vat_amount": 0,
+                "tax_amount": 0,
+                "total": amount,
+                "voided": False,
                 "status": "posted",
                 "created_at": datetime.now(UTC).isoformat(),
                 "created_by": current_user.email,
             }
             await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
             await db.folio_charges.insert_one(folio_charge)
+            balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
+            await db.folios.update_one(
+                {"id": folio["id"], "tenant_id": current_user.tenant_id},
+                {"$set": {"balance": balance, "updated_at": datetime.now(UTC).isoformat()}},
+            )
             invalidate_financial_report_caches(current_user.tenant_id)
 
-    await db.upsell_offers.update_one({"id": offer_id}, {"$set": update_data})
+    await db.upsell_offers.update_one({"id": offer_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
     return {"message": f"Teklif {'kabul edildi' if action == 'accepted' else 'reddedildi'}", "offer_id": offer_id, "status": action}
 
 

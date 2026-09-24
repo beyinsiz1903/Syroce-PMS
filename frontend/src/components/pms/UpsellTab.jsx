@@ -185,7 +185,7 @@ const UpsellTab = ({
       if (err.response?.status === 404) {
         toast.error('Rezervasyon bulunamadı');
       } else {
-        toast.error(err.response?.data?.detail || 'Teklif uretme başarısız');
+        toast.error(err.response?.data?.detail || 'Teklif üretilemedi');
       }
     }
     setLoading(false);
@@ -202,7 +202,7 @@ const UpsellTab = ({
       loadAllOffers();
       loadInsights();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Teklif uretme başarısız');
+      toast.error(err.response?.data?.detail || 'Teklif üretilemedi');
     }
     setLoading(false);
   };
@@ -364,7 +364,7 @@ const UpsellTab = ({
                 </CardDescription>
               </div>
               {selectedBooking && <Button variant="outline" size="sm" onClick={regenerateOffers} disabled={loading} className="h-7 text-xs">
-                  <Sparkles className="w-3 h-3 mr-1" /> Yeniden Uret
+                  <Sparkles className="w-3 h-3 mr-1" /> Yeniden Üret
                 </Button>}
               {loading && <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />}
             </div>
@@ -436,7 +436,7 @@ const UpsellTab = ({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tumu ({offerSummary?.total || 0})</SelectItem>
+                  <SelectItem value="all">Tümü ({offerSummary?.total || 0})</SelectItem>
                   <SelectItem value="pending">Bekleyen ({offerSummary?.pending || 0})</SelectItem>
                   <SelectItem value="accepted">Kabul ({offerSummary?.accepted || 0})</SelectItem>
                   <SelectItem value="rejected">Red ({offerSummary?.rejected || 0})</SelectItem>
@@ -473,7 +473,7 @@ const UpsellTab = ({
             <CardTitle className="text-base flex items-center gap-2">
               <Building2 className="w-4 h-4" /> Gelir Analizi
             </CardTitle>
-            <CardDescription>Gercek verilere dayali oneriler</CardDescription>
+            <CardDescription>Gerçek verilere dayalı öneriler</CardDescription>
           </CardHeader>
           <CardContent>
             {!revenueInsights?.insights?.length ? <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.analiz_icin_yeterli_veri_yok')}</p> : <div className="space-y-3">

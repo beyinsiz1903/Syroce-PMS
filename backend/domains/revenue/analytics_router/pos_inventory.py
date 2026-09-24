@@ -61,11 +61,29 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
     if not end_date:
         end_date = today.date().isoformat()
 
+    end_exclusive = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()
+    # Yeni siparişlerde business_date otoritedir. Legacy kayıtlarda bu alan
+    # bulunmadığı için created_at aralığına kontrollü fallback yapılır.
+    period_filter = {
+        "$or": [
+            {"business_date": {"$gte": start_date, "$lt": end_exclusive}},
+            {
+                "business_date": {"$exists": False},
+                "created_at": {"$gte": start_date, "$lt": end_exclusive},
+            },
+        ]
+    }
+    query = {
+        "tenant_id": current_user.tenant_id,
+        "status": {"$nin": ["cancelled", "voided"]},
+        **period_filter,
+    }
+
     # Gerçek POS siparişlerinden outlet kırılımı; sabit/placeholder outlet üretilmez.
     # Veri yoksa boş döner (fail-closed), uydurma kategori yok.
     outlet_sales = {}
 
-    async for order in db.pos_orders.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_date, "$lte": end_date}}):
+    async for order in db.pos_orders.find(query):
         outlet = order.get("outlet_name") or "Bilinmeyen"
         if outlet not in outlet_sales:
             outlet_sales[outlet] = {"sales": 0, "orders": 0, "avg_ticket": 0}
