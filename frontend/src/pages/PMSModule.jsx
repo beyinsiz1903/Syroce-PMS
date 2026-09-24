@@ -454,6 +454,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const [hasLoadedFrontdesk, setHasLoadedFrontdesk] = useState(false);
   const [hasLoadedHousekeeping, setHasLoadedHousekeeping] = useState(false);
+  const [hasLoadedAllBookings, setHasLoadedAllBookings] = useState(false);
   const [ratePlans, setRatePlans] = useState([]);
   const [packages, setPackages] = useState([]);
 
@@ -491,8 +492,31 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     if (!validTabKeys.has(activeTab)) return;
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
     else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
+    else if (activeTab === 'bookings' && !hasLoadedAllBookings) {
+      const loadEveryBooking = async () => {
+        const allRows = [];
+        const pageSize = 1000;
+        for (let offset = 0; ; offset += pageSize) {
+          const response = await axios.get(`/pms/bookings?limit=${pageSize}&offset=${offset}&full_history=true`, { timeout: 30000 });
+          const payload = response?.data;
+          const rows = Array.isArray(payload) ? payload : (payload?.bookings || []);
+          allRows.push(...rows);
+          if (rows.length < pageSize) break;
+        }
+        return allRows;
+      };
+      loadEveryBooking()
+        .then((rows) => {
+          setBookings(rows);
+          setHasLoadedAllBookings(true);
+        })
+        .catch((error) => {
+          console.error('Tüm rezervasyonlar yüklenemedi:', error);
+          toast.error('Tüm rezervasyonlar yüklenemedi; tarih aralığındaki kayıtlar gösteriliyor');
+        });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
+  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping, hasLoadedAllBookings]);
 
   const loadData = async (businessDateOverride = null) => {
     try {

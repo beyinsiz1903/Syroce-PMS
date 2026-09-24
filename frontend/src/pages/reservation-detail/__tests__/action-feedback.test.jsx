@@ -279,6 +279,7 @@ describe('reservation detail action feedback', () => {
           { id: 'rate-b', date: '2026-11-07', rate: 5500 },
         ]}
         booking={{ id: 'booking-a', currency: 'TRY' }}
+        summary={{ total_payments: 2000 }}
       />,
     );
 
@@ -286,6 +287,8 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(screen.getByLabelText('Toplam konaklama fiyatı'), { target: { value: '12000' } });
 
     expect(screen.getAllByLabelText(/gece fiyatı/).map(input => input.value)).toEqual(['6000.00', '6000.00']);
+    expect(within(screen.getByTestId('rate-change-summary')).getByText('2.000 TL')).toBeInTheDocument();
+    expect(within(screen.getByTestId('rate-change-summary')).getByText('10.000 TL')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
     await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
       '/pms/reservations/booking-a/daily-rates',

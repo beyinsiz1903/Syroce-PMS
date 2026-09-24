@@ -46,6 +46,12 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
     return () => { active = false; };
   }, [booking.guest_id, booking.room_id, guest, room]);
 
+  useEffect(() => {
+    const closeOnEscape = event => { if (event.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
   const currency = folioData.currency || booking.currency || 'TL';
   const charges = useMemo(() => {
     const seen = new Set();
@@ -68,6 +74,15 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
   const guestName = guestData?.name || guestData?.full_name || booking.guest_name || EMPTY;
   const roomNumber = roomData?.room_number || roomData?.number || booking.room_number || EMPTY;
   const roomType = roomData?.room_type || roomData?.type_name || booking.room_type || EMPTY;
+  const hotelName = folioData.hotel_name || folioData.property_name || booking.hotel_name || booking.property_name;
+  const hotelAddress = folioData.hotel_address || folioData.property_address || booking.hotel_address;
+  const hotelTaxNumber = folioData.hotel_tax_number || folioData.tax_number || booking.hotel_tax_number;
+  const missingDocumentFields = [
+    !hotelName && 'otel/unvan',
+    !folioData.folio_number && 'folyo numarası',
+    roomNumber === EMPTY && 'oda numarası',
+    !(guestData?.id_number || guestData?.identity_number) && 'misafir kimlik numarası',
+  ].filter(Boolean);
 
   if (loading) return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4"><div className="rounded-xl bg-white px-8 py-6 text-sm text-slate-600 shadow-xl">Folyo hazırlanıyor…</div></div>;
 
@@ -75,12 +90,13 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
     <Card className="printable-folio-sheet mx-auto w-full max-w-5xl overflow-hidden bg-white shadow-2xl">
       <CardHeader className="border-b bg-slate-50 px-5 py-4 sm:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">{folioData.hotel_name || folioData.property_name || 'Syroce PMS'}</p><h1 className="mt-1 text-2xl font-bold text-slate-900">{folioData.document_title || 'Misafir Folyosu'}</h1><p className="mt-1 text-sm text-slate-500">Rezervasyon: {booking.reservation_number || booking.confirmation_number || booking.id || EMPTY}</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">{hotelName || 'Otel bilgisi belirtilmedi'}</p><h1 className="mt-1 text-2xl font-bold text-slate-900">{folioData.document_title || 'Misafir Folyosu'}</h1><p className="mt-1 text-sm text-slate-500">Rezervasyon: {booking.reservation_number || booking.confirmation_number || booking.id || EMPTY}</p>{hotelAddress && <p className="mt-1 text-xs text-slate-500">{hotelAddress}</p>}{hotelTaxNumber && <p className="text-xs text-slate-500">Vergi/TC no: {hotelTaxNumber}</p>}</div>
           <div className="print:hidden flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => window.print()} data-testid="print-folio"><Printer className="mr-2 h-4 w-4" /> Yazdır / PDF Kaydet</Button><Button type="button" variant="outline" size="icon" onClick={onClose} aria-label="Kapat"><X className="h-4 w-4" /></Button></div>
         </div>
         <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2"><div><b>Folyo no:</b> {folioData.folio_number || EMPTY}</div><div className="sm:text-right"><b>Düzenlenme:</b> {dateText(new Date(), true)}</div></div>
       </CardHeader>
       <CardContent className="space-y-6 p-5 sm:p-8">
+        {missingDocumentFields.length > 0 && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"><b>Yazdırmadan önce kontrol edin:</b> {missingDocumentFields.join(', ')} bilgisi eksik.</div>}
         <section className="grid gap-6 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
           <Info title="Misafir Bilgileri" rows={[["Ad soyad", guestName], ["Telefon", guestData?.phone], ["E-posta", guestData?.email], ["Kimlik no", guestData?.id_number || guestData?.identity_number], ["Uyruk", guestData?.nationality]]} />
           <Info title="Konaklama Bilgileri" rows={[["Oda", roomNumber], ["Oda tipi", roomType], ["Giriş", dateText(booking.check_in || booking.check_in_date)], ["Çıkış", dateText(booking.check_out || booking.check_out_date)], ["Süre", nights === EMPTY ? EMPTY : `${nights} gece`], ["Kişi", `${Number(booking.adults || 0)} yetişkin${Number(booking.children || 0) > 0 ? `, ${booking.children} çocuk` : ''}`]]} />

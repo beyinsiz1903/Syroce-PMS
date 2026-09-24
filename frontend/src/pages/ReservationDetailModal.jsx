@@ -96,6 +96,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '', nights: 1 });
   const [staySaving, setStaySaving] = useState(false);
   const loadGenerationRef = useRef(0);
+  const tabsListRef = useRef(null);
+
+  useEffect(() => {
+    const active = tabsListRef.current?.querySelector(`[data-reservation-tab="${activeTab}"]`);
+    active?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeTab]);
 
   // allBookings kimliği her render değişebilir → loadData dep'ine koymak yerine
   // ref ile oku (full-detail re-fetch döngüsünü önler).
@@ -494,9 +500,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           ><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
           {/* Sol panel — sticky footer'lı */}
-          <aside className="w-72 border-r bg-slate-50 flex-shrink-0 flex flex-col">
+          <aside className="flex max-h-[42%] w-full flex-shrink-0 flex-col border-b bg-slate-50 md:max-h-none md:w-72 md:border-b-0 md:border-r">
             <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4">
               {/* Misafir başlığı */}
               <div className="flex flex-col items-center text-center gap-2">
@@ -559,7 +565,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   {unpostedRoomAmount > 0.01 && (
                     <>
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Folio bakiyesi</span>
+                        <span className="text-slate-500">Folyo bakiyesi</span>
                         <span className="font-semibold text-amber-700">{fmtCurrency(displayedFolioBalance, currency)}</span>
                       </div>
                       <div className="flex justify-between text-xs" data-testid="unposted-room-amount">
@@ -828,7 +834,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     if (hasOpenBalance) {
                       setActiveTab('folios');
                       toast.warning(
-                        `Çıkış için önce folio bakiyesini (${balance.toLocaleString('tr-TR', {
+                        `Çıkış için önce folyo bakiyesini (${balance.toLocaleString('tr-TR', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })} ${currency}) kapatın.`,
@@ -889,11 +895,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           {/* Ana içerik */}
           <div className="flex-1 overflow-y-auto bg-white">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-              <TabsList className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-10">
+              <TabsList ref={tabsListRef} className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-10">
                 {primaryTabs.map(tab => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
+                    data-reservation-tab={tab.id}
                     className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-600 data-[state=active]:text-amber-700 data-[state=active]:bg-amber-50/40 data-[state=active]:shadow-none px-4 py-2.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap"
                   >
                     <tab.icon className="w-3.5 h-3.5 mr-1.5" />{tab.label}
@@ -925,13 +932,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TabsList>
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} onStayEdit={openStayEditor} canEditStay={canEditStayDates} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
-                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
+                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} summary={summary} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
                 <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>

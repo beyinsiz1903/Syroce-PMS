@@ -39,6 +39,7 @@ export function DailyRatesTab({
   onRefresh,
   readOnly = false,
   businessDate,
+  summary = {},
 }) {
   const currency = booking?.currency || "TL";
   const {
@@ -48,6 +49,7 @@ export function DailyRatesTab({
   const [rates, setRates] = useState([]);
   const [totalInput, setTotalInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [showCompForm, setShowCompForm] = useState(false);
   const [compReason, setCompReason] = useState('');
   const [compScope, setCompScope] = useState('accommodation_only');
@@ -62,9 +64,19 @@ export function DailyRatesTab({
   const isComplimentary = Boolean(booking?.is_complimentary);
   const hasComplimentaryTotalDrift = isComplimentary && Number(booking?.total_amount || 0) > 0;
   const ratesTotal = rates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
+  const originalTotal = (dailyRates || []).reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
+  const paidTotal = Number(summary?.total_payments ?? summary?.paid_amount ?? summary?.prepayment_total ?? booking?.paid_amount ?? 0) || 0;
+  const remainingAfterChange = Math.max(0, ratesTotal - paidTotal);
   const beginEditing = () => {
+    setSaveError('');
     setTotalInput(ratesTotal.toFixed(2));
     setEditMode(true);
+  };
+  const cancelEditing = () => {
+    setRates(dailyRates || []);
+    setTotalInput(originalTotal.toFixed(2));
+    setSaveError('');
+    setEditMode(false);
   };
   const handleTotalChange = event => {
     const value = event.target.value;
@@ -85,12 +97,16 @@ export function DailyRatesTab({
     }
   };
   const handleSave = async () => {
+    setSaveError('');
     const requestedTotal = parseDecimalInput(totalInput);
     if (!Number.isFinite(requestedTotal) || Math.round(requestedTotal * 100) !== Math.round(ratesTotal * 100)) {
-      toast.error('Toplam tutar açık gecelere dağıtılamadı; kapalı gecelerin toplamından büyük bir tutar girin');
+      const message = 'Toplam tutar açık gecelere dağıtılamadı; kapalı gecelerin toplamından büyük bir tutar girin';
+      setSaveError(message);
+      toast.error(message);
       return;
     }
     if (rates.some(rate => !Number.isFinite(parseDecimalInput(rate.rate)) || parseDecimalInput(rate.rate) <= 0)) {
+      setSaveError('Günlük fiyat sıfırdan büyük olmalıdır');
       toast.error('Günlük fiyat sıfırdan büyük olmalıdır');
       return;
     }
@@ -107,6 +123,7 @@ export function DailyRatesTab({
       const detail = e.response?.status === 404
         ? 'Günlük fiyat güncelleme servisi bulunamadı. Uygulamanın backend sürümü güncel olmayabilir.'
         : (e.response?.data?.detail || e.message);
+      setSaveError(detail);
       toast.error('İşlem Hatası: ' + detail);
     }
     setSaving(false);
@@ -120,7 +137,7 @@ export function DailyRatesTab({
     setSaving(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/mark-complimentary`, { reason, scope: compScope });
-      toast.success(compScope === 'full' ? 'Rezervasyon Full Comp olarak kaydedildi' : 'Konaklama comp olarak kaydedildi');
+      toast.success(compScope === 'full' ? 'Rezervasyon tamamen ikram olarak kaydedildi' : 'Konaklama ikram olarak kaydedildi');
       setShowCompForm(false);
       setCompReason('');
       onRefresh?.();
@@ -137,6 +154,7 @@ export function DailyRatesTab({
               <Gift className="w-3 h-3 mr-1" />
               Comp Ver
             </Button>}
+          {editMode && <Button size="sm" variant="ghost" onClick={cancelEditing} disabled={saving} className="h-7 text-xs">Vazgeç</Button>}
           <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : beginEditing()} disabled={saving || readOnly || !anyEditable || isComplimentary} className="h-7 text-xs" title={isComplimentary ? 'Comp rezervasyonun günlük fiyatları değiştirilemez' : readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
             {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
             {editMode ? 'Kaydet' : 'Düzenle'}
@@ -144,7 +162,7 @@ export function DailyRatesTab({
         </div>
       </div>
       {isComplimentary && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="complimentary-summary">
-          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Full Comp' : 'Sadece Konaklama Comp'}</div>
+          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Tam İkram' : 'Konaklama İkramı'}</div>
           {booking?.complimentary_reason && <p className="mt-0.5 text-xs text-emerald-800">Gerekçe: {booking.complimentary_reason}</p>}
           {booking?.complimentary_original_total > 0 && <p className="mt-0.5 text-xs text-emerald-800">Raporlanan konaklama değeri: {fmtCurrency(booking.complimentary_original_total, currency)}</p>}
         </div>}
@@ -165,7 +183,7 @@ export function DailyRatesTab({
               <label className="mb-1 block text-xs font-medium text-amber-950" htmlFor="complimentary-scope">Komp kapsamı</label>
               <select id="complimentary-scope" value={compScope} onChange={event => setCompScope(event.target.value)} disabled={saving} className="h-9 w-full rounded-md border border-amber-300 bg-white px-3 text-sm">
                 <option value="accommodation_only">Sadece Konaklama</option>
-                <option value="full">Full Comp</option>
+                <option value="full">Tam İkram</option>
               </select>
             </div>
             <div>
@@ -183,7 +201,7 @@ export function DailyRatesTab({
       {!readOnly && hasClosedRates && <p className="text-xs text-slate-500">Night Audit ile kapanan tarihler kilitlidir; yalnızca açık iş günü ve sonrası düzenlenebilir.</p>}
       <div className="border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50"><tr><th className="text-left py-2 px-3 text-xs text-gray-500 font-medium">{t('cm.pages_reservationdetail_PricingTabs.tarih')}</th><th className="text-right py-2 px-3 text-xs text-gray-500 font-medium">Fiyat (TL)</th></tr></thead>
+          <thead className="bg-gray-50"><tr><th className="text-left py-2 px-3 text-xs text-gray-500 font-medium">{t('cm.pages_reservationdetail_PricingTabs.tarih')}</th><th className="text-right py-2 px-3 text-xs text-gray-500 font-medium">Fiyat ({currency === 'TRY' ? 'TL' : currency})</th></tr></thead>
           <tbody>
             {rates.map((r, i) => <tr key={r.id || i} className="border-t">
                 <td className="py-2 px-3 text-gray-700">{fmtDate(r.date)}</td>
@@ -203,6 +221,12 @@ export function DailyRatesTab({
           <tfoot className="bg-gray-50 border-t-2"><tr><td className="py-2 px-3 font-semibold">{t('cm.pages_reservationdetail_PricingTabs.toplam')}</td><td className="py-2 px-3 text-right font-bold">{editMode ? <Input aria-label="Toplam konaklama fiyatı" type="text" inputMode="decimal" value={totalInput} onChange={handleTotalChange} className="h-8 w-32 ml-auto text-right font-bold" /> : fmtCurrency(ratesTotal, currency)}</td></tr></tfoot>
         </table>
       </div>
+      {editMode && <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs" data-testid="rate-change-summary">
+        <div><span className="block text-slate-500">Yeni konaklama</span><strong className="text-slate-900">{fmtCurrency(ratesTotal, currency)}</strong>{Math.round(originalTotal * 100) !== Math.round(ratesTotal * 100) && <span className="mt-0.5 block text-amber-700">Önceki: {fmtCurrency(originalTotal, currency)}</span>}</div>
+        <div><span className="block text-slate-500">Tahsil edilen</span><strong className="text-emerald-700">{fmtCurrency(paidTotal, currency)}</strong></div>
+        <div><span className="block text-slate-500">Kaydetme sonrası kalan</span><strong className={remainingAfterChange > 0.01 ? 'text-rose-700' : 'text-emerald-700'}>{fmtCurrency(remainingAfterChange, currency)}</strong></div>
+      </div>}
+      {saveError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{saveError}</div>}
       {editMode && <p className="text-xs text-slate-500">Toplam tutar değiştirildiğinde açık gecelere kuruş farkı bırakmadan eşit dağıtılır. Night Audit ile kapanan geceler korunur.</p>}
     </div>;
 }
@@ -342,7 +366,7 @@ export function ExtraChargesTab({
           quantity: v
         }))} />
           </div>
-          <p className="text-xs text-amber-800">{isFullComp ? 'Full Comp kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 TL yansır.' : '0 TL girilen kalemler bakiyeyi etkilemeden Komp / İkram olarak kaydedilir.'}</p>
+          <p className="text-xs text-amber-800">{isFullComp ? 'Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 TL yansır.' : '0 TL girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.'}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ekle'}</Button>

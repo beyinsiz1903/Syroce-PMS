@@ -42,6 +42,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [printFolioId, setPrintFolioId] = useState('all');
   const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [actionError, setActionError] = useState('');
   const [reconcilingRoomCharge, setReconcilingRoomCharge] = useState(false);
   // Currency Converter state
   const [useCurrencyConverter, setUseCurrencyConverter] = useState(false);
@@ -109,6 +110,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
 
   const completePendingRoomCharge = async () => {
+    setActionError('');
     setReconcilingRoomCharge(true);
     try {
       const response = await axios.post(`/pms/reservations/${booking.id}/complete-pending-room-charge`);
@@ -116,7 +118,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       else toast.info('Konaklama tahakkuku zaten tamamlanmış');
       await onRefresh?.();
     } catch (e) {
-      toast.error('Tahakkuk tamamlanamadı: ' + (e.response?.data?.detail || e.message));
+      const message = 'Tahakkuk tamamlanamadı: ' + (e.response?.data?.detail || e.message);
+      setActionError(message);
+      toast.error(message);
     } finally {
       setReconcilingRoomCharge(false);
     }
@@ -138,7 +142,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         await onRefresh?.();
         setShowSplit(true);
       } catch (e) {
-        toast.error('Folyo hazırlanamadı: ' + (e.response?.data?.detail || e.message));
+        const message = 'Folyo hazırlanamadı: ' + (e.response?.data?.detail || e.message);
+        setActionError(message);
+        toast.error(message);
       }
       setLoading(false);
       return;
@@ -149,7 +155,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
 
   const loadCari = async () => { try { const r = await axios.get(`/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch { /* fetch error */ } };
 
-  const exec = async (fn) => { setLoading(true); try { await fn(); onRefresh?.(); } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); } setLoading(false); };
+  const exec = async (fn) => { setLoading(true); setActionError(''); try { await fn(); onRefresh?.(); } catch (e) { const message = e.response?.data?.detail || e.message; setActionError(message); toast.error('İşlem Hatası: ' + message); } setLoading(false); };
 
   const allItems = useMemo(() => {
     const seen = new Set();
@@ -188,6 +194,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
 
   return (
     <div data-testid="folios-tab" className="space-y-4">
+      {actionError && <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"><span><b>İşlem tamamlanamadı:</b> {actionError}</span><button type="button" className="font-semibold text-rose-700 hover:text-rose-900" onClick={() => setActionError('')} aria-label="Hata mesajını kapat">×</button></div>}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard currency={currency} label="Konaklama" value={accommodationTotal} color="blue" />
         <SummaryCard currency={currency} label="Ekstralar" value={additionalChargeTotal} color="amber" />
