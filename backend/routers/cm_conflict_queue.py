@@ -54,6 +54,15 @@ PENDING_QUERY: dict[str, Any] = {
     "status": {"$in": ["confirmed", "guaranteed", "pending"]},
 }
 
+# Legacy imports created before ``allocation_source`` became mandatory can be
+# roomless duplicates without the ``pending_assignment`` marker.  Reconciliation
+# may inspect those rows, but still requires an exact external OTA identity and
+# a room-assigned checked-in/out authoritative stay before changing anything.
+LEGACY_DUPLICATE_CANDIDATE_QUERY: dict[str, Any] = {
+    "room_id": {"$in": [None, ""]},
+    "status": {"$in": ["confirmed", "guaranteed", "pending"]},
+}
+
 
 class ResolveRequest(BaseModel):
     room_id: str = Field(..., min_length=1, description="Target room id to assign")
@@ -352,7 +361,7 @@ async def reconcile_legacy_duplicates(
     authoritative booking has a room and is checked in/out.
     """
     tenant_id = current_user.tenant_id
-    pending_query = {**PENDING_QUERY, "tenant_id": tenant_id}
+    pending_query = {**LEGACY_DUPLICATE_CANDIDATE_QUERY, "tenant_id": tenant_id}
     pending_rows = await db.bookings.find(pending_query, {"_id": 0}).limit(200).to_list(200)
     reconciled: list[dict[str, str]] = []
     now_iso = datetime.now(UTC).isoformat()
@@ -368,7 +377,7 @@ async def reconcile_legacy_duplicates(
             continue
 
         result = await db.bookings.update_one(
-            {**PENDING_QUERY, "tenant_id": tenant_id, "id": booking_id},
+            {**LEGACY_DUPLICATE_CANDIDATE_QUERY, "tenant_id": tenant_id, "id": booking_id},
             {
                 "$set": {
                     "status": "cancelled",
