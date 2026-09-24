@@ -126,18 +126,6 @@ class ExelyPullScheduler:
                 _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             await asyncio.sleep(interval_seconds)
 
-    async def _heartbeat(self, provider: ExelyProvider, tenant_id: str):
-        """Send a room discovery request to keep the connection alive in Exely."""
-        try:
-            from datetime import datetime, timedelta
-
-            tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
-            week = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d")
-            result = await provider.discover_rooms(tomorrow, week)
-            logger.info("[EXELY-PULL] operation=heartbeat success=%s", result.success)
-        except Exception as exc:
-            logger.warning("[EXELY-PULL] operation=heartbeat success=false exception_class=%s", type(exc).__name__)
-
     async def _pull_all_tenants(self, safety_window_minutes: int):
         runtime_block = reservation_sync_block_reason()
         if runtime_block:
@@ -282,9 +270,6 @@ class ExelyPullScheduler:
         if connection_mode:
             provider_kwargs["connection_mode"] = connection_mode
         provider = ExelyProvider(**provider_kwargs)
-
-        # Heartbeat: keep connection alive in Exely
-        await self._heartbeat(provider, tenant_id)
 
         pull_start = datetime.now(UTC)
 
