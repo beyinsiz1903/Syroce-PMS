@@ -16,8 +16,10 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
+from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user
 from models.schemas import (
     User,
@@ -493,7 +495,9 @@ async def update_upsell_offer(
                 "created_at": datetime.now(UTC).isoformat(),
                 "created_by": current_user.email,
             }
+            await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
             await db.folio_charges.insert_one(folio_charge)
+            invalidate_financial_report_caches(current_user.tenant_id)
 
     await db.upsell_offers.update_one({"id": offer_id}, {"$set": update_data})
     return {"message": f"Teklif {'kabul edildi' if action == 'accepted' else 'reddedildi'}", "offer_id": offer_id, "status": action}

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from core.business_date_service import (
+    _local_calendar_date,
     accounting_day_match,
     accounting_period_match,
     ensure_business_date_initialized,
@@ -28,6 +29,13 @@ def _db(*, settings_reads, latest_run=None, bookings=None):
         night_audit_runs=night_audit_runs,
         bookings=booking_collection,
     )
+
+
+def test_default_hotel_timezone_advances_calendar_day_at_local_midnight():
+    instant = datetime(2026, 9, 23, 21, 30, tzinfo=UTC)
+
+    assert _local_calendar_date("Europe/Istanbul", now=instant) == date(2026, 9, 24)
+    assert _local_calendar_date("UTC", now=instant) == date(2026, 9, 23)
 
 
 @pytest.mark.asyncio

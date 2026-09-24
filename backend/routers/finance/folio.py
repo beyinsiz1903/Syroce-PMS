@@ -755,7 +755,7 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
         # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge eklenince)
         if cache:
             cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
-            cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "reports_basic_dashboard_v2")
 
         # Acente webhook: rezervasyon güncellendi (yeni charge → toplam değişti)
         from routers.webhook_retry_service import schedule_emit_reservation_updated
@@ -924,7 +924,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
             {"payment_id": payment.id, "amount": float(payment.amount), "method": method_str},
         )
         if cache:
-            cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "reports_basic_dashboard_v2")
 
         return payment
     except HTTPException:
@@ -984,10 +984,25 @@ async def revenue_by_category(
         "tax_amount": 1,
         "total": 1,
     }
-    query = {"tenant_id": current_user.tenant_id, "voided": {"$ne": True}}
+    date_fields = ("business_date", "charge_date", "date", "posted_at", "created_at")
+    string_start = dt_from.date().isoformat()
+    string_end = (dt_to.date() + timedelta(days=1)).isoformat()
+    date_clauses = []
+    for field in date_fields:
+        date_clauses.extend(
+            [
+                {field: {"$gte": string_start, "$lt": string_end}},
+                {field: {"$gte": dt_from, "$lte": dt_to}},
+            ]
+        )
+    query = {
+        "tenant_id": current_user.tenant_id,
+        "voided": {"$ne": True},
+        "$or": date_clauses,
+    }
     folio_rows, extra_rows = await asyncio.gather(
-        db.folio_charges.find(query, projection).to_list(50000),
-        db.extra_charges.find(query, projection).to_list(50000),
+        db.folio_charges.find(query, projection).to_list(None),
+        db.extra_charges.find(query, projection).to_list(None),
     )
 
     def report_day(row: dict) -> date | None:
@@ -1157,7 +1172,7 @@ async def void_charge(folio_id: str, charge_id: str, void_reason: str, current_u
     # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void edilince)
     if cache:
         cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
-        cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
+        cache.invalidate_tenant_cache(current_user.tenant_id, "reports_basic_dashboard_v2")
 
     # Acente webhook: rezervasyon güncellendi (charge iptal → toplam değişti)
     if charge.get("booking_id"):

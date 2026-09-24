@@ -1084,7 +1084,7 @@ class FrontdeskServiceV2:
 
             if _cache:
                 _cache.invalidate_tenant_cache(ctx.tenant_id, "folio_revenue_by_category_v2")
-                _cache.invalidate_tenant_cache(ctx.tenant_id, "reports:basic_dashboard:v2")
+                _cache.invalidate_tenant_cache(ctx.tenant_id, "reports_basic_dashboard_v2")
         except ImportError:
             pass
 

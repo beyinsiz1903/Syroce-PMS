@@ -802,6 +802,37 @@ async def release_booking_nights(tenant_id: str, booking_id: str, reason: str = 
     return deleted
 
 
+async def release_booking_room_nights(
+    tenant_id: str,
+    booking_id: str,
+    room_id: str,
+    check_in: str,
+    check_out: str,
+    *,
+    reason: str,
+) -> int:
+    """Release only one attempted assignment's locks.
+
+    Auto-assignment may lose a compare-and-set race after claiming room nights.
+    Releasing every lock owned by the booking in that situation can erase the
+    winning assignment's protection.  Compensation therefore has to be scoped
+    to the exact room and stay window attempted by the losing worker.
+    """
+    nights = _night_dates(check_in, check_out)
+    if not nights:
+        return 0
+    with tenant_context(tenant_id):
+        result = await db.room_night_locks.delete_many(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "night_date": {"$in": nights},
+            }
+        )
+    return int(getattr(result, "deleted_count", 0) or 0)
+
+
 async def assign_room_atomic(
     *,
     tenant_id: str,

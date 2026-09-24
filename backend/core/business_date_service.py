@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,19 @@ def _date_only(value: Any) -> date | None:
         return date.fromisoformat(value.strip()[:10])
     except ValueError:
         return None
+
+
+def _local_calendar_date(timezone_name: str, *, now: datetime | None = None) -> date:
+    """Resolve a wall-clock instant to the hotel's local calendar date."""
+    try:
+        tenant_timezone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError, OSError):
+        logger.warning("Invalid tenant timezone timezone=%s; using Europe/Istanbul", timezone_name)
+        tenant_timezone = ZoneInfo("Europe/Istanbul")
+    reference = now or datetime.now(UTC)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+    return reference.astimezone(tenant_timezone).date()
 
 
 async def _derive_initial_business_date(db, tenant_id: str, today: date) -> tuple[str, str]:
@@ -98,7 +112,8 @@ async def ensure_business_date_initialized(
     if current and current.get("business_date"):
         return business_date_payload(current)
 
-    today_value = today or datetime.now(UTC).date()
+    timezone_name = str((current or {}).get("timezone") or "Europe/Istanbul")
+    today_value = today or _local_calendar_date(timezone_name)
     initial_date, reason = await _derive_initial_business_date(db, tenant_id, today_value)
     now = datetime.now(UTC).isoformat()
     fields = {

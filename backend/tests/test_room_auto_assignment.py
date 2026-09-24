@@ -33,6 +33,17 @@ class _Collection:
         self.calls.append((query, update))
         return SimpleNamespace(matched_count=1, modified_count=1)
 
+    async def find_one(self, query, projection=None):
+        del projection
+        return next(
+            (
+                doc
+                for doc in self._docs
+                if all(doc.get(key) == value for key, value in query.items() if not key.startswith("$"))
+            ),
+            None,
+        )
+
 
 def _database(*, rooms=(), bookings=(), blocks=(), locks=()):
     return SimpleNamespace(
@@ -223,7 +234,112 @@ async def test_pending_booking_is_reassigned_after_legacy_hold_release(monkeypat
     assert updated["allocation_source"] == "ota_auto_assignment_after_hold_release"
     assert "auto_assignment_reason" not in updated
     assert assign.await_args.kwargs["room_id"] == "room-208"
+    claim_query, claim_update = database.bookings.calls[0]
+    claim_id = claim_update["$set"]["auto_assignment_claim_id"]
+    assert claim_query["room_id"] is None
+    assert "$or" in claim_query
     query, update = database.bookings.calls[-1]
-    assert query == {"tenant_id": "tenant-1", "id": "booking-1", "room_id": None}
+    assert query == {
+        "tenant_id": "tenant-1",
+        "id": "booking-1",
+        "room_id": None,
+        "auto_assignment_claim_id": claim_id,
+    }
     assert update["$set"]["room_id"] == "room-208"
-    assert update["$unset"] == {"auto_assignment_reason": ""}
+    assert update["$unset"] == {
+        "auto_assignment_reason": "",
+        "auto_assignment_claim_id": "",
+        "auto_assignment_claimed_at": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_pending_assignment_stops_when_another_worker_owns_claim(monkeypatch):
+    database = _database()
+    database.bookings.update_one = AsyncMock(return_value=SimpleNamespace(matched_count=0, modified_count=0))
+    find_candidates = AsyncMock()
+    assign = AsyncMock()
+    monkeypatch.setattr("core.room_auto_assignment.find_auto_assignment_candidates", find_candidates)
+    monkeypatch.setattr("core.room_auto_assignment.assign_room_atomic", assign)
+    booking = {**_booking(), "room_id": None}
+
+    updated, room = await assign_pending_booking_with_auto_assignment(
+        database=database,
+        tenant_id="tenant-1",
+        booking_doc=booking,
+    )
+
+    assert updated == booking
+    assert room is None
+    find_candidates.assert_not_awaited()
+    assign.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pending_assignment_lost_cas_releases_only_attempted_room(monkeypatch):
+    candidate = {"id": "room-208", "room_number": "208"}
+    monkeypatch.setattr(
+        "core.room_auto_assignment.find_auto_assignment_candidates",
+        AsyncMock(return_value=[candidate]),
+    )
+    monkeypatch.setattr("core.room_auto_assignment.assign_room_atomic", AsyncMock(return_value={"success": True}))
+    release = AsyncMock()
+    monkeypatch.setattr("core.room_auto_assignment.release_booking_room_nights", release)
+    database = _database()
+    database.bookings.update_one = AsyncMock(
+        side_effect=[
+            SimpleNamespace(matched_count=1, modified_count=1),
+            SimpleNamespace(matched_count=0, modified_count=0),
+            SimpleNamespace(matched_count=1, modified_count=1),
+        ]
+    )
+    database.bookings.find_one = AsyncMock(return_value={**_booking(), "room_id": "room-999"})
+
+    updated, room = await assign_pending_booking_with_auto_assignment(
+        database=database,
+        tenant_id="tenant-1",
+        booking_doc={**_booking(), "room_id": None},
+    )
+
+    assert updated["room_id"] is None
+    assert room is None
+    release.assert_awaited_once_with(
+        "tenant-1",
+        "booking-1",
+        "room-208",
+        "2026-08-22",
+        "2026-08-24",
+        reason="pending_booking_assignment_lost",
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_assignment_ambiguous_cas_keeps_winning_locks(monkeypatch):
+    candidate = {"id": "room-208", "room_number": "208"}
+    monkeypatch.setattr(
+        "core.room_auto_assignment.find_auto_assignment_candidates",
+        AsyncMock(return_value=[candidate]),
+    )
+    monkeypatch.setattr("core.room_auto_assignment.assign_room_atomic", AsyncMock(return_value={"success": True}))
+    release = AsyncMock()
+    monkeypatch.setattr("core.room_auto_assignment.release_booking_room_nights", release)
+    database = _database()
+    database.bookings.update_one = AsyncMock(
+        side_effect=[
+            SimpleNamespace(matched_count=1, modified_count=1),
+            SimpleNamespace(matched_count=0, modified_count=0),
+        ]
+    )
+    database.bookings.find_one = AsyncMock(
+        return_value={**_booking(), "room_id": "room-208", "room_number": "208"}
+    )
+
+    updated, room = await assign_pending_booking_with_auto_assignment(
+        database=database,
+        tenant_id="tenant-1",
+        booking_doc={**_booking(), "room_id": None},
+    )
+
+    assert updated["room_id"] == "room-208"
+    assert room == candidate
+    release.assert_not_awaited()

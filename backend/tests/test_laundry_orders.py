@@ -110,6 +110,8 @@ class _FakeDB:
         )
         self.bookings = _Coll()
         self.rooms = _Coll()
+        self.tenant_settings = _Coll()
+        self.tenant_settings.docs.append({"tenant_id": TENANT, "business_date": "2026-09-23"})
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -224,6 +226,7 @@ async def test_deliver_posts_charge_per_line_to_open_folio(_patch):
     assert {c["line_no"] for c in charges} == {0, 1}
     assert len({c["source_laundry_order_id"] for c in charges}) == 1
     assert sorted(c["total"] for c in charges) == [40.0, 60.0]
+    assert {c["business_date"] for c in charges} == {"2026-09-23"}
     # Order flagged folio_charged.
     assert _patch.laundry_orders.docs[0]["folio_charged"] is True
 
@@ -278,7 +281,7 @@ async def test_charge_is_idempotent_no_double_post(_patch):
     _seed_booking(_patch)
     _seed_open_folio(_patch)
     _seed_item(_patch, "shirt", "Gomlek", 30.0)
-    order = await _create(_patch, _order_payload([("shirt", 2)]), _user("front_desk"))
+    await _create(_patch, _order_payload([("shirt", 2)]), _user("front_desk"))
     order_doc = _patch.laundry_orders.docs[0]
 
     r1 = await lr._charge_order_to_folio(TENANT, "u1", order_doc)

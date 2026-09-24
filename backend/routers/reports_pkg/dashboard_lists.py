@@ -13,6 +13,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics, load_stay_night_metrics
 
 security = HTTPBearer()
@@ -46,7 +47,7 @@ sub_router = APIRouter()
 
 
 NON_CASH_PAYMENT_METHODS = {"discount", "city_ledger", "complimentary", "correction", "ar"}
-IN_HOUSE_STATUSES = {"checked_in", "checked_out"}
+IN_HOUSE_STATUSES = {"checked_in", "in_house", "checked_out"}
 ARRIVAL_STATUSES = {"confirmed", "guaranteed", "checked_in", "checked_out"}
 ROOM_CHARGE_CATEGORIES = {"room", "accommodation", "room_charge"}
 FNB_CHARGE_CATEGORIES = {
@@ -209,6 +210,7 @@ async def get_official_guest_list(
     date: str | None = None,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
+    _permission: None = Depends(require_op("view_guest_list")),
 ):
     """Resmi misafir listesi (Maliye / resmi denetimler için).
 
@@ -223,12 +225,18 @@ async def get_official_guest_list(
     next_day = day_start + timedelta(days=1)
 
     # İlgili tarihte otelde konaklayan rezervasyonlar
+    day_start_iso = day_start.date().isoformat()
+    next_day_iso = next_day.date().isoformat()
     bookings_cursor = db.bookings.find(
         {
             "tenant_id": current_user.tenant_id,
-            "check_in": {"$lt": next_day.date().isoformat()},
-            "check_out": {"$gt": day_start.date().isoformat()},
             "status": {"$nin": ["cancelled", "no_show"]},
+            "$or": [
+                {"check_in": {"$lt": next_day_iso}, "check_out": {"$gt": day_start_iso}},
+                {"check_in": {"$lt": next_day}, "check_out": {"$gt": day_start}},
+                {"check_in": {"$lt": next_day_iso}, "check_out": {"$gt": day_start}},
+                {"check_in": {"$lt": next_day}, "check_out": {"$gt": day_start_iso}},
+            ],
         },
         {
             "_id": 0,
@@ -256,7 +264,7 @@ async def get_official_guest_list(
 
     bookings = [
         booking
-        for booking in await bookings_cursor.to_list(5000)
+        for booking in await bookings_cursor.to_list(None)
         if _booking_occupied_on(booking, target_date.isoformat())
     ]
 
@@ -275,7 +283,7 @@ async def get_official_guest_list(
     guest_links = await db.booking_guests.find(
         {"tenant_id": current_user.tenant_id, "booking_id": {"$in": booking_ids}},
         {"_id": 0},
-    ).to_list(10000) if booking_ids else []
+    ).to_list(None) if booking_ids else []
 
     links_by_booking: dict[str, list[dict]] = {}
     for link in guest_links:
@@ -310,7 +318,7 @@ async def get_official_guest_list(
         )
         from security.encrypted_lookup import decrypt_guest_doc
 
-        guest_docs = [decrypt_guest_doc(g) for g in await guests_cursor.to_list(5000)]
+        guest_docs = [decrypt_guest_doc(g) for g in await guests_cursor.to_list(None)]
         guests_by_id = {str(g["id"]): g for g in guest_docs}
 
     rows = []
@@ -339,7 +347,11 @@ async def get_official_guest_list(
                     "passport_number": passport_number if has_pii else _mask_pii(passport_number),
                     "country": (guest or {}).get("country") or (guest or {}).get("nationality"),
                     "city": (guest or {}).get("city"),
-                    "date_of_birth": (guest or {}).get("date_of_birth") or (guest or {}).get("birth_date"),
+                    "date_of_birth": (
+                        (guest or {}).get("date_of_birth") or (guest or {}).get("birth_date")
+                        if has_pii
+                        else _mask_pii((guest or {}).get("date_of_birth") or (guest or {}).get("birth_date"))
+                    ),
                     "room_number": str(b.get("room_number") or room_map.get(str(b.get("room_id"))) or "?").strip() or "?",
                     "check_in": b.get("check_in"),
                     "check_out": b.get("check_out"),
@@ -348,9 +360,9 @@ async def get_official_guest_list(
                     "reservation_adults": b.get("adults", 1),
                     "reservation_children": b.get("children", 0),
                     "total_amount": b.get("total_amount", 0.0) if occupant_index == 0 else 0.0,
-                    "billing_tax_number": b.get("billing_tax_number"),
-                    "billing_address": b.get("billing_address"),
-                    "company_id": b.get("company_id"),
+                    "billing_tax_number": b.get("billing_tax_number") if has_pii else _mask_pii(b.get("billing_tax_number")),
+                    "billing_address": b.get("billing_address") if has_pii else _mask_pii(b.get("billing_address")),
+                    "company_id": b.get("company_id") if has_pii else _mask_pii(b.get("company_id")),
                     "market_segment": b.get("market_segment"),
                 }
             )
@@ -400,7 +412,7 @@ async def get_basic_reports_dashboard(
     return await _basic_dashboard_impl(current_user, has_pii, date, period)
 
 
-@cached(ttl=120, key_prefix="reports:basic_dashboard:v2", role_aware=True)
+@cached(ttl=120, key_prefix="reports_basic_dashboard_v2", role_aware=True)
 async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: str = None, period: str = "monthly"):
     if target_date:
         try:
@@ -469,10 +481,15 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "tenant_id": tenant_id,
                 "$or": [
                     {"check_in": {"$gte": trend_start.date().isoformat(), "$lt": next_day.date().isoformat()}},
+                    {"check_in": {"$gte": trend_start, "$lt": next_day}},
                     {"check_out": {"$gte": trend_start.date().isoformat(), "$lt": next_day.date().isoformat()}},
+                    {"check_out": {"$gte": trend_start, "$lt": next_day}},
                     {"check_in": {"$lt": trend_start.date().isoformat()}, "check_out": {"$gt": target_day}},
+                    {"check_in": {"$lt": trend_start}, "check_out": {"$gt": today_start}},
                     {"status": "cancelled", "cancelled_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
+                    {"status": "cancelled", "cancelled_at": {"$gte": trend_start, "$lt": next_day}},
                     {"status": "cancelled", "updated_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
+                    {"status": "cancelled", "updated_at": {"$gte": trend_start, "$lt": next_day}},
                 ],
             },
             {
@@ -805,7 +822,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         st = r.get("current_status", r.get("status", "available"))
         room_status_counts[st] = room_status_counts.get(st, 0) + 1
 
-    ts_s, ts_e = today_start.isoformat(), today_end.isoformat()
     month_day, week_day = month_start.date().isoformat(), week_start.date().isoformat()
     occupied_today = arrivals = departures = no_shows = cancellations = today_revenue = 0
     period_arrivals = period_departures = period_no_shows = period_cancellations = 0
@@ -833,7 +849,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             daily_in_house.extend(booking_guest_rows(bk))
         if ci_day == target_day and status == "no_show":
             no_shows += 1
-        if status == "cancelled" and created >= ts_s and created <= ts_e:
+        cancellation_day = _date_part(bk.get("cancelled_at") or bk.get("updated_at") or created)
+        if status == "cancelled" and cancellation_day == target_day:
             cancellations += 1
         if trend_start.date().isoformat() <= ci_day <= target_day:
             if status in ARRIVAL_STATUSES:
@@ -842,7 +859,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 period_no_shows += 1
         if trend_start.date().isoformat() <= co_day <= target_day and status not in ("cancelled", "no_show"):
             period_departures += 1
-        cancellation_day = _date_part(bk.get("cancelled_at") or bk.get("updated_at") or created)
         if status == "cancelled" and trend_start.date().isoformat() <= cancellation_day <= target_day:
             period_cancellations += 1
         if month_day <= ci_day <= target_day and status in ALL_REVENUE_STATUSES:

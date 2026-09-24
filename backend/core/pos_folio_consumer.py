@@ -36,7 +36,9 @@ from typing import Any
 
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import stamp_open_business_date
 from core.outbox_service import POS_CHARGE_POSTED, POS_CHARGE_REVERSED
+from core.report_cache import invalidate_financial_report_caches
 from core.tenant_db import get_system_db
 from domains.pms.pos_extensions._idem import ensure_compound_unique
 
@@ -177,13 +179,17 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
     inserted = 0
     for cdoc in charges:
         try:
-            await db.folio_charges.insert_one(dict(cdoc))
+            charge_doc = dict(cdoc)
+            await stamp_open_business_date(db, tenant_id, charge_doc)
+            await db.folio_charges.insert_one(charge_doc)
             inserted += 1
         except DuplicateKeyError:
             # This exact (order, line) already posted — idempotent skip.
             continue
 
     balance = await _recalc_folio_balance(db, tenant_id, folio_id)
+    if inserted:
+        invalidate_financial_report_caches(tenant_id)
     return True, (f"posted {inserted} charge(s) for order {order_id} to folio {folio_id}; balance={balance}")
 
 
