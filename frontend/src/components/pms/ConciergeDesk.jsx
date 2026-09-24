@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog } from '@/lib/dialogs';
-import { formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import {
   MapPin, Car, Utensils, Ticket, Clock, Plus, CheckCircle,
   AlertCircle, Package, Key, Coffee, Bell, Search, RefreshCw,
@@ -47,12 +47,12 @@ const CURRENCY_OPTIONS = ['TRY', 'EUR', 'USD', 'GBP'];
 const PAGE_SIZE = 50;
 const POLL_INTERVAL_MS = 60_000;
 
-const EMPTY_FORM = {
+const emptyForm = () => ({
   type: '', room_number: '', guest_name: '', details: '',
   date: '', time: '', pax: '1', notes: '', priority: 'normal',
-  amount: '', currency: 'TRY', charge_to_folio: false,
+  amount: '', currency: cachedTenantCurrency(), charge_to_folio: false,
   booking_id: '', folio_id: '',
-};
+});
 
 const formatDateTime = (date, time) => {
   if (!date && !time) return '—';
@@ -89,31 +89,31 @@ const ConciergeDesk = () => {
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [page, setPage] = useState(0);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(emptyForm);
   const [roomLookupBusy, setRoomLookupBusy] = useState(false);
   const [roomLookupHint, setRoomLookupHint] = useState(null);
   const lookupTimerRef = useRef(null);
 
-  const loadRequests = useCallback(async ({ append = false, silent = false } = {}) => {
+  const loadRequests = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
-      if (append) setLoading(true); else setRefreshing(true);
+      setRefreshing(true);
     }
     try {
-      const params = { skip: append ? page * PAGE_SIZE : 0, limit: PAGE_SIZE };
+      const params = { skip: 0, limit: PAGE_SIZE };
       if (activeStatus !== 'all') params.status = activeStatus;
       const res = await axios.get('/concierge/requests', { params });
       const next = res.data.requests || [];
-      setRequests(prev => append ? [...prev, ...next] : next);
+      setRequests(next);
       setCounts(res.data.counts || { total: 0, pending: 0, in_progress: 0, completed: 0, cancelled: 0 });
       setTotalForFilter(res.data.total || 0);
-      if (!append) setPage(0);
+      setPage(0);
     } catch (err) {
       toast.error(errMsg(err, tc('loadError')));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeStatus, page, tc]);
+  }, [activeStatus, tc]);
 
   useEffect(() => {
     loadRequests();
@@ -179,7 +179,7 @@ const ConciergeDesk = () => {
     notes: form.notes.trim(),
     priority: form.priority,
     amount: Number(form.amount || 0),
-    currency: form.currency || 'TRY',
+    currency: form.currency || cachedTenantCurrency(),
     charge_to_folio: !!form.charge_to_folio,
     booking_id: form.booking_id || '',
     folio_id: form.folio_id || '',
@@ -192,7 +192,7 @@ const ConciergeDesk = () => {
       const res = await axios.post('/concierge/requests', buildPayload());
       setRequests(prev => [res.data, ...prev]);
       toast.success(tc('requestCreated'));
-      setForm(EMPTY_FORM);
+      setForm(emptyForm());
       setRoomLookupHint(null);
       setShowNew(false);
       loadRequests({ silent: true });
@@ -216,7 +216,7 @@ const ConciergeDesk = () => {
       notes: req.notes || '',
       priority: req.priority || 'normal',
       amount: req.amount ? String(req.amount) : '',
-      currency: req.currency || 'TRY',
+      currency: req.currency || cachedTenantCurrency(),
       charge_to_folio: !!req.charge_to_folio,
       booking_id: req.booking_id || '',
       folio_id: req.folio_id || '',
@@ -232,7 +232,7 @@ const ConciergeDesk = () => {
       const res = await axios.patch(`/concierge/requests/${editingId}`, buildPayload());
       setRequests(prev => prev.map(r => r.id === editingId ? { ...r, ...res.data } : r));
       toast.success(tc('requestUpdated'));
-      setForm(EMPTY_FORM);
+      setForm(emptyForm());
       setEditingId(null);
       setRoomLookupHint(null);
       setShowNew(false);
@@ -280,7 +280,7 @@ const ConciergeDesk = () => {
   const closeDialog = () => {
     setShowNew(false);
     setEditingId(null);
-    setForm(EMPTY_FORM);
+    setForm(emptyForm());
     setRoomLookupHint(null);
   };
 
@@ -301,8 +301,22 @@ const ConciergeDesk = () => {
   };
 
   const handleLoadMore = () => {
-    setPage(p => p + 1);
-    loadRequests({ append: true });
+    const nextPage = page + 1;
+    setLoading(true);
+    axios.get('/concierge/requests', {
+      params: {
+        skip: nextPage * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        ...(activeStatus !== 'all' ? { status: activeStatus } : {}),
+      },
+    }).then(res => {
+      const next = res.data.requests || [];
+      setRequests(prev => [...prev, ...next.filter(item => !prev.some(current => current.id === item.id))]);
+      setCounts(res.data.counts || counts);
+      setTotalForFilter(res.data.total || 0);
+      setPage(nextPage);
+    }).catch(err => toast.error(errMsg(err, tc('loadError'))))
+      .finally(() => setLoading(false));
   };
 
   const hasMore = requests.length < totalForFilter;
@@ -325,7 +339,7 @@ const ConciergeDesk = () => {
             <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
             {tc('refresh')}
           </Button>
-          <Button onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setRoomLookupHint(null); setShowNew(true); }}>
+          <Button onClick={() => { setEditingId(null); setForm(emptyForm()); setRoomLookupHint(null); setShowNew(true); }}>
             <Plus className="w-4 h-4 mr-1" /> {tc('newRequest')}
           </Button>
         </div>
@@ -388,7 +402,7 @@ const ConciergeDesk = () => {
             <CardContent className="p-8 text-center space-y-3">
               <ConciergeBell className="w-10 h-10 text-slate-300 mx-auto" />
               <p className="text-slate-500">{tc('emptyHint')}</p>
-              <Button onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setShowNew(true); }}>
+              <Button onClick={() => { setEditingId(null); setForm(emptyForm()); setShowNew(true); }}>
                 <Plus className="w-4 h-4 mr-1" /> {tc('createCta')}
               </Button>
             </CardContent>
