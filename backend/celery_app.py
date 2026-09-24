@@ -9,6 +9,7 @@ from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
+from core.celery_runtime_role import should_import_task_implementations
 from redis_ssl import (
     celery_ssl_conf,
     normalize_redis_url_for_redis_py,
@@ -284,13 +285,16 @@ celery_app.conf.update(
     },
 )
 
-# Import tasks directly (celery_tasks is a module, not a package)
-try:
-    import celery_tasks  # noqa: F401
-except ImportError as e:
-    import logging
+# Workers must register executable task bodies.  Beat only sends the static
+# task names declared above, so importing the complete task graph there wastes
+# memory and makes its health probe contend with the scheduler.
+if should_import_task_implementations():
+    try:
+        import celery_tasks  # noqa: F401
+    except ImportError as e:
+        import logging
 
-    logging.getLogger(__name__).warning(f"celery_tasks import failed: {e}")
+        logging.getLogger(__name__).warning(f"celery_tasks import failed: {e}")
 
 if __name__ == "__main__":
     celery_app.start()

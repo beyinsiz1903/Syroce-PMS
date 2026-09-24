@@ -5,7 +5,12 @@ Do not raise process counts or the aggregate memory ceiling on this profile
 without resizing the Droplet and intentionally updating this contract.
 """
 
+import os
+import subprocess
+import sys
 from pathlib import Path
+
+from core.celery_runtime_role import should_import_task_implementations
 
 
 def test_four_gb_profile_uses_single_python_process_per_service():
@@ -13,8 +18,40 @@ def test_four_gb_profile_uses_single_python_process_per_service():
         encoding="utf-8"
     )
 
-    assert "WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}" in compose
+    assert 'WEB_CONCURRENCY: "1"' in compose
     assert "--concurrency=${WORKER_CONCURRENCY:-1}" in compose
+
+
+def test_beat_uses_lightweight_role_and_process_healthcheck():
+    compose = (Path(__file__).parents[2] / "docker-compose.prod.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CELERY_PROCESS_ROLE: beat" in compose
+    assert "kill -0 $$(cat /tmp/celerybeat.pid)" in compose
+
+
+def test_beat_does_not_import_task_implementations():
+    assert should_import_task_implementations({}) is True
+    assert should_import_task_implementations({"CELERY_PROCESS_ROLE": "worker"}) is True
+    assert should_import_task_implementations({"CELERY_PROCESS_ROLE": " BEAT "}) is False
+
+    backend_dir = Path(__file__).parents[1]
+    env = os.environ.copy()
+    env["CELERY_PROCESS_ROLE"] = "beat"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import celery_app; print('celery_tasks' in sys.modules)",
+        ],
+        cwd=backend_dir,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.stdout.strip() == "False"
 
 
 def test_four_gb_profile_has_headroom_for_host_and_docker():

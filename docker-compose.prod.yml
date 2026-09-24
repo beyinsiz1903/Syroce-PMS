@@ -38,9 +38,11 @@ services:
       # This node has 4 GB for the OS, Docker and every service.  A Uvicorn
       # worker imports the full PMS application (reports, OCR and provider
       # clients), so two workers plus prefork Celery children can exhaust RAM
-      # and make the kernel kill Python processes.  Start with one process;
-      # scale the Droplet before increasing either concurrency value.
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      # and make the kernel kill Python processes.  This compose file is the
+      # fixed 4 GiB Droplet profile: keep one API process even when a stale
+      # WEB_CONCURRENCY value remains in a server-side .env file.  A larger
+      # host must use an intentionally resized deployment profile.
+      WEB_CONCURRENCY: "1"
     env_file:
       - ./backend/.env
     deploy:
@@ -160,6 +162,10 @@ services:
     restart: always
     environment:
       <<: *backend-env
+      # Beat only publishes task names from the static schedule.  It must not
+      # import every task implementation (and their reporting/integration
+      # dependencies) like a worker process does.
+      CELERY_PROCESS_ROLE: beat
     env_file:
       - ./backend/.env
     command: ["celery", "-A", "celery_app", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid"]
@@ -173,6 +179,16 @@ services:
         limits:
           cpus: "0.25"
           memory: 160M
+    healthcheck:
+      # The worker image's default healthcheck runs `celery inspect ping`.
+      # That starts a second, heavy Celery app inside the small Beat cgroup and
+      # can time out even while the scheduler is healthy.  Beat owns this PID;
+      # checking it directly is deterministic and allocation-free.
+      test: ["CMD-SHELL", "test -s /tmp/celerybeat.pid && kill -0 $$(cat /tmp/celerybeat.pid)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
     logging: *default-logging
 
   # ── Load Balancer ──
