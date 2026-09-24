@@ -833,7 +833,7 @@ async def test_daily_rate_update_requires_each_stay_night_exactly_once(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_daily_rate_update_blocks_pricing_change_after_payment_before_any_write(monkeypatch):
+async def test_daily_rate_update_blocks_pricing_change_after_issued_invoice_before_any_write(monkeypatch):
     daily_rates = SimpleNamespace(
         find=lambda *_args, **_kwargs: AsyncRows(
             [{"booking_id": "booking-a", "tenant_id": "tenant-a", "date": "2026-08-18", "rate": 400.0}]
@@ -858,7 +858,7 @@ async def test_daily_rate_update_blocks_pricing_change_after_payment_before_any_
         daily_rates=daily_rates,
         folios=SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-a"})),
         payments=SimpleNamespace(find_one=AsyncMock(return_value={"id": "payment-a"})),
-        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value={"id": "invoice-a", "status": "issued"})),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -886,6 +886,6 @@ async def test_daily_rate_update_blocks_pricing_change_after_payment_before_any_
         )
 
     assert exc.value.status_code == 409
-    assert "Ödeme" in exc.value.detail
+    assert "fatura" in exc.value.detail
     daily_rates.update_one.assert_not_awaited()
     bookings.update_one.assert_not_awaited()

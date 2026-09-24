@@ -3547,9 +3547,11 @@ async def update_daily_rates(
                 detail=(f"Night Audit ile kapanmış oda tahakkuku günlük fiyatla uyuşmuyor; manuel finans mutabakatı gerekir ({', '.join(historical_mismatches)})"),
             )
 
-        # Pricing after a payment or an issued invoice must be an explicit,
-        # audited financial adjustment.  A normal daily-rate save must never
-        # change either future room revenue or a drifted posted room charge.
+        # A prepayment is not a reason to freeze an authorised rate override:
+        # the payment remains intact and the reservation's remaining balance
+        # is derived again from the new accommodation total. An issued invoice
+        # is immutable and still requires a separate credit/correction flow.
+        active_payment = None
         if folio and (rate_changed_dates or mismatched_dates):
             active_payment = await db.payments.find_one(
                 {"tenant_id": tid, "folio_id": folio["id"], "voided": {"$ne": True}, "amount": {"$gt": 0}},
@@ -3559,10 +3561,10 @@ async def update_daily_rates(
                 {"tenant_id": tid, "folio_id": folio["id"], "status": {"$nin": ["draft", "cancelled", "voided"]}},
                 {"_id": 0, "id": 1},
             )
-            if active_payment or issued_invoice:
+            if issued_invoice:
                 raise HTTPException(
                     status_code=409,
-                    detail="Ödeme veya düzenlenmiş fatura bulunan rezervasyonda fiyat/tahakkuk mutabakatı finans onayı olmadan değiştirilemez",
+                    detail="Düzenlenmiş faturası bulunan rezervasyonun fiyatı değiştirilemez; önce fatura iptal/düzeltme işlemi yapılmalıdır",
                 )
 
         affected_folio_ids: set[str] = set()
@@ -3712,6 +3714,7 @@ async def update_daily_rates(
                 "rates_count": len(submitted_rates),
                 "business_date": current_business_date,
                 "folio_charges_synced": len(affected_folio_ids) > 0,
+                "prepayment_preserved": bool(active_payment),
                 "cross_tenant_update": is_cross_tenant_update,
                 "original_actor_tenant": current_user.tenant_id,
             },
