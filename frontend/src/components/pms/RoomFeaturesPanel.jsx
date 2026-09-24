@@ -12,26 +12,27 @@ import {
   BellOff, Wine, Plus, Trash2, Clock, CheckCircle, AlertTriangle, DoorOpen
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
 
 const MINIBAR_ITEMS = [
   { code: 'water', name: 'Su (500ml)', price: 5 },
   { code: 'cola', name: 'Kola', price: 8 },
   { code: 'juice', name: 'Meyve Suyu', price: 10 },
   { code: 'beer', name: 'Bira', price: 25 },
-  { code: 'wine_mini', name: 'Sarap (Minibar)', price: 40 },
+  { code: 'wine_mini', name: 'Şarap (Minibar)', price: 40 },
   { code: 'chips', name: 'Cips', price: 12 },
-  { code: 'chocolate', name: 'Cikolata', price: 15 },
-  { code: 'nuts', name: 'Kuruyemis', price: 18 },
+  { code: 'chocolate', name: 'Çikolata', price: 15 },
+  { code: 'nuts', name: 'Kuruyemiş', price: 18 },
   { code: 'whisky_mini', name: 'Viski (50ml)', price: 35 },
   { code: 'vodka_mini', name: 'Votka (50ml)', price: 30 },
 ];
 
 const CHECKOUT_RULES = [
-  { key: 'early_checkout', label: 'Erken Çıkış (12:00 oncesi)', charge: 0, description: 'Ücret yok' },
+  { key: 'early_checkout', label: 'Erken Çıkış (12:00 öncesi)', charge: 0, description: 'Ücret yok' },
   { key: 'standard_checkout', label: 'Standart Çıkış (12:00)', charge: 0, description: 'Normal çıkış saati' },
-  { key: 'late_14', label: 'Gec Çıkış (14:00)', charge: 30, description: 'Oda ucretinin %30' },
-  { key: 'late_17', label: 'Gec Çıkış (17:00)', charge: 50, description: 'Oda ucretinin %50' },
-  { key: 'late_after_17', label: 'Gec Çıkış (17:00 sonrasi)', charge: 100, description: 'Tam gun ucreti' },
+  { key: 'late_14', label: 'Geç Çıkış (14:00)', charge: 30, description: 'Oda ücretinin %30’u' },
+  { key: 'late_17', label: 'Geç Çıkış (17:00)', charge: 50, description: 'Oda ücretinin %50’si' },
+  { key: 'late_after_17', label: 'Geç Çıkış (17:00 sonrası)', charge: 100, description: 'Tam gün ücreti' },
 ];
 
 const RoomFeaturesPanel = ({ room, onUpdate }) => {
@@ -48,7 +49,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
     try {
       await axios.patch(`/pms/rooms/${room._id || room.id}/features`, { dnd: newVal });
       setDndEnabled(newVal);
-      toast.success(newVal ? 'DND Aktif' : 'DND Kapatildi');
+      toast.success(newVal ? 'DND aktif' : 'DND kapatıldı');
       onUpdate?.();
     } catch {
       toast.error('DND durumu güncellenemedi');
@@ -78,7 +79,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
         charge_category: 'minibar',
         quantity: 1
       });
-      toast.success(`Minibar ücreti eklendi: ${total} TL`);
+      toast.success(`Minibar ücreti eklendi: ${formatCurrency(total, 'TRY', { decimals: 2 })}`);
       setMinibarItems([]);
       setShowMinibar(false);
     } catch {
@@ -95,13 +96,13 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <BellOff className="h-4 w-4" />
-              Rahatsiz Etmeyin (DND)
+              Rahatsız Etmeyin (DND)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
               <Badge variant={dndEnabled ? 'destructive' : 'outline'}>
-                {dndEnabled ? 'AKTIF' : 'KAPALI'}
+                {dndEnabled ? 'AKTİF' : 'KAPALI'}
               </Badge>
               <Button size="sm" variant={dndEnabled ? 'destructive' : 'default'} onClick={toggleDND}>
                 {dndEnabled ? 'Kapat' : 'Aktif Et'}
@@ -119,7 +120,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
           </CardHeader>
           <CardContent>
             <Button size="sm" className="w-full" onClick={() => setShowMinibar(true)}>
-              <Plus className="h-4 w-4 mr-1" /> Minibar Girisi
+              <Plus className="h-4 w-4 mr-1" /> Minibar Girişi
             </Button>
           </CardContent>
         </Card>
@@ -138,7 +139,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
               <div key={rule.key} className="border rounded-lg p-3 text-center">
                 <p className="text-xs font-medium">{rule.label}</p>
                 <p className={`text-lg font-bold ${rule.charge > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                  {rule.charge > 0 ? `%${rule.charge}` : 'Ucretsiz'}
+                  {rule.charge > 0 ? `%${rule.charge}` : 'Ücretsiz'}
                 </p>
                 <p className="text-xs text-muted-foreground">{rule.description}</p>
               </div>
@@ -163,7 +164,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                 <SelectContent>
                   {MINIBAR_ITEMS.map(item => (
                     <SelectItem key={item.code} value={item.code}>
-                      {item.name} - {item.price} TL
+                      {item.name} - {formatCurrency(item.price, 'TRY', { decimals: 2 })}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -188,7 +189,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                     <div key={idx} className="flex items-center justify-between p-2 text-sm">
                       <span>{item.quantity}x {item.name}</span>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{item.total} TL</span>
+                        <span className="font-medium">{formatCurrency(item.total, 'TRY', { decimals: 2 })}</span>
                         <Button size="sm" variant="ghost" onClick={() => removeMinibarItem(idx)}>
                           <Trash2 className="h-3 w-3 text-red-500" />
                         </Button>
@@ -198,13 +199,13 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                 </div>
                 <div className="border-t p-2 flex justify-between font-bold">
                   <span>{t('cm.components_pms_RoomFeaturesPanel.toplam')}</span>
-                  <span>{minibarTotal} TL</span>
+                  <span>{formatCurrency(minibarTotal, 'TRY', { decimals: 2 })}</span>
                 </div>
               </div>
             )}
 
             <Button className="w-full" onClick={postMinibarCharges} disabled={minibarItems.length === 0}>
-              <CheckCircle className="h-4 w-4 mr-1" /> {t('cm.components_pms_RoomFeaturesPanel.folyoya_ekle')}{minibarTotal} TL)
+              <CheckCircle className="h-4 w-4 mr-1" /> {t('cm.components_pms_RoomFeaturesPanel.folyoya_ekle')} ({formatCurrency(minibarTotal, 'TRY', { decimals: 2 })})
             </Button>
           </div>
         </DialogContent>
