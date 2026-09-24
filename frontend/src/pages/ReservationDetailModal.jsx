@@ -53,6 +53,24 @@ const isRetryableDetailError = (error) => {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const dateInputValue = (value) => String(value || '').slice(0, 10);
+const utcDateFromInput = (value) => {
+  const [year, month, day] = dateInputValue(value).split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(Date.UTC(year, month - 1, day));
+};
+export const nightsBetweenDates = (checkIn, checkOut) => {
+  const start = utcDateFromInput(checkIn);
+  const end = utcDateFromInput(checkOut);
+  if (!start || !end) return 0;
+  return Math.max(0, Math.round((end - start) / 86_400_000));
+};
+export const checkoutFromNightCount = (checkIn, nightCount) => {
+  const start = utcDateFromInput(checkIn);
+  const nights = Number(nightCount);
+  if (!start || !Number.isInteger(nights) || nights < 1) return '';
+  start.setUTCDate(start.getUTCDate() + nights);
+  return start.toISOString().slice(0, 10);
+};
 
 const stayDates = (checkIn, checkOut) => {
   const dates = [];
@@ -75,7 +93,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [loadError, setLoadError] = useState(null);
   const [pricingRepairing, setPricingRepairing] = useState(false);
   const [stayEditorOpen, setStayEditorOpen] = useState(false);
-  const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '' });
+  const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '', nights: 1 });
   const [staySaving, setStaySaving] = useState(false);
   const loadGenerationRef = useRef(0);
 
@@ -303,9 +321,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const checkedInStay = bookingStatus === 'checked_in';
 
   const openStayEditor = () => {
+    const checkIn = dateInputValue(booking?.check_in);
+    const checkOut = dateInputValue(booking?.check_out);
     setStayForm({
-      checkIn: dateInputValue(booking?.check_in),
-      checkOut: dateInputValue(booking?.check_out),
+      checkIn,
+      checkOut,
+      nights: Math.max(1, nightsBetweenDates(checkIn, checkOut)),
     });
     setStayEditorOpen(true);
   };
@@ -946,7 +967,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 type="date"
                 value={stayForm.checkIn}
                 disabled={staySaving || checkedInStay}
-                onChange={(event) => setStayForm((current) => ({ ...current, checkIn: event.target.value }))}
+                onChange={(event) => setStayForm((current) => {
+                  const checkIn = event.target.value;
+                  return {
+                    ...current,
+                    checkIn,
+                    checkOut: checkoutFromNightCount(checkIn, Number(current.nights) || 1),
+                  };
+                })}
               />
             </div>
             <div className="space-y-2">
@@ -957,8 +985,40 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 min={stayForm.checkIn || undefined}
                 value={stayForm.checkOut}
                 disabled={staySaving}
-                onChange={(event) => setStayForm((current) => ({ ...current, checkOut: event.target.value }))}
+                onChange={(event) => setStayForm((current) => {
+                  const checkOut = event.target.value;
+                  const nights = nightsBetweenDates(current.checkIn, checkOut);
+                  return { ...current, checkOut, nights: nights > 0 ? nights : current.nights };
+                })}
               />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="stay-night-count">Gece sayısı</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="stay-night-count"
+                  data-testid="stay-night-count"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="3650"
+                  step="1"
+                  value={stayForm.nights}
+                  disabled={staySaving}
+                  onChange={(event) => {
+                    const nights = Number(event.target.value);
+                    setStayForm((current) => ({
+                      ...current,
+                      nights: event.target.value,
+                      checkOut: Number.isInteger(nights) && nights > 0
+                        ? checkoutFromNightCount(current.checkIn, nights)
+                        : current.checkOut,
+                    }));
+                  }}
+                  className="max-w-32"
+                />
+                <p className="text-xs text-slate-500">Gece sayısını değiştirdiğinizde çıkış tarihi otomatik hesaplanır.</p>
+              </div>
             </div>
           </div>
           {checkedInStay && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
