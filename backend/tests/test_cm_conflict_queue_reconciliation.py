@@ -90,3 +90,32 @@ async def test_reconcile_keeps_pending_row_without_completed_match(monkeypatch):
     assert result["count"] == 0
     bookings.update_one.assert_not_awaited()
     fake_db.room_night_locks.delete_many.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_retires_legacy_roomless_duplicate_without_allocation_marker(monkeypatch):
+    pending = {
+        "id": "legacy-copy",
+        "tenant_id": "tenant-1",
+        "room_id": None,
+        "status": "confirmed",
+        "external_reservation_id": "R370795907",
+    }
+    authoritative = {"id": "real-stay", "room_id": "room-208", "status": "checked_in"}
+    bookings = _Bookings(pending, authoritative)
+    fake_db = SimpleNamespace(
+        bookings=bookings,
+        room_night_locks=SimpleNamespace(delete_many=AsyncMock()),
+    )
+    monkeypatch.setattr(queue, "db", fake_db)
+    monkeypatch.setattr(queue, "create_audit_log", AsyncMock())
+    user = SimpleNamespace(id="user-1", name="Admin", role="admin", tenant_id="tenant-1")
+
+    result = await queue.reconcile_legacy_duplicates(current_user=user)
+
+    assert result["count"] == 1
+    update_query = bookings.update_one.await_args.args[0]
+    assert update_query["tenant_id"] == "tenant-1"
+    assert update_query["room_id"] == {"$in": [None, ""]}
+    assert "allocation_source" not in update_query
+    assert bookings.update_one.await_args.args[1]["$set"]["duplicate_of_booking_id"] == "real-stay"
