@@ -129,13 +129,17 @@
       <input id="jandarma_userTc" inputmode="numeric" maxlength="11" autocomplete="off" />
 
       <label for="jandarma_facilityCode">Tesis kodu</label>
-      <input id="jandarma_facilityCode" inputmode="numeric" maxlength="6" autocomplete="off" />
+      <input id="jandarma_facilityCode" inputmode="numeric" maxlength="19" autocomplete="off" />
+      <div class="row-help">KBS portalında görünen tesis kodunu aynen girin. Resmî servis bu alanı sayısal uzun değer olarak tanımlar; sabit 6 hane şartı yoktur.</div>
 
       <label for="jandarma_password">Yeni web servis sifresi (tarayici kapaninca silinir)</label>
       <input id="jandarma_password" type="password" maxlength="50" autocomplete="new-password" />
       <div class="row-help">E-devlet sifrenizi buraya girmeyin. Ekran goruntusunde gorunen eski sifreyi kullanmayin.</div>
 
       <label><input id="jandarma_liveConfirmed" type="checkbox" /> Canli Jandarma bildirimlerinin hukuki kayit olusturacagini anliyorum.</label>
+
+      <button id="jandarma_test_connection" type="button">Jandarma bağlantısını doğrula</button>
+      <div class="row-help">Misafir kaydı oluşturmaz; resmî ParametreListele çağrısıyla yetkili T.C., tesis kodu, web servis şifresi ve kayıtlı sabit IP eşleşmesini sınar.</div>
 
       <label for="jandarma_requestFormat">Istek bicimi</label>
       <select id="jandarma_requestFormat">
@@ -158,7 +162,7 @@
     </section>
 
     <div>
-      <button id="save">Kaydet</button>
+      <button id="save" type="button">Kaydet</button>
       <span id="status"></span>
     </div>
 

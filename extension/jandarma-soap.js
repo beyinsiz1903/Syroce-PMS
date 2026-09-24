@@ -79,7 +79,10 @@
 
   function buildRequest(payload, action, credentials, now = new Date()) {
     if (!credentials || !/^\d{11}$/.test(String(credentials.userTc || ""))) throw new Error("invalid_user_tc");
-    if (!/^\d{6}$/.test(String(credentials.facilityCode || ""))) throw new Error("invalid_facility_code");
+    // Live WSDL declares TssKod as xs:long; it does not impose a six-digit
+    // pattern. Keep the lexical value as digits so leading zeroes are not
+    // lost locally and let the authority validate the assigned code.
+    if (!/^\d{1,19}$/.test(String(credentials.facilityCode || ""))) throw new Error("invalid_facility_code");
     if (!String(credentials.password || "").trim()) throw new Error("missing_web_service_password");
     if (!payload || !["checkin", "checkout"].includes(action)) throw new Error("invalid_action");
 
@@ -136,6 +139,22 @@
     return { method, soapAction: `${SERVICE_NS}ISrvShsYtkTml/${method}`, envelope };
   }
 
+  function buildConnectionTest(credentials) {
+    if (!credentials || !/^\d{11}$/.test(String(credentials.userTc || ""))) throw new Error("invalid_user_tc");
+    if (!/^\d{1,19}$/.test(String(credentials.facilityCode || ""))) throw new Error("invalid_facility_code");
+    if (!String(credentials.password || "").trim()) throw new Error("missing_web_service_password");
+    const method = "ParametreListele";
+    const envelope = `<?xml version="1.0" encoding="utf-8"?>`
+      + `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">`
+      + `<s:Body><${method} xmlns="${SERVICE_NS}">`
+      + `<KullaniciTC>${escapeXml(credentials.userTc)}</KullaniciTC>`
+      + `<TssKod>${escapeXml(credentials.facilityCode)}</TssKod>`
+      + `<Sifre>${escapeXml(credentials.password)}</Sifre>`
+      + `<parametreTuru>ULKELER</parametreTuru>`
+      + `</${method}></s:Body></s:Envelope>`;
+    return { method, soapAction: `${SERVICE_NS}ISrvShsYtkTml/${method}`, envelope };
+  }
+
   function firstTag(xml, name) {
     const match = new RegExp(`<(?:\\w+:)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?${name}>`, "i").exec(xml || "");
     return match ? match[1].replace(/<[^>]+>/g, "").trim() : "";
@@ -153,5 +172,5 @@
     return { ok: true, code: code || "100", message, method };
   }
 
-  root.SyroceJandarmaSoap = { buildRequest, parseResponse, countryEnum, escapeXml, optionalPhone };
+  root.SyroceJandarmaSoap = { buildRequest, buildConnectionTest, parseResponse, countryEnum, escapeXml, optionalPhone };
 })(typeof self !== "undefined" ? self : globalThis);

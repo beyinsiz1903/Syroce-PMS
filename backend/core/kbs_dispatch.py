@@ -425,7 +425,7 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
             {"_kind": QUEUE_KIND, "tenant_id": job["tenant_id"], "id": job["id"]},
             {"$set": {"payload": payload, "updated_at": _iso(_now())}},
         )
-        ok, missing_fields = validate_kbs_payload(payload)
+        ok, missing_fields = validate_kbs_payload(payload, job.get("action", "checkin"))
         if not ok:
             await _handle_missing_data(db, job, missing_fields)
             missing += 1

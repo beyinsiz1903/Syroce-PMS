@@ -5,10 +5,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { webcrypto } = require("node:crypto");
 
-function loadWorker(fetchImpl) {
+function loadWorker(fetchImpl, overrides = {}) {
   let listener;
   const extensionDir = path.join(__dirname, "..");
-  const local = { kbsConfig: { polis: { mode: "egm-session" }, jandarma: { mode: "test" } } };
+  const local = { kbsConfig: overrides.kbsConfig || { polis: { mode: "egm-session" }, jandarma: { mode: "test" } } };
+  const session = overrides.session || {};
   const context = {
     AbortController, URL, URLSearchParams, Response, Headers, crypto: webcrypto,
     setTimeout, clearTimeout, fetch: fetchImpl,
@@ -18,11 +19,12 @@ function loadWorker(fetchImpl) {
           get: async (key) => ({ [key]: local[key] }),
           set: async (values) => Object.assign(local, values),
         },
-        session: { get: async () => ({}) },
+        session: { get: async (key) => ({ [key]: session[key] }) },
       },
       runtime: {
         id: "test-extension",
         getManifest: () => ({ version: "1.3.0" }),
+        getURL: (file) => `chrome-extension://test-extension/${file}`,
         onMessage: { addListener: (fn) => { listener = fn; } },
       },
     },
@@ -89,4 +91,57 @@ test("EGM checkout resolves the active guest before deactivating it", async () =
   assert.equal(calls.length, 2);
   assert.match(calls[0].url, /AktifKonaklayanGetir$/);
   assert.deepEqual(calls[1].body, { konaklayanId: "guest-7" });
+});
+
+test("checkout accepts the official minimum payload without entry-only fields", async () => {
+  const calls = [];
+  const send = loadWorker(async (url, init) => {
+    calls.push({ url, body: init.body && JSON.parse(init.body) });
+    const payload = url.endsWith("AktifKonaklayanGetir")
+      ? { isSuccess: true, data: { items: [{ konaklayanId: "guest-9", kimlikNo: 10000000146 }] } }
+      : { isSuccess: true };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  const result = await send({
+    type: "KBS_SEND", authority: "polis",
+    body: { action: "checkout", nationality: "TR", id_number: "10000000146", check_out: "2026-08-23" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 2);
+});
+
+test("Jandarma SOAP accepts live WSDL facility-code shape and returns auditable authority result", async () => {
+  const calls = [];
+  const send = loadWorker(async (url, init) => {
+    calls.push({ url, init });
+    return new Response(
+      "<MusteriKimlikNoCikisResult><Basarili>true</Basarili><HataKodu>Basarili</HataKodu><Mesaj>İşlem başarılı</Mesaj></MusteriKimlikNoCikisResult>",
+      { status: 200, headers: { "content-type": "text/xml" } },
+    );
+  }, {
+    kbsConfig: {
+      polis: { mode: "test" },
+      jandarma: {
+        mode: "jandarma-soap",
+        endpoint: "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc",
+        userTc: "11111111110",
+        facilityCode: "12345",
+        liveConfirmed: true,
+      },
+    },
+    session: { jandarmaWebServicePassword: "secret" },
+  });
+  const result = await send({
+    type: "KBS_SEND", authority: "jandarma",
+    body: { action: "checkout", nationality: "TR", id_number: "10000000146", check_out: "2026-08-23" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.officialReference, false);
+  assert.equal(result.responseCode, "Basarili");
+  assert.equal(result.responseMessage, "İşlem başarılı");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc");
+  assert.match(calls[0].init.body, /<TssKod>12345<\/TssKod>/);
 });

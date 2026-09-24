@@ -79,7 +79,7 @@ async def _enqueue_single_guest(
             )
             return None
 
-        ok, missing = validate_kbs_payload(snapshot)
+        ok, missing = validate_kbs_payload(snapshot, action)
         if not ok:
             await db.kbs_alerts.insert_one(
                 {
@@ -234,7 +234,7 @@ async def auto_enqueue_kbs(
             )
             return None
 
-        ok, missing = validate_kbs_payload(snapshot)
+        ok, missing = validate_kbs_payload(snapshot, action)
         if not ok:
             await db.kbs_alerts.insert_one(
                 {

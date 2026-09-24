@@ -351,6 +351,14 @@ Run #167 pointer TASINMAZ; full stress KOSTURULMADI (operatör dispatch). Backen
 ## digitalocean.md'den tasinan detaylar (sadelestirme, 2026-06-18)
 
 ### KBS tarayici eklentisi
+- **Jandarma resmî sözleşme uyumu (v1.4):** Canlı WSDL'deki `TssKod=xs:long`
+  nedeniyle eski sabit 6 hane kısıtı kaldırıldı; resmî SOAP uç tam URL olarak
+  pinlendi. Payload doğrulaması action bazlıdır: girişte oda+giriş zamanı,
+  çıkışta kimlik/belge+çıkış zamanı gerekir; çıkış artık ad/oda/giriş/planlı
+  çıkışın tümünü istemez. Options'taki `ParametreListele` bağlantı testi
+  T.C.+tesis kodu+web servis şifresi+kayıtlı sabit IP'yi yan etkisiz doğrular.
+  Jandarma'nın işlem numarası vermeyen başarı cevabında yerel teslim kaydı,
+  `Basarili/HataKodu/Mesaj` ve makam ayrı audit alanları olarak saklanır.
 - **KBS tarayıcı eklentisi (otel IP'sinden Polis+Jandarma gönderimi)** — `extension/` (MV3): bulut IP'si KBS tarafından reddedildiği için bildirim resepsiyon tarayıcısından (otel IP'si) gönderilir. Eklenti = saf KBS transport'u (`background.js`); PMS sayfası = kuyruk worker'ı (`frontend/src/lib/kbsExtensionBridge.js` + `KBSNotification.jsx` claim→send→complete/fail). **İKİ MAKAM (v1.1):** nested `kbsConfig {polis,jandarma}` (eski tek-profil flat config → polis'e otomatik migrate); per-makam host kilidi (Polis `*.egm.gov.tr`, Jandarma `*.jandarma.gov.tr`) + fail-closed; sayfa→content→background mesajlarına `authority` taşınır, `KBS_STATE` `states{polis,jandarma}` map döner (geriye uyumlu tekil `state`=polis). UI: KBS panelinde **Makam** seçici (localStorage `kbs_ext_authority`), rozet/extReady seçili makama göre. **Eklenti ZIP indirme:** backend `GET /api/kbs/extension/download` (get_current_user zorunlu, canlı `extension/` klasörünü bellek-içi ZIP'ler, whitelisted uzantılar, no-store) → panelde "Eklentiyi indir" butonu (axios blob). Eşleştirme: `KBS_AUTO_DISPATCH=0` (yoksa Celery dispatcher bulut IP'sinden çift gönderir; `KBS_TEST_MODE=1` iken `kbs_dispatch_active()` True döner — tuzak) + `KBS_AUTO_ENQUEUE=1`. Çift gönderim atomik `claim` (CAS) ile de engellenir. Özel alan adı → `extension/manifest.json` `content_scripts.matches`'e ekle. Operatör kurulum/config → `docs/REPLIT_OPS_CHEATSHEET.md`.
 
 ### E2E pilot residue sweep
