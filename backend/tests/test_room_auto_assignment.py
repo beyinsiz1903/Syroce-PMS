@@ -5,6 +5,7 @@ import pytest
 
 from core.atomic_booking import BookingConflictError
 from core.room_auto_assignment import (
+    assign_pending_booking_with_auto_assignment,
     create_booking_with_auto_assignment,
     find_auto_assignment_candidates,
     normalize_room_type,
@@ -27,6 +28,10 @@ class _Collection:
     def find(self, query, projection):
         self.calls.append((query, projection))
         return _Cursor(self._docs)
+
+    async def update_one(self, query, update):
+        self.calls.append((query, update))
+        return SimpleNamespace(matched_count=1, modified_count=1)
 
 
 def _database(*, rooms=(), bookings=(), blocks=(), locks=()):
@@ -183,3 +188,42 @@ async def test_no_available_room_keeps_reservation_pending(monkeypatch):
     assert pending["room_id"] is None
     assert pending["allocation_source"] == "pending_assignment"
     assert pending["auto_assignment_reason"] == "no_available_room"
+
+
+@pytest.mark.asyncio
+async def test_pending_booking_is_reassigned_after_legacy_hold_release(monkeypatch):
+    candidates = [
+        {"id": "room-201", "room_number": "201"},
+        {"id": "room-208", "room_number": "208"},
+    ]
+    monkeypatch.setattr(
+        "core.room_auto_assignment.find_auto_assignment_candidates",
+        AsyncMock(return_value=candidates),
+    )
+    assign = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr("core.room_auto_assignment.assign_room_atomic", assign)
+    database = _database()
+    booking = {
+        **_booking(),
+        "room_id": None,
+        "preferred_room_number": "208",
+        "allocation_source": "pending_assignment",
+        "auto_assignment_reason": "no_available_room",
+    }
+
+    updated, room = await assign_pending_booking_with_auto_assignment(
+        database=database,
+        tenant_id="tenant-1",
+        booking_doc=booking,
+    )
+
+    assert room == {"id": "room-208", "room_number": "208"}
+    assert updated["room_id"] == "room-208"
+    assert updated["room_number"] == "208"
+    assert updated["allocation_source"] == "ota_auto_assignment_after_hold_release"
+    assert "auto_assignment_reason" not in updated
+    assert assign.await_args.kwargs["room_id"] == "room-208"
+    query, update = database.bookings.calls[-1]
+    assert query == {"tenant_id": "tenant-1", "id": "booking-1", "room_id": None}
+    assert update["$set"]["room_id"] == "room-208"
+    assert update["$unset"] == {"auto_assignment_reason": ""}

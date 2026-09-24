@@ -276,7 +276,21 @@ async def _ensure_durable_pms_result(
         "external_reservation_id": external_id,
         "booking_source": {"$ne": "ota_unmatched_hold"},
     }
-    booking = await db.bookings.find_one(booking_query, {"_id": 0, "status": 1})
+    booking = await db.bookings.find_one(
+        booking_query,
+        {
+            "_id": 0,
+            "id": 1,
+            "status": 1,
+            "room_id": 1,
+            "room_number": 1,
+            "room_type": 1,
+            "room_type_id": 1,
+            "property_id": 1,
+            "check_in": 1,
+            "check_out": 1,
+        },
+    )
 
     if not booking and (getattr(pipeline_result, "status", "") == "duplicate" or getattr(pipeline_result, "decision", "") == "skip"):
         from core.import_bridge_service import replay_reviewed_mapping_import
@@ -315,6 +329,17 @@ async def _ensure_durable_pms_result(
             )
             if release_result.get("booking_id") and not release_result.get("released"):
                 return _PMS_FAILED
+            if not booking.get("room_id") and release_result.get("released") and release_result.get("room_id"):
+                from core.room_auto_assignment import assign_pending_booking_with_auto_assignment
+
+                booking, _assigned_room = await assign_pending_booking_with_auto_assignment(
+                    database=db,
+                    tenant_id=tenant_id,
+                    booking_doc={
+                        **booking,
+                        "preferred_room_number": release_result.get("room_number") or "",
+                    },
+                )
         booking = await db.bookings.find_one(booking_query, {"_id": 0, "status": 1})
         if not booking:
             return _PMS_FAILED

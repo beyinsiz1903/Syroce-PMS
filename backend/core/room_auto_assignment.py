@@ -17,6 +17,8 @@ from typing import Any
 from core.atomic_booking import (
     BookingConflictError,
     assert_pending_assignment,
+    assign_room_atomic,
+    release_booking_nights,
 )
 
 UNSELLABLE_ROOM_STATUSES = {
@@ -197,3 +199,86 @@ async def create_booking_with_auto_assignment(
     assert_pending_assignment(pending)
     created = await create_booking(tenant_id=tenant_id, booking_doc=pending)
     return created, None
+
+
+async def assign_pending_booking_with_auto_assignment(
+    *,
+    database: Any,
+    tenant_id: str,
+    booking_doc: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Assign an already-persisted pending booking after a stale hold is freed.
+
+    Legacy unmatched holds could occupy the provider's preferred physical room
+    until *after* the durable import was created.  The first allocation pass
+    therefore correctly produced a pending booking.  Once that legacy hold is
+    removed, perform a second race-safe allocation instead of leaving a false
+    "no available room" duplicate on the calendar.
+    """
+    booking_id = str(booking_doc.get("id") or "").strip()
+    if not booking_id or booking_doc.get("room_id"):
+        return booking_doc, None
+
+    candidates = await find_auto_assignment_candidates(
+        database=database,
+        tenant_id=tenant_id,
+        property_id=booking_doc.get("property_id"),
+        room_type=booking_doc.get("room_type") or booking_doc.get("room_type_id") or "",
+        check_in=booking_doc.get("check_in") or booking_doc.get("check_in_date") or "",
+        check_out=booking_doc.get("check_out") or booking_doc.get("check_out_date") or "",
+    )
+    preferred_room_number = str(booking_doc.get("preferred_room_number") or "").strip()
+    if preferred_room_number:
+        candidates.sort(
+            key=lambda room: (
+                str(room.get("room_number") or room.get("name") or "").strip() != preferred_room_number,
+                _natural_room_key(room),
+            )
+        )
+
+    for room in candidates:
+        try:
+            await assign_room_atomic(
+                tenant_id=tenant_id,
+                booking_id=booking_id,
+                room_id=room["id"],
+                check_in=booking_doc.get("check_in") or booking_doc.get("check_in_date") or "",
+                check_out=booking_doc.get("check_out") or booking_doc.get("check_out_date") or "",
+                correlation_id=f"ota-hold-promotion:{booking_id}",
+            )
+        except BookingConflictError:
+            continue
+
+        now = datetime.now(UTC).isoformat()
+        result = await database.bookings.update_one(
+            {"tenant_id": tenant_id, "id": booking_id, "room_id": None},
+            {
+                "$set": {
+                    "room_id": room["id"],
+                    "room_number": room.get("room_number") or room.get("name") or "",
+                    "allocation_source": "ota_auto_assignment_after_hold_release",
+                    "auto_assigned_at": now,
+                    "updated_at": now,
+                },
+                "$unset": {"auto_assignment_reason": ""},
+            },
+        )
+        if not getattr(result, "matched_count", 1):
+            await release_booking_nights(tenant_id, booking_id, reason="pending_booking_assignment_lost")
+            return booking_doc, None
+
+        assigned = dict(booking_doc)
+        assigned.update(
+            {
+                "room_id": room["id"],
+                "room_number": room.get("room_number") or room.get("name") or "",
+                "allocation_source": "ota_auto_assignment_after_hold_release",
+                "auto_assigned_at": now,
+                "updated_at": now,
+            }
+        )
+        assigned.pop("auto_assignment_reason", None)
+        assigned.pop("preferred_room_number", None)
+        return assigned, room
+
+    return booking_doc, None
