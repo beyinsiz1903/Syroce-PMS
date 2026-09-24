@@ -8,6 +8,7 @@ from routers.reports_pkg.dashboard_lists import (
     _guest_identity,
     _guest_link_active_on,
     _nightly_booking_rate,
+    _normalized_room_status,
     _payment_is_collection,
     _payment_is_effective,
     _payment_method,
@@ -129,3 +130,12 @@ def test_period_performance_uses_posted_revenue_when_period_is_complete():
     assert result["room_revenue"] == 2400
     assert result["adr"] == 1200
     assert result["revpar"] == 240
+
+
+def test_room_status_normalization_keeps_report_buckets_consistent():
+    assert _normalized_room_status("checked_in") == "occupied"
+    assert _normalized_room_status("Kirli") == "dirty"
+    assert _normalized_room_status("bakım") == "maintenance"
+    assert _normalized_room_status("sale-closed") == "out_of_order"
+    assert _normalized_room_status("clean") == "available"
+    assert _normalized_room_status("unexpected_legacy_value") == "out_of_order"

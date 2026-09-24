@@ -16,7 +16,7 @@ const OccupancySection = ({ data, s, periodMetrics, reportPeriod }) => {
   const periodLabel = isDaily ? 'Seçili Gün' : '30 Gün';
   return (
   <div className="space-y-6" data-testid="section-occupancy">
-    <SectionHeader title="Doluluk Raporu" description="Doluluk oranları ve trendler" actions={<Badge className="bg-sky-100 text-sky-700 border-sky-200">Canlı</Badge>} />
+    <SectionHeader title="Doluluk Raporu" description="Seçili rapor döneminin doluluk oranları ve trendleri" actions={<Badge className="bg-sky-100 text-sky-700 border-sky-200">Seçili dönem</Badge>} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title={isDaily ? 'Satılabilir Oda' : 'Satılabilir Oda-Gecesi'} value={capacity} icon={Hotel} color="blue" />
       <KPICard title={isDaily ? 'Dolu Oda' : 'Dolu Oda-Gecesi'} value={occupied} icon={BedDouble} color="green" />

@@ -151,7 +151,8 @@ const RevenueSection = ({
   s,
   pc,
   roomTypeData,
-  reportPeriod
+  reportPeriod,
+  reportDate
 }) => {
   const {
     t
@@ -188,7 +189,7 @@ const RevenueSection = ({
         </ResponsiveContainer>
       </CardContent>
     </Card>
-    <CategoryRevenueCard reportDate={data?.date} reportPeriod={reportPeriod} />
+    <CategoryRevenueCard reportDate={reportDate || data?.date} reportPeriod={reportPeriod} />
     {roomTypeData.length > 0 && <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.oda_tipi_bazli_gelir')}</CardTitle></CardHeader>
         <CardContent>

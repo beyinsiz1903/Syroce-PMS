@@ -31,7 +31,7 @@ const REPORT_MENU = [{
   label: 'GENEL'
 }, {
   id: 'flash_report',
-  label: 'Bugünün Özeti (Flash)',
+  label: 'Gün Özeti (Flash)',
   icon: Activity,
   desc: 'Anlık kasa ve tesis durumu'
 }, {
@@ -201,6 +201,8 @@ const REPORT_MENU = [{
   desc: 'Yiyecek & içecek'
 }];
 const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official', 'forecast_reports', 'trial_balance']);
+const REPORT_SECTION_IDS = new Set(REPORT_MENU.filter(item => item.id).map(item => item.id));
+const TABLE_EXPORT_SECTIONS = new Set(['guests', 'inhouse', 'front_office', 'noshow', 'housekeeping', 'payments', 'cash_movements', 'rate_control', 'official', 'police']);
 const BasicReports = ({
   user,
   tenant,
@@ -215,7 +217,8 @@ const BasicReports = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlSection = searchParams.get('section') || 'overview';
+  const requestedSection = searchParams.get('section') || 'overview';
+  const urlSection = REPORT_SECTION_IDS.has(requestedSection) ? requestedSection : 'overview';
   const [activeSection, setActiveSectionState] = useState(urlSection);
   // Keep tab state in sync with the URL so browser back/forward and external
   // navigations land on the right section (e.g. /app/cost-management redirect).
@@ -266,10 +269,10 @@ const BasicReports = ({
   // needs it. Self-contained sections (expenses, official) load their own
   // data and shouldn't block on the dashboard aggregate.
     useEffect(() => {
-    if (needsDashboard && !error) {
+    if (needsDashboard) {
       fetchData();
     }
-  }, [needsDashboard, fetchData, error]);
+  }, [needsDashboard, fetchData]);
   const fetchOfficialGuests = useCallback(async dateParam => {
     setOfficialLoading(true);
     setOfficialError(null);
@@ -448,7 +451,7 @@ const BasicReports = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `rapor_${activeSection}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `rapor_${activeSection}_${reportDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -463,11 +466,11 @@ const BasicReports = ({
 
     switch (activeSection) {
       case 'flash_report':
-        return <FlashReportContent showDatePicker={false} isEmbedded={true} targetDate={reportPeriod === 'daily' && reportDate ? reportDate : new Date().toISOString().split('T')[0]} />;
+        return <FlashReportContent showDatePicker={false} isEmbedded={true} targetDate={reportDate} />;
       case 'overview':
         return <OverviewSection data={data} s={s} pc={pc} periodMetrics={periodMetrics} roomStatusData={roomStatusData} reportPeriod={reportPeriod} />;
       case 'revenue':
-        return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} reportPeriod={reportPeriod} />;
+        return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} reportPeriod={reportPeriod} reportDate={selectedDate} />;
       case 'adr_revpar':
         return <AdrRevparSection data={data} s={s} pc={pc} periodMetrics={periodMetrics} reportPeriod={reportPeriod} />;
       case 'forecast_reports':
@@ -515,7 +518,7 @@ const BasicReports = ({
       case 'departments':
         return <DepartmentsSection s={s} hk={hk} maint={maint} finance={finance} />;
       case 'fnb':
-        return <FnBSection s={s} />;
+        return <FnBSection s={s} reportDate={selectedDate} />;
       case 'expenses':
         return <div data-testid="section-expenses"><CostAnalyticsView /></div>;
       default:
@@ -531,11 +534,11 @@ const BasicReports = ({
               <BarChart3 className="w-5 h-5 text-sky-600" />
               <h1 className="text-base font-bold text-gray-900">Rapor Merkezi</h1>
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">{new Date().toLocaleDateString('tr-TR', {
+            <p className="text-[11px] text-gray-400 mt-1">{businessDate || reportDate ? new Date((businessDate || reportDate) + 'T12:00:00').toLocaleDateString('tr-TR', {
               day: 'numeric',
               month: 'long',
               year: 'numeric'
-            })}</p>
+            }) : 'PMS tarihi yükleniyor'}</p>
           </div>
           <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {REPORT_MENU.map((item, idx) => {
@@ -567,6 +570,13 @@ const BasicReports = ({
             <select value={activeSection} onChange={e => setActiveSection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" data-testid="mobile-report-selector">
               {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id}`, m.label)}</option>)}
             </select>
+            {needsDashboard && <div className="grid grid-cols-2 gap-2 mt-2">
+              <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
+                <option value="monthly">Son 30 Gün</option>
+                <option value="daily">Günlük</option>
+              </select>
+              <input type="date" className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportDate} onChange={e => { reportDateEditedRef.current = true; setReportDate(e.target.value); }} />
+            </div>}
           </div>
           <div className="p-4" data-testid="reports-mobile-content">{renderContent()}</div>
         </div>
@@ -580,7 +590,7 @@ const BasicReports = ({
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
                             <div className="flex items-center gap-2">
-                {activeSection !== 'flash_report' && (
+                {needsDashboard && activeSection !== 'flash_report' && (
                 <select 
                   className="border rounded px-2 py-1 text-sm bg-white print:hidden"
                   value={reportPeriod}
@@ -590,7 +600,7 @@ const BasicReports = ({
                   <option value="daily">Günlük (Seçili Tarih)</option>
                 </select>
                 )}
-                <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
+                {needsDashboard && <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
                   Rapor tarihi
                   <input
                     type="date"
@@ -602,16 +612,16 @@ const BasicReports = ({
                     }}
                     data-testid="report-date-input"
                   />
-                </label>
-                <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                </label>}
+                {activeSection !== 'official' && <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
-                </Button>
-                <Button onClick={handleGenericExportCsv} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                </Button>}
+                {TABLE_EXPORT_SECTIONS.has(activeSection) && activeSection !== 'official' && <Button onClick={handleGenericExportCsv} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Download className="w-3.5 h-3.5 mr-1.5" />Excel/CSV
-                </Button>
-                <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
+                </Button>}
+                {needsDashboard && <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
                   <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile
-                </Button>
+                </Button>}
               </div>
             </div>
             {renderContent()}

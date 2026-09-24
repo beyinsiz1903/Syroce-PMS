@@ -5,6 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, DollarSign, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
+const TASK_STATUS_LABELS = { completed: 'Tamamlandı', pending: 'Bekliyor', assigned: 'Atandı', open: 'Açık', new: 'Yeni', in_progress: 'Devam ediyor', inprogress: 'Devam ediyor', active: 'Devam ediyor', cleaning: 'Temizleniyor', ready: 'Hazır' };
+const TASK_TYPE_LABELS = { checkout_cleaning: 'Çıkış temizliği', stayover_cleaning: 'Konaklama temizliği', room_status: 'Oda kontrolü', deep_cleaning: 'Detaylı temizlik' };
+const PAYMENT_METHOD_LABELS = { cash: 'Nakit', credit_card: 'Kredi kartı', debit_card: 'Banka kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme' };
 export const NoShowSection = ({
   s,
   noShowGuests,
@@ -65,14 +68,14 @@ export const HousekeepingSection = ({
   hk,
   reportDate
 }) => <div className="space-y-6" data-testid="section-housekeeping">
-    <SectionHeader title="Housekeeping Raporu" description={`${reportDate} tarihli temizlik görevleri ve durumları`} />
+    <SectionHeader title="Housekeeping Raporu" description={`${reportDate} tarihli görevler; oda durumu sütunu güncel anlık durumu gösterir`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Tamamlanan" value={hk.completed || 0} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen" value={hk.pending || 0} icon={Clock} color="amber" />
       <KPICard title="Devam Eden" value={hk.in_progress || 0} icon={Activity} color="blue" />
       <KPICard title="Kirli Oda" value={hk.dirty || 0} icon={AlertTriangle} color="red" />
       <KPICard title="Temiz / Hazır" value={hk.clean || 0} icon={CheckCircle2} color="green" />
-      <KPICard title="Bugün Çıkacak" value={hk.due_out || 0} icon={Calendar} color="amber" />
+      <KPICard title="Çıkış Beklenen" value={hk.due_out || 0} icon={Calendar} color="amber" />
       <KPICard title="Çıkış Yaptı" value={hk.departed || 0} icon={CheckCircle2} color="blue" />
       <KPICard title="Toplam Oda" value={hk.total || 0} icon={Hotel} color="purple" />
     </div>
@@ -107,7 +110,7 @@ export const HousekeepingSection = ({
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Görev Detayları ({hk.rows?.length || 0})</CardTitle></CardHeader>
       <CardContent className="p-0 overflow-x-auto">
-        {(hk.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Oda</th><th className="text-left p-3">Oda Durumu</th><th className="text-left p-3">Çıkış Bilgisi</th><th className="text-left p-3">Görev</th><th className="text-left p-3">Görev Durumu</th><th className="text-left p-3">Personel</th><th className="text-left p-3">Başlangıç</th><th className="text-left p-3">Bitiş</th></tr></thead><tbody>{hk.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number || '-'}<span className="block text-xs font-normal text-gray-500">{row.room_type || ''}</span></td><td className="p-3">{row.room_status || '-'}</td><td className="p-3">{row.departed ? 'Çıkış yaptı' : row.due_out ? 'Bugün çıkacak' : '-'}{row.departure_guest && <span className="block text-xs text-gray-500">{row.departure_guest}</span>}</td><td className="p-3">{row.task_type || '-'}</td><td className="p-3">{row.status || '-'}</td><td className="p-3">{row.assigned_to || '-'}</td><td className="p-3 text-xs">{row.started_at ? new Date(row.started_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 text-xs">{row.completed_at ? new Date(row.completed_at).toLocaleString('tr-TR') : '-'}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CheckCircle2} message="Oda kaydı bulunamadı" /></div>}
+        {(hk.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Oda</th><th className="text-left p-3">Güncel Oda Durumu</th><th className="text-left p-3">Çıkış Bilgisi</th><th className="text-left p-3">Görev</th><th className="text-left p-3">Görev Durumu</th><th className="text-left p-3">Personel</th><th className="text-left p-3">Başlangıç</th><th className="text-left p-3">Bitiş</th></tr></thead><tbody>{hk.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number || '-'}<span className="block text-xs font-normal text-gray-500">{row.room_type || ''}</span></td><td className="p-3">{ROOM_STATUS_LABELS[row.room_status] || row.room_status || '-'}</td><td className="p-3">{row.departed ? 'Çıkış yaptı' : row.due_out ? 'Çıkış bekleniyor' : '-'}{row.departure_guest && <span className="block text-xs text-gray-500">{row.departure_guest}</span>}</td><td className="p-3">{TASK_TYPE_LABELS[row.task_type] || row.task_type || '-'}</td><td className="p-3">{TASK_STATUS_LABELS[row.status] || row.status || '-'}</td><td className="p-3">{row.assigned_to || '-'}</td><td className="p-3 text-xs">{row.started_at ? new Date(row.started_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 text-xs">{row.completed_at ? new Date(row.completed_at).toLocaleString('tr-TR') : '-'}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CheckCircle2} message="Oda kaydı bulunamadı" /></div>}
       </CardContent>
     </Card>
   </div>;
@@ -157,7 +160,7 @@ export const PaymentsSection = ({
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Tahsilat Hareketleri ({payments.rows?.length || 0})</CardTitle></CardHeader>
       <CardContent className="p-0 overflow-x-auto">
-        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3">{row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.amount)}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
+        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{PAYMENT_METHOD_LABELS[row.method] || row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.amount)}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
       </CardContent>
     </Card>
   </div>;
@@ -172,7 +175,7 @@ export const DepartmentsSection = ({
     t
   } = useTranslation();
   return <div className="space-y-6" data-testid="section-departments">
-    <SectionHeader title="Departman Özeti" description="Tüm departmanların günlük performans özeti" />
+    <SectionHeader title="Departman Özeti" description="Seçili gün hareketleri ile güncel açık işlerin özeti" />
     <div className="grid md:grid-cols-2 gap-4">
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-sky-500" />Ön Büro</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-3 gap-3">
@@ -204,11 +207,12 @@ export const DepartmentsSection = ({
   </div>;
 };
 export const FnBSection = ({
-  s
+  s,
+  reportDate
 }) => <div className="space-y-6" data-testid="section-fnb">
     <SectionHeader title="F&B Raporu" description="Yiyecek & İçecek gelir ve performans özeti" />
     <div className="grid grid-cols-2 gap-3">
-      <KPICard title="Bugünkü F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />
+      <KPICard title="Seçili Gün F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />
       <KPICard title="Toplam Gelir İçi Payı" value={s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) + '%' : '%0'} icon={Activity} color="purple" />
     </div>
     <Card className="border-l-4 border-l-amber-500">
@@ -216,7 +220,7 @@ export const FnBSection = ({
         <Utensils className="w-12 h-12 text-amber-500 mx-auto mb-3" />
         <h3 className="text-lg font-bold text-slate-900">F&B Geliri</h3>
         <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrency(s.fnb_revenue)}</p>
-        <p className="text-sm text-slate-500 mt-2">Bugünkü toplam yiyecek & içecek geliri</p>
+        <p className="text-sm text-slate-500 mt-2">{reportDate} tarihli toplam yiyecek & içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrency(s.today_room_revenue)}</p></div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">F&B Payı</p><p className="font-bold text-slate-900">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>

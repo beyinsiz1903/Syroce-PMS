@@ -17,8 +17,9 @@ const FrontCashierReport = ({ summary, reportDate }) => (
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
       <div><p className="text-gray-500">Folyo hareketi</p><p className="font-bold text-lg">{summary.charge_count || 0}</p></div>
       <div><p className="text-gray-500">Ödeme hareketi</p><p className="font-bold text-lg">{summary.payment_count || 0}</p></div>
-      <div><p className="text-gray-500">Net nakit hareketi</p><p className="font-bold text-lg">{formatCurrency(summary.net_cash_movement || 0)}</p></div>
-      <div><p className="text-gray-500">Oluşan açık bakiye</p><p className="font-bold text-lg">{formatCurrency(summary.uncollected_charges || 0)}</p></div>
+      <div><p className="text-gray-500">Net nakit tahsilatı</p><p className="font-bold text-lg">{formatCurrency(summary.net_cash_movement || 0)}</p></div>
+      <div><p className="text-gray-500">Günlük bakiye değişimi</p><p className={`font-bold text-lg ${(summary.daily_balance_change || 0) < 0 ? 'text-emerald-700' : (summary.daily_balance_change || 0) > 0 ? 'text-rose-700' : ''}`}>{formatCurrency(summary.daily_balance_change || 0)}</p><p className="text-xs text-gray-400">Folyo işlemleri − tahsilatlar</p></div>
+      <div><p className="text-gray-500">Tahsil edilmemiş yeni tutar</p><p className="font-bold text-lg">{formatCurrency(summary.uncollected_charges || 0)}</p></div>
       <div><p className="text-gray-500">Rapor tarihi</p><p className="font-bold text-lg">{reportDate}</p></div>
     </CardContent></Card>
   </div>

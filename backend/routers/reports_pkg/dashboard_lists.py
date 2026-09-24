@@ -5,10 +5,14 @@ import logging
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
-from core.business_date_service import accounting_day_match
+from core.business_date_service import (
+    accounting_day_match,
+    accounting_period_match,
+    ensure_business_date_initialized,
+)
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
@@ -70,6 +74,34 @@ FNB_CHARGE_CATEGORIES = {
     "restaurant",
     "room_service",
 }
+
+
+def _normalized_room_status(value) -> str:
+    """Map legacy/localized room states into the report's canonical buckets."""
+    status = str(value or "available").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "checked_in": "occupied",
+        "dolu": "occupied",
+        "in_house": "occupied",
+        "kirli": "dirty",
+        "cleaning": "dirty",
+        "temizlikte": "dirty",
+        "repair": "maintenance",
+        "bakim": "maintenance",
+        "bakım": "maintenance",
+        "blocked": "out_of_order",
+        "ooo": "out_of_order",
+        "sale_closed": "out_of_order",
+        "clean": "available",
+        "inspected": "available",
+        "ready": "available",
+        "bos": "available",
+        "boş": "available",
+    }
+    return aliases.get(
+        status,
+        status if status in {"available", "occupied", "dirty", "maintenance", "out_of_order"} else "out_of_order",
+    )
 
 
 def _date_part(value) -> str:
@@ -214,10 +246,17 @@ async def get_official_guest_list(
 ):
     """Resmi misafir listesi (Maliye / resmi denetimler için).
 
-    Verilen tarihte (veya bugün) otelde konaklayan tüm misafirleri ve konaklama
-    bilgilerini döner. Check-in <= tarih <= Check-out koşulunu kullanır.
+    Verilen tarihte (veya PMS iş tarihinde) otelde konaklayan tüm misafirleri ve
+    konaklama bilgilerini döner. Konaklama aralığı [giriş, çıkış) şeklindedir.
     """
-    target_date = datetime.now(UTC).date() if not date else datetime.fromisoformat(date).date()
+    if date:
+        try:
+            target_date = datetime.fromisoformat(date).date()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Geçersiz rapor tarihi") from exc
+    else:
+        business_date_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        target_date = date_type.fromisoformat(str(business_date_state["business_date"])[:10])
     has_pii = _user_has_pii_access(current_user)
 
     # Stays are [check-in, check-out): a departure date is not another room-night.
@@ -408,19 +447,23 @@ async def get_basic_reports_dashboard(
     """
     Temel Raporlar Dashboard - OPTIMIZED: Batch queries + cache (Tur 28).
     """
+    if period not in {"daily", "monthly"}:
+        raise HTTPException(status_code=422, detail="Geçersiz rapor dönemi")
+    if date:
+        try:
+            datetime.fromisoformat(date[:10])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Geçersiz rapor tarihi") from exc
+    else:
+        business_date_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        date = str(business_date_state["business_date"])[:10]
     has_pii = _user_has_pii_access(current_user)
     return await _basic_dashboard_impl(current_user, has_pii, date, period)
 
 
 @cached(ttl=120, key_prefix="reports_basic_dashboard_v2", role_aware=True)
-async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: str = None, period: str = "monthly"):
-    if target_date:
-        try:
-            today = datetime.fromisoformat(target_date[:10]).replace(tzinfo=UTC)
-        except ValueError:
-            today = datetime.now(UTC)
-    else:
-        today = datetime.now(UTC)
+async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: str, period: str = "monthly"):
+    today = datetime.fromisoformat(target_date[:10]).replace(tzinfo=UTC)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today.replace(hour=23, minute=59, second=59)
     next_day = today_start + timedelta(days=1)
@@ -453,11 +496,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 {
                     "tenant_id": tenant_id,
                     "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
-                    "$or": [
-                        {"business_date": {"$gte": charge_range_start, "$lte": target_day}},
+                    **accounting_period_match(
+                        charge_range_start,
+                        target_day,
                         {"closed_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
                         {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                    ],
+                    ),
                 },
                 {
                     "_id": 0,
@@ -585,7 +629,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         db.bookings.find(
             {
                 "tenant_id": tenant_id,
-                "check_in": {"$gte": previous_start.date().isoformat(), "$lt": previous_end.date().isoformat()},
+                "$or": [
+                    {"check_in": {"$gte": previous_start.date().isoformat(), "$lt": previous_end.date().isoformat()}},
+                    {"check_in": {"$gte": previous_start, "$lt": previous_end}},
+                ],
                 "status": {"$in": ["confirmed", "checked_in", "checked_out"]},
             },
             {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1},
@@ -593,7 +640,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         db.bookings.find(
             {
                 "tenant_id": tenant_id,
-                "check_in": {"$gte": last_year_start.date().isoformat(), "$lt": last_year_end.date().isoformat()},
+                "$or": [
+                    {"check_in": {"$gte": last_year_start.date().isoformat(), "$lt": last_year_end.date().isoformat()}},
+                    {"check_in": {"$gte": last_year_start, "$lt": last_year_end}},
+                ],
                 "status": {"$in": ["confirmed", "checked_in", "checked_out"]},
             },
             {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1},
@@ -648,15 +698,14 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         {
             "tenant_id": tenant_id,
             "voided": {"$ne": True},
-            "$or": [
-                {"business_date": {"$gte": charge_range_start, "$lte": target_day}},
-                {"business_date": {"$exists": False}, "date": {"$gte": charge_range_start, "$lt": next_day.date().isoformat()}},
-                {"business_date": None, "date": {"$gte": charge_range_start, "$lt": next_day.date().isoformat()}},
-                {"business_date": {"$exists": False}, "date": {"$gte": charge_range_start_dt, "$lt": next_day}},
-                {"business_date": None, "date": {"$gte": charge_range_start_dt, "$lt": next_day}},
-                {"business_date": {"$exists": False}, "date": {"$exists": False}, "created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                {"business_date": {"$exists": False}, "date": {"$exists": False}, "created_at": {"$gte": charge_range_start_dt, "$lt": next_day}},
-            ],
+            **accounting_period_match(
+                charge_range_start,
+                target_day,
+                {"date": {"$gte": charge_range_start, "$lt": next_day.date().isoformat()}},
+                {"date": {"$gte": charge_range_start_dt, "$lt": next_day}},
+                {"date": {"$exists": False}, "created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                {"date": {"$exists": False}, "created_at": {"$gte": charge_range_start_dt, "$lt": next_day}},
+            ),
         },
         {
             "_id": 0,
@@ -684,15 +733,16 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         {
             "tenant_id": tenant_id,
             "voided": {"$ne": True},
-            "$or": [
-                {"business_date": {"$gte": charge_range_start, "$lte": target_day}},
+            **accounting_period_match(
+                charge_range_start,
+                target_day,
                 {"charge_date": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
                 {"charge_date": {"$gte": charge_range_start_dt, "$lt": next_day}},
                 {"date": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
                 {"date": {"$gte": charge_range_start_dt, "$lt": next_day}},
                 {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
                 {"created_at": {"$gte": charge_range_start_dt, "$lt": next_day}},
-            ],
+            ),
         },
         {
             "_id": 0,
@@ -819,7 +869,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
 
     room_status_counts = {"available": 0, "occupied": 0, "dirty": 0, "maintenance": 0, "out_of_order": 0}
     for r in active_rooms:
-        st = r.get("current_status", r.get("status", "available"))
+        st = _normalized_room_status(r.get("current_status", r.get("status", "available")))
         room_status_counts[st] = room_status_counts.get(st, 0) + 1
 
     month_day, week_day = month_start.date().isoformat(), week_start.date().isoformat()
@@ -952,7 +1002,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         )
         task = tasks[0] if tasks else {}
         departure = departures_by_room.get(room_id)
-        room_status = str(room.get("housekeeping_status") or room.get("hk_status") or room.get("status") or "available").lower()
+        room_status = _normalized_room_status(
+            room.get("housekeeping_status") or room.get("hk_status") or room.get("status") or "available"
+        )
         task_status = str(task.get("status") or task.get("task_status") or "").lower()
         departed = bool(departure and (departure.get("checked_out_at") or departure.get("status") == "checked_out"))
         housekeeping_rows.append(
@@ -1148,7 +1200,28 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     )
     prev_revenue = prev_non_room_revenue + prev_performance["room_revenue"]
     prev_adr = prev_performance["adr"]
-    ly_revenue = sum(charge_amount(charge) for charge in charges_between(last_year_start, last_year_end))
+    ly_charges = charges_between(last_year_start, last_year_end)
+    ly_metrics = await load_stay_night_metrics(
+        db,
+        tenant_id,
+        last_year_start.date(),
+        (last_year_end - timedelta(days=1)).date(),
+        actual_only=True,
+    )
+    ly_room_charges_by_day: dict[str, float] = {}
+    for charge in ly_charges:
+        category = str(charge.get("charge_category") or charge.get("charge_type") or "").lower()
+        if category in ROOM_CHARGE_CATEGORIES:
+            day = _date_part(charge.get("business_date") or charge.get("date"))
+            ly_room_charges_by_day[day] = ly_room_charges_by_day.get(day, 0.0) + charge_amount(charge)
+    ly_performance = _period_performance(ly_metrics, ly_room_charges_by_day)
+    ly_non_room_revenue = sum(
+        charge_amount(charge)
+        for charge in ly_charges
+        if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower()
+        not in ROOM_CHARGE_CATEGORIES
+    )
+    ly_revenue = ly_non_room_revenue + ly_performance["room_revenue"]
 
     return {
         "date": today.strftime("%Y-%m-%d"),
@@ -1194,6 +1267,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         "occupancy_trend": occupancy_trend,
         "revenue_trend": revenue_trend,
         "room_status": room_status_counts,
+        "room_status_snapshot": "current",
         "room_types": room_types,
         "room_type_occupancy": room_type_occ,
         "booking_sources": {"distribution": source_distribution, "revenue": {k: round(v, 2) for k, v in source_revenue.items()}},
@@ -1215,6 +1289,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "departures": daily_departures,
         },
         "housekeeping": {
+            "room_status_snapshot": "current",
             "completed": hk_completed,
             "pending": hk_pending,
             "in_progress": hk_in_progress,
@@ -1231,7 +1306,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "cash_total": cash_total,
             "non_cash_total": round(total_paid - cash_total, 2),
             "net_cash_movement": cash_total,
-            "uncollected_charges": round(charge_total - total_paid, 2),
+            "daily_balance_change": round(charge_total - total_paid, 2),
+            "uncollected_charges": round(max(charge_total - total_paid, 0), 2),
             "charge_count": len(daily_charges),
             "payment_count": len(payment_rows),
         },
