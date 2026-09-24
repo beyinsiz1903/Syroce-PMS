@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from routers.report_builder import (
     DATA_SOURCES,
@@ -234,3 +235,52 @@ async def test_revenue_builder_includes_reservation_card_extra_charges(monkeypat
             "date": "2026-09-23",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_builder_rejects_pii_filter_before_masking(monkeypatch):
+    monkeypatch.setattr("routers.report_builder._db", _DB(guests=_Collection([])))
+    config = ReportConfig(
+        data_source="guests",
+        columns=["name"],
+        filters=[ReportFilter(field="email", operator="contains", value="example.com")],
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await fetch_report_data(config, "t1", has_pii=False)
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_builder_rejects_pii_sort_before_masking(monkeypatch):
+    monkeypatch.setattr("routers.report_builder._db", _DB(guests=_Collection([])))
+    config = ReportConfig(data_source="guests", columns=["name"], sort_by="email")
+
+    with pytest.raises(HTTPException) as exc:
+        await fetch_report_data(config, "t1", has_pii=False)
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_builder_fails_explicitly_instead_of_returning_partial_scan(monkeypatch):
+    monkeypatch.setattr("routers.report_builder.MAX_SCAN_ROWS", 2)
+    monkeypatch.setattr(
+        "routers.report_builder._db",
+        _DB(
+            bookings=_Collection(
+                [
+                    {"id": "b1", "tenant_id": "t1", "check_in": "2026-09-23"},
+                    {"id": "b2", "tenant_id": "t1", "check_in": "2026-09-23"},
+                    {"id": "b3", "tenant_id": "t1", "check_in": "2026-09-23"},
+                ]
+            )
+        ),
+    )
+    config = ReportConfig(data_source="reservations", columns=["check_in"])
+
+    with pytest.raises(HTTPException) as exc:
+        await fetch_report_data(config, "t1", has_pii=True)
+
+    assert exc.value.status_code == 413

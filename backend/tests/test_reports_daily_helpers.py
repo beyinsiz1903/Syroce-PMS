@@ -37,6 +37,16 @@ def test_confirmed_booking_is_arrival_not_in_house():
     assert _booking_occupied_on(booking, "2026-09-22") is False
 
 
+def test_legacy_in_house_status_is_included_in_daily_lists():
+    booking = {
+        "status": "in_house",
+        "check_in": "2026-09-22",
+        "check_out": "2026-09-24",
+    }
+
+    assert _booking_occupied_on(booking, "2026-09-23") is True
+
+
 def test_actual_checkout_prevents_false_historical_occupancy():
     booking = {
         "status": "checked_out",

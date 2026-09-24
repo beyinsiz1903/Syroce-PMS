@@ -397,7 +397,7 @@ async def add_extra_charge(
     await db.extra_charges.insert_one(extra_charge_doc)
     if cache:
         cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
-        cache.invalidate_tenant_cache(current_user.tenant_id, "reports:basic_dashboard:v2")
+        cache.invalidate_tenant_cache(current_user.tenant_id, "reports_basic_dashboard_v2")
 
     return {"success": True, "message": "Extra charge added successfully", "extra_charge": extra_charge_doc}
 

@@ -68,6 +68,35 @@ def test_unassigned_booking_does_not_inflate_room_occupancy():
     assert metrics[0]["revenue"] == 0.0
 
 
+def test_room_number_and_room_id_resolve_to_one_physical_room():
+    metrics = calculate_stay_night_metrics(
+        [
+            {
+                "room_id": "r1",
+                "status": "confirmed",
+                "check_in": "2026-09-23",
+                "check_out": "2026-09-24",
+                "total_amount": 100,
+            },
+            {
+                "room_number": "201",
+                "status": "confirmed",
+                "check_in": "2026-09-23",
+                "check_out": "2026-09-24",
+                "total_amount": 50,
+            },
+        ],
+        [{"id": "r1", "room_number": "201"}],
+        date(2026, 9, 23),
+        date(2026, 9, 23),
+    )
+
+    assert metrics[0]["occupied_rooms"] == 1
+    assert metrics[0]["total_rooms"] == 1
+    assert metrics[0]["revenue"] == 150
+    assert metrics[0]["adr"] == 150
+
+
 def test_actual_occupancy_excludes_unchecked_confirmed_and_respects_early_checkout():
     rooms = [{"id": "r1"}, {"id": "r2"}]
     bookings = [

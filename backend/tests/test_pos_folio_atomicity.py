@@ -307,6 +307,9 @@ class _FakeDB:
     def __init__(self):
         self.client = _FakeClient()
         self._colls: dict[str, _Coll] = {}
+        self._get("tenant_settings").docs.append(
+            {"tenant_id": "tenant-A", "business_date": "2026-09-23"}
+        )
 
     def _get(self, name) -> _Coll:
         if name not in self._colls:
@@ -436,6 +439,7 @@ async def test_async_consumer_applies_charges_and_recalcs_balance(_patch, monkey
     folio = await _patch.folios.find_one({"id": "F1", "tenant_id": "tenant-A"})
     assert folio["balance"] == pytest.approx(177.0)
     assert len(_patch.folio_charges.docs) == 2
+    assert {c["business_date"] for c in _patch.folio_charges.docs} == {"2026-09-23"}
 
 
 async def test_consumer_redelivery_does_not_double_post(_patch, monkeypatch):

@@ -2656,7 +2656,7 @@ async def early_checkin(
         await db.extra_charges.insert_one({**charge})
         if _gb_cache:
             _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-            _gb_cache.invalidate_tenant_cache(tid, "reports:basic_dashboard:v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
 
     await _log_activity(
         tid,
@@ -2730,7 +2730,7 @@ async def late_checkout(
         await db.extra_charges.insert_one({**charge})
         if _gb_cache:
             _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-            _gb_cache.invalidate_tenant_cache(tid, "reports:basic_dashboard:v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
 
     await _log_activity(
         tid,
@@ -2973,7 +2973,7 @@ async def add_extra_charge_detail(
 
     if _gb_cache:
         _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
-        _gb_cache.invalidate_tenant_cache(tid, "reports:basic_dashboard:v2")
+        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
 
     await _log_activity(
         tid,

@@ -833,16 +833,39 @@ async def test_lineage_linked_to_booking():
              patch("core.import_decision.db", db), \
              patch("core.atomic_booking.db", db):
             from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
-            record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
-            # DIAGNOSTIC
-            all_docs = await db["imported_reservations"].find().to_list(None)
-            print("=== ALL DOCS IN DB BEFORE CLAIM ===", all_docs)
-            # DIAGNOSTIC
-            all_docs = await db["imported_reservations"].find().to_list(None)
-            doc_info = str(all_docs)
-            success, msg = await auto_import_reservation_to_pms(record["id"])
+            # Keep the row invisible to a concurrently running import worker
+            # until this test owns it.  The CI suite uses a shared live MongoDB;
+            # creating the row as pending allowed another pytest worker to claim
+            # it between insert and the call below, producing a false failure.
+            record = await create_import_record(
+                lineage,
+                "review_required",
+                review_reason="test_claim_barrier",
+                connector_id=TEST_CONNECTOR,
+            )
+            claimed = await db[COLL_IMPORTED].find_one_and_update(
+                {
+                    "id": record["id"],
+                    "import_status": "review_required",
+                    "review_reason": "test_claim_barrier",
+                },
+                {
+                    "$set": {
+                        "import_status": "processing",
+                        "review_reason": None,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                },
+                return_document=True,
+            )
+            assert claimed is not None
+            claimed.pop("_id", None)
+            success, msg = await auto_import_reservation_to_pms(
+                record["id"],
+                pre_claimed_record=claimed,
+            )
 
-        assert success is True, f"Auto import failed: {msg} | Docs: {doc_info} | searched ID: {record['id']}"
+        assert success is True, f"Auto import failed: {msg} | searched ID: {record['id']}"
 
         updated_lineage = await db[COLL_LINEAGE].find_one({"id": lineage_id}, {"_id": 0})
         assert updated_lineage["reservation_id"] is not None

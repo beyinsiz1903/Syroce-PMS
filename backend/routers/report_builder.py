@@ -257,6 +257,7 @@ PII_COLUMNS: dict[str, set[str]] = {
 
 # Maximum allowed result rows per request (DoS guard).
 MAX_LIMIT = 5000
+MAX_SCAN_ROWS = 100000
 
 # Maximum columns for landscape PDF (above this, font shrinks).
 PDF_FIT_COLUMNS = 8
@@ -658,7 +659,7 @@ async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[di
         charges = await db.folio_charges.find(
             {"tenant_id": tenant_id, "folio_id": {"$in": folio_ids}, "voided": {"$ne": True}},
             {"_id": 0, "folio_id": 1, "total": 1, "amount": 1},
-        ).to_list(MAX_LIMIT * 20)
+        ).to_list(None)
         payments = await db.payments.find(
             {
                 "tenant_id": tenant_id,
@@ -667,7 +668,7 @@ async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[di
                 "status": {"$nin": ["void", "voided", "failed", "cancelled", "rejected"]},
             },
             {"_id": 0, "folio_id": 1, "amount": 1, "payment_type": 1},
-        ).to_list(MAX_LIMIT * 20)
+        ).to_list(None)
         charge_totals: dict[str, float] = defaultdict(float)
         payment_totals: dict[str, float] = defaultdict(float)
         for charge in charges:
@@ -720,6 +721,17 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
         if report_filter.operator not in allowed_operators:
             raise HTTPException(status_code=422, detail=f"Geçersiz filtre işlemi: {report_filter.operator}")
 
+    pii_keys = PII_COLUMNS.get(config.data_source, set())
+    if not has_pii:
+        forbidden_filters = sorted({item.field for item in (config.filters or []) if item.field in pii_keys})
+        if forbidden_filters:
+            raise HTTPException(
+                status_code=403,
+                detail=f"PII yetkisi olmadan bu alanlarda filtreleme yapılamaz: {', '.join(forbidden_filters)}",
+            )
+        if config.sort_by in pii_keys:
+            raise HTTPException(status_code=403, detail="PII yetkisi olmadan bu alanda sıralama yapılamaz")
+
     # sort_by allow-list.
     sort_field_key = config.sort_by if config.sort_by in cols_def else None
     sort_field_db = source_def.get("date_field") or "_id"
@@ -744,13 +756,17 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
         query["voided"] = {"$ne": True}
     projection = build_projection(config.data_source, config.columns)
 
-    cursor = collection.find(query, projection).sort(sort_field_db, sort_dir).limit(MAX_LIMIT)
-    raw = await cursor.to_list(length=MAX_LIMIT)
+    cursor = collection.find(query, projection).sort(sort_field_db, sort_dir).limit(MAX_SCAN_ROWS + 1)
+    raw = await cursor.to_list(length=MAX_SCAN_ROWS + 1)
+    if len(raw) > MAX_SCAN_ROWS:
+        raise HTTPException(status_code=413, detail="Rapor tarama sınırını aşıyor; tarih aralığını daraltın")
     if config.data_source == "revenue":
         # Reservation-card extras are financially real before they are moved
         # onto a folio.  Include them in custom revenue reports as well; the
         # move operation deletes the source row, so this does not double count.
-        extra_raw = await db.extra_charges.find(query, projection).to_list(length=MAX_LIMIT)
+        extra_raw = await db.extra_charges.find(query, projection).limit(MAX_SCAN_ROWS + 1).to_list(length=MAX_SCAN_ROWS + 1)
+        if len(extra_raw) > MAX_SCAN_ROWS:
+            raise HTTPException(status_code=413, detail="Ek ücret tarama sınırını aşıyor; tarih aralığını daraltın")
         raw.extend(extra_raw)
     raw = await _enrich_report_docs(db, config.data_source, tenant_id, raw)
     raw = [doc for doc in raw if _within_requested_dates(config, source_def, doc)]
@@ -767,8 +783,6 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
             return (0, str(value).casefold())
 
         raw.sort(key=_raw_sort_value, reverse=sort_dir < 0)
-
-    pii_keys = PII_COLUMNS.get(config.data_source, set())
 
     cleaned: list[dict] = []
     for doc in raw:

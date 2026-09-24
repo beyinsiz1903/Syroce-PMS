@@ -1,6 +1,6 @@
 """Canonical room-night metrics used by PMS dashboards and reports."""
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 OCCUPYING_STATUSES = frozenset({"confirmed", "guaranteed", "checked_in", "in_house", "checked_out"})
@@ -105,6 +105,11 @@ def calculate_stay_night_metrics(
         for room in active_rooms
         if room.get("id") or room.get("room_number")
     }
+    room_number_keys = {
+        str(room.get("room_number")).strip(): f"id:{room.get('id')}"
+        for room in active_rooms
+        if room.get("id") and room.get("room_number") not in (None, "")
+    }
     days = (end_date - start_date).days + 1
     result = []
 
@@ -117,6 +122,12 @@ def calculate_stay_night_metrics(
         check_in = as_date(booking.get("check_in"))
         check_out = as_date(booking.get("check_out"))
         room_key = _room_key(booking)
+        if room_key and room_key.startswith("number:"):
+            room_key = room_number_keys.get(room_key.removeprefix("number:"), room_key)
+        # Unknown/deactivated room references must not inflate occupied rooms or
+        # divide ADR by inventory that is absent from the denominator.
+        if room_key not in active_room_keys:
+            room_key = None
         if not check_in or not check_out or check_out <= check_in or not room_key:
             continue
         nights = (check_out - check_in).days
@@ -176,12 +187,24 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
         {"tenant_id": tenant_id, "is_active": {"$ne": False}},
         {"_id": 0, "id": 1, "room_number": 1, "is_active": 1},
     ).to_list(5000)
+    start_iso = start_date.isoformat()
+    end_exclusive_date = end_date + timedelta(days=1)
+    end_iso = end_exclusive_date.isoformat()
+    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
+    end_dt = datetime.combine(end_exclusive_date, datetime.min.time(), tzinfo=UTC)
+    overlap_query = {
+        "$or": [
+            {"check_out": {"$gt": start_iso}, "check_in": {"$lt": end_iso}},
+            {"check_out": {"$gt": start_dt}, "check_in": {"$lt": end_dt}},
+            {"check_out": {"$gt": start_iso}, "check_in": {"$lt": end_dt}},
+            {"check_out": {"$gt": start_dt}, "check_in": {"$lt": end_iso}},
+        ]
+    }
     bookings = await db.bookings.find(
         {
             "tenant_id": tenant_id,
             "status": {"$in": list(OCCUPYING_STATUSES)},
-            "check_out": {"$gt": start_date.isoformat()},
-            "check_in": {"$lt": (end_date + timedelta(days=1)).isoformat()},
+            **overlap_query,
         },
         {
             "_id": 0,
@@ -200,8 +223,12 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
             "tenant_id": tenant_id,
             "status": "active",
             "allow_sell": {"$ne": True},
-            "start_date": {"$lt": (end_date + timedelta(days=1)).isoformat()},
-            "$or": [{"end_date": {"$gt": start_date.isoformat()}}, {"end_date": None}],
+            "$or": [
+                {"start_date": {"$lt": end_iso}, "end_date": {"$gt": start_iso}},
+                {"start_date": {"$lt": end_dt}, "end_date": {"$gt": start_dt}},
+                {"start_date": {"$lt": end_iso}, "end_date": None},
+                {"start_date": {"$lt": end_dt}, "end_date": None},
+            ],
         },
         {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "status": 1, "allow_sell": 1},
     ).to_list(10000)

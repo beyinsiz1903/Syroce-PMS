@@ -19,7 +19,9 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
+from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
@@ -152,7 +154,9 @@ async def manual_pos_sync(
                 "created_by": current_user.id,
             }
 
+            await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
             await db.folio_charges.insert_one(folio_charge)
+            invalidate_financial_report_caches(current_user.tenant_id)
 
             # Mark as posted
             await db.pos_charges.update_one({"_id": charge["_id"]}, {"$set": {"posted_to_folio": True, "posted_at": datetime.now(UTC).isoformat()}})
@@ -209,7 +213,9 @@ async def manual_pos_post(post_data: dict, current_user: User = Depends(get_curr
         "created_by": current_user.id,
     }
 
+    await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
     await db.folio_charges.insert_one(folio_charge)
+    invalidate_financial_report_caches(current_user.tenant_id)
 
     # Mark as posted
     await db.pos_charges.update_one({"_id": charge["_id"]}, {"$set": {"posted_to_folio": True, "posted_at": datetime.now(UTC).isoformat(), "post_method": method}})
