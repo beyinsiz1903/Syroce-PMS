@@ -57,7 +57,7 @@ const RoomImageUploadDialog = ({ open, onClose, selectedRoom, setSelectedRoom, o
                     await onDataRefresh();
                     setSelectedRoom(prev => prev ? ({ ...prev, images: res.data.images || prev.images }) : prev);
                   } catch (err) {
-                    toast.error(err?.response?.data?.detail || 'Failed to upload photo');
+                    toast.error(err?.response?.data?.detail || 'Fotoğraf yüklenemedi');
                   } finally {
                     e.target.value = '';
                   }

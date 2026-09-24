@@ -18,6 +18,7 @@ import {
   ChevronDown, ChevronUp, CreditCard, Loader2
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 import { confirmDialog } from '@/lib/dialogs';
 const FrontdeskTab = ({
@@ -116,10 +117,9 @@ const FrontdeskTab = ({
     return items.slice(0, 12); // cap to prevent overflow
   }, [arrivals, inhouse, guestById, tf]);
 
-  const formatMoney = useCallback((n) => {
-    const v = Number(n) || 0;
-    return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  }, []);
+  const formatMoney = useCallback((value) => (
+    formatCurrency(value, cachedTenantCurrency(), { decimals: 2 })
+  ), []);
 
   const formatBookingChannel = useCallback((booking) => {
     const rawChannel = booking?.ota_channel
@@ -194,7 +194,7 @@ const FrontdeskTab = ({
     const balance = effectiveBookingBalance(booking);
     if (balance > 0.01) {
       setReservationDetailId?.(booking.id);
-      toast.warning(`${tf('balance')}: ${formatMoney(balance)} ${t('pmsComponents.common.currency')} · ${tf('collectFirst')}`);
+      toast.warning(`${tf('balance')}: ${formatMoney(balance)} · ${tf('collectFirst')}`);
       return;
     }
 
@@ -289,7 +289,7 @@ const FrontdeskTab = ({
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
-        toast.success(`Bakiye cari hesaba aktarıldı: ${formatMoney(amount)} ${t('pmsComponents.common.currency')}`);
+        toast.success(`Bakiye cari hesaba aktarıldı: ${formatMoney(amount)}`);
       } else {
         response = await axios.post(`/frontdesk/folio/${quickPaymentBooking.id}/payment`, {
           amount,
@@ -300,7 +300,7 @@ const FrontdeskTab = ({
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
-        toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount)} ${t('pmsComponents.common.currency')}`);
+        toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount)}`);
       }
       const apiRemaining = Number(response?.data?.remaining_balance);
       const remainingBalance = Number.isFinite(apiRemaining)
@@ -525,7 +525,7 @@ const FrontdeskTab = ({
                           )}
                           {balance > 0 && (
                             <Badge variant="outline" className="text-[9px] border-red-300 text-red-700 ml-auto">
-                              {tf('balance')}: {balance.toFixed(2)} {t('pmsComponents.common.currency')}
+                              {tf('balance')}: {formatMoney(balance)}
                             </Badge>
                           )}
                         </div>
@@ -551,21 +551,21 @@ const FrontdeskTab = ({
             <div className="rounded-md bg-emerald-50 border border-emerald-100 p-3">
               <p className="text-[11px] text-emerald-700 font-medium">{tf('expectedRevenueToday')}</p>
               <p className="text-xl font-bold text-emerald-800 mt-1">
-                {formatMoney(financialPulse.expectedRevenue)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+                {formatMoney(financialPulse.expectedRevenue)}
               </p>
               <p className="text-[10px] text-emerald-600 mt-0.5">{tf('fromArrivals', { count: arrivals.length })}</p>
             </div>
             <div className="rounded-md bg-amber-50 border border-amber-100 p-3">
               <p className="text-[11px] text-amber-700 font-medium">{tf('expectedCollectionsToday')}</p>
               <p className="text-xl font-bold text-amber-800 mt-1">
-                {formatMoney(financialPulse.expectedCollections)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+                {formatMoney(financialPulse.expectedCollections)}
               </p>
               <p className="text-[10px] text-amber-600 mt-0.5">{tf('fromDepartures', { count: departures.length })}</p>
             </div>
             <div className="rounded-md bg-rose-50 border border-rose-100 p-3">
               <p className="text-[11px] text-rose-700 font-medium">{tf('inhouseOutstanding')}</p>
               <p className="text-xl font-bold text-rose-800 mt-1">
-                {formatMoney(financialPulse.inhouseOutstanding)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+                {formatMoney(financialPulse.inhouseOutstanding)}
               </p>
               <p className="text-[10px] text-rose-600 mt-0.5">{tf('inhouseGuestsCount', { count: inhouse.length })}</p>
             </div>
@@ -835,7 +835,7 @@ const FrontdeskTab = ({
                         )}
                         {balance > 0.01 && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                            {tf('balance')}: {balance.toFixed(2)} {t('pmsComponents.common.currency')}
+                            {tf('balance')}: {formatMoney(balance)}
                           </span>
                         )}
                       </div>
@@ -883,7 +883,7 @@ const FrontdeskTab = ({
                       <div className="text-xs text-slate-400 mt-0.5">{tf('checkout')}: {new Date(booking.check_out).toLocaleDateString()}</div>
                       {hasBalance && (
                         <div className="mt-2 inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                          <span className="font-semibold">{tf('balance')}: {balance.toFixed(2)} {t('pmsComponents.common.currency')}</span>
+                          <span className="font-semibold">{tf('balance')}: {formatMoney(balance)}</span>
                           — {tf('collectFirst')}
                         </div>
                       )}
@@ -952,7 +952,7 @@ const FrontdeskTab = ({
                 <div className="mt-1 flex items-center justify-between text-sm text-slate-600">
                   <span>{tf('room')} {quickPaymentBooking.room_number || quickPaymentBooking.room?.room_number || '-'}</span>
                   <span className="font-semibold text-red-700">
-                    {tf('balance')}: {formatMoney(effectiveBookingBalance(quickPaymentBooking))} {t('pmsComponents.common.currency')}
+                    {tf('balance')}: {formatMoney(effectiveBookingBalance(quickPaymentBooking))}
                   </span>
                 </div>
                 <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-sm">

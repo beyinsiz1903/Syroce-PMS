@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { TrendingUp, Search, CheckCircle, XCircle, RefreshCw, Sparkles, ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3, DollarSign, Target, Percent, Building2, Settings as SettingsIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, currencySymbol, formatCurrency } from '@/lib/currency';
 const PRICE_FIELDS = [{
   key: 'late_checkout',
   label: 'Geç Check-out',
@@ -25,7 +26,7 @@ const PRICE_FIELDS = [{
 }];
 const TYPE_LABELS = {
   room_upgrade: {
-    label: 'Oda Yukseltme',
+    label: 'Oda Yükseltme',
     icon: ArrowUpRight,
     color: 'bg-blue-100 text-blue-800'
   },
@@ -35,7 +36,7 @@ const TYPE_LABELS = {
     color: 'bg-green-100 text-green-800'
   },
   late_checkout: {
-    label: 'Gec Check-out',
+    label: 'Geç Check-out',
     icon: LogOut,
     color: 'bg-indigo-100 text-indigo-800'
   },
@@ -71,6 +72,8 @@ const UpsellTab = ({
   const {
     t
   } = useTranslation();
+  const currency = cachedTenantCurrency();
+  const money = value => formatCurrency(value, currency, { decimals: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [offers, setOffers] = useState([]);
@@ -175,7 +178,7 @@ const UpsellTab = ({
         timeout: 10000
       });
       setOffers(res.data.offers || []);
-      toast.success(`${res.data.total_offers} teklif uretildi`);
+      toast.success(`${res.data.total_offers} teklif üretildi`);
       loadAllOffers();
       loadInsights();
     } catch (err) {
@@ -195,7 +198,7 @@ const UpsellTab = ({
         timeout: 10000
       });
       setOffers(res.data.offers || []);
-      toast.success(`${res.data.total_offers} yeni teklif uretildi`);
+      toast.success(`${res.data.total_offers} yeni teklif üretildi`);
       loadAllOffers();
       loadInsights();
     } catch (err) {
@@ -260,9 +263,9 @@ const UpsellTab = ({
                   ...prev,
                   [f.key]: e.target.value
                 }))} placeholder={def != null ? `Varsayılan: ${def}` : ''} data-testid={`input-upsell-price-${f.key}`} />
-                      <span className="text-sm text-gray-500">TL</span>
+                      <span className="text-sm text-gray-500">{currencySymbol(currency)}</span>
                     </div>
-                    {def != null && <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.sistem_varsayilani')} {def} TL</p>}
+                    {def != null && <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.sistem_varsayilani')} {money(def)}</p>}
                   </div>;
           })}
             </div>}
@@ -292,7 +295,7 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <DollarSign className="w-4 h-4" /> ADR
               </div>
-              <p className="text-2xl font-bold">{kpis.adr?.toFixed(0)} TL</p>
+              <p className="text-2xl font-bold">{money(kpis.adr)}</p>
               <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.ortalama_gunluk_fiyat')}</p>
             </CardContent>
           </Card>
@@ -301,7 +304,7 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <BarChart3 className="w-4 h-4" /> RevPAR
               </div>
-              <p className="text-2xl font-bold">{kpis.revpar?.toFixed(0)} TL</p>
+              <p className="text-2xl font-bold">{money(kpis.revpar)}</p>
               <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.oda_basina_gelir')}</p>
             </CardContent>
           </Card>
@@ -310,7 +313,7 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <TrendingUp className="w-4 h-4" /> Upsell Geliri
               </div>
-              <p className="text-2xl font-bold">{(upsellSummary?.revenue || 0).toFixed(0)} TL</p>
+              <p className="text-2xl font-bold">{money(upsellSummary?.revenue)}</p>
               <p className="text-xs text-gray-400">
                 {upsellSummary?.accepted || 0} kabul / {upsellSummary?.total || 0} toplam
               </p>
@@ -370,7 +373,7 @@ const UpsellTab = ({
             {!selectedBooking && offers.length === 0 ? <div className="text-center py-12 text-gray-400">
                 <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">{t('cm.components_pms_UpsellTab.henuz_teklif_yok')}</p>
-                <p className="text-sm">Bir rezervasyon sectiginizde AI otomatik teklif uretecek</p>
+                <p className="text-sm">Bir rezervasyon seçtiğinizde yapay zekâ otomatik teklif üretecek.</p>
               </div> : <div className="space-y-3">
                 {offers.map(offer => {
               const typeInfo = TYPE_LABELS[offer.type] || {
@@ -387,7 +390,7 @@ const UpsellTab = ({
                           <span className="font-medium text-sm">{typeInfo.label}</span>
                           <Badge className={`text-xs ${typeInfo.color}`}>{offer.type}</Badge>
                         </div>
-                        <span className="font-bold text-lg">{offer.price?.toFixed(0)} TL</span>
+                        <span className="font-bold text-lg">{money(offer.price)}</span>
                       </div>
                       <div className="text-sm text-gray-600 mb-2">
                         {offer.current_item && <span>{offer.current_item} → </span>}
@@ -396,7 +399,7 @@ const UpsellTab = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 text-xs text-gray-400">
                           <span className="flex items-center gap-1">
-                            <Target className="w-3 h-3" /> %{(offer.confidence * 100).toFixed(0)} guven
+                            <Target className="w-3 h-3" /> %{(offer.confidence * 100).toFixed(0)} güven
                           </span>
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {offer.valid_until?.slice(0, 10)}
@@ -454,7 +457,7 @@ const UpsellTab = ({
                         <span className="text-xs text-gray-500 truncate">{offer.guest_name || offer.room_number || 'Rezervasyon teklifi'}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium">{offer.price?.toFixed(0)} TL</span>
+                        <span className="text-sm font-medium">{money(offer.price)}</span>
                         <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'rejected' ? 'secondary' : 'outline'} className="text-xs">
                           {offer.status === 'accepted' ? 'Kabul' : offer.status === 'rejected' ? 'Red' : 'Bekliyor'}
                         </Badge>

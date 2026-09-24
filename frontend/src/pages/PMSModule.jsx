@@ -556,7 +556,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setRooms(roomsRes?.data || []); setGuests(guestsRes?.data || []);
       setBookings(bookingsRes?.data || []); setCompanies(companiesRes?.data || []);
       setOccupancyPricingRules(pricingRes?.data?.rules || {});
-    } catch (error) { toast.error('Failed to load data'); console.error('PMS data load error:', error);
+    } catch (error) { toast.error('PMS verileri yüklenemedi'); console.error('PMS data load error:', error);
     } finally { setLoading(false); }
   };
 
@@ -577,8 +577,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           : setTimeout(fn, 1500);
       idle(() => loadAIInsights());
     } catch (error) {
-      const msg = error?.response?.data?.detail || error.message || 'Failed to load front desk data';
-      setFdError(msg); toast.error('Failed to load front desk data');
+      const msg = error?.response?.data?.detail || error.message || 'Ön büro verileri yüklenemedi';
+      setFdError(msg); toast.error('Ön büro verileri yüklenemedi');
     } finally { setFdLoading(false); }
   };
 
@@ -615,7 +615,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           setArrivalRooms(arrivalsRes.data.arrival_rooms || []); setRoomBlocks(blocksRes.data.blocks || []);
         } catch (error) { console.error('Failed to load additional housekeeping data:', error); toast.error('Ek kat hizmetleri verileri yüklenemedi'); }
       }, 500);
-    } catch (error) { toast.error('Failed to load housekeeping data');
+    } catch (error) { toast.error('Kat hizmetleri verileri yüklenemedi');
     } finally { setHkLoading(false); }
   };
 
@@ -625,7 +625,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       if (channel) params.channel = channel; if (companyId) params.company_id = companyId; if (stayDate) params.stay_date = stayDate;
       const [rpRes, pkgRes] = await Promise.all([axios.get('/rates/rate-plans', { params }), axios.get('/rates/packages')]);
       setRatePlans(rpRes.data || []); setPackages(pkgRes.data || []);
-    } catch (error) { console.error('Failed to load rate plans/packages', error); toast.error('Failed to load rate plans'); }
+    } catch (error) { console.error('Failed to load rate plans/packages', error); toast.error('Fiyat planları yüklenemedi'); }
   };
 
   const loadAuditLogs = async () => {
@@ -648,14 +648,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const handleImportOTA = async (otaId) => {
     try {
       const response = await axios.post(`/channel-manager/import-reservation/${otaId}`);
-      toast.success(`${response.data.message} - Room ${response.data.room_number}`);
+      toast.success(`${response.data.message} · Oda ${response.data.room_number}`);
       loadChannelManagerData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to import reservation'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Rezervasyon içe aktarılamadı'); }
   };
 
   const handleApplyRMSSuggestion = async (suggestionId) => {
     try { const response = await axios.post(`/rms/apply-suggestion/${suggestionId}`); toast.success(response.data.message); loadChannelManagerData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to apply suggestion'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Öneri uygulanamadı'); }
   };
 
   const handleGenerateRMSSuggestions = async () => {
@@ -664,7 +664,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const response = await axios.post(`/rms/generate-suggestions?start_date=${today}&end_date=${nextWeek}`);
       toast.success(response.data.message); loadChannelManagerData();
-    } catch (error) { toast.error('Failed to generate suggestions'); }
+    } catch (error) { toast.error('Öneriler oluşturulamadı'); }
   };
 
   const handleCheckIn = async (bookingId, forceClean = false) => {
@@ -685,7 +685,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         null,
         { headers: { [RESERVATION_EDIT_LOCK_HEADER]: lock.lockId } },
       );
-      toast.success(`${response.data.message} - Room ${response.data.room_number}`);
+      toast.success(`${response.data.message} · Oda ${response.data.room_number}`);
       await Promise.all([loadData(), loadFrontDeskData()]);
     } catch (error) {
       toast.error(getCheckoutErrorMessage(error, 'Giriş yapılamadı'));
@@ -733,13 +733,13 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const loadFolio = async (bookingId) => {
     try { const response = await axios.get(`/frontdesk/folio/${bookingId}`); setFolio(response.data); setSelectedBooking(bookingId); setOpenDialog('folio');
-    } catch (error) { toast.error('Failed to load folio'); }
+    } catch (error) { toast.error('Folyo yüklenemedi'); }
   };
 
   const handleCreateHKTask = async (e) => {
     e.preventDefault();
-    try { await axios.post('/housekeeping/tasks', newHKTask); toast.success('Task created'); setOpenDialog(null); loadHousekeepingData(); setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
-    } catch (error) { toast.error('Failed to create task'); }
+    try { await axios.post('/housekeeping/tasks', newHKTask); toast.success('Görev oluşturuldu'); setOpenDialog(null); loadHousekeepingData(); setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
+    } catch (error) { toast.error('Görev oluşturulamadı'); }
   };
 
   const handleAssignHKTask = async (taskId, userId) => {
@@ -751,18 +751,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const handleUpdateHKTask = async (taskId, status) => {
-    try { await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { status } }); toast.success('Task updated'); loadHousekeepingData(); loadData();
-    } catch (error) { toast.error('Failed to update task'); }
+    try { await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { status } }); toast.success('Görev güncellendi'); loadHousekeepingData(); loadData();
+    } catch (error) { toast.error('Görev güncellenemedi'); }
   };
 
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     try {
       const response = await axios.post('/companies', newCompany);
-      toast.success('Company created successfully'); setOpenDialog(null); loadData();
+      toast.success('Şirket oluşturuldu'); setOpenDialog(null); loadData();
       const company = response.data; handleCompanySelect(company.id);
       setNewCompany({ name: '', corporate_code: '', tax_number: '', billing_address: '', contact_person: '', contact_email: '', contact_phone: '', contracted_rate: '', default_rate_type: '', default_market_segment: '', default_cancellation_policy: '', payment_terms: '', status: 'pending' });
-    } catch (error) { toast.error('Failed to create company'); }
+    } catch (error) { toast.error('Şirket oluşturulamadı'); }
   };
 
   const handleCompanySelect = (companyId) => {
@@ -808,12 +808,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const handleCreateBooking = async (e, inlineGuestName) => {
     e?.preventDefault();
-    if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Please provide a reason for rate override'); return; }
-    if (!newBooking.guest_id && !inlineGuestName) { toast.error('Please select guest or type a guest name'); return; }
-    if (!newBooking.check_in || !newBooking.check_out) { toast.error('Please select check-in and check-out dates'); return; }
+    if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Fiyat değişikliği için açıklama girin'); return; }
+    if (!newBooking.guest_id && !inlineGuestName) { toast.error('Misafir seçin veya misafir adını yazın'); return; }
+    if (!newBooking.check_in || !newBooking.check_out) { toast.error('Giriş ve çıkış tarihlerini seçin'); return; }
     await loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
-    if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('Please add at least one room'); return; }
-    if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Please select room for each line'); return; }
+    if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('En az bir oda ekleyin'); return; }
+    if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Her satır için oda seçin'); return; }
     try {
       const roomsPayload = multiRoomBooking.map(room => ({
         room_id: room.room_id, adults: room.adults, children: room.children, children_ages: room.children_ages || [],
@@ -832,14 +832,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         payload.guest = { name: inlineGuestName, phone: '' };
       }
       await axios.post('/pms/bookings/multi-room', payload);
-      toast.success('Booking created successfully'); setOpenDialog(null); loadData(); setSelectedCompany(null);
+      toast.success('Rezervasyon oluşturuldu'); setOpenDialog(null); loadData(); setSelectedCompany(null);
       setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '' });
       setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
     } catch (error) {
       const conflict = parseBookingConflict(error);
       if (conflict) { setBookingConflict(conflict); return; }
       const detail = error.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Failed to create booking'));
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Rezervasyon oluşturulamadı'));
     }
   };
 
@@ -883,22 +883,22 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     try {
       const response = await axios.get(`/folio/${folioId}`);
       setSelectedFolio(response.data.folio); setFolioCharges(response.data.charges || []); setFolioPayments(response.data.payments || []);
-    } catch (error) { toast.error('Failed to load folio details'); }
+    } catch (error) { toast.error('Folyo ayrıntıları yüklenemedi'); }
   };
 
   const updateRoomStatus = async (roomId, newStatus) => {
-    try { await axios.put(`/pms/rooms/${roomId}`, { status: newStatus }); toast.success('Room status updated'); loadData(); loadHousekeepingData();
-    } catch (error) { toast.error('Failed to update status'); }
+    try { await axios.put(`/pms/rooms/${roomId}`, { status: newStatus }); toast.success('Oda durumu güncellendi'); loadData(); loadHousekeepingData();
+    } catch (error) { toast.error('Oda durumu güncellenemedi'); }
   };
 
   const quickUpdateRoomStatus = async (roomId, newStatus) => {
     try { const response = await axios.put(`/housekeeping/room/${roomId}/status?new_status=${newStatus}`); toast.success(response.data.message); loadHousekeepingData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to update status'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Oda durumu güncellenemedi'); }
   };
 
   const createRoomBlock = async () => {
-    if (!selectedRoom) { toast.error('Please select a room'); return; }
-    if (!newRoomBlock.reason || !newRoomBlock.start_date) { toast.error('Please fill in all required fields'); return; }
+    if (!selectedRoom) { toast.error('Bir oda seçin'); return; }
+    if (!newRoomBlock.reason || !newRoomBlock.start_date) { toast.error('Zorunlu alanları doldurun'); return; }
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-create-${Date.now()}-${Math.random()}`;
       const response = await axios.post('/pms/room-blocks', { room_id: selectedRoom.id, ...newRoomBlock }, { headers: { 'Idempotency-Key': idempotencyKey } });
@@ -906,15 +906,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       toast.success(response.data.message); setOpenDialog(null); setSelectedRoom(null);
       setNewRoomBlock({ type: 'out_of_order', reason: '', details: '', start_date: '', end_date: '', allow_sell: false });
       loadHousekeepingData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to create room block'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Oda blokajı oluşturulamadı'); }
   };
 
   const cancelRoomBlock = async (blockId) => {
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-release-${Date.now()}-${Math.random()}`;
       await axios.post(`/pms/room-blocks/${blockId}/cancel`, null, { headers: { 'Idempotency-Key': idempotencyKey } });
-      toast.success('Room block cancelled'); loadHousekeepingData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to cancel block'); }
+      toast.success('Oda blokajı kaldırıldı'); loadHousekeepingData(); loadData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Oda blokajı kaldırılamadı'); }
   };
 
   const loadGuest360 = async (guestId, initialSection = 'profile') => {
@@ -922,21 +922,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     setGuest360InitialSection(initialSection);
     try { const response = await axios.get(`/crm/guest/${guestId}`, { timeout: 15000 }); setGuest360Data(response.data); setOpenDialog('guest360');
     } catch (error) {
-      if (error.code === 'ECONNABORTED') toast.error('Request timeout - Guest profile has too much data.');
-      else toast.error(error.response?.data?.detail || 'Failed to load guest profile');
+      if (error.code === 'ECONNABORTED') toast.error('İstek zaman aşımına uğradı; misafir profilinde çok fazla veri bulunuyor.');
+      else toast.error(error.response?.data?.detail || 'Misafir profili yüklenemedi');
     } finally { setLoadingGuest360(false); }
   };
 
   const addGuestTag = async () => {
     if (!guestTag || !selectedGuest360) return;
-    try { await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`); toast.success('Tag added'); setGuestTag(''); loadGuest360(selectedGuest360);
-    } catch (error) { toast.error('Failed to add tag'); }
+    try { await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`); toast.success('Etiket eklendi'); setGuestTag(''); loadGuest360(selectedGuest360);
+    } catch (error) { toast.error('Etiket eklenemedi'); }
   };
 
   const addGuestNote = async () => {
     if (!guestNote || !selectedGuest360) return;
-    try { await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`); toast.success('Note added'); setGuestNote(''); loadGuest360(selectedGuest360);
-    } catch (error) { toast.error('Failed to add note'); }
+    try { await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`); toast.success('Not eklendi'); setGuestNote(''); loadGuest360(selectedGuest360);
+    } catch (error) { toast.error('Not eklenemedi'); }
   };
 
   if (loading) {
@@ -971,7 +971,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               const typeTabMap = { guest: 'frontdesk', booking: 'frontdesk', room: 'rooms', company: 'frontdesk', housekeeping: 'housekeeping' };
               const tab = typeTabMap[result.type] || 'frontdesk';
               setActiveTab(tab); window.location.hash = tab;
-              toast.info(`${result.data.name || result.data.room_number || result.data.id} - redirected to ${tab}`);
+              toast.info(`${result.data.name || result.data.room_number || result.data.id} · ilgili ekran açıldı`);
             }} />
           </div>
         </div>

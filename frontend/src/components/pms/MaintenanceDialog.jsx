@@ -31,7 +31,7 @@ const MaintenanceDialog = ({ open, onClose, maintenanceForm = {}, setMaintenance
       const res = await axios.post('/maintenance/work-orders', payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
       });
-      toast.success(`Maintenance work order created for room ${res.data.room_number || maintenanceForm.room_number}`);
+      toast.success(`Oda ${res.data.room_number || maintenanceForm.room_number} için bakım iş emri oluşturuldu`);
       if (onSuccess) onSuccess();
       onClose();
     } catch (error) {

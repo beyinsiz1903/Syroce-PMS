@@ -989,7 +989,7 @@ const RoomsTab = ({
                 // For now, force check-in to dirty room with clean flag
                 // In future: reassign room via API
                 handleCheckIn?.(dirtyRoomInfo.guestInfo.booking_id, true);
-                toast.info(`Alternatif oda ${altRoom.room_number} onerisi not edildi`);
+                toast.info(`Alternatif oda ${altRoom.room_number} önerisi not edildi`);
               }}
               onCancel={() => setDirtyRoomDialog(false)}
             />
