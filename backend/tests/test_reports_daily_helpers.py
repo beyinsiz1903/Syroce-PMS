@@ -2,6 +2,9 @@ import os
 
 os.environ.setdefault("JWT_SECRET", "test-secret-key-that-is-long-enough-for-tests")
 
+import pytest
+from fastapi import HTTPException
+
 from routers.reports_pkg.dashboard_lists import (
     _booking_occupied_on,
     _date_part,
@@ -14,6 +17,7 @@ from routers.reports_pkg.dashboard_lists import (
     _payment_method,
     _period_performance,
 )
+from routers.reports_pkg.flash_email import _report_date
 
 
 def test_occupied_night_uses_half_open_stay_interval():
@@ -139,3 +143,10 @@ def test_room_status_normalization_keeps_report_buckets_consistent():
     assert _normalized_room_status("sale-closed") == "out_of_order"
     assert _normalized_room_status("clean") == "available"
     assert _normalized_room_status("unexpected_legacy_value") == "out_of_order"
+
+
+def test_report_date_rejects_invalid_values_instead_of_returning_server_error():
+    assert _report_date("2026-09-24").isoformat() == "2026-09-24"
+    with pytest.raises(HTTPException) as exc_info:
+        _report_date("not-a-date")
+    assert exc_info.value.status_code == 422

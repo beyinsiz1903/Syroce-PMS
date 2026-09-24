@@ -383,12 +383,12 @@ const BasicReports = ({
     name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal Yöneticisi (OTA)' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
     revenue: bookingSources.revenue?.[key] || 0
-  }));
+  })).sort((a, b) => b.count - a.count || b.revenue - a.revenue || a.name.localeCompare(b.name, 'tr'));
   const selectedDate = data?.date || reportDate;
   const todayArrivals = dailyLists.arrivals || [];
   const todayDepartures = dailyLists.departures || [];
-  const noShowGuests = guestList.filter(g => g.status === 'no_show');
-  const cancelledGuests = guestList.filter(g => g.status === 'cancelled');
+  const noShowGuests = guestList.filter(g => ['no_show', 'noshow'].includes(String(g.status || '').toLowerCase()));
+  const cancelledGuests = guestList.filter(g => ['cancelled', 'canceled'].includes(String(g.status || '').toLowerCase()));
   const filteredGuests = guestList.filter(g => {
     if (!searchGuest) return true;
     const term = searchGuest.toLowerCase();
@@ -397,7 +397,7 @@ const BasicReports = ({
   const fallbackInHouseGuests = guestList.filter(g => {
     const ci = g.check_in ? g.check_in.substring(0, 10) : '';
     const co = g.check_out ? g.check_out.substring(0, 10) : '';
-    return ci && co && ci <= selectedDate && selectedDate < co && ['checked_in', 'checked_out'].includes(g.status);
+    return ci && co && ci <= selectedDate && selectedDate < co && ['checked_in', 'in_house', 'checked_out'].includes(g.status);
   });
   const selectedInHouseGuests = (Array.isArray(dailyLists.in_house) ? dailyLists.in_house : fallbackInHouseGuests).filter(g => {
     if (!searchGuest) return true;
@@ -514,7 +514,7 @@ const BasicReports = ({
           setOfficialDate(value);
         }} officialRows={officialRows} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
       case 'police':
-        return <PoliceSection filteredGuests={filteredGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />;
+        return <PoliceSection filteredGuests={selectedInHouseGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} reportDate={selectedDate} />;
       case 'departments':
         return <DepartmentsSection s={s} hk={hk} maint={maint} finance={finance} />;
       case 'fnb':

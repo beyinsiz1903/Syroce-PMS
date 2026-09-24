@@ -491,32 +491,31 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
 
     # ALL queries in parallel
     async def get_fnb_orders():
-        try:
-            return await db.pos_orders.find(
-                {
-                    "tenant_id": tenant_id,
-                    "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
-                    **accounting_period_match(
-                        charge_range_start,
-                        target_day,
-                        {"closed_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                        {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                    ),
-                },
-                {
-                    "_id": 0,
-                    "id": 1,
-                    "business_date": 1,
-                    "closed_at": 1,
-                    "created_at": 1,
-                    "total_amount": 1,
-                    "grand_total": 1,
-                    "status": 1,
-                    "payment_status": 1,
-                },
-            ).to_list(5000)
-        except Exception:
-            return []
+        # Never convert a database/query failure into a believable "0 TL".
+        # An incomplete financial report is more dangerous than a visible error.
+        return await db.pos_orders.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
+                **accounting_period_match(
+                    charge_range_start,
+                    target_day,
+                    {"closed_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                    {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
+                ),
+            },
+            {
+                "_id": 0,
+                "id": 1,
+                "business_date": 1,
+                "closed_at": 1,
+                "created_at": 1,
+                "total_amount": 1,
+                "grand_total": 1,
+                "status": 1,
+                "payment_status": 1,
+            },
+        ).to_list(5000)
 
     results = await asyncio.gather(
         db.rooms.find({"tenant_id": tenant_id}).to_list(1000),

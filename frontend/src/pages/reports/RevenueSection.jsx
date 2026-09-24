@@ -39,7 +39,14 @@ const fmt = n => Number(n || 0).toLocaleString('tr-TR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
-const isoToday = () => new Date().toISOString().slice(0, 10);
+const localIsoDate = value => {
+  const date = value || new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const isoToday = () => localIsoDate(new Date());
 const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
   const {
     t
@@ -48,7 +55,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
   const initialFrom = reportPeriod === 'daily' ? initialTo : (() => {
     const date = new Date(`${initialTo}T12:00:00`);
     date.setDate(date.getDate() - 29);
-    return date.toISOString().slice(0, 10);
+    return localIsoDate(date);
   })();
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);

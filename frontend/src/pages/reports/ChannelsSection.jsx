@@ -95,7 +95,7 @@ export const SourcesSection = ({
     <SectionHeader title="Kaynak Analizi" description="Rezervasyon kaynaklarının detaylı performans karşılaştırması" />
     {sourceData.length > 0 ? <>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {sourceData.slice(0, 4).map((src, i) => <Card key={src.id || i} className="border-l-4" style={{
+          {sourceData.map((src, i) => <Card key={src.id || i} className="border-l-4" style={{
         borderLeftColor: COLORS[i % COLORS.length]
       }}>
               <CardContent className="p-4">

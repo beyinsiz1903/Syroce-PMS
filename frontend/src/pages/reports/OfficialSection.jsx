@@ -121,17 +121,17 @@ export const OfficialSection = ({
   </div>
 );
 
-export const PoliceSection = ({ filteredGuests, searchGuest, setSearchGuest }) => (
+export const PoliceSection = ({ filteredGuests, searchGuest, setSearchGuest, reportDate }) => (
   <div data-testid="section-police">
     <Card className="mb-5 border-sky-200 bg-sky-50/30">
       <CardContent className="p-4 flex items-start gap-3">
         <Shield className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
         <div>
           <h4 className="font-semibold text-gray-900 text-sm">Polis Bildirimi (Emniyet Listesi)</h4>
-          <p className="text-xs text-gray-600 mt-0.5">Emniyet Müdürlüğü'ne bildirilmesi gereken konaklayan misafir listesi. TC Kimlik No ve pasaport bilgileri dahildir.</p>
+          <p className="text-xs text-gray-600 mt-0.5">{reportDate} tarihinde fiilen konaklayan ve Emniyet Müdürlüğü'ne bildirilmesi gereken misafirler. TC Kimlik No ve pasaport alanları yalnızca yetkili kullanıcıya gösterilir.</p>
         </div>
       </CardContent>
     </Card>
-    <GuestTable guests={filteredGuests} title="Polis Bildirimi Listesi" showId={true} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />
+    <GuestTable guests={filteredGuests} title={`Polis Bildirimi Listesi · ${reportDate}`} showId={true} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />
   </div>
 );

@@ -4,6 +4,24 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import { formatCurrency, SectionHeader } from './ReportHelpers';
+
+const GUEST_STATUS = {
+  checked_in: { label: 'Otelde', className: 'bg-emerald-100 text-emerald-700' },
+  in_house: { label: 'Otelde', className: 'bg-emerald-100 text-emerald-700' },
+  checked_out: { label: 'Çıkış Yaptı', className: 'bg-slate-100 text-slate-600' },
+  no_show: { label: 'No-Show', className: 'bg-rose-100 text-rose-700' },
+  noshow: { label: 'No-Show', className: 'bg-rose-100 text-rose-700' },
+  cancelled: { label: 'İptal', className: 'bg-rose-100 text-rose-700' },
+  canceled: { label: 'İptal', className: 'bg-rose-100 text-rose-700' },
+  confirmed: { label: 'Onaylı', className: 'bg-sky-100 text-sky-700' },
+  guaranteed: { label: 'Garantili', className: 'bg-indigo-100 text-indigo-700' },
+  pending: { label: 'Bekliyor', className: 'bg-amber-100 text-amber-700' },
+};
+
+const guestStatus = value => GUEST_STATUS[String(value || '').toLowerCase()] || {
+  label: value ? String(value).replaceAll('_', ' ') : 'Bilinmiyor',
+  className: 'bg-slate-100 text-slate-600'
+};
 const GuestTable = ({
   guests,
   title,
@@ -32,15 +50,18 @@ const GuestTable = ({
             <th className="text-right py-2.5 px-3 font-semibold text-gray-600">Tutar</th>
           </tr></thead>
           <tbody>
-            {guests.length > 0 ? guests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-sky-50/30 transition-colors">
+            {guests.length > 0 ? guests.map((g, i) => {
+              const status = guestStatus(g.status);
+              return <tr key={g.id || i} className="border-b hover:bg-sky-50/30 transition-colors">
                 <td className="py-2 px-3"><div className="font-medium text-gray-900">{g.guest_name || '-'}</div><div className="text-[11px] text-gray-400">{g.guest_email && g.guest_email.includes('@') ? g.guest_email : ''}</div></td>
                 <td className="py-2 px-3 font-medium">{g.room_number || '-'}</td>
                 {showId && <td className="py-2 px-3 text-xs font-mono">{g.id_number || g.passport_number || '-'}</td>}
                 <td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td>
-                <td className="py-2 px-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${g.status === 'checked_in' ? 'bg-emerald-100 text-emerald-700' : g.status === 'checked_out' ? 'bg-slate-100 text-slate-600' : g.status === 'no_show' ? 'bg-rose-100 text-rose-700' : g.status === 'cancelled' ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'}`}>{g.status === 'checked_in' ? 'Otelde' : g.status === 'checked_out' ? 'Çıkış Yaptı' : g.status === 'no_show' ? 'No-Show' : g.status === 'cancelled' ? 'İptal' : 'Onaylı'}</span></td>
+                <td className="py-2 px-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status.className}`}>{status.label}</span></td>
                 <td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td>
-              </tr>) : <tr><td colSpan={showId ? 7 : 6} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
+              </tr>;
+            }) : <tr><td colSpan={showId ? 7 : 6} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
           </tbody>
         </table></div>
       </CardContent>

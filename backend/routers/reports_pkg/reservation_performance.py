@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font, PatternFill
 
+from core.business_date_service import ensure_business_date_initialized
 from core.csv_safe import xlsx_safe
 from core.database import db
 from core.helpers import require_module
@@ -97,6 +98,20 @@ def _lead_time_bucket(days: int) -> str:
         if days >= lower and (upper is None or days <= upper):
             return key
     return "same_day"
+
+
+async def _resolve_report_dates(*, tenant_id: str, start_date: str | None, end_date: str | None) -> tuple[date, date]:
+    if end_date:
+        end = _parse_date(end_date, "end_date")
+    else:
+        state = await ensure_business_date_initialized(db, tenant_id)
+        end = _parse_date(state["business_date"], "business_date")
+    start = _parse_date(start_date, "start_date") if start_date else end - timedelta(days=29)
+    if start > end:
+        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
+    if (end - start).days > 366:
+        raise HTTPException(status_code=422, detail="Rezervasyon raporu en fazla 366 günlük aralıkta alınabilir")
+    return start, end
 
 
 def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_date: date, end_date: date) -> dict[str, Any]:
@@ -255,12 +270,7 @@ async def get_reservation_performance_report(
     _perm=Depends(require_op("view_reports")),
     _nocache: bool = Query(False, alias="nocache"),
 ):
-    end = _parse_date(end_date, "end_date") if end_date else datetime.now(UTC).date()
-    start = _parse_date(start_date, "start_date") if start_date else end - timedelta(days=29)
-    if start > end:
-        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
-    if (end - start).days > 366:
-        raise HTTPException(status_code=422, detail="Rezervasyon raporu en fazla 366 günlük aralıkta alınabilir")
+    start, end = await _resolve_report_dates(tenant_id=current_user.tenant_id, start_date=start_date, end_date=end_date)
     return await _reservation_performance_payload(tenant_id=current_user.tenant_id, start_date=start, end_date=end)
 
 
@@ -272,10 +282,7 @@ async def export_reservation_performance_excel(
     _: None = Depends(require_module("reports")),
     _perm=Depends(require_op("view_reports")),
 ):
-    end = _parse_date(end_date, "end_date") if end_date else datetime.now(UTC).date()
-    start = _parse_date(start_date, "start_date") if start_date else end - timedelta(days=29)
-    if start > end:
-        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
+    start, end = await _resolve_report_dates(tenant_id=current_user.tenant_id, start_date=start_date, end_date=end_date)
     payload = await _reservation_performance_payload(tenant_id=current_user.tenant_id, start_date=start, end_date=end)
     summary = payload["summary"]
     data = [
