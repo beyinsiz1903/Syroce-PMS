@@ -1104,7 +1104,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <RoomBlockCreateDialog open={openDialog === 'roomblock'} onClose={() => { setOpenDialog(null); setSelectedRoom(null); }} rooms={rooms} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} newRoomBlock={newRoomBlock} setNewRoomBlock={setNewRoomBlock} onSubmit={createRoomBlock} />
         <RoomBlockViewDialog open={openDialog === 'roomblock-view'} onClose={() => setOpenDialog(null)} roomBlocks={roomBlocks} onCancel={cancelRoomBlock} />
         <FindRoomDialog open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} criteria={findRoomCriteria} setCriteria={setFindRoomCriteria} />
-        <PaymentDialog open={openDialog === 'payment'} onClose={() => setOpenDialog(null)} paymentForm={paymentForm} setPaymentForm={setPaymentForm} bookingId={selectedBooking} onPaymentSuccess={() => { loadData(); loadFrontDeskData(); }} />
+        <PaymentDialog
+          open={openDialog === 'payment'}
+          onClose={() => setOpenDialog(null)}
+          paymentForm={paymentForm}
+          setPaymentForm={setPaymentForm}
+          selectedBooking={bookings.find((booking) => booking.id === selectedBooking) || null}
+          onPaymentDone={() => { loadData(); loadFrontDeskData(); }}
+        />
 
         {selectedBookingDetail && (
           <BookingDetailDialog

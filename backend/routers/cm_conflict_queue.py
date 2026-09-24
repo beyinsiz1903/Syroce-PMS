@@ -113,9 +113,14 @@ def _external_booking_ids(booking: dict[str, Any]) -> list[str]:
     values = (
         booking.get("external_reservation_id"),
         booking.get("external_confirmation"),
+        booking.get("ota_confirmation"),
+        booking.get("agency_reservation_number"),
+        booking.get("provider_reservation_id"),
         source.get("external_reservation_id"),
         source.get("external_confirmation"),
         source.get("reservation_id"),
+        source.get("external_id"),
+        source.get("provider_reservation_id"),
     )
     return list(dict.fromkeys(str(value).strip() for value in values if str(value or "").strip()))
 
@@ -139,9 +144,14 @@ async def _find_completed_duplicate(tenant_id: str, pending: dict[str, Any]) -> 
             [
                 {"external_reservation_id": external_id},
                 {"external_confirmation": external_id},
+                {"ota_confirmation": external_id},
+                {"agency_reservation_number": external_id},
+                {"provider_reservation_id": external_id},
                 {"source.external_reservation_id": external_id},
                 {"source.external_confirmation": external_id},
                 {"source.reservation_id": external_id},
+                {"source.external_id": external_id},
+                {"source.provider_reservation_id": external_id},
             ]
         )
 

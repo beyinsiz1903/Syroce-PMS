@@ -14,6 +14,7 @@ import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
+import { formatCurrency } from '@/lib/currency';
 const VAT_OPTIONS = [{
   value: '0',
   label: '%0'
@@ -51,6 +52,7 @@ const FolioViewDialog = ({
   const {
     t
   } = useTranslation();
+  const money = (value) => formatCurrency(value, selectedFolio?.currency || 'TRY', { decimals: 2 });
   const [subDialog, setSubDialog] = useState(null);
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
   const [voidTarget, setVoidTarget] = useState(null);
@@ -373,7 +375,7 @@ th{background:#f5f5f5}
                       {f.folio_number || f.id?.slice(0, 8)} · {f.folio_type?.toUpperCase?.()}
                     </span>
                     <span className="text-xs text-gray-500">
-                      Bakiye: {fmt(f.balance)} ₺
+                      Bakiye: {money(f.balance)}
                     </span>
                   </Button>)}
               </div>
@@ -401,7 +403,7 @@ th{background:#f5f5f5}
                   <div className="px-6 flex flex-col items-end justify-center">
                     <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.currentBalance', 'Güncel Bakiye')}</div>
                     <div className={`text-3xl font-black tabular-nums tracking-tight ${selectedFolio.balance > 0 ? 'text-blue-600' : selectedFolio.balance < 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
-                      {fmt(selectedFolio.balance)} ₺
+                      {money(selectedFolio.balance)}
                     </div>
                     <div className="mt-2">
                       {selectedFolio.balance > 0 ? <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Tahsilat Bekliyor</span> : selectedFolio.balance < 0 ? <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">İade Bekliyor</span> : <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">Bakiye Dengeli</span>}
@@ -468,23 +470,23 @@ th{background:#f5f5f5}
                                     {new Date(charge.created_at || charge.date).toLocaleString()}
                                   </div>
                                   {hasDiscount && <div className="text-xs text-amber-700 mt-1">
-                                      İndirim: −{fmt(charge.discount_amount)} ₺
+                                      İndirim: −{money(charge.discount_amount)}
                                       {charge.discount_reason ? ` (${charge.discount_reason})` : ''}
                                     </div>}
                                 </div>
                                 <div className="text-right">
-                                  <div className="font-bold">{fmt(charge.total ?? charge.total_amount ?? charge.amount)} ₺</div>
+                                  <div className="font-bold">{money(charge.total ?? charge.total_amount ?? charge.amount)}</div>
                                   {(hasVat || hasCity) && <div className="text-[11px] text-gray-500 leading-tight mt-0.5">
-                                      {hasDiscount && <div>Net: {fmt(charge.amount)} ₺</div>}
-                                      {hasVat && <div>KDV %{charge.vat_rate}: {fmt(charge.vat_amount)} ₺</div>}
-                                      {hasCity && <div>Şehir vergisi: {fmt(charge.tax_amount)} ₺</div>}
+                                      {hasDiscount && <div>Net: {money(charge.amount)}</div>}
+                                      {hasVat && <div>KDV %{charge.vat_rate}: {money(charge.vat_amount)}</div>}
+                                      {hasCity && <div>Şehir vergisi: {money(charge.tax_amount)}</div>}
                                     </div>}
                                 </div>
                               </div>
                               {isExpanded && hasLineItems && <div className="mt-3 pt-3 border-t space-y-1">
                                   {charge.line_items.map((li, i) => <div key={li.id || i} className="flex justify-between text-xs text-gray-600">
                                       <span>{li.name || li.description} x{li.quantity}</span>
-                                      <span>{fmt(li.total ?? li.amount)} ₺</span>
+                                      <span>{money(li.total ?? li.amount)}</span>
                                     </div>)}
                                 </div>}
                             </CardContent>
@@ -518,7 +520,7 @@ th{background:#f5f5f5}
                               </div>
                               <div className="text-right">
                                 <div className={`font-bold ${payment.voided ? 'text-gray-400 line-through' : 'text-green-600'}`}>
-                                  {fmt(payment.amount)} ₺
+                                  {money(payment.amount)}
                                 </div>
                                 {!payment.voided && <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
                           setVoidTarget(payment);
@@ -620,11 +622,11 @@ th{background:#f5f5f5}
             </div>
 
             <div className="bg-gray-50 rounded p-3 text-sm space-y-1">
-              <div className="flex justify-between"><span>Ara Toplam</span><span>{fmt(chargePreview.sub)} ₺</span></div>
-              {chargePreview.disc > 0 && <div className="flex justify-between text-amber-700"><span>İndirim</span><span>−{fmt(chargePreview.disc)} ₺</span></div>}
-              <div className="flex justify-between"><span>Net</span><span>{fmt(chargePreview.net)} ₺</span></div>
-              {chargePreview.rate > 0 && <div className="flex justify-between text-gray-600"><span>KDV %{chargePreview.rate}</span><span>{fmt(chargePreview.vat)} ₺</span></div>}
-              <div className="flex justify-between font-bold pt-1 border-t"><span>Toplam</span><span>{fmt(chargePreview.total)} ₺</span></div>
+              <div className="flex justify-between"><span>Ara Toplam</span><span>{money(chargePreview.sub)}</span></div>
+              {chargePreview.disc > 0 && <div className="flex justify-between text-amber-700"><span>İndirim</span><span>−{money(chargePreview.disc)}</span></div>}
+              <div className="flex justify-between"><span>Net</span><span>{money(chargePreview.net)}</span></div>
+              {chargePreview.rate > 0 && <div className="flex justify-between text-gray-600"><span>KDV %{chargePreview.rate}</span><span>{money(chargePreview.vat)}</span></div>}
+              <div className="flex justify-between font-bold pt-1 border-t"><span>Toplam</span><span>{money(chargePreview.total)}</span></div>
               <div className="text-[11px] text-gray-500">Şehir vergisi (varsa) sunucuda otomatik eklenir.</div>
             </div>
 
@@ -690,7 +692,7 @@ th{background:#f5f5f5}
             <DialogTitle>Ödeme İadesi</DialogTitle>
             <DialogDescription>
               {voidTarget && <>
-                  {voidTarget.method?.toUpperCase()} ödemesi {fmt(voidTarget.amount)} ₺ iade edilecek.
+                  {voidTarget.method?.toUpperCase()} ödemesi {money(voidTarget.amount)} iade edilecek.
                   {voidTarget.method === 'cash' && ' Nakit iadesi için açık bir vardiya gerekir.'}
                 </>}
             </DialogDescription>
@@ -789,7 +791,7 @@ th{background:#f5f5f5}
                           <td className="px-4 py-3 text-sm text-red-600 text-right tabular-nums">{fmt(c.discount_amount)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.amount)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.vat_amount)} <span className="text-xs text-gray-400">{c.vat_rate ? `(%${c.vat_rate})` : ''}</span></td>
-                          <td className="px-4 py-3 text-sm text-gray-900 font-bold text-right tabular-nums">{fmt(c.total)} ₺</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-bold text-right tabular-nums">{money(c.total)}</td>
                         </tr>)}
                     </tbody>
                   </table>
@@ -810,8 +812,8 @@ th{background:#f5f5f5}
                     <tbody className="divide-y divide-gray-50">
                       {(proforma.vat_breakdown || []).map(g => <tr key={g.vat_rate}>
                           <td className="py-2 text-gray-600">% {g.vat_rate}</td>
-                          <td className="py-2 text-gray-800 text-right tabular-nums">{fmt(g.net)} ₺</td>
-                          <td className="py-2 text-gray-800 text-right tabular-nums">{fmt(g.vat_amount)} ₺</td>
+                          <td className="py-2 text-gray-800 text-right tabular-nums">{money(g.net)}</td>
+                          <td className="py-2 text-gray-800 text-right tabular-nums">{money(g.vat_amount)}</td>
                         </tr>)}
                     </tbody>
                   </table>
@@ -820,35 +822,35 @@ th{background:#f5f5f5}
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Ara Toplam</span>
-                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.subtotal)} ₺</span>
+                      <span className="tabular-nums font-medium text-gray-800">{money(proforma.totals?.subtotal)}</span>
                     </div>
                     {proforma.totals?.discount_total > 0 && <div className="flex justify-between text-sm text-red-600">
                         <span>İndirim Toplamı</span>
-                        <span className="tabular-nums font-medium">−{fmt(proforma.totals?.discount_total)} ₺</span>
+                        <span className="tabular-nums font-medium">−{money(proforma.totals?.discount_total)}</span>
                       </div>}
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Net Toplam</span>
-                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.net_total)} ₺</span>
+                      <span className="tabular-nums font-medium text-gray-800">{money(proforma.totals?.net_total)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Hesaplanan KDV</span>
-                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.vat_total)} ₺</span>
+                      <span className="tabular-nums font-medium text-gray-800">{money(proforma.totals?.vat_total)}</span>
                     </div>
                     {proforma.totals?.city_tax_total > 0 && <div className="flex justify-between text-sm text-gray-600">
                         <span>Konaklama Vergisi (Şehir)</span>
-                        <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.city_tax_total)} ₺</span>
+                        <span className="tabular-nums font-medium text-gray-800">{money(proforma.totals?.city_tax_total)}</span>
                       </div>}
                     <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between text-xl font-bold text-gray-900">
                       <span>Genel Toplam</span>
-                      <span className="tabular-nums">{fmt(proforma.totals?.grand_total)} ₺</span>
+                      <span className="tabular-nums">{money(proforma.totals?.grand_total)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600 mt-2">
                       <span>Tahsil Edilen (Ödenen)</span>
-                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.payments_total)} ₺</span>
+                      <span className="tabular-nums font-medium text-gray-800">{money(proforma.totals?.payments_total)}</span>
                     </div>
                     <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between text-lg font-bold text-emerald-600">
                       <span>Kalan Bakiye</span>
-                      <span className="tabular-nums">{fmt(proforma.totals?.balance_due)} ₺</span>
+                      <span className="tabular-nums">{money(proforma.totals?.balance_due)}</span>
                     </div>
                   </div>
                 </div>
@@ -883,7 +885,7 @@ th{background:#f5f5f5}
                         </div>
                         <div className="flex flex-col items-end">
                           <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Güncel Bakiye</span>
-                          <span className={`font-bold tabular-nums text-sm ${f.balance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>{fmt(f.balance)} ₺</span>
+                          <span className={`font-bold tabular-nums text-sm ${f.balance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>{money(f.balance)}</span>
                         </div>
                       </div>
                     </SelectItem>)}
@@ -906,7 +908,7 @@ th{background:#f5f5f5}
                       <div className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">{c.charge_category} • {new Date(c.date || c.created_at).toLocaleDateString()}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold tabular-nums text-gray-900">{fmt(c.total ?? c.amount)} ₺</div>
+                      <div className="font-bold tabular-nums text-gray-900">{money(c.total ?? c.amount)}</div>
                     </div>
                   </label>)}
               </div>
@@ -951,7 +953,7 @@ th{background:#f5f5f5}
                             {op.performed_by_name || op.performed_by} • {op.performed_at ? new Date(op.performed_at).toLocaleString() : ''}
                           </div>
                         </div>
-                        {op.amount != null && <div className="font-bold">{fmt(op.amount)} ₺</div>}
+                        {op.amount != null && <div className="font-bold">{money(op.amount)}</div>}
                       </div>
                     </CardContent>
                   </Card>)}

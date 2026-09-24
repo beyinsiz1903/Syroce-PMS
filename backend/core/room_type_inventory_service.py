@@ -29,6 +29,11 @@ from core.tenant_db import get_system_db, tenant_context
 
 logger = logging.getLogger("core.room_type_inventory")
 
+# Keep the worker's wait seam local to this module. Tests can replace this
+# callable without mutating ``asyncio.sleep`` process-wide (which would also
+# turn unrelated Redis/event-bus listeners into busy loops).
+_worker_sleep = asyncio.sleep
+
 # Transient Atlas/network errors that the worker should treat as
 # "retry next tick" instead of Sentry-level errors. Atlas occasionally drops
 # the primary connection mid-reconciliation (No Primary / SSL handshake timeout
@@ -463,7 +468,7 @@ class RoomTypeInventoryWorker:
                         )
                 else:
                     logger.error("RoomTypeInventoryWorker error: %s", e)
-            await asyncio.sleep(self._interval)
+            await _worker_sleep(self._interval)
 
     async def _run_once(self) -> None:
         """Run reconciliation for all tenants, today + 30 days."""
