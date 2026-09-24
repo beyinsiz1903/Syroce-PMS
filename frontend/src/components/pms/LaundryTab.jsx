@@ -12,9 +12,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shirt, Plus, RefreshCw, Search, Settings, Trash2, Pencil, Check, X } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
 const SERVICE_TYPES = [{
   code: 'wash_iron',
-  name: 'Yikama + Utuleme',
+  name: 'Yıkama + Ütüleme',
   multiplier: 1
 }, {
   code: 'dry_clean',
@@ -22,7 +23,7 @@ const SERVICE_TYPES = [{
   multiplier: 1.5
 }, {
   code: 'iron_only',
-  name: 'Sadece Utuleme',
+  name: 'Sadece Ütüleme',
   multiplier: 0.5
 }, {
   code: 'express',
@@ -32,7 +33,7 @@ const SERVICE_TYPES = [{
 const FALLBACK_ITEMS = [{
   id: 'shirt',
   code: 'shirt',
-  name: 'Gomlek',
+  name: 'Gömlek',
   price: 30,
   active: true
 }, {
@@ -43,6 +44,7 @@ const FALLBACK_ITEMS = [{
   active: true
 }];
 const LaundryTab = () => {
+  const formatTry = value => formatCurrency(value, 'TRY', { decimals: 2 });
   const {
     t
   } = useTranslation();
@@ -200,7 +202,7 @@ const LaundryTab = () => {
       const charge = res.data?.folio_charge;
       if (newStatus === 'delivered') {
         if (charge?.charged) {
-          toast.success(`Teslim edildi — Folio'ya ${charge.amount?.toFixed(2)} TL eklendi`);
+          toast.success(`Teslim edildi — Folyoya ${formatTry(charge.amount)} eklendi`);
         } else if (charge && charge.charged === false) {
           if (charge.reason === 'no_active_booking_or_folio') {
             toast.warning('Teslim edildi, ancak aktif folio bulunamadığı için folio yansıtılmadı');
@@ -414,7 +416,7 @@ const LaundryTab = () => {
                       </div>
                       <div className="flex items-center gap-3">
                         <Badge className={sc.color}>{sc.label}</Badge>
-                        <span className="text-sm font-bold text-gray-700">{(order.total || 0).toFixed(2)} TL</span>
+                        <span className="text-sm font-bold text-gray-700">{formatTry(order.total)}</span>
                         <div className="flex gap-1">
                           {order.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Basla</Button>}
                           {order.status === 'in_progress' && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>{t('cm.components_pms_LaundryTab.hazir_04e6f')}</Button>}
@@ -479,7 +481,7 @@ const LaundryTab = () => {
                         <div className="flex items-center gap-3 flex-1">
                           <span className="text-xs text-gray-500 font-mono w-20">{it.code}</span>
                           <span className={`text-sm flex-1 ${it.active === false ? 'text-gray-400 line-through' : ''}`}>{it.name}</span>
-                          <span className="text-sm font-bold text-gray-700 w-24 text-right">{Number(it.price).toFixed(2)} TL</span>
+                          <span className="text-sm font-bold text-gray-700 w-24 text-right">{formatTry(it.price)}</span>
                         </div>
                         <div className="flex gap-1 ml-2">
                           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => toggleActive(it)}>
@@ -559,7 +561,7 @@ const LaundryTab = () => {
               }))}>
                   <SelectTrigger className="flex-1"><SelectValue placeholder="Urun secin" /></SelectTrigger>
                   <SelectContent>
-                    {activeItems.map(i => <SelectItem key={i.code} value={i.code}>{i.name} ({Number(i.price).toFixed(2)} TL)</SelectItem>)}
+                    {activeItems.map(i => <SelectItem key={i.code} value={i.code}>{i.name} ({formatTry(i.price)})</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Input type="number" min="1" className="w-16" value={itemToAdd.quantity} onChange={e => setItemToAdd(p => ({
@@ -572,13 +574,13 @@ const LaundryTab = () => {
                   {orderForm.items.map((item, i) => <div key={item.id || i} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1">
                       <span>{item.name} x{item.quantity}</span>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{item.total?.toFixed(2)} TL</span>
+                        <span className="font-medium">{formatTry(item.total)}</span>
                         <Button size="sm" variant="ghost" className="h-5 w-5 p-0 text-red-500" onClick={() => removeItem(i)}>x</Button>
                       </div>
                     </div>)}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
                     <span>{t('cm.components_pms_LaundryTab.toplam')}</span>
-                    <span>{orderTotal.toFixed(2)} TL</span>
+                    <span>{formatTry(orderTotal)}</span>
                   </div>
                 </div>}
             </div>
@@ -588,7 +590,7 @@ const LaundryTab = () => {
             }))} placeholder={t('cm.components_pms_LaundryTab.ozel_talimatlar')} /></div>
             <Button onClick={submitOrder} disabled={loading} className="w-full">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              {t('cm.components_pms_LaundryTab.siparis_olustur')}{orderTotal.toFixed(2)} TL)
+              {t('cm.components_pms_LaundryTab.siparis_olustur')}{formatTry(orderTotal)})
             </Button>
           </div>
         </DialogContent>
