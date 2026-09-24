@@ -74,3 +74,31 @@ test("omits an overlong optional phone number instead of letting Jandarma reject
   assert.match(req.envelope, /<d:TELNO><\/d:TELNO>/);
   assert.equal(soap.optionalPhone("+90 540 452 93 26"), "905404529326");
 });
+
+test("accepts the numeric facility code shape declared as xs:long by the live WSDL", () => {
+  const req = soap.buildRequest({
+    nationality: "TR", id_number: "10000000146", room_number: "12",
+    check_in: "2026-08-23T10:00:00+03:00",
+  }, "checkin", { ...credentials, facilityCode: "12345" });
+
+  assert.match(req.envelope, /<TssKod>12345<\/TssKod>/);
+});
+
+test("checkout does not require entry-only guest, room or check-in fields", () => {
+  const req = soap.buildRequest({
+    nationality: "TR", id_number: "10000000146", check_out: "2026-08-23T12:00:00Z",
+  }, "checkout", credentials);
+
+  assert.equal(req.method, "MusteriKimlikNoCikis");
+  assert.doesNotMatch(req.envelope, /<d:ODANO>/);
+  assert.doesNotMatch(req.envelope, /<d:GRSTRH>/);
+});
+
+test("builds a side-effect-free official parameter call for connection testing", () => {
+  const req = soap.buildConnectionTest(credentials);
+
+  assert.equal(req.method, "ParametreListele");
+  assert.match(req.soapAction, /ParametreListele$/);
+  assert.match(req.envelope, /<parametreTuru>ULKELER<\/parametreTuru>/);
+  assert.doesNotMatch(req.envelope, /Musteri/);
+});

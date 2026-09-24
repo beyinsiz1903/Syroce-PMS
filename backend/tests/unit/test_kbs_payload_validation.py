@@ -66,7 +66,7 @@ def test_foreign_guest_still_requires_birth_date():
     assert "birth_date" in missing
 
 
-def test_foreign_guest_requires_gender_and_birth_place():
+def test_foreign_checkin_requires_gender_but_not_birth_place():
     ok, missing = validate_kbs_payload(
         _snapshot(
             nationality="DE",
@@ -78,4 +78,48 @@ def test_foreign_guest_requires_gender_and_birth_place():
     )
     assert not ok
     assert "gender" in missing
-    assert "birth_place" in missing
+    assert "birth_place" not in missing
+
+
+def test_turkish_checkin_matches_official_contract_without_name_or_checkout():
+    ok, missing = validate_kbs_payload(
+        _snapshot(guest_name="", check_out=""),
+        "checkin",
+    )
+
+    assert ok, missing
+
+
+def test_checkout_only_requires_identity_and_checkout_time():
+    ok, missing = validate_kbs_payload(
+        _snapshot(guest_name="", room_number="", check_in=""),
+        "checkout",
+    )
+
+    assert ok, missing
+
+
+def test_foreign_checkout_does_not_require_entry_only_fields():
+    ok, missing = validate_kbs_payload(
+        _snapshot(
+            nationality="DE",
+            id_number="",
+            passport_number="C01X",
+            guest_name="",
+            room_number="",
+            check_in="",
+            birth_date="",
+            gender="",
+            birth_place="",
+        ),
+        "checkout",
+    )
+
+    assert ok, missing
+
+
+def test_checkout_requires_actual_checkout_time():
+    ok, missing = validate_kbs_payload(_snapshot(check_out=""), "checkout")
+
+    assert not ok
+    assert "check_out" in missing

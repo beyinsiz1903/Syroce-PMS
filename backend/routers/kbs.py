@@ -681,7 +681,7 @@ async def kbs_queue_enqueue(
                     # backoff'a giren is, kullanici tekrar Gonder dediginde ayni
                     # bozuk payload'i kullanmaz.
                     booking, guest, snapshot = await _build_payload_snapshot(tenant_id, data.booking_id)
-                    ok, missing = validate_kbs_payload(snapshot)
+                    ok, missing = validate_kbs_payload(snapshot, data.action)
                     if not ok:
                         raise HTTPException(
                             status_code=422,
@@ -727,7 +727,7 @@ async def kbs_queue_enqueue(
             # Madde 7: enqueue zamanında payload tamlığı kontrolü.
             # force=true → bypass (eksik bilgiyle bilinçli kuyruğa atma).
             if not data.force:
-                ok, missing = validate_kbs_payload(snapshot)
+                ok, missing = validate_kbs_payload(snapshot, data.action)
                 if not ok:
                     raise HTTPException(
                         status_code=422,
@@ -1098,14 +1098,17 @@ async def kbs_queue_claim(
         # degismis veya eski bir is oda numarasi olmadan olusmus olabilir.
         claimable = await db.kbs_reports.find_one(
             query,
-            {"_id": 0, "booking_id": 1},
+            {"_id": 0, "booking_id": 1, "action": 1},
         )
         if claimable:
             _booking, _guest, fresh_snapshot = await _build_payload_snapshot(
                 tenant_id,
                 claimable["booking_id"],
             )
-            ok, missing = validate_kbs_payload(fresh_snapshot)
+            ok, missing = validate_kbs_payload(
+                fresh_snapshot,
+                claimable.get("action") or "checkin",
+            )
             if not ok:
                 validation_error = "kbs_payload_incomplete: " + ", ".join(missing)
                 dead_result = await db.kbs_reports.update_one(
@@ -1199,6 +1202,10 @@ async def kbs_queue_claim(
 class KBSQueueComplete(BaseModel):
     worker_id: str = Field(..., min_length=1)
     kbs_reference: str = Field(..., min_length=1, max_length=200)
+    authority: str | None = Field(None, pattern="^(polis|jandarma)$")
+    official_reference: bool | None = None
+    authority_response_code: str = Field("", max_length=100)
+    authority_response_message: str = Field("", max_length=500)
     notes: str = ""
 
 
@@ -1290,6 +1297,10 @@ async def kbs_queue_complete(
                         "completed_at": _iso(now),
                         "updated_at": _iso(now),
                         "kbs_test": is_test_ref,
+                        "authority": data.authority,
+                        "official_reference": data.official_reference,
+                        "authority_response_code": data.authority_response_code,
+                        "authority_response_message": data.authority_response_message,
                         "notes": (job.get("notes") or "") + (("\n" + data.notes) if data.notes else ""),
                     },
                     # Closed state: _open_lock'u kaldır → aynı booking+action için
@@ -1314,6 +1325,10 @@ async def kbs_queue_complete(
                     "kbs_checkout_sent_at": _iso(now),
                     "kbs_checkout_reference": data.kbs_reference,
                     "kbs_checkout_test": is_test_ref,
+                    "kbs_checkout_authority": data.authority,
+                    "kbs_checkout_reference_official": data.official_reference,
+                    "kbs_checkout_response_code": data.authority_response_code,
+                    "kbs_checkout_response_message": data.authority_response_message,
                 }
             else:
                 booking_update = {
@@ -1323,6 +1338,10 @@ async def kbs_queue_complete(
                     "kbs_sent_at": _iso(now),
                     "kbs_reference": data.kbs_reference,
                     "kbs_test": is_test_ref,
+                    "kbs_authority": data.authority,
+                    "kbs_reference_official": data.official_reference,
+                    "kbs_response_code": data.authority_response_code,
+                    "kbs_response_message": data.authority_response_message,
                 }
             await db.bookings.update_one(
                 {"tenant_id": tenant_id, "id": job["booking_id"]},
@@ -1342,6 +1361,10 @@ async def kbs_queue_complete(
                     "booking_id": job["booking_id"],
                     "action": action,
                     "submission_reference": data.kbs_reference,
+                    "authority": data.authority,
+                    "official_reference": data.official_reference,
+                    "authority_response_code": data.authority_response_code,
+                    "authority_response_message": data.authority_response_message,
                     "notes": data.notes or "via queue",
                     "submitted_by": f"worker:{data.worker_id}",
                     "submitted_by_email": current_user.email,

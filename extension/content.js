@@ -60,6 +60,9 @@
           reference: resp.reference || "",
           error: resp.error || "",
           test: !!resp.test,
+          officialReference: resp.officialReference !== false,
+          responseCode: resp.responseCode || "",
+          responseMessage: resp.responseMessage || "",
         });
       });
       return;

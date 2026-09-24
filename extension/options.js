@@ -91,8 +91,12 @@ function buildProfile(a, status) {
   const facilityCode = a === "jandarma" ? $("jandarma_facilityCode").value.trim() : "";
   const liveConfirmed = a === "jandarma" && $("jandarma_liveConfirmed").checked;
   if (mode === "jandarma-soap") {
-    if (!/^\d{11}$/.test(userTc) || !/^\d{6}$/.test(facilityCode)) {
-      status.textContent = "Jandarma: Yetkili T.C. 11, tesis kodu 6 hane olmalidir.";
+    if (endpoint !== JANDARMA_SOAP_ENDPOINT) {
+      status.textContent = "Jandarma: Resmi SOAP modunda servis adresi değiştirilemez.";
+      return null;
+    }
+    if (!/^\d{11}$/.test(userTc) || !/^\d{1,19}$/.test(facilityCode)) {
+      status.textContent = "Jandarma: Yetkili T.C. 11 hane, tesis kodu yalnız rakamlardan oluşmalıdır.";
       return null;
     }
     if (!liveConfirmed) {
@@ -126,7 +130,26 @@ async function save() {
     : "Kaydedildi.";
 }
 
+async function testJandarmaConnection() {
+  const status = $("status");
+  status.textContent = "Jandarma bağlantısı doğrulanıyor...";
+  // Test, storage'daki son ayarları kullanır; kullanıcı değişiklik yaptıysa
+  // önce güvenli biçimde kaydet.
+  await save();
+  if (!String(status.textContent).startsWith("Kaydedildi")) return;
+  chrome.runtime.sendMessage({ type: "KBS_TEST_JANDARMA_CONNECTION" }, (result) => {
+    if (chrome.runtime.lastError || !result) {
+      status.textContent = "Jandarma bağlantı testi çalıştırılamadı.";
+      return;
+    }
+    status.textContent = result.ok
+      ? `Jandarma bağlantısı doğrulandı (${result.code || "Basarili"}).`
+      : `Jandarma bağlantısı reddedildi: ${result.error || "bilinmeyen_hata"}`;
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   load();
   $("save").addEventListener("click", save);
+  $("jandarma_test_connection").addEventListener("click", testJandarmaConnection);
 });

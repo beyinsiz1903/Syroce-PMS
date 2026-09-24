@@ -1,23 +1,17 @@
 """KBS payload validation helpers.
 
-Polise gönderilecek misafir bilgisinin enqueue zamanında eksiksiz olduğunu
-doğrular. Eksikse iş kuyruğa girmesin diye `validate_kbs_payload()` çağrılır.
+Giriş ve çıkışın resmî KBS sözleşmeleri aynı alanları istemez. Özellikle
+Jandarma SOAP çıkışı yalnız kimlik/belge ile gerçek çıkış zamanını taşır;
+oda, ad ve giriş zamanı istemek geçerli bir bildirimi PMS içinde engeller.
 
-Kurallar (EGM/Jandarma KBS minimum şeması):
-  * `guest_name`               — boş olamaz
-  * `nationality == "TC"`      → `id_number` 11 hane (numeric)
-  * `nationality != "TC"`      → `passport_number`, `gender`, `birth_place`
-                                  ve `birth_date` boş olamaz
-  * `check_in` / `check_out`   — boş olamaz
-
-Yardımcı: `validate_or_raise()` 422 HTTPException fırlatır (router için).
+Bu modül her iki taşıyıcının ortak asgari şartlarını action bazında doğrular.
+Taşıyıcıya özgü enum/eşleme kontrolleri kurum çağrısından hemen önce adapter
+tarafında fail-closed yapılır.
 """
 
 from __future__ import annotations
 
 from fastapi import HTTPException
-
-REQUIRED_BASE_FIELDS = ("guest_name", "room_number", "check_in", "check_out")
 
 
 def _norm(v: object) -> str:
@@ -29,10 +23,14 @@ def _is_turkish_nationality(value: object) -> bool:
     return normalized in {"", "TC", "TR", "TUR", "TURKIYE"}
 
 
-def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
+def validate_kbs_payload(snapshot: dict, action: str = "checkin") -> tuple[bool, list[str]]:
     """Return (ok, missing_fields). Missing list boşsa payload uygundur."""
     missing: list[str] = []
-    for field in REQUIRED_BASE_FIELDS:
+    if action not in {"checkin", "checkout"}:
+        return False, ["action_invalid"]
+
+    required = ("room_number", "check_in") if action == "checkin" else ("check_out",)
+    for field in required:
         if not _norm(snapshot.get(field)):
             missing.append(field)
 
@@ -46,21 +44,22 @@ def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
         elif not (id_number.isdigit() and len(id_number) == 11):
             missing.append("id_number_invalid")
     else:
-        if not _norm(snapshot.get("birth_date")):
-            missing.append("birth_date")
         if not passport_number:
             missing.append("passport_number")
-        if not _norm(snapshot.get("gender")):
-            missing.append("gender")
-        if not _norm(snapshot.get("birth_place")):
-            missing.append("birth_place")
+        if action == "checkin":
+            if not _norm(snapshot.get("guest_name")):
+                missing.append("guest_name")
+            if not _norm(snapshot.get("birth_date")):
+                missing.append("birth_date")
+            if not _norm(snapshot.get("gender")):
+                missing.append("gender")
 
     return (len(missing) == 0, missing)
 
 
-def validate_or_raise(snapshot: dict) -> None:
+def validate_or_raise(snapshot: dict, action: str = "checkin") -> None:
     """Geçersizse 422 fırlat. Geçerliyse no-op."""
-    ok, missing = validate_kbs_payload(snapshot)
+    ok, missing = validate_kbs_payload(snapshot, action)
     if not ok:
         raise HTTPException(
             status_code=422,

@@ -357,7 +357,14 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     if (sent.ok && sent.reference) {
       try {
         await axios.post(`/kbs/queue/${job.id}/complete`,
-          { worker_id: workerId, kbs_reference: sent.reference },
+          {
+            worker_id: workerId,
+            kbs_reference: sent.reference,
+            authority,
+            official_reference: sent.officialReference,
+            authority_response_code: (sent.responseCode || '').slice(0, 100),
+            authority_response_message: (sent.responseMessage || '').slice(0, 500),
+          },
           { headers: { 'Idempotency-Key': idem } });
         markBookingSent(claimed, sent.reference);
         return { status: 'ok', reference: sent.reference, error: '' };
@@ -416,7 +423,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     }
     const workerId = `ext:${extInfo.installId}`;
     const r = await processJobViaExtension(job, workerId);
-    if (r?.status === 'ok') toast.success(`KBS kabulü doğrulandı. Makbuz: ${r.reference}`);
+    if (r?.status === 'ok') toast.success(`KBS kabulü doğrulandı. Yerel teslim kaydı: ${r.reference}`);
     else if (r?.status === 'test') toast.error('Test modu sonucu gönderilmiş sayılmadı. Eklentiyi canlı moda alın.');
     else if (r?.status === 'fail') toast.error(cleanKbsError(r.error, 'KBS gönderimi başarısız; başarılı olarak kaydedilmedi.'));
     else toast.error('İş şu anda alınamadı (başka worker veya bekleme süresi).');
@@ -529,7 +536,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
         ? await processJobViaExtension(job, `ext:${extInfo.installId}`)
         : { status: 'fail' };
       if (result?.status === 'ok') {
-        toast.success(`${guest.guest_name} için KBS kabulü doğrulandı. Makbuz: ${result.reference}`);
+        toast.success(`${guest.guest_name} için KBS kabulü doğrulandı. Yerel teslim kaydı: ${result.reference}`);
       } else if (result?.status === 'test') {
         toast.error('Test modu sonucu gönderilmiş sayılmadı. Eklentiyi canlı moda alın.');
       } else {
