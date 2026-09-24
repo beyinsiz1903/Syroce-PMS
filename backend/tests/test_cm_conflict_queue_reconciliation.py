@@ -150,6 +150,26 @@ async def test_reconcile_retires_future_confirmed_duplicate_with_assigned_canoni
     }
 
 
+def test_external_booking_ids_cover_legacy_ota_confirmation_shapes():
+    booking = {
+        "external_reservation_id": "R370795907",
+        "ota_confirmation": "R370795907",
+        "agency_reservation_number": "AGENCY-42",
+        "provider_reservation_id": 99123,
+        "source": {
+            "external_id": "SOURCE-7",
+            "provider_reservation_id": "99123",
+        },
+    }
+
+    assert queue._external_booking_ids(booking) == [
+        "R370795907",
+        "AGENCY-42",
+        "99123",
+        "SOURCE-7",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_auto_assign_available_retries_pending_booking(monkeypatch):
     pending = {
