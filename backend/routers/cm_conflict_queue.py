@@ -41,6 +41,7 @@ from pymongo.errors import DuplicateKeyError
 from core.atomic_booking import _night_dates, _timeline_event
 from core.database import db
 from core.helpers import create_audit_log
+from core.room_auto_assignment import assign_pending_booking_with_auto_assignment
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -99,6 +100,8 @@ async def _serialize_pending_booking(booking: dict[str, Any]) -> dict[str, Any]:
         "adults": booking.get("adults"),
         "children": booking.get("children"),
         "special_requests": booking.get("special_requests"),
+        "allocation_source": booking.get("allocation_source"),
+        "auto_assignment_reason": booking.get("auto_assignment_reason"),
         "created_at": booking.get("created_at"),
     }
 
@@ -120,10 +123,11 @@ def _external_booking_ids(booking: dict[str, Any]) -> list[str]:
 async def _find_completed_duplicate(tenant_id: str, pending: dict[str, Any]) -> dict[str, Any] | None:
     """Find an authoritative stay for a legacy unassigned OTA duplicate.
 
-    Deliberately requires an exact external identifier *and* a completed or
-    currently checked-in, room-assigned stay.  Guest names/dates are not used:
-    providers may correct either after the original import, while the external
-    reservation identity remains stable.
+    Deliberately requires an exact external identifier and a room-assigned
+    authoritative stay. The authoritative row may still be a future confirmed
+    reservation; waiting for check-in left exact OTA duplicates visible until
+    arrival. Guest names/dates are not used because providers may correct either
+    while the external reservation identity remains stable.
     """
     external_ids = _external_booking_ids(pending)
     if not external_ids:
@@ -147,7 +151,7 @@ async def _find_completed_duplicate(tenant_id: str, pending: dict[str, Any]) -> 
                 "tenant_id": tenant_id,
                 "id": {"$ne": pending.get("id")},
                 "room_id": {"$nin": [None, ""]},
-                "status": {"$in": ["checked_in", "checked_out"]},
+                "status": {"$in": ["confirmed", "guaranteed", "pending", "checked_in", "checked_out"]},
                 "$or": identity_clauses,
             },
             {"_id": 0, "id": 1, "room_id": 1, "status": 1},
@@ -358,7 +362,7 @@ async def reconcile_legacy_duplicates(
     The HotelRunner legacy-hold fix prevents new duplicates, but rows created
     before that fix remain in the conflict queue.  This repair is intentionally
     conservative: it only reconciles an exact OTA external-id match when the
-    authoritative booking has a room and is checked in/out.
+    authoritative booking has a room and the exact same external OTA identity.
     """
     tenant_id = current_user.tenant_id
     pending_query = {**LEGACY_DUPLICATE_CANDIDATE_QUERY, "tenant_id": tenant_id}
@@ -411,6 +415,44 @@ async def reconcile_legacy_duplicates(
             logger.warning("Duplicate reconciliation audit failed (booking=%s): %s", booking_id, exc)
 
     return {"ok": True, "reconciled": reconciled, "count": len(reconciled)}
+
+
+@router.post("/auto-assign-available")
+async def auto_assign_available_pending_bookings(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("edit_booking")),
+):
+    """Retry safe room assignment for pending OTA bookings.
+
+    Availability can change after the original import (cancellation, room move,
+    or stale hold cleanup). The shared assignment service validates room type,
+    blocks and every room-night lock atomically, so opening the operational
+    queue can recover now-available stays without risking overbooking.
+    """
+    tenant_id = current_user.tenant_id
+    pending_rows = await db.bookings.find(
+        {**PENDING_QUERY, "tenant_id": tenant_id},
+        {"_id": 0},
+    ).limit(200).to_list(200)
+    assigned: list[dict[str, str]] = []
+
+    for booking in pending_rows:
+        updated, room = await assign_pending_booking_with_auto_assignment(
+            database=db,
+            tenant_id=tenant_id,
+            booking_doc=booking,
+        )
+        if not room:
+            continue
+        assigned.append(
+            {
+                "booking_id": str(updated.get("id") or booking.get("id") or ""),
+                "room_id": str(room.get("id") or ""),
+                "room_number": str(room.get("room_number") or room.get("name") or ""),
+            }
+        )
+
+    return {"ok": True, "assigned": assigned, "count": len(assigned)}
 
 
 @router.post("/{booking_id}/resolve")

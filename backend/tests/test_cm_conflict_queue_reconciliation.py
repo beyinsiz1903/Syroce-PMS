@@ -119,3 +119,62 @@ async def test_reconcile_retires_legacy_roomless_duplicate_without_allocation_ma
     assert update_query["room_id"] == {"$in": [None, ""]}
     assert "allocation_source" not in update_query
     assert bookings.update_one.await_args.args[1]["$set"]["duplicate_of_booking_id"] == "real-stay"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_retires_future_confirmed_duplicate_with_assigned_canonical(monkeypatch):
+    pending = {
+        "id": "irfan-unassigned",
+        "tenant_id": "tenant-1",
+        "room_id": None,
+        "status": "confirmed",
+        "allocation_source": "pending_assignment",
+        "external_reservation_id": "R370795907",
+    }
+    authoritative = {"id": "irfan-room-208", "room_id": "room-208", "status": "confirmed"}
+    bookings = _Bookings(pending, authoritative)
+    fake_db = SimpleNamespace(
+        bookings=bookings,
+        room_night_locks=SimpleNamespace(delete_many=AsyncMock()),
+    )
+    monkeypatch.setattr(queue, "db", fake_db)
+    monkeypatch.setattr(queue, "create_audit_log", AsyncMock())
+    user = SimpleNamespace(id="user-1", name="Admin", role="admin", tenant_id="tenant-1")
+
+    result = await queue.reconcile_legacy_duplicates(current_user=user)
+
+    assert result["count"] == 1
+    assert result["reconciled"][0] == {
+        "booking_id": "irfan-unassigned",
+        "duplicate_of_booking_id": "irfan-room-208",
+    }
+
+
+@pytest.mark.asyncio
+async def test_auto_assign_available_retries_pending_booking(monkeypatch):
+    pending = {
+        "id": "pending-1",
+        "tenant_id": "tenant-1",
+        "room_id": None,
+        "status": "confirmed",
+        "allocation_source": "pending_assignment",
+        "room_type": "Suite",
+    }
+    bookings = _Bookings(pending, None)
+    fake_db = SimpleNamespace(bookings=bookings)
+    assign = AsyncMock(return_value=(
+        {**pending, "room_id": "room-208", "room_number": "208"},
+        {"id": "room-208", "room_number": "208"},
+    ))
+    monkeypatch.setattr(queue, "db", fake_db)
+    monkeypatch.setattr(queue, "assign_pending_booking_with_auto_assignment", assign)
+    user = SimpleNamespace(id="user-1", name="Admin", role="admin", tenant_id="tenant-1")
+
+    result = await queue.auto_assign_available_pending_bookings(current_user=user)
+
+    assert result == {
+        "ok": True,
+        "assigned": [{"booking_id": "pending-1", "room_id": "room-208", "room_number": "208"}],
+        "count": 1,
+    }
+    assign.assert_awaited_once_with(database=fake_db, tenant_id="tenant-1", booking_doc=pending)

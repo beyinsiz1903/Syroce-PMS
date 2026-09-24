@@ -89,6 +89,13 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
   const badgeColor = UA_BADGE[urgency.level] || 'bg-blue-100 text-blue-700';
   const sameTypeRooms = rooms.filter(r => roomMatchesBookingType(r, booking));
   const matchingRooms = sameTypeRooms.filter(r => roomIsFreeForBooking(r, booking, bookings));
+  const blockingBookings = sameTypeRooms.flatMap(room => bookings.filter(other => (
+    other.room_id === room.id
+    && other.id !== booking.id
+    && !['cancelled', 'checked_out', 'no_show'].includes(other.status)
+    && new Date(other.check_in) < new Date(booking.check_out)
+    && new Date(other.check_out) > new Date(booking.check_in)
+  )).map(other => ({ room, booking: other })));
   const guestCount = Number(booking.adults || 0) + Number(booking.children || 0);
   const currency = booking.currency || 'TRY';
   const formattedAmount = new Intl.NumberFormat('tr-TR', {
@@ -156,8 +163,12 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
               <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} {t('cm.pages_ReservationCalendar.musait_873fb')}</span>
             </div>
           ) : (
-            <span className="text-[10px] text-red-500 font-medium">
-              {sameTypeRooms.length === 0 ? 'Oda tipi eşleşmesi bulunamadı' : 'Bu tarihlerde uygun oda yok'}
+            <span className="text-[10px] text-red-500 font-medium" title={blockingBookings.map(item => `${item.room.room_number}: ${item.booking.guest_name || 'başka rezervasyon'}`).join(', ')}>
+              {sameTypeRooms.length === 0
+                ? 'Oda tipi eşleşmesi bulunamadı'
+                : blockingBookings.length > 0
+                  ? `${blockingBookings.map(item => item.room.room_number).filter(Boolean).join(', ')} numaralı oda başka rezervasyonla çakışıyor`
+                  : 'Oda müsaitliği oda-gece kilidi nedeniyle doğrulanamadı'}
             </span>
           )}
           <button
@@ -274,6 +285,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     if (!showUnassignedPanel) return;
     let cancelled = false;
     const reconciledBookingIds = new Set();
+    const autoAssignedBookingIds = new Set();
     setAllUnassignedLoading(true);
     // Older HotelRunner imports could leave a second, roomless row behind even
     // though the real reservation had already checked in/out. Reconcile only
@@ -287,13 +299,27 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         }
       })
       .catch(() => null)
+      .then(() => axios.post('/api/channel-manager/conflict-queue/auto-assign-available'))
+      .then(res => {
+        const count = Number(res.data?.count || 0);
+        (res.data?.assigned || []).forEach(item => autoAssignedBookingIds.add(item.booking_id));
+        if (!cancelled && count > 0) {
+          toast.success(`${count} rezervasyona güncel müsaitlikten oda atandı`);
+          const assignments = new Map((res.data?.assigned || []).map(item => [item.booking_id, item]));
+          setBookings(current => current.map(item => {
+            const assignment = assignments.get(item.id);
+            return assignment ? { ...item, room_id: assignment.room_id, room_number: assignment.room_number } : item;
+          }));
+        }
+      })
+      .catch(() => null)
       .then(() => axios.get('/api/channel-manager/conflict-queue?limit=200'))
       .then(res => {
         if (!cancelled) {
           // conflict-queue API'si + takvimde görünen ama room_id'siz diğerleri
           const apiItems = res.data?.items || [];
           // Takvimde görünüp henüz API'de olmayan pendingleri de dahil et
-          const calendarPending = bookings.filter(b => !reconciledBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+          const calendarPending = bookings.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
           const apiIds = new Set(apiItems.map(b => b.id));
           const merged = [...apiItems, ...calendarPending.filter(b => !apiIds.has(b.id))];
           setAllUnassignedBookings(merged);
@@ -302,7 +328,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       .catch(() => {
         if (!cancelled) {
           // Fallback: sadece takvimde görünenleri göster
-          setAllUnassignedBookings(bookings.filter(b => !reconciledBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
+          setAllUnassignedBookings(bookings.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
         }
       })
       .finally(() => { if (!cancelled) setAllUnassignedLoading(false); });
