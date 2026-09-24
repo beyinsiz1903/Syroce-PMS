@@ -206,6 +206,21 @@ describe('ReservationDetailModal operation URLs', () => {
     ));
   });
 
+  it('gece sayısı değişince çıkış tarihini otomatik hesaplar ve elle seçilen tarihten geceyi günceller', async () => {
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('edit-stay-dates'));
+    const nightInput = screen.getByTestId('stay-night-count');
+    const checkoutInput = screen.getByLabelText('Çıkış tarihi');
+
+    expect(nightInput).toHaveValue(1);
+    fireEvent.change(nightInput, { target: { value: '4' } });
+    expect(checkoutInput).toHaveValue('2026-08-17');
+
+    fireEvent.change(checkoutInput, { target: { value: '2026-08-16' } });
+    expect(nightInput).toHaveValue(3);
+  });
+
   it('keeps a complimentary stay free when its checkout date changes', async () => {
     get.mockImplementation((url) => {
       if (url.includes('/unified-rate-manager/grid')) {

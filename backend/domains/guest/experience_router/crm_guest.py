@@ -193,6 +193,10 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
         "preferences": preferences,
         "behavior": behavior,
         "stats": {"total_stays": total_stays, "total_nights": total_nights, "lifetime_value": round(lifetime_value, 2), "average_adr": round(average_adr, 2), "channel_distribution": channel_mix},
+        # Keep the complete tenant-scoped history available to the PMS guest
+        # profile. ``recent_bookings`` remains for older clients that expect a
+        # compact payload section.
+        "stay_history": bookings,
         "recent_bookings": bookings[:10],
         "recent_upsells": upsell_offers,
     }

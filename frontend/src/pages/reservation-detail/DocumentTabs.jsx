@@ -82,7 +82,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                 </div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">Depozito - {d.method === 'cash' ? 'Nakit' : d.method === 'card' ? 'Kart' : 'Havale'}</div>
-                  <div className="text-xs text-gray-400">{fmtTs(d.created_at)} | {d.recorded_by} {d.reference && `| Ref: ${d.reference}`}</div>
+                  <div className="text-xs text-gray-400">{fmtTs(d.created_at)} | {d.recorded_by} {d.reference && `| Referans: ${d.reference}`}</div>
                 </div>
                 <div className={`text-sm font-bold ${d.status === 'refunded' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>{fmtCurrency(d.amount, currency)}</div>
                 <Badge className={`text-xs ${d.status === 'refunded' ? 'bg-gray-100 text-gray-500' : d.status === 'partially_refunded' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>

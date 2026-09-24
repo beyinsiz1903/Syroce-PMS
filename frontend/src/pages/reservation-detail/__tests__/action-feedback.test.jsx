@@ -39,11 +39,12 @@ vi.mock('axios', () => ({ default: axiosMock }));
 
 import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
 import { OnlinePaymentTab } from '@/pages/reservation-detail/OnlinePaymentTab';
-import { DailyRatesTab, ExtraChargesTab } from '@/pages/reservation-detail/PricingTabs';
+import { DailyRatesTab, ExtraChargesTab, distributeTotalAcrossEditableRates } from '@/pages/reservation-detail/PricingTabs';
 
 beforeEach(() => {
   axiosGet.mockReset();
   axiosPost.mockReset();
+  axiosMock.put.mockReset();
   toast.error.mockReset();
   toast.success.mockReset();
 });
@@ -150,7 +151,7 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText(/gece fiyatı/), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Günlük fiyat sıfırdan büyük olmalıdır'));
@@ -247,7 +248,7 @@ describe('reservation detail action feedback', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
 
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    expect(screen.getAllByLabelText(/gece fiyatı/)).toHaveLength(1);
     expect(screen.getByText('Gün sonu kapalı')).toBeInTheDocument();
   });
 
@@ -260,13 +261,59 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1250,50' } });
+    fireEvent.change(screen.getByLabelText(/gece fiyatı/), { target: { value: '1250,50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
 
     await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
       '/pms/reservations/booking-a/daily-rates',
       { rates: [{ id: 'rate-a', date: '2026-08-18', rate: 1250.5 }] },
     ));
+  });
+
+  it('distributes an edited accommodation total exactly across open nights', async () => {
+    axiosMock.put.mockResolvedValue({ data: { success: true } });
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { id: 'rate-a', date: '2026-11-06', rate: 5500 },
+          { id: 'rate-b', date: '2026-11-07', rate: 5500 },
+        ]}
+        booking={{ id: 'booking-a', currency: 'TRY' }}
+        summary={{ total_payments: 2000 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+    fireEvent.change(screen.getByLabelText('Toplam konaklama fiyatı'), { target: { value: '12000' } });
+
+    expect(screen.getAllByLabelText(/gece fiyatı/).map(input => input.value)).toEqual(['6000.00', '6000.00']);
+    expect(within(screen.getByTestId('rate-change-summary')).getByText('2.000 TL')).toBeInTheDocument();
+    expect(within(screen.getByTestId('rate-change-summary')).getByText('10.000 TL')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/daily-rates',
+      { rates: [
+        { id: 'rate-a', date: '2026-11-06', rate: 6000 },
+        { id: 'rate-b', date: '2026-11-07', rate: 6000 },
+      ] },
+    ));
+  });
+
+  it('keeps closed nights fixed and distributes cents without losing value', () => {
+    const distributed = distributeTotalAcrossEditableRates(
+      [
+        { date: '2026-08-17', rate: 400 },
+        { date: '2026-08-18', rate: 500 },
+        { date: '2026-08-19', rate: 500 },
+        { date: '2026-08-20', rate: 500 },
+      ],
+      '1400.01',
+      rate => rate.date === '2026-08-17',
+    );
+
+    expect(distributed[0].rate).toBe(400);
+    expect(distributed.slice(1).map(rate => rate.rate)).toEqual(['333.34', '333.34', '333.33']);
+    expect(distributed.reduce((sum, rate) => sum + Number(rate.rate), 0)).toBeCloseTo(1400.01, 2);
   });
 
   it('exposes the virtual-card delete icon as a named action', async () => {

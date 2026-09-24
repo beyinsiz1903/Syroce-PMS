@@ -46,6 +46,7 @@ class FeatureFlag(str, Enum):
     RATE_MANAGEMENT = "rate_management"
     BOOKING_ENGINE = "booking_engine"
     GUEST_ADVANCED = "guest_advanced"
+    AGENCY_REQUESTS = "agency_requests"
 
     # Enterprise Features
     REVENUE_MANAGEMENT = "revenue_management"
@@ -151,6 +152,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "rate_management": False,
         "booking_engine": False,
         "guest_advanced": False,
+        "agency_requests": False,
         "mailing": False,
         "housekeeping_advanced": False,
         "pos_basic": False,
@@ -208,6 +210,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # BASIC ek modülleri - Açık
         "mailing": True,
         "guest_advanced": True,
+        "agency_requests": True,
         "housekeeping_advanced": True,
         "cost_management": True,
         "reports": True,
@@ -285,6 +288,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "rate_management": True,
         "booking_engine": True,
         "guest_advanced": True,
+        "agency_requests": True,
         "pos_basic": True,
         "maintenance": True,
         # ENTERPRISE - Kapalı
@@ -351,6 +355,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "rate_management": True,
         "booking_engine": True,
         "guest_advanced": True,
+        "agency_requests": True,
         "pos_basic": True,
         "maintenance": True,
         # ENTERPRISE - Açık
@@ -456,6 +461,7 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
             FeatureFlag.CHANNEL_MANAGER,
             FeatureFlag.MAILING,
             FeatureFlag.GUEST_ADVANCED,
+            FeatureFlag.AGENCY_REQUESTS,
             FeatureFlag.HOUSEKEEPING_ADVANCED,
             FeatureFlag.COST_MANAGEMENT,
             FeatureFlag.REPORTS,
@@ -504,6 +510,7 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
             FeatureFlag.RATE_MANAGEMENT,
             FeatureFlag.BOOKING_ENGINE,
             FeatureFlag.GUEST_ADVANCED,
+            FeatureFlag.AGENCY_REQUESTS,
             FeatureFlag.POS_BASIC,
             FeatureFlag.MAINTENANCE,
         ],

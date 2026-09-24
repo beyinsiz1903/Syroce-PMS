@@ -53,6 +53,24 @@ const isRetryableDetailError = (error) => {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const dateInputValue = (value) => String(value || '').slice(0, 10);
+const utcDateFromInput = (value) => {
+  const [year, month, day] = dateInputValue(value).split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(Date.UTC(year, month - 1, day));
+};
+export const nightsBetweenDates = (checkIn, checkOut) => {
+  const start = utcDateFromInput(checkIn);
+  const end = utcDateFromInput(checkOut);
+  if (!start || !end) return 0;
+  return Math.max(0, Math.round((end - start) / 86_400_000));
+};
+export const checkoutFromNightCount = (checkIn, nightCount) => {
+  const start = utcDateFromInput(checkIn);
+  const nights = Number(nightCount);
+  if (!start || !Number.isInteger(nights) || nights < 1) return '';
+  start.setUTCDate(start.getUTCDate() + nights);
+  return start.toISOString().slice(0, 10);
+};
 
 const stayDates = (checkIn, checkOut) => {
   const dates = [];
@@ -75,9 +93,15 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [loadError, setLoadError] = useState(null);
   const [pricingRepairing, setPricingRepairing] = useState(false);
   const [stayEditorOpen, setStayEditorOpen] = useState(false);
-  const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '' });
+  const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '', nights: 1 });
   const [staySaving, setStaySaving] = useState(false);
   const loadGenerationRef = useRef(0);
+  const tabsListRef = useRef(null);
+
+  useEffect(() => {
+    const active = tabsListRef.current?.querySelector(`[data-reservation-tab="${activeTab}"]`);
+    active?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeTab]);
 
   // allBookings kimliği her render değişebilir → loadData dep'ine koymak yerine
   // ref ile oku (full-detail re-fetch döngüsünü önler).
@@ -303,9 +327,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const checkedInStay = bookingStatus === 'checked_in';
 
   const openStayEditor = () => {
+    const checkIn = dateInputValue(booking?.check_in);
+    const checkOut = dateInputValue(booking?.check_out);
     setStayForm({
-      checkIn: dateInputValue(booking?.check_in),
-      checkOut: dateInputValue(booking?.check_out),
+      checkIn,
+      checkOut,
+      nights: Math.max(1, nightsBetweenDates(checkIn, checkOut)),
     });
     setStayEditorOpen(true);
   };
@@ -473,9 +500,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           ><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
           {/* Sol panel — sticky footer'lı */}
-          <aside className="w-72 border-r bg-slate-50 flex-shrink-0 flex flex-col">
+          <aside className="flex max-h-[42%] w-full flex-shrink-0 flex-col border-b bg-slate-50 md:max-h-none md:w-72 md:border-b-0 md:border-r">
             <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4">
               {/* Misafir başlığı */}
               <div className="flex flex-col items-center text-center gap-2">
@@ -538,7 +565,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   {unpostedRoomAmount > 0.01 && (
                     <>
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Folio bakiyesi</span>
+                        <span className="text-slate-500">Folyo bakiyesi</span>
                         <span className="font-semibold text-amber-700">{fmtCurrency(displayedFolioBalance, currency)}</span>
                       </div>
                       <div className="flex justify-between text-xs" data-testid="unposted-room-amount">
@@ -807,7 +834,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     if (hasOpenBalance) {
                       setActiveTab('folios');
                       toast.warning(
-                        `Çıkış için önce folio bakiyesini (${balance.toLocaleString('tr-TR', {
+                        `Çıkış için önce folyo bakiyesini (${balance.toLocaleString('tr-TR', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })} ${currency}) kapatın.`,
@@ -868,11 +895,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           {/* Ana içerik */}
           <div className="flex-1 overflow-y-auto bg-white">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-              <TabsList className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-10">
+              <TabsList ref={tabsListRef} className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-10">
                 {primaryTabs.map(tab => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
+                    data-reservation-tab={tab.id}
                     className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-600 data-[state=active]:text-amber-700 data-[state=active]:bg-amber-50/40 data-[state=active]:shadow-none px-4 py-2.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap"
                   >
                     <tab.icon className="w-3.5 h-3.5 mr-1.5" />{tab.label}
@@ -904,14 +932,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TabsList>
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} onStayEdit={openStayEditor} canEditStay={canEditStayDates} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
-                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
-                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
-                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
+                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} summary={summary} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
+                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>
                 <TabsContent value="voucher" className="mt-0"><VoucherTab booking={booking} bookingId={bookingId} /></TabsContent>
@@ -946,7 +974,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 type="date"
                 value={stayForm.checkIn}
                 disabled={staySaving || checkedInStay}
-                onChange={(event) => setStayForm((current) => ({ ...current, checkIn: event.target.value }))}
+                onChange={(event) => setStayForm((current) => {
+                  const checkIn = event.target.value;
+                  return {
+                    ...current,
+                    checkIn,
+                    checkOut: checkoutFromNightCount(checkIn, Number(current.nights) || 1),
+                  };
+                })}
               />
             </div>
             <div className="space-y-2">
@@ -957,8 +992,40 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 min={stayForm.checkIn || undefined}
                 value={stayForm.checkOut}
                 disabled={staySaving}
-                onChange={(event) => setStayForm((current) => ({ ...current, checkOut: event.target.value }))}
+                onChange={(event) => setStayForm((current) => {
+                  const checkOut = event.target.value;
+                  const nights = nightsBetweenDates(current.checkIn, checkOut);
+                  return { ...current, checkOut, nights: nights > 0 ? nights : current.nights };
+                })}
               />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="stay-night-count">Gece sayısı</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="stay-night-count"
+                  data-testid="stay-night-count"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="3650"
+                  step="1"
+                  value={stayForm.nights}
+                  disabled={staySaving}
+                  onChange={(event) => {
+                    const nights = Number(event.target.value);
+                    setStayForm((current) => ({
+                      ...current,
+                      nights: event.target.value,
+                      checkOut: Number.isInteger(nights) && nights > 0
+                        ? checkoutFromNightCount(current.checkIn, nights)
+                        : current.checkOut,
+                    }));
+                  }}
+                  className="max-w-32"
+                />
+                <p className="text-xs text-slate-500">Gece sayısını değiştirdiğinizde çıkış tarihi otomatik hesaplanır.</p>
+              </div>
             </div>
           </div>
           {checkedInStay && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">

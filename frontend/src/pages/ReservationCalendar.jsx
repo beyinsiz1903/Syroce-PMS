@@ -273,14 +273,27 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   useEffect(() => {
     if (!showUnassignedPanel) return;
     let cancelled = false;
+    const reconciledBookingIds = new Set();
     setAllUnassignedLoading(true);
-    axios.get('/api/channel-manager/conflict-queue?limit=200')
+    // Older HotelRunner imports could leave a second, roomless row behind even
+    // though the real reservation had already checked in/out. Reconcile only
+    // exact external-id matches before presenting the operational queue.
+    axios.post('/api/channel-manager/conflict-queue/reconcile-legacy-duplicates')
+      .then(res => {
+        const count = Number(res.data?.count || 0);
+        (res.data?.reconciled || []).forEach(item => reconciledBookingIds.add(item.booking_id));
+        if (!cancelled && count > 0) {
+          toast.success(`${count} mükerrer OTA rezervasyonu güvenle temizlendi`);
+        }
+      })
+      .catch(() => null)
+      .then(() => axios.get('/api/channel-manager/conflict-queue?limit=200'))
       .then(res => {
         if (!cancelled) {
           // conflict-queue API'si + takvimde görünen ama room_id'siz diğerleri
           const apiItems = res.data?.items || [];
           // Takvimde görünüp henüz API'de olmayan pendingleri de dahil et
-          const calendarPending = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+          const calendarPending = bookings.filter(b => !reconciledBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
           const apiIds = new Set(apiItems.map(b => b.id));
           const merged = [...apiItems, ...calendarPending.filter(b => !apiIds.has(b.id))];
           setAllUnassignedBookings(merged);
@@ -289,7 +302,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       .catch(() => {
         if (!cancelled) {
           // Fallback: sadece takvimde görünenleri göster
-          setAllUnassignedBookings(bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
+          setAllUnassignedBookings(bookings.filter(b => !reconciledBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
         }
       })
       .finally(() => { if (!cancelled) setAllUnassignedLoading(false); });

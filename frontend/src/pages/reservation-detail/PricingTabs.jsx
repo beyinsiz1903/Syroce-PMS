@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock, Gift, X } from 'lucide-react';
-import { API, fmtDate, fmtTL, fmtCurrency, fmtTs, FormField, SelectField } from './helpers';
+import { API, fmtDate, fmtCurrency, fmtTs, FormField, SelectField } from './helpers';
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
 
@@ -14,12 +14,32 @@ const parseDecimalInput = value => {
   return Number(normalized.replace(',', '.'));
 };
 
+export const distributeTotalAcrossEditableRates = (rates, total, isLocked = () => false) => {
+  const totalValue = parseDecimalInput(total);
+  const editableIndexes = rates.map((rate, index) => isLocked(rate) ? -1 : index).filter(index => index >= 0);
+  if (!Number.isFinite(totalValue) || totalValue <= 0 || editableIndexes.length === 0) return null;
+
+  const targetCents = Math.round(totalValue * 100);
+  const lockedCents = rates.reduce((sum, rate) => sum + (isLocked(rate) ? Math.round((parseDecimalInput(rate.rate) || 0) * 100) : 0), 0);
+  const distributableCents = targetCents - lockedCents;
+  if (distributableCents < editableIndexes.length) return null;
+
+  const centsPerNight = Math.floor(distributableCents / editableIndexes.length);
+  let remainder = distributableCents % editableIndexes.length;
+  return rates.map((rate, index) => {
+    if (!editableIndexes.includes(index)) return rate;
+    const cents = centsPerNight + (remainder-- > 0 ? 1 : 0);
+    return { ...rate, rate: (cents / 100).toFixed(2) };
+  });
+};
+
 export function DailyRatesTab({
   dailyRates,
   booking,
   onRefresh,
   readOnly = false,
   businessDate,
+  summary = {},
 }) {
   const currency = booking?.currency || "TL";
   const {
@@ -27,12 +47,15 @@ export function DailyRatesTab({
   } = useTranslation();
   const [editMode, setEditMode] = useState(false);
   const [rates, setRates] = useState([]);
+  const [totalInput, setTotalInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [showCompForm, setShowCompForm] = useState(false);
   const [compReason, setCompReason] = useState('');
   const [compScope, setCompScope] = useState('accommodation_only');
   useEffect(() => {
     setRates(dailyRates || []);
+    setTotalInput(((dailyRates || []).reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0)).toFixed(2));
   }, [dailyRates]);
   const normalizedBusinessDate = String(businessDate || '').slice(0, 10);
   const isClosedRate = rate => Boolean(normalizedBusinessDate && String(rate?.date || '').slice(0, 10) < normalizedBusinessDate);
@@ -40,6 +63,27 @@ export function DailyRatesTab({
   const hasClosedRates = rates.some(isClosedRate);
   const isComplimentary = Boolean(booking?.is_complimentary);
   const hasComplimentaryTotalDrift = isComplimentary && Number(booking?.total_amount || 0) > 0;
+  const ratesTotal = rates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
+  const originalTotal = (dailyRates || []).reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
+  const paidTotal = Number(summary?.total_payments ?? summary?.paid_amount ?? summary?.prepayment_total ?? booking?.paid_amount ?? 0) || 0;
+  const remainingAfterChange = Math.max(0, ratesTotal - paidTotal);
+  const beginEditing = () => {
+    setSaveError('');
+    setTotalInput(ratesTotal.toFixed(2));
+    setEditMode(true);
+  };
+  const cancelEditing = () => {
+    setRates(dailyRates || []);
+    setTotalInput(originalTotal.toFixed(2));
+    setSaveError('');
+    setEditMode(false);
+  };
+  const handleTotalChange = event => {
+    const value = event.target.value;
+    setTotalInput(value);
+    const distributed = distributeTotalAcrossEditableRates(rates, value, isClosedRate);
+    if (distributed) setRates(distributed);
+  };
   const handleReconcileComplimentaryTotal = async () => {
     setSaving(true);
     try {
@@ -53,7 +97,16 @@ export function DailyRatesTab({
     }
   };
   const handleSave = async () => {
+    setSaveError('');
+    const requestedTotal = parseDecimalInput(totalInput);
+    if (!Number.isFinite(requestedTotal) || Math.round(requestedTotal * 100) !== Math.round(ratesTotal * 100)) {
+      const message = 'Toplam tutar açık gecelere dağıtılamadı; kapalı gecelerin toplamından büyük bir tutar girin';
+      setSaveError(message);
+      toast.error(message);
+      return;
+    }
     if (rates.some(rate => !Number.isFinite(parseDecimalInput(rate.rate)) || parseDecimalInput(rate.rate) <= 0)) {
+      setSaveError('Günlük fiyat sıfırdan büyük olmalıdır');
       toast.error('Günlük fiyat sıfırdan büyük olmalıdır');
       return;
     }
@@ -67,7 +120,11 @@ export function DailyRatesTab({
       setEditMode(false);
       onRefresh?.();
     } catch (e) {
-      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
+      const detail = e.response?.status === 404
+        ? 'Günlük fiyat güncelleme servisi bulunamadı. Uygulamanın backend sürümü güncel olmayabilir.'
+        : (e.response?.data?.detail || e.message);
+      setSaveError(detail);
+      toast.error('İşlem Hatası: ' + detail);
     }
     setSaving(false);
   };
@@ -80,7 +137,7 @@ export function DailyRatesTab({
     setSaving(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/mark-complimentary`, { reason, scope: compScope });
-      toast.success(compScope === 'full' ? 'Rezervasyon Full Comp olarak kaydedildi' : 'Konaklama comp olarak kaydedildi');
+      toast.success(compScope === 'full' ? 'Rezervasyon tamamen ikram olarak kaydedildi' : 'Konaklama ikram olarak kaydedildi');
       setShowCompForm(false);
       setCompReason('');
       onRefresh?.();
@@ -97,14 +154,15 @@ export function DailyRatesTab({
               <Gift className="w-3 h-3 mr-1" />
               Comp Ver
             </Button>}
-          <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving || readOnly || !anyEditable || isComplimentary} className="h-7 text-xs" title={isComplimentary ? 'Comp rezervasyonun günlük fiyatları değiştirilemez' : readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
+          {editMode && <Button size="sm" variant="ghost" onClick={cancelEditing} disabled={saving} className="h-7 text-xs">Vazgeç</Button>}
+          <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : beginEditing()} disabled={saving || readOnly || !anyEditable || isComplimentary} className="h-7 text-xs" title={isComplimentary ? 'Comp rezervasyonun günlük fiyatları değiştirilemez' : readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
             {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
             {editMode ? 'Kaydet' : 'Düzenle'}
           </Button>
         </div>
       </div>
       {isComplimentary && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="complimentary-summary">
-          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Full Comp' : 'Sadece Konaklama Comp'}</div>
+          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Tam İkram' : 'Konaklama İkramı'}</div>
           {booking?.complimentary_reason && <p className="mt-0.5 text-xs text-emerald-800">Gerekçe: {booking.complimentary_reason}</p>}
           {booking?.complimentary_original_total > 0 && <p className="mt-0.5 text-xs text-emerald-800">Raporlanan konaklama değeri: {fmtCurrency(booking.complimentary_original_total, currency)}</p>}
         </div>}
@@ -125,7 +183,7 @@ export function DailyRatesTab({
               <label className="mb-1 block text-xs font-medium text-amber-950" htmlFor="complimentary-scope">Komp kapsamı</label>
               <select id="complimentary-scope" value={compScope} onChange={event => setCompScope(event.target.value)} disabled={saving} className="h-9 w-full rounded-md border border-amber-300 bg-white px-3 text-sm">
                 <option value="accommodation_only">Sadece Konaklama</option>
-                <option value="full">Full Comp</option>
+                <option value="full">Tam İkram</option>
               </select>
             </div>
             <div>
@@ -143,25 +201,33 @@ export function DailyRatesTab({
       {!readOnly && hasClosedRates && <p className="text-xs text-slate-500">Night Audit ile kapanan tarihler kilitlidir; yalnızca açık iş günü ve sonrası düzenlenebilir.</p>}
       <div className="border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50"><tr><th className="text-left py-2 px-3 text-xs text-gray-500 font-medium">{t('cm.pages_reservationdetail_PricingTabs.tarih')}</th><th className="text-right py-2 px-3 text-xs text-gray-500 font-medium">Fiyat (TL)</th></tr></thead>
+          <thead className="bg-gray-50"><tr><th className="text-left py-2 px-3 text-xs text-gray-500 font-medium">{t('cm.pages_reservationdetail_PricingTabs.tarih')}</th><th className="text-right py-2 px-3 text-xs text-gray-500 font-medium">Fiyat ({currency === 'TRY' ? 'TL' : currency})</th></tr></thead>
           <tbody>
             {rates.map((r, i) => <tr key={r.id || i} className="border-t">
                 <td className="py-2 px-3 text-gray-700">{fmtDate(r.date)}</td>
                 <td className="py-2 px-3 text-right">
-                  {editMode && !isClosedRate(r) ? <Input type="text" inputMode="decimal" value={r.rate} onChange={e => {
+                  {editMode && !isClosedRate(r) ? <Input aria-label={`${fmtDate(r.date)} gece fiyatı`} type="text" inputMode="decimal" value={r.rate} onChange={e => {
                 const u = [...rates];
                 u[i] = {
                   ...u[i],
                   rate: e.target.value
                 };
                 setRates(u);
+                setTotalInput(u.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0).toFixed(2));
               }} className="h-7 text-sm text-right w-24 ml-auto" /> : <span className="inline-flex items-center justify-end gap-1.5 font-medium text-gray-800">{editMode && isClosedRate(r) && <><Lock className="h-3 w-3 text-slate-400" /><span className="sr-only">Gün sonu kapalı</span></>}{fmtCurrency(r.rate, currency)}</span>}
                 </td>
               </tr>)}
           </tbody>
-          <tfoot className="bg-gray-50 border-t-2"><tr><td className="py-2 px-3 font-semibold">{t('cm.pages_reservationdetail_PricingTabs.toplam')}</td><td className="py-2 px-3 text-right font-bold">{fmtTL(rates.reduce((s, r) => s + (parseDecimalInput(r.rate) || 0), 0))} TL</td></tr></tfoot>
+          <tfoot className="bg-gray-50 border-t-2"><tr><td className="py-2 px-3 font-semibold">{t('cm.pages_reservationdetail_PricingTabs.toplam')}</td><td className="py-2 px-3 text-right font-bold">{editMode ? <Input aria-label="Toplam konaklama fiyatı" type="text" inputMode="decimal" value={totalInput} onChange={handleTotalChange} className="h-8 w-32 ml-auto text-right font-bold" /> : fmtCurrency(ratesTotal, currency)}</td></tr></tfoot>
         </table>
       </div>
+      {editMode && <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs" data-testid="rate-change-summary">
+        <div><span className="block text-slate-500">Yeni konaklama</span><strong className="text-slate-900">{fmtCurrency(ratesTotal, currency)}</strong>{Math.round(originalTotal * 100) !== Math.round(ratesTotal * 100) && <span className="mt-0.5 block text-amber-700">Önceki: {fmtCurrency(originalTotal, currency)}</span>}</div>
+        <div><span className="block text-slate-500">Tahsil edilen</span><strong className="text-emerald-700">{fmtCurrency(paidTotal, currency)}</strong></div>
+        <div><span className="block text-slate-500">Kaydetme sonrası kalan</span><strong className={remainingAfterChange > 0.01 ? 'text-rose-700' : 'text-emerald-700'}>{fmtCurrency(remainingAfterChange, currency)}</strong></div>
+      </div>}
+      {saveError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{saveError}</div>}
+      {editMode && <p className="text-xs text-slate-500">Toplam tutar değiştirildiğinde açık gecelere kuruş farkı bırakmadan eşit dağıtılır. Night Audit ile kapanan geceler korunur.</p>}
     </div>;
 }
 export function ExtraChargesTab({
@@ -169,7 +235,8 @@ export function ExtraChargesTab({
   charges,
   booking,
   onRefresh,
-  allBookings
+  allBookings,
+  readOnly = false,
 }) {
   const currency = booking?.currency || "TL";
   const {
@@ -192,6 +259,9 @@ export function ExtraChargesTab({
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState('');
   const isFullComp = booking?.is_complimentary && booking?.complimentary_scope === 'full';
+  const lifecycleStatus = String(booking?.status || '').toLowerCase();
+  const canAddEarlyCheckin = ['pending', 'confirmed', 'guaranteed'].includes(lifecycleStatus);
+  const canAddLateCheckout = ['checked_in', 'in_house'].includes(lifecycleStatus);
   const allCharges = [...(extra_charges || []), ...(charges || [])].filter(c => !c.voided);
   const cats = {
     room_service: 'Oda Servisi',
@@ -269,9 +339,11 @@ export function ExtraChargesTab({
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.ek_ucretler')}</span>
         <div className="flex gap-1.5">
-          <Button size="sm" variant="outline" onClick={() => setElDirection('early_checkin')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.erken_giris')}</Button>
-          <Button size="sm" variant="outline" onClick={() => setElDirection('late_checkout')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.gec_cikis')}</Button>
-          <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.ekle')}</Button>
+          {!readOnly && <>
+            {canAddEarlyCheckin && <Button size="sm" variant="outline" onClick={() => setElDirection('early_checkin')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.erken_giris')}</Button>}
+            {canAddLateCheckout && <Button size="sm" variant="outline" onClick={() => setElDirection('late_checkout')} className="h-7 text-xs"><Clock className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.gec_cikis')}</Button>}
+            <Button size="sm" onClick={() => setShowAdd(!showAdd)} className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_PricingTabs.ekle')}</Button>
+          </>}
         </div>
       </div>
       <EarlyLateChargeModal open={!!elDirection} onClose={() => setElDirection(null)} bookingId={booking?.id} direction={elDirection || 'early_checkin'} defaultHour={elDirection === 'late_checkout' ? 14 : 10} onApplied={onRefresh} />
@@ -294,7 +366,7 @@ export function ExtraChargesTab({
           quantity: v
         }))} />
           </div>
-          <p className="text-xs text-amber-800">{isFullComp ? 'Full Comp kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 TL yansır.' : '0 TL girilen kalemler bakiyeyi etkilemeden Komp / İkram olarak kaydedilir.'}</p>
+          <p className="text-xs text-amber-800">{isFullComp ? 'Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 TL yansır.' : '0 TL girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.'}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ekle'}</Button>
@@ -310,7 +382,7 @@ export function ExtraChargesTab({
                   <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtCurrency(c.complimentary_original_amount, currency)}</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
                 <div className="text-sm font-bold text-amber-700">{fmtCurrency(c.total ?? c.charge_amount ?? c.amount, currency)}</div>
-                {!c.is_complimentary && <Button
+                {!readOnly && !c.is_complimentary && <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => setShowSplit(showSplit === c.id ? null : c.id)}

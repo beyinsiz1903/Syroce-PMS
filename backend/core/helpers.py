@@ -291,6 +291,7 @@ MODULE_DEFAULTS: dict[str, bool] = {
     "rate_management": True,
     "booking_engine": True,
     "guest_advanced": True,
+    "agency_requests": True,
     "revenue_management": True,
     "multi_property": True,
     "group_sales": True,

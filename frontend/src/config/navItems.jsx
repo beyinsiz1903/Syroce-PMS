@@ -252,6 +252,7 @@ export const NAV_ITEMS = [
     key: "agency_requests",
     label: "Acenta Talepleri",
     path: "/agency-requests",
+    moduleKey: "agency_requests",
     tier: "basic",
     group: "core",
     navGroup: "frontdesk",

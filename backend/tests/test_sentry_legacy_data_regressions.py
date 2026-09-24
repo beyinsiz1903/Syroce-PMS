@@ -133,4 +133,5 @@ async def test_guest_360_handles_legacy_dates_source_and_profile_race(monkeypatc
     assert result["stats"]["total_nights"] == 2
     assert result["stats"]["lifetime_value"] == 200.0
     assert result["stats"]["channel_distribution"] == {"Exely": 1, "direct": 1}
+    assert len(result["stay_history"]) == 2
     guest_profiles.update_one.assert_awaited_once()

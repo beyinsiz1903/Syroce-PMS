@@ -40,6 +40,7 @@ from pymongo.errors import DuplicateKeyError
 
 from core.atomic_booking import _night_dates, _timeline_event
 from core.database import db
+from core.helpers import create_audit_log
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -82,6 +83,7 @@ async def _serialize_pending_booking(booking: dict[str, Any]) -> dict[str, Any]:
         "room_type": booking.get("room_type"),
         "channel": booking.get("channel") or booking.get("source"),
         "external_confirmation": booking.get("external_confirmation"),
+        "external_reservation_id": booking.get("external_reservation_id"),
         "total_amount": booking.get("total_amount"),
         "currency": booking.get("currency"),
         "status": booking.get("status"),
@@ -90,6 +92,62 @@ async def _serialize_pending_booking(booking: dict[str, Any]) -> dict[str, Any]:
         "special_requests": booking.get("special_requests"),
         "created_at": booking.get("created_at"),
     }
+
+
+def _external_booking_ids(booking: dict[str, Any]) -> list[str]:
+    """Return stable OTA identities from current and legacy booking shapes."""
+    source = booking.get("source")
+    source = source if isinstance(source, dict) else {}
+    values = (
+        booking.get("external_reservation_id"),
+        booking.get("external_confirmation"),
+        source.get("external_reservation_id"),
+        source.get("external_confirmation"),
+        source.get("reservation_id"),
+    )
+    return list(dict.fromkeys(str(value).strip() for value in values if str(value or "").strip()))
+
+
+async def _find_completed_duplicate(tenant_id: str, pending: dict[str, Any]) -> dict[str, Any] | None:
+    """Find an authoritative stay for a legacy unassigned OTA duplicate.
+
+    Deliberately requires an exact external identifier *and* a completed or
+    currently checked-in, room-assigned stay.  Guest names/dates are not used:
+    providers may correct either after the original import, while the external
+    reservation identity remains stable.
+    """
+    external_ids = _external_booking_ids(pending)
+    if not external_ids:
+        return None
+
+    identity_clauses: list[dict[str, Any]] = []
+    for external_id in external_ids:
+        identity_clauses.extend(
+            [
+                {"external_reservation_id": external_id},
+                {"external_confirmation": external_id},
+                {"source.external_reservation_id": external_id},
+                {"source.external_confirmation": external_id},
+                {"source.reservation_id": external_id},
+            ]
+        )
+
+    cursor = (
+        db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "id": {"$ne": pending.get("id")},
+                "room_id": {"$nin": [None, ""]},
+                "status": {"$in": ["checked_in", "checked_out"]},
+                "$or": identity_clauses,
+            },
+            {"_id": 0, "id": 1, "room_id": 1, "status": 1},
+        )
+        .sort("updated_at", -1)
+        .limit(1)
+    )
+    matches = await cursor.to_list(1)
+    return matches[0] if matches else None
 
 
 async def _claim_room_for_pending_booking(
@@ -279,6 +337,71 @@ async def conflict_queue_stats(
         q["tenant_id"] = current_user.tenant_id
     total = await db.bookings.count_documents(q)
     return {"count": total, "total": total, "status": "ok"}
+
+
+@router.post("/reconcile-legacy-duplicates")
+async def reconcile_legacy_duplicates(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("edit_booking")),
+):
+    """Retire old unassigned rows whose real stay already exists.
+
+    The HotelRunner legacy-hold fix prevents new duplicates, but rows created
+    before that fix remain in the conflict queue.  This repair is intentionally
+    conservative: it only reconciles an exact OTA external-id match when the
+    authoritative booking has a room and is checked in/out.
+    """
+    tenant_id = current_user.tenant_id
+    pending_query = {**PENDING_QUERY, "tenant_id": tenant_id}
+    pending_rows = await db.bookings.find(pending_query, {"_id": 0}).limit(200).to_list(200)
+    reconciled: list[dict[str, str]] = []
+    now_iso = datetime.now(UTC).isoformat()
+
+    for pending in pending_rows:
+        authoritative = await _find_completed_duplicate(tenant_id, pending)
+        if not authoritative:
+            continue
+
+        booking_id = str(pending.get("id") or "")
+        authoritative_id = str(authoritative.get("id") or "")
+        if not booking_id or not authoritative_id:
+            continue
+
+        result = await db.bookings.update_one(
+            {**PENDING_QUERY, "tenant_id": tenant_id, "id": booking_id},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "allocation_source": "legacy_duplicate_reconciled",
+                    "duplicate_of_booking_id": authoritative_id,
+                    "duplicate_reconciled_at": now_iso,
+                    "duplicate_reconciled_by": current_user.id,
+                    "cancellation_reason": "legacy_ota_duplicate",
+                    "updated_at": now_iso,
+                }
+            },
+        )
+        if result.modified_count != 1:
+            continue
+
+        # A pending row should not own locks, but clean up defensively in case
+        # an older importer left partial state behind.
+        await db.room_night_locks.delete_many({"tenant_id": tenant_id, "booking_id": booking_id})
+        reconciled.append({"booking_id": booking_id, "duplicate_of_booking_id": authoritative_id})
+
+        try:
+            await create_audit_log(
+                tenant_id=tenant_id,
+                user=current_user,
+                action="LEGACY_OTA_DUPLICATE_RECONCILED",
+                entity_type="booking",
+                entity_id=booking_id,
+                changes={"duplicate_of_booking_id": authoritative_id, "previous_status": pending.get("status")},
+            )
+        except Exception as exc:
+            logger.warning("Duplicate reconciliation audit failed (booking=%s): %s", booking_id, exc)
+
+    return {"ok": True, "reconciled": reconciled, "count": len(reconciled)}
 
 
 @router.post("/{booking_id}/resolve")

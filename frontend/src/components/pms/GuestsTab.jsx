@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, User, Search, Star, Phone, Mail, CreditCard, MapPin, Merge, Settings, UserCheck } from 'lucide-react';
+import { Plus, User, Search, Star, Phone, Mail, CreditCard, MapPin, Merge, Settings, UserCheck, History } from 'lucide-react';
 
 const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, setNewBooking, onGuestsChanged }) => {
   const { t } = useTranslation();
@@ -202,15 +202,20 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2 pt-2 border-t">
-                  <Button size="sm" variant="outline" className="flex-1 h-7 text-xs"
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t min-w-0">
+                  <Button size="sm" variant="outline" className="col-span-2 w-full h-8 text-xs min-w-0"
                     onClick={() => { setNewBooking(prev => ({ ...prev, guest_id: guest.id })); setOpenDialog('booking'); }}
                     data-testid={`guest-new-booking-btn-${guest.id}`}>
                     <Plus className="w-3 h-3 mr-1" /> {tc('newBookingFor')}
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs"
+                  <Button size="sm" variant="outline" className="w-full h-8 px-2 text-xs min-w-0 whitespace-nowrap"
                     onClick={() => { setSelectedGuestForPref(guest); setPreferences(guest.preferences || {}); setShowPreferencesDialog(true); }}>
                     <Settings className="w-3 h-3 mr-1" /> {tc('preferencesBtn')}
+                  </Button>
+                  <Button size="sm" variant="outline" className="w-full h-8 px-2 text-xs min-w-0 whitespace-nowrap"
+                    onClick={() => { setSelectedGuest360(guest.id); loadGuest360(guest.id, 'history'); }}
+                    data-testid={`guest-history-btn-${guest.id}`}>
+                    <History className="w-3 h-3 mr-1" /> Geçmiş
                   </Button>
                 </div>
               </CardContent>

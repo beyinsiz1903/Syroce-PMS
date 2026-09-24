@@ -159,6 +159,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [selectedGuest360, setSelectedGuest360] = useState(null);
   const [guest360Data, setGuest360Data] = useState(null);
   const [loadingGuest360, setLoadingGuest360] = useState(false);
+  const [guest360InitialSection, setGuest360InitialSection] = useState('profile');
   const [selectedBookingDetail, setSelectedBookingDetail] = useState(null);
   const [reservationDetailId, setReservationDetailId] = useState(null);
   const [guestTag, setGuestTag] = useState('');
@@ -453,6 +454,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const [hasLoadedFrontdesk, setHasLoadedFrontdesk] = useState(false);
   const [hasLoadedHousekeeping, setHasLoadedHousekeeping] = useState(false);
+  const [hasLoadedAllBookings, setHasLoadedAllBookings] = useState(false);
   const [ratePlans, setRatePlans] = useState([]);
   const [packages, setPackages] = useState([]);
 
@@ -490,8 +492,31 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     if (!validTabKeys.has(activeTab)) return;
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
     else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
+    else if (activeTab === 'bookings' && !hasLoadedAllBookings) {
+      const loadEveryBooking = async () => {
+        const allRows = [];
+        const pageSize = 1000;
+        for (let offset = 0; ; offset += pageSize) {
+          const response = await axios.get(`/pms/bookings?limit=${pageSize}&offset=${offset}&full_history=true`, { timeout: 30000 });
+          const payload = response?.data;
+          const rows = Array.isArray(payload) ? payload : (payload?.bookings || []);
+          allRows.push(...rows);
+          if (rows.length < pageSize) break;
+        }
+        return allRows;
+      };
+      loadEveryBooking()
+        .then((rows) => {
+          setBookings(rows);
+          setHasLoadedAllBookings(true);
+        })
+        .catch((error) => {
+          console.error('Tüm rezervasyonlar yüklenemedi:', error);
+          toast.error('Tüm rezervasyonlar yüklenemedi; tarih aralığındaki kayıtlar gösteriliyor');
+        });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
+  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping, hasLoadedAllBookings]);
 
   const loadData = async (businessDateOverride = null) => {
     try {
@@ -892,8 +917,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     } catch (error) { toast.error(error.response?.data?.detail || 'Failed to cancel block'); }
   };
 
-  const loadGuest360 = async (guestId) => {
+  const loadGuest360 = async (guestId, initialSection = 'profile') => {
     setLoadingGuest360(true);
+    setGuest360InitialSection(initialSection);
     try { const response = await axios.get(`/crm/guest/${guestId}`, { timeout: 15000 }); setGuest360Data(response.data); setOpenDialog('guest360');
     } catch (error) {
       if (error.code === 'ECONNABORTED') toast.error('Request timeout - Guest profile has too much data.');
@@ -1109,6 +1135,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               open={openDialog === 'guest360'}
               onClose={() => { setOpenDialog(null); setGuest360Data(null); }}
               guest360Data={guest360Data}
+              loadingGuest360={loadingGuest360}
+              selectedGuest360={selectedGuest360}
+              loadGuest360={loadGuest360}
+              initialSection={guest360InitialSection}
               guestTag={guestTag}
               setGuestTag={setGuestTag}
               guestNote={guestNote}

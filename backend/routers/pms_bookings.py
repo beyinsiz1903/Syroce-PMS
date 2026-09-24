@@ -431,6 +431,7 @@ async def get_bookings(
     end_date: str | None = None,
     status: str | None = None,
     search: str | None = None,
+    full_history: bool = False,
     # Use FastAPI's dependency injection so `get_current_user` is shared
     # with the `require_module` dependency (FastAPI caches dependency
     # results within a single request). The previous code path took the
@@ -493,7 +494,7 @@ async def get_bookings(
         return {"bookings": bookings, "total": len(bookings)}
 
     # Check pre-warmed cache for default query (no filters)
-    if not start_date and not end_date and not status and offset == 0:
+    if not full_history and not start_date and not end_date and not status and offset == 0:
         from cache_warmer import cache_warmer
 
         if cache_warmer:

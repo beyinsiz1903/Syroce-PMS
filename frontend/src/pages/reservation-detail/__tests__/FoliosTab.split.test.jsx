@@ -93,6 +93,16 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
+  it('çıkış yapılmış kartta mutasyonları gizler, görüntüleme ve yazdırmayı açık tutar', () => {
+    render(<FoliosTab {...singleFolioProps({ readOnly: true })} />);
+
+    expect(screen.queryByTestId('btn-odeme-al')).toBeNull();
+    expect(screen.queryByTestId('btn-cariye-aktar')).toBeNull();
+    expect(screen.queryByTestId('btn-folyo-bol')).toBeNull();
+    expect(screen.getByTestId('btn-folyo-yazdir')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Faturayı Görüntüle/i })).toBeInTheDocument();
+  });
+
   it('btn-folyo-bol görünür ve tıklayınca split-folio-panel açılır', () => {
     render(<FoliosTab {...singleFolioProps()} />);
 
