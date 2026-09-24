@@ -7,7 +7,7 @@ import asyncio
 import logging
 import os
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from typing import Any
 
@@ -304,7 +304,7 @@ async def connect(sid, environ, auth):
         # hit implies the user can actually receive a DM right now.
         await _record_user_connect(identity["tenant_id"], identity["user_id"])
         logger.info(f"Socket {sid} authenticated user={identity['user_id']} tenant={identity['tenant_id']} dept={identity.get('department')} → joined {len(rooms)} internal_chat rooms")
-    await sio.emit("connection_established", {"sid": sid, "authenticated": bool(identity), "timestamp": datetime.utcnow().isoformat()}, to=sid)
+    await sio.emit("connection_established", {"sid": sid, "authenticated": bool(identity), "timestamp": datetime.now(UTC).isoformat()}, to=sid)
 
 
 @sio.event
@@ -435,7 +435,7 @@ async def leave_room(sid, data):
 async def broadcast_dashboard_update(metrics: dict[str, Any]):
     """Broadcast dashboard metrics update to all dashboard subscribers"""
     try:
-        await sio.emit("dashboard_update", {"metrics": metrics, "timestamp": datetime.utcnow().isoformat()}, room="dashboard")
+        await sio.emit("dashboard_update", {"metrics": metrics, "timestamp": datetime.now(UTC).isoformat()}, room="dashboard")
         logger.debug("Dashboard update broadcasted")
     except Exception as e:
         logger.error(f"Failed to broadcast dashboard update: {e}")
@@ -468,7 +468,7 @@ async def broadcast_booking_update(
         logger.warning(f"broadcast_booking_update called without tenant_id; dropping event_type={event_type!r} to avoid cross-tenant leak.")
         return
     target_room = _pms_tenant_room(tenant_id)
-    envelope = {"event_type": event_type, "booking": booking_data, "tenant_id": tenant_id, "timestamp": datetime.utcnow().isoformat()}
+    envelope = {"event_type": event_type, "booking": booking_data, "tenant_id": tenant_id, "timestamp": datetime.now(UTC).isoformat()}
     try:
         from infra.ws_redis_adapter import ws_redis_adapter
 
@@ -482,7 +482,7 @@ async def broadcast_notification(user_id: str, notification: dict[str, Any]):
     """Send notification to specific user"""
     try:
         # In a production setup, you'd maintain a mapping of user_id to sid
-        await sio.emit("notification", {"notification": notification, "timestamp": datetime.utcnow().isoformat()}, room="notifications")
+        await sio.emit("notification", {"notification": notification, "timestamp": datetime.now(UTC).isoformat()}, room="notifications")
         logger.debug(f"Notification sent to user {user_id}")
     except Exception as e:
         logger.error(f"Failed to send notification: {e}")
@@ -504,7 +504,7 @@ async def broadcast_room_status_update(
         logger.warning(f"broadcast_room_status_update called without tenant_id; dropping room_id={room_id!r} status={status!r} to avoid cross-tenant leak.")
         return
     target_room = _pms_tenant_room(tenant_id)
-    envelope = {"room_id": room_id, "status": status, "tenant_id": tenant_id, "timestamp": datetime.utcnow().isoformat()}
+    envelope = {"room_id": room_id, "status": status, "tenant_id": tenant_id, "timestamp": datetime.now(UTC).isoformat()}
     try:
         from infra.ws_redis_adapter import ws_redis_adapter
 
@@ -517,7 +517,7 @@ async def broadcast_room_status_update(
 async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
     """Broadcast kitchen display orders"""
     try:
-        await sio.emit("kitchen_orders", {"tenant_id": tenant_id, "orders": orders, "timestamp": datetime.utcnow().isoformat()}, room="kitchen")
+        await sio.emit("kitchen_orders", {"tenant_id": tenant_id, "orders": orders, "timestamp": datetime.now(UTC).isoformat()}, room="kitchen")
         logger.debug("Kitchen orders broadcasted")
     except Exception as e:
         logger.error(f"Failed to broadcast kitchen orders: {e}")
@@ -546,7 +546,7 @@ async def broadcast_system_health_event(event_type: str, payload: dict[str, Any]
                 "severity": severity,
                 "tenant_id": tenant_id,
                 "payload": payload,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             room="system-health",
         )
@@ -567,7 +567,7 @@ async def broadcast_health_metric_update(metric_type: str, data: dict[str, Any],
                 "metric_type": metric_type,
                 "data": data,
                 "tenant_id": tenant_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             room="system-health",
         )
@@ -579,7 +579,7 @@ async def broadcast_health_metric_update(metric_type: str, data: dict[str, Any],
 @sio.event
 async def ping(sid):
     """Ping/pong for connection health check"""
-    await sio.emit("pong", {"timestamp": datetime.utcnow().isoformat()}, to=sid)
+    await sio.emit("pong", {"timestamp": datetime.now(UTC).isoformat()}, to=sid)
 
 
 # ── Internal chat: live read receipts & typing indicators ──
@@ -671,7 +671,7 @@ async def broadcast_internal_message_read(
                 "tenant_id": tenant_id,
                 "message_ids": list(message_ids or []),
                 "partner_id": partner_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
         )
     except Exception as e:
@@ -722,7 +722,7 @@ async def internal_typing(sid, data):
                 "to_user_id": to_user_id,
                 "tenant_id": tenant_id,
                 "is_typing": bool(data.get("is_typing", True)),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
         )
     except Exception as e:
@@ -752,7 +752,7 @@ async def broadcast_cockpit_snapshot(snapshot: dict[str, Any], tenant_id: str = 
             {
                 "tenant_id": tenant_id,
                 "snapshot": snapshot,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             room="cockpit",
         )
@@ -792,7 +792,7 @@ async def broadcast_internal_message(
         "tenant_id": tenant_id,
         "to_user_id": to_user_id,
         "to_department": to_department,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
     try:
@@ -837,7 +837,7 @@ async def broadcast_internal_message_update(
         "tenant_id": tenant_id,
         "to_user_id": to_user_id,
         "to_department": to_department,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
     try:
