@@ -37,6 +37,25 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;');
 }
 
+function normalizeCurrency(value) {
+  const code = String(value || 'TRY').toUpperCase();
+  return code === 'TL' ? 'TRY' : code;
+}
+
+function money(value, currency) {
+  const amount = Number(value);
+  try {
+    return new Intl.NumberFormat('tr-TR', {
+      style: 'currency',
+      currency: normalizeCurrency(currency),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number.isFinite(amount) ? amount : 0);
+  } catch {
+    return `${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'} ${escapeHtml(currency || 'TRY')}`;
+  }
+}
+
 export function printRegistrationCard(booking, guest, room, hotelArg) {
   const hotel = normalizeHotelInfo(hotelArg);
   const w = window.open('', '_blank');
@@ -112,6 +131,7 @@ export function printFolio(folioData, hotelArg) {
   const folio = folioData?.folio;
   const summary = folioData?.summary;
   const timeline = folioData?.timeline || [];
+  const currency = folioData?.currency || summary?.currency || folio?.currency || 'TRY';
   w.document.write(`<html><head><title>Folio - ${escapeHtml(folio?.folio_number || '')}</title>
   <style>
     body{font-family:Arial,sans-serif;padding:30px;font-size:11px;color:#333}
@@ -161,17 +181,17 @@ export function printFolio(folioData, hotelArg) {
         <td>${escapeHtml(e.timestamp?.slice(0, 10) || '')}</td>
         <td>${escapeHtml(e.description || e.type || '')}</td>
         <td>${escapeHtml(e.category || '')}</td>
-        <td style="text-align:right" class="amount-out">${e.type === 'charge' ? (e.amount || 0).toFixed(2) : ''}</td>
-        <td style="text-align:right" class="amount-in">${e.type === 'payment' ? (e.amount || 0).toFixed(2) : ''}</td>
-        <td style="text-align:right">${e.running_balance?.toFixed(2) || ''}</td>
+        <td style="text-align:right" class="amount-out">${e.type === 'charge' ? money(e.amount, e.currency || currency) : ''}</td>
+        <td style="text-align:right" class="amount-in">${e.type === 'payment' ? money(e.amount, e.currency || currency) : ''}</td>
+        <td style="text-align:right">${e.running_balance == null ? '' : money(e.running_balance, currency)}</td>
       </tr>
     `).join('')}
     </tbody>
   </table>
   <div class="totals">
-    <div class="total-row"><span>Toplam Masraf / Total Charges:</span><span>${(summary?.total_charges || 0).toFixed(2)} TL</span></div>
-    <div class="total-row"><span>Toplam Ödeme / Total Payments:</span><span>${(summary?.total_payments || 0).toFixed(2)} TL</span></div>
-    <div class="total-row final"><span>BAKIYE / BALANCE:</span><span>${(summary?.balance || 0).toFixed(2)} TL</span></div>
+    <div class="total-row"><span>Toplam Masraf / Total Charges:</span><span>${money(summary?.total_charges, currency)}</span></div>
+    <div class="total-row"><span>Toplam Ödeme / Total Payments:</span><span>${money(summary?.total_payments, currency)}</span></div>
+    <div class="total-row final"><span>BAKIYE / BALANCE:</span><span>${money(summary?.balance, currency)}</span></div>
   </div>
   <div class="footer">
     <p>Bu belge ${new Date().toLocaleString('tr-TR')} tarihinde olusturulmustur.</p>
@@ -187,6 +207,7 @@ export function printProformaInvoice(booking, guest, charges, hotelArg) {
   const w = window.open('', '_blank');
   if (!w) return;
   const totalAmount = booking?.total_amount || charges?.reduce((s, c) => s + (c.amount || 0), 0) || 0;
+  const currency = booking?.currency || charges?.find(c => c.currency)?.currency || 'TRY';
   const taxRate = 0.10;
   const netAmount = totalAmount / (1 + taxRate);
   const taxAmount = totalAmount - netAmount;
@@ -246,13 +267,13 @@ export function printProformaInvoice(booking, guest, charges, hotelArg) {
   <table>
     <thead><tr><th>#</th><th>Açıklama</th><th style="text-align:right">Birim Fiyat</th><th style="text-align:center">Adet</th><th style="text-align:right">Tutar</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>Konaklama Ucreti</td><td style="text-align:right">${(totalAmount).toFixed(2)} TL</td><td style="text-align:center">1</td><td style="text-align:right">${totalAmount.toFixed(2)} TL</td></tr>
+      <tr><td>1</td><td>Konaklama Ücreti</td><td style="text-align:right">${money(totalAmount, currency)}</td><td style="text-align:center">1</td><td style="text-align:right">${money(totalAmount, currency)}</td></tr>
     </tbody>
   </table>
   <div class="total-section">
-    <div class="total-row"><span>Net:</span><span>${netAmount.toFixed(2)} TL</span></div>
-    <div class="total-row"><span>KDV (%10):</span><span>${taxAmount.toFixed(2)} TL</span></div>
-    <div class="total-row grand"><span>TOPLAM:</span><span>${totalAmount.toFixed(2)} TL</span></div>
+    <div class="total-row"><span>Net:</span><span>${money(netAmount, currency)}</span></div>
+    <div class="total-row"><span>KDV (%10):</span><span>${money(taxAmount, currency)}</span></div>
+    <div class="total-row grand"><span>TOPLAM:</span><span>${money(totalAmount, currency)}</span></div>
   </div>
   <div style="clear:both"></div>
   <div class="note">

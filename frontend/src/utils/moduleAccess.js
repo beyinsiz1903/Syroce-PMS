@@ -59,6 +59,7 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/pms-operations': ['frontdesk'],
   '/app/reservation-calendar': ['frontdesk'],
   '/reservation-calendar': ['frontdesk'],
+  '/agency-requests': ['frontdesk'],
   '/walkin': ['frontdesk'],
   '/room-map': ['frontdesk'],
   '/frontdesk/audit-checklist': ['frontdesk'],
@@ -167,6 +168,7 @@ const NAV_KEY_SCOPES = Object.freeze({
   pms: ['frontdesk'],
   pms_operations: ['frontdesk'],
   reservation_calendar: ['frontdesk'],
+  agency_requests: ['frontdesk'],
   shift_handover: ['frontdesk'],
   early_late_pricing: ['frontdesk'],
   walkin: ['frontdesk'],
@@ -220,6 +222,7 @@ const NAV_KEY_SCOPES = Object.freeze({
 const MODULE_KEY_SCOPES = Object.freeze({
   pms: ['frontdesk'],
   reservation_calendar: ['frontdesk'],
+  agency_requests: ['frontdesk'],
   invoices: ['invoice'],
   channel_manager: ['channel_manager'],
   basic_reporting: ['reports'],

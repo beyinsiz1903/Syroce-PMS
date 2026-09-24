@@ -29,6 +29,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { formatCurrency } from '@/lib/currency';
 
 // Pydantic 422 detail array geldiğinde (`[{loc, msg, type}, ...]`)
 // `toast.error(detail)` "[object Object]" basıyordu — burada güvenli
@@ -181,7 +182,7 @@ const AgencyRequests = () => {
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
               <Building2 className="w-8 h-8 text-blue-600" />
@@ -253,7 +254,7 @@ const AgencyRequests = () => {
               onClick={() => setSelectedRequest(request)}
             >
               {/* Status Badge */}
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 {getStatusBadge(request.status)}
                 <span className="text-xs text-gray-500">
                   {formatDateTime(request.created_at)}
@@ -300,19 +301,19 @@ const AgencyRequests = () => {
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-sm text-gray-600">Toplam Tutar:</span>
                   <span className="text-lg font-bold text-gray-900">
-                    {request.total_price.toLocaleString('tr-TR')} {request.currency}
+                    {formatCurrency(request.total_price, request.currency || 'TRY')}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Komisyon (%{request.commission_pct}):</span>
                   <span className="text-red-600 font-semibold">
-                    -{request.commission_amount.toLocaleString('tr-TR')} {request.currency}
+                    -{formatCurrency(request.commission_amount, request.currency || 'TRY')}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs mt-1 pt-1 border-t">
                   <span className="text-gray-700 font-medium">Net Tutar:</span>
                   <span className="text-green-600 font-bold">
-                    {request.net_to_hotel.toLocaleString('tr-TR')} {request.currency}
+                    {formatCurrency(request.net_to_hotel, request.currency || 'TRY')}
                   </span>
                 </div>
               </div>
@@ -390,7 +391,7 @@ const AgencyRequests = () => {
               {/* Booking Details */}
               <div className="bg-blue-50 rounded-lg p-4">
                 <h3 className="font-semibold text-gray-900 mb-3">Rezervasyon Detayları</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Giriş Tarihi</p>
                     <p className="font-medium">{formatDate(selectedRequest.check_in)}</p>
@@ -428,25 +429,25 @@ const AgencyRequests = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Gecelik Fiyat:</span>
                     <span className="font-medium">
-                      {selectedRequest.price_per_night.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      {formatCurrency(selectedRequest.price_per_night, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam ({selectedRequest.nights} gece):</span>
                     <span className="font-medium">
-                      {selectedRequest.total_price.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      {formatCurrency(selectedRequest.total_price, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm border-t pt-2">
                     <span className="text-red-600">Acenta Komisyonu (%{selectedRequest.commission_pct}):</span>
                     <span className="text-red-600 font-semibold">
-                      -{selectedRequest.commission_amount.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      -{formatCurrency(selectedRequest.commission_amount, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="flex justify-between text-lg font-bold border-t pt-2">
                     <span className="text-green-700">Net Otel Geliri:</span>
                     <span className="text-green-700">
-                      {selectedRequest.net_to_hotel.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      {formatCurrency(selectedRequest.net_to_hotel, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                 </div>
@@ -455,29 +456,29 @@ const AgencyRequests = () => {
               {/* Availability & Restrictions Snapshot */}
               <div className="bg-indigo-50 rounded-lg p-4">
                 <h3 className="font-semibold text-gray-900 mb-3">Talep Anındaki Durum</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                   <div>
                     <p className="text-gray-600">Müsait Oda:</p>
                     <p className="font-medium">
-                      {selectedRequest.availability_at_request.available_rooms} oda
+                      {selectedRequest.availability_at_request?.available_rooms ?? '—'} oda
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Kontrol Zamanı:</p>
                     <p className="font-medium text-xs">
-                      {formatDateTime(selectedRequest.availability_at_request.checked_at)}
+                      {formatDateTime(selectedRequest.availability_at_request?.checked_at)}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Min Konaklama:</p>
                     <p className="font-medium">
-                      {selectedRequest.restrictions_snapshot.min_stay} gece
+                      {selectedRequest.restrictions_snapshot?.min_stay ?? '—'} gece
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Satış Durumu:</p>
-                    <p className={`font-medium ${selectedRequest.restrictions_snapshot.stop_sell ? 'text-red-600' : 'text-green-600'}`}>
-                      {selectedRequest.restrictions_snapshot.stop_sell ? 'Satışa Kapalı' : 'Satışta'}
+                    <p className={`font-medium ${selectedRequest.restrictions_snapshot?.stop_sell ? 'text-red-600' : 'text-green-600'}`}>
+                      {selectedRequest.restrictions_snapshot?.stop_sell ? 'Satışa Kapalı' : 'Satışta'}
                     </p>
                   </div>
                 </div>
