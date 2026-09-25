@@ -187,6 +187,28 @@ async def _load_bookings_for_date_check(
 
 async def ensure_night_audit_indexes():
     """Create all required indexes for the hardened night audit."""
+    # The original room-charge dedup index also covered voided correction
+    # rows.  A legitimate rate correction voids the old charge and posts its
+    # replacement with the same booking/date/type tuple, so that definition
+    # incorrectly raised E11000.  Upgrade the index in place: only active
+    # charges participate in duplicate prevention, while the full correction
+    # history remains available in the ledger.
+    charge_dedup_name = "idx_folio_charges_na_dedup"
+    charge_dedup_filter = {
+        "business_date": {"$exists": True},
+        "charge_type": {"$exists": True},
+        "voided": False,
+    }
+    try:
+        charge_indexes = await db.folio_charges.index_information()
+        current_dedup = charge_indexes.get(charge_dedup_name)
+        if current_dedup and current_dedup.get("partialFilterExpression") != charge_dedup_filter:
+            await db.folio_charges.drop_index(charge_dedup_name)
+            logger.info("Upgrading %s to active-charge-only deduplication", charge_dedup_name)
+    except Exception as e:
+        if "index not found" not in str(e).lower() and "ns not found" not in str(e).lower():
+            logger.warning("Could not inspect/upgrade %s: %s", charge_dedup_name, e)
+
     idx_defs = [
         (
             "night_audit_runs",
@@ -221,8 +243,8 @@ async def ensure_night_audit_indexes():
         (
             "folio_charges",
             [("tenant_id", 1), ("booking_id", 1), ("business_date", 1), ("charge_type", 1)],
-            "idx_folio_charges_na_dedup",
-            {"unique": True, "partialFilterExpression": {"business_date": {"$exists": True}, "charge_type": {"$exists": True}}},
+            charge_dedup_name,
+            {"unique": True, "partialFilterExpression": charge_dedup_filter},
         ),
         (
             # Run-level concurrency lock for the pms-core night audit engine:
