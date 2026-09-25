@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -86,6 +86,7 @@ const UpsellTab = ({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const selectionRequestRef = useRef(0);
   const [priceDefaults, setPriceDefaults] = useState({});
   const [priceForm, setPriceForm] = useState({
     late_checkout: '',
@@ -164,39 +165,71 @@ const UpsellTab = ({
     if (!term) return true;
     return (b.guest_name || '').toLowerCase().includes(term) || (b.id || '').toLowerCase().includes(term) || (b.room_number || '').toString().includes(term);
   });
+  const bookingId = booking => booking?.id || booking?.booking_id || booking?.reservation_id || '';
+  const bookingReferences = booking => [...new Set([
+    booking?.id,
+    booking?.booking_id,
+    booking?.reservation_id,
+    booking?.booking_number,
+    booking?.channel_booking_id,
+    booking?.external_id,
+    booking?.external_reservation_id,
+  ].filter(Boolean).map(String))];
+  const roomLabel = booking => booking?.room_number || 'Atanmamış';
+  const generateOffers = async booking => {
+    const references = bookingReferences(booking);
+    if (references.length === 0) throw new Error('Rezervasyon kimliği bulunamadı');
+    let lastError;
+    for (const reference of references) {
+      try {
+        return await axios.post(`/ai/upsell/generate?booking_id=${encodeURIComponent(reference)}`, {}, {
+          timeout: 10000
+        });
+      } catch (error) {
+        lastError = error;
+        if (error.response?.status !== 404) throw error;
+      }
+    }
+    throw lastError;
+  };
   const selectBooking = async booking => {
+    const id = bookingId(booking);
+    if (!id) {
+      toast.error('Bu rezervasyonun geçerli kimliği bulunamadı');
+      return;
+    }
+    const requestId = ++selectionRequestRef.current;
     setSelectedBooking(booking);
+    setOffers([]);
     setLoading(true);
     try {
-      const existing = allOffers.filter(o => o.booking_id === booking.id);
+      const existing = allOffers.filter(o => o.booking_id === id);
       if (existing.length > 0) {
-        setOffers(existing);
-        setLoading(false);
+        if (selectionRequestRef.current === requestId) setOffers(existing);
         return;
       }
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${booking.id}`, {}, {
-        timeout: 10000
-      });
+      const res = await generateOffers(booking);
+      if (selectionRequestRef.current !== requestId) return;
       setOffers(res.data.offers || []);
       toast.success(`${res.data.total_offers} teklif üretildi`);
       loadAllOffers();
       loadInsights();
     } catch (err) {
+      if (selectionRequestRef.current !== requestId) return;
       if (err.response?.status === 404) {
-        toast.error('Rezervasyon bulunamadı');
+        toast.error(err.response?.data?.detail || 'Rezervasyon bulunamadı');
       } else {
         toast.error(err.response?.data?.detail || 'Teklif üretilemedi');
       }
+    } finally {
+      if (selectionRequestRef.current === requestId) setLoading(false);
     }
-    setLoading(false);
   };
   const regenerateOffers = async () => {
     if (!selectedBooking) return;
     setLoading(true);
     try {
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${selectedBooking.id}`, {}, {
-        timeout: 10000
-      });
+      const res = await generateOffers(selectedBooking);
       setOffers(res.data.offers || []);
       toast.success(`${res.data.total_offers} yeni teklif üretildi`);
       loadAllOffers();
@@ -332,11 +365,11 @@ const UpsellTab = ({
           <CardContent className="space-y-3">
             <Input placeholder={t('cm.components_pms_UpsellTab.misafir_adi_oda_no_veya_rez_id')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="text-sm" />
             <div className="max-h-[400px] overflow-y-auto space-y-2">
-              {filteredBookings.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">{t('cm.components_pms_UpsellTab.aktif_rezervasyon_bulunamadi')}</p> : filteredBookings.slice(0, 20).map(b => <div key={b.id} onClick={() => selectBooking(b)} className={`border rounded-lg p-3 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50/50 ${selectedBooking?.id === b.id ? 'border-blue-500 bg-blue-50' : ''}`}>
+              {filteredBookings.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">{t('cm.components_pms_UpsellTab.aktif_rezervasyon_bulunamadi')}</p> : filteredBookings.slice(0, 20).map(b => <div key={bookingId(b)} onClick={() => selectBooking(b)} className={`border rounded-lg p-3 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50/50 ${bookingId(selectedBooking) === bookingId(b) ? 'border-blue-500 bg-blue-50' : ''}`}>
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-sm">{b.guest_name || 'Misafir'}</p>
-                        <p className="text-xs text-gray-500">{t('cm.components_pms_UpsellTab.oda')} {b.room_number} - {b.room_type}</p>
+                        <p className="text-xs text-gray-500">{t('cm.components_pms_UpsellTab.oda')} {roomLabel(b)}{b.room_type ? ` - ${b.room_type}` : ''}</p>
                       </div>
                       <Badge variant="outline" className="text-xs">
                         {b.status === 'checked_in' ? 'Konaklama' : 'Onaylanmış'}
@@ -360,7 +393,7 @@ const UpsellTab = ({
                   <Sparkles className="w-4 h-4 text-amber-500" /> Upsell Teklifleri
                 </CardTitle>
                 <CardDescription>
-                  {selectedBooking ? `${selectedBooking.guest_name} - Oda ${selectedBooking.room_number}` : 'Sol taraftan bir rezervasyon seçin'}
+                  {selectedBooking ? `${selectedBooking.guest_name || 'Misafir'} - Oda ${roomLabel(selectedBooking)}` : 'Sol taraftan bir rezervasyon seçin'}
                 </CardDescription>
               </div>
               {selectedBooking && <Button variant="outline" size="sm" onClick={regenerateOffers} disabled={loading} className="h-7 text-xs">
@@ -370,10 +403,10 @@ const UpsellTab = ({
             </div>
           </CardHeader>
           <CardContent>
-            {!selectedBooking && offers.length === 0 ? <div className="text-center py-12 text-gray-400">
+            {(!selectedBooking || (!loading && offers.length === 0)) ? <div className="text-center py-12 text-gray-400">
                 <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">{t('cm.components_pms_UpsellTab.henuz_teklif_yok')}</p>
-                <p className="text-sm">Bir rezervasyon seçtiğinizde yapay zekâ otomatik teklif üretecek.</p>
+                <p className="font-medium">{selectedBooking ? 'Bu rezervasyon için teklif bulunamadı' : t('cm.components_pms_UpsellTab.henuz_teklif_yok')}</p>
+                <p className="text-sm">{selectedBooking ? 'Teklifleri yeniden üretmeyi deneyebilirsiniz.' : 'Bir rezervasyon seçtiğinizde teklifler otomatik üretilecek.'}</p>
               </div> : <div className="space-y-3">
                 {offers.map(offer => {
               const typeInfo = TYPE_LABELS[offer.type] || {
