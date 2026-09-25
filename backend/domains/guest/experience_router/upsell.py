@@ -116,20 +116,32 @@ async def generate_upsell_offers(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    guest = await db.guests.find_one({"id": booking.get("guest_id"), "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if not guest:
-        raise HTTPException(status_code=404, detail="Misafir bilgisi bulunamadi")
+    guest = None
+    if booking.get("guest_id"):
+        guest = await db.guests.find_one(
+            {"id": booking["guest_id"], "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+    guest = guest or {
+        "name": booking.get("guest_name") or "Misafir",
+        "loyalty_tier": booking.get("loyalty_tier") or "standard",
+    }
 
-    room = await db.rooms.find_one({"id": booking.get("room_id"), "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if not room:
-        raise HTTPException(status_code=404, detail="Oda bilgisi bulunamadi")
+    room = None
+    if booking.get("room_id"):
+        room = await db.rooms.find_one(
+            {"id": booking["room_id"], "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
 
     check_in = booking["check_in"]
     check_out = booking["check_out"]
     offers = []
 
     rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
-    better_rooms = [r for r in rooms if r.get("base_price", 0) > room.get("base_price", 0)]
+    # An unassigned reservation can still receive generic service offers.
+    # Only a room upgrade requires a valid current room.
+    better_rooms = [r for r in rooms if r.get("base_price", 0) > room.get("base_price", 0)] if room else []
 
     loyalty_tier = guest.get("loyalty_tier", "standard")
     past_bookings = await db.bookings.count_documents({"guest_id": booking["guest_id"], "tenant_id": current_user.tenant_id, "status": "checked_out"})
