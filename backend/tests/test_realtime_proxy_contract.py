@@ -18,9 +18,10 @@ def test_realtime_proxy_and_service_worker_are_allowed(config_path: Path) -> Non
 
     assert "worker-src 'self' blob:" in config
     assert "connect-src 'self' wss: https:" in config
+    assert "map $http_upgrade $connection_upgrade" in config
     assert "location /ws/" in config
 
     ws_location = config.split("location /ws/", maxsplit=1)[1]
     assert "proxy_set_header Upgrade $http_upgrade;" in ws_location
-    assert 'proxy_set_header Connection "upgrade";' in ws_location
+    assert "proxy_set_header Connection $connection_upgrade;" in ws_location
     assert "proxy_read_timeout 86400s;" in ws_location
