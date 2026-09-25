@@ -58,6 +58,7 @@ const AgencyRequests = () => {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [marketplaceNegotiations, setMarketplaceNegotiations] = useState([]);
 
   useEffect(() => {
     loadRequests();
@@ -68,8 +69,12 @@ const AgencyRequests = () => {
     try {
       setLoading(true);
       const params = filterStatus !== 'all' ? { status: filterStatus } : {};
-      const response = await axios.get('/hotel/booking-requests', { params });
+      const [response, negotiationResponse] = await Promise.all([
+        axios.get('/hotel/booking-requests', { params }),
+        axios.get('/marketplace/v1/hotel/negotiations').catch(() => ({ data: { items: [] } })),
+      ]);
       setRequests(response.data.items || []);
+      setMarketplaceNegotiations(negotiationResponse.data.items || []);
     } catch (error) {
       console.error('Failed to load agency requests:', error);
       toast.error('Acenta talepleri yüklenemedi');
@@ -223,6 +228,13 @@ const AgencyRequests = () => {
       </div>
 
       {/* Loading */}
+      {marketplaceNegotiations.length > 0 && <div className="mb-6 space-y-3">
+        <h2 className="text-lg font-semibold text-gray-900">Acente ile Karşılıklı İşlemler</h2>
+        {marketplaceNegotiations.map(item => <div key={item.id} className="bg-white rounded-lg border border-amber-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div><div className="font-semibold">{item.confirmation_code} · {item.guest_name}</div><div className="text-sm text-gray-600 mt-1">İptal önerisi: {item.reason}</div><div className="text-xs text-gray-500 mt-1">Tek taraflı iptal edilmez; acente yanıtı: {item.status === 'awaiting_agency' ? 'Bekleniyor' : item.status === 'accepted' ? 'Kabul edildi' : 'Reddedildi'}</div></div>
+          {getStatusBadge(item.status === 'awaiting_agency' ? 'hotel_review' : item.status === 'accepted' ? 'approved' : 'rejected')}
+        </div>)}
+      </div>}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />

@@ -404,6 +404,15 @@ class MarketplaceReservationCreate(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
 
+class CancellationProposalCreate(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+
+class CancellationProposalDecision(BaseModel):
+    accept: bool
+    response_note: str = Field(default="", max_length=1000)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # SYSTEM ADMIN — Marketplace Agency Yönetimi
 # ═══════════════════════════════════════════════════════════════════════
@@ -1459,6 +1468,94 @@ async def agency_cancel_reservation(
         logger.warning(f"Marketplace cancel webhook failed: {e}")
 
     return {"ok": True, "message": "Rezervasyon iptal edildi", "penalty_pct": penalty_pct, "penalty_amount": penalty_amount}
+
+
+@router.post("/hotel/reservations/{reservation_id}/cancellation-proposals")
+async def hotel_propose_marketplace_cancellation(
+    reservation_id: str,
+    data: CancellationProposalCreate,
+    current_user: User = Depends(get_current_user),
+):
+    """Hotel may propose, but never unilaterally execute, an agency cancellation."""
+    tenant_id = _require_hotel_admin(current_user)
+    sysdb = get_system_db()
+    booking = await sysdb.marketplace_bookings.find_one(
+        {"id": reservation_id, "tenant_id": tenant_id, "status": {"$ne": "cancelled"}}, {"_id": 0}
+    )
+    if not booking:
+        raise HTTPException(404, "Aktif acente rezervasyonu bulunamadı")
+    existing = await sysdb.marketplace_negotiations.find_one(
+        {"reservation_id": reservation_id, "type": "hotel_cancellation", "status": "awaiting_agency"}, {"_id": 0}
+    )
+    if existing:
+        raise HTTPException(409, "Bu rezervasyon için acente yanıtı bekleyen bir teklif zaten var")
+    proposal = {
+        "id": _uuid(), "reservation_id": reservation_id, "tenant_id": tenant_id,
+        "agency_id": booking["agency_id"], "hotel_name": booking.get("hotel_name"),
+        "confirmation_code": booking.get("confirmation_code"), "guest_name": booking.get("guest_name"),
+        "type": "hotel_cancellation", "reason": data.reason.strip(), "status": "awaiting_agency",
+        "created_by": current_user.id, "created_at": _now_iso(), "updated_at": _now_iso(),
+    }
+    await sysdb.marketplace_negotiations.insert_one(proposal)
+    with tenant_context(tenant_id):
+        await db.notifications.insert_one({
+            "id": _uuid(), "tenant_id": tenant_id, "type": "agency_negotiation", "title": "Acente yanıtı bekleniyor",
+            "message": f"{booking.get('confirmation_code')} için iptal önerisi acenteye iletildi.", "read": False,
+            "metadata": {"proposal_id": proposal["id"], "reservation_id": reservation_id}, "created_at": _now_iso(),
+        })
+    return {"ok": True, "proposal": {k: v for k, v in proposal.items() if k != "_id"}}
+
+
+@router.get("/hotel/negotiations")
+async def hotel_list_marketplace_negotiations(current_user: User = Depends(get_current_user)):
+    tenant_id = _require_hotel_admin(current_user)
+    docs = await get_system_db().marketplace_negotiations.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    return {"items": docs}
+
+
+@router.get("/negotiations")
+async def agency_list_negotiations(agency: dict = Depends(get_marketplace_agency)):
+    docs = await get_system_db().marketplace_negotiations.find(
+        {"agency_id": agency["agency_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    return {"items": docs}
+
+
+@router.post("/negotiations/{proposal_id}/decision")
+async def agency_decide_negotiation(
+    proposal_id: str,
+    data: CancellationProposalDecision,
+    agency: dict = Depends(get_marketplace_agency),
+):
+    sysdb = get_system_db()
+    proposal = await sysdb.marketplace_negotiations.find_one(
+        {"id": proposal_id, "agency_id": agency["agency_id"], "status": "awaiting_agency"}, {"_id": 0}
+    )
+    if not proposal:
+        raise HTTPException(404, "Yanıt bekleyen teklif bulunamadı")
+    status_value = "accepted" if data.accept else "declined"
+    if data.accept:
+        with tenant_context(proposal["tenant_id"]):
+            booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": proposal["tenant_id"]})
+            if not booking or booking.get("status") in {"checked_in", "checked_out", "cancelled"}:
+                raise HTTPException(409, "Rezervasyon artık iptal edilebilir durumda değil")
+            await db.bookings.update_one(
+                {"id": proposal["reservation_id"], "tenant_id": proposal["tenant_id"]},
+                {"$set": {"status": "cancelled", "cancellation_reason": proposal["reason"], "cancelled_by": "mutual_agreement", "cancelled_at": _now_iso(), "updated_at": _now_iso()}},
+            )
+            from core.atomic_booking import release_booking_nights
+            await release_booking_nights(proposal["tenant_id"], proposal["reservation_id"], reason="mutual_agreement")
+        await sysdb.marketplace_bookings.update_one(
+            {"id": proposal["reservation_id"], "agency_id": agency["agency_id"]},
+            {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": proposal["reason"]}},
+        )
+    await sysdb.marketplace_negotiations.update_one(
+        {"id": proposal_id, "status": "awaiting_agency"},
+        {"$set": {"status": status_value, "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso()}},
+    )
+    return {"ok": True, "status": status_value, "reservation_cancelled": bool(data.accept)}
 
 
 # ═══════════════════════════════════════════════════════════════════════

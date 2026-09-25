@@ -89,6 +89,7 @@ const AgencyPortalDashboard = () => {
   const [reservations, setReservations] = useState([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reconciliation, setReconciliation] = useState(null);
+  const [negotiations, setNegotiations] = useState([]);
 
   // Login handler
   const handleLogin = async e => {
@@ -297,10 +298,12 @@ const AgencyPortalDashboard = () => {
     setReservationsLoading(true);
     try {
       if (portalMode === 'marketplace') {
-        const { data } = await agencyApi.get('/marketplace/v1/reservations', {
-          params: selectedTenantId ? { tenant_id: selectedTenantId } : {},
-        });
+        const [{ data }, { data: negotiationData }] = await Promise.all([
+          agencyApi.get('/marketplace/v1/reservations', { params: selectedTenantId ? { tenant_id: selectedTenantId } : {} }),
+          agencyApi.get('/marketplace/v1/negotiations'),
+        ]);
         setReservations(data.reservations || []);
+        setNegotiations((negotiationData.items || []).filter(item => !selectedTenantId || item.tenant_id === selectedTenantId));
       } else {
         const { data } = await agencyApi.get('/agency-portal/reservations');
         setReservations(Array.isArray(data) ? data : data.items || []);
@@ -310,6 +313,15 @@ const AgencyPortalDashboard = () => {
     } finally {
       setReservationsLoading(false);
     }
+  };
+  const decideNegotiation = async (proposal, accept) => {
+    const responseNote = window.prompt(accept ? 'Kabul notu (isteğe bağlı)' : 'Reddetme gerekçesi') || '';
+    if (!accept && responseNote.trim().length < 5) return toast.error('Reddetme gerekçesi en az 5 karakter olmalıdır');
+    try {
+      await agencyApi.post(`/marketplace/v1/negotiations/${encodeURIComponent(proposal.id)}/decision`, { accept, response_note: responseNote });
+      toast.success(accept ? 'Karşılıklı iptal kabul edildi' : 'Otel önerisi reddedildi; rezervasyon korundu');
+      loadReservations();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Yanıt kaydedilemedi'); }
   };
   const cancelReservation = async reservation => {
     if (!window.confirm(`${reservation.confirmation_code || reservation.id} numaralı rezervasyon iptal edilsin mi?`)) return;
@@ -542,6 +554,7 @@ const AgencyPortalDashboard = () => {
               <div><h2 className="font-semibold text-slate-800">Acente rezervasyonları</h2><p className="text-xs text-slate-500">Bu acente hesabından oluşturulan kayıtlar</p></div>
               <Button variant="outline" size="sm" onClick={loadReservations} disabled={reservationsLoading}><RefreshCw size={14} className={reservationsLoading ? 'animate-spin mr-1' : 'mr-1'} />Yenile</Button>
             </div>
+            {negotiations.filter(item => item.status === 'awaiting_agency').map(item => <Card key={item.id} className="border-amber-300 bg-amber-50"><CardContent className="py-4"><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><div className="font-semibold text-amber-900">Otel iptal önerisi · {item.confirmation_code}</div><div className="text-sm text-amber-800 mt-1">{item.reason}</div><div className="text-xs text-amber-700 mt-1">Tek taraflı uygulanmaz; kararınız bekleniyor.</div></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => decideNegotiation(item, false)}>Reddet</Button><Button size="sm" onClick={() => decideNegotiation(item, true)}>Kabul Et</Button></div></div></CardContent></Card>)}
             {reservationsLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" size={24} /></div> : reservations.length === 0 ? <Card><CardContent className="py-12 text-center text-slate-400">
                 <ClipboardList size={40} className="mx-auto mb-3 opacity-40" />
                 <p>{t('cm.pages_AgencyPortalDashboard.henuz_rezervasyonunuz_yok')}</p>
