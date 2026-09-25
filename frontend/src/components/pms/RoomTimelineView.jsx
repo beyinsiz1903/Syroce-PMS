@@ -16,6 +16,16 @@ const statusColors = {
   tentative: { bg: '#F97316', text: '#fff' },
 };
 
+const statusLabels = {
+  confirmed: 'Onaylandı',
+  checked_in: 'Konaklıyor',
+  checked_out: 'Çıkış yapıldı',
+  cancelled: 'İptal edildi',
+  no_show: 'Gelmedi',
+  guaranteed: 'Garantili',
+  tentative: 'Opsiyonlu',
+};
+
 const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
   const { t } = useTranslation();
   const [startDate, setStartDate] = useState(() => {
@@ -190,13 +200,13 @@ const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
                               className="rounded-md px-2 py-1 cursor-pointer hover:opacity-90 transition-opacity shadow-sm"
                               style={{ backgroundColor: colors.bg, color: colors.text, height: 28 }}
                               onClick={() => onBookingClick?.(booking)}
-                              title={`${booking.guest_name || 'Misafir'} | ${ci} - ${co} | ${booking.status}`}
+                              title={`${booking.guest_name || 'Misafir'} | ${ci} - ${co} | ${statusLabels[booking.status] || 'Durum bilinmiyor'}`}
                             >
                               <span className="text-[10px] font-medium truncate block leading-tight">
                                 {booking.guest_name?.split(' ')[0] || 'Misafir'}
                               </span>
                               <span className="text-[8px] opacity-80 truncate block leading-tight">
-                                {booking.status === 'checked_in' ? 'Konaklama' : booking.status === 'confirmed' ? 'Onaylandi' : booking.status}
+                                {statusLabels[booking.status] || 'Durum bilinmiyor'}
                               </span>
                             </div>
                           </div>
@@ -224,7 +234,7 @@ const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
         {Object.entries(statusColors).map(([status, colors]) => (
           <div key={status} className="flex items-center gap-1.5 text-xs">
             <div className="w-3 h-3 rounded" style={{ backgroundColor: colors.bg }} />
-            <span className="text-gray-600 capitalize">{status.replace('_', ' ')}</span>
+            <span className="text-gray-600">{statusLabels[status]}</span>
           </div>
         ))}
       </div>
