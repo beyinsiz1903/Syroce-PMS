@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 
 import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
@@ -50,6 +50,18 @@ from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, 
 _DUMMY_PWHASH = hash_password("__agency_portal_timing_dummy__never_a_real_password__")
 
 router = APIRouter(prefix="/api", tags=["agency-portal"])
+
+
+def _date_pair(start_value: str, end_value: str):
+    """Parse an ISO hotel date range for both request models and endpoints."""
+    try:
+        start = datetime.strptime(start_value, "%Y-%m-%d").date()
+        end = datetime.strptime(end_value, "%Y-%m-%d").date()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Tarihler YYYY-AA-GG biçiminde olmalıdır") from exc
+    if end <= start:
+        raise ValueError("Bitiş tarihi başlangıçtan sonra olmalıdır")
+    return start, end
 
 
 # ─── Request / Response Models ────────────────────────────────────
@@ -102,9 +114,9 @@ class AgencyUpdate(BaseModel):
 
 
 class AgencyUserCreate(BaseModel):
-    name: str
-    email: str
-    password: str
+    name: str = Field(..., min_length=2, max_length=120)
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
     role: str = "agency_agent"  # agency_admin or agency_agent
 
 
@@ -115,18 +127,35 @@ class SeasonRate(BaseModel):
     season_start: str
     season_end: str
     room_type_id: str
-    price: float
+    price: float = Field(..., gt=0)
+
+    @model_validator(mode="after")
+    def _valid_date_range(self):
+        _date_pair(self.season_start, self.season_end)
+        return self
 
 
 class AgencyContractCreate(BaseModel):
-    contract_name: str
+    contract_name: str = Field(..., min_length=2, max_length=160)
     start_date: str
     end_date: str
     is_active: bool = True
     contract_type: Literal["net_rate", "commission"]
-    commission_rate: float | None = None
-    credit_limit: float | None = None
+    commission_rate: float | None = Field(None, ge=0, le=100)
+    credit_limit: float | None = Field(None, ge=0)
     season_rates: list[SeasonRate] | None = None
+
+    @model_validator(mode="after")
+    def _valid_contract(self):
+        _date_pair(self.start_date, self.end_date)
+        if self.contract_type == "commission" and self.commission_rate is None:
+            raise ValueError("Komisyon sözleşmesinde komisyon oranı zorunludur")
+        if self.contract_type == "net_rate" and not self.season_rates:
+            raise ValueError("Net fiyat sözleşmesinde en az bir sezon fiyatı zorunludur")
+        for rate in self.season_rates or []:
+            if rate.season_start < self.start_date or rate.season_end > self.end_date:
+                raise ValueError("Sezon fiyatları sözleşme tarihleri içinde olmalıdır")
+        return self
 
 
 class AgencyAllotmentCreate(BaseModel):
@@ -134,13 +163,18 @@ class AgencyAllotmentCreate(BaseModel):
     room_type_id: str
     start_date: str
     end_date: str
-    allotment_count: int
-    release_days: int
+    allotment_count: int = Field(..., ge=1, le=10000)
+    release_days: int = Field(..., ge=0, le=365)
+
+    @model_validator(mode="after")
+    def _valid_date_range(self):
+        _date_pair(self.start_date, self.end_date)
+        return self
 
 
 class AgencyLoginRequest(BaseModel):
-    email: str
-    password: str
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class AgencyReservationCreate(BaseModel):
@@ -204,13 +238,10 @@ async def _active_agency_for(user: User) -> dict | None:
 
 def _parse_stay_dates(check_in: str, check_out: str):
     try:
-        ci = datetime.strptime(check_in, "%Y-%m-%d").date()
-        co = datetime.strptime(check_out, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=422, detail="Tarihler YYYY-AA-GG biçiminde olmalıdır")
-    if co <= ci:
-        raise HTTPException(status_code=400, detail="Çıkış tarihi girişten sonra olmalıdır")
-    return ci, co
+        return _date_pair(check_in, check_out)
+    except ValueError as exc:
+        status_code = 422 if "YYYY-AA-GG" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 async def _get_agency_user_from_token(token: str) -> dict:
@@ -552,6 +583,17 @@ async def create_agency_contract(agency_id: str, data: AgencyContractCreate, cur
     agency = await db.agencies.find_one({"id": agency_id, "tenant_id": current_user.tenant_id})
     if not agency:
         raise HTTPException(status_code=404, detail="Acente bulunamadı")
+    if agency.get("status") != "active":
+        raise HTTPException(status_code=409, detail="Pasif acente için yeni sözleşme oluşturulamaz")
+
+    rate_room_types = {rate.room_type_id for rate in data.season_rates or []}
+    if rate_room_types:
+        existing_room_types = set(
+            await db.rooms.distinct("room_type", {"tenant_id": current_user.tenant_id, "room_type": {"$in": list(rate_room_types)}})
+        )
+        missing_room_types = sorted(rate_room_types - existing_room_types)
+        if missing_room_types:
+            raise HTTPException(status_code=400, detail=f"Tanımsız oda tipi: {', '.join(missing_room_types)}")
 
     contract_id = str(uuid.uuid4())
     contract_doc = {
@@ -588,6 +630,30 @@ async def create_agency_allotment(agency_id: str, data: AgencyAllotmentCreate, c
     contract = await db.agency_contracts.find_one({"id": data.contract_id, "agency_id": agency_id, "tenant_id": current_user.tenant_id})
     if not contract:
         raise HTTPException(status_code=404, detail="Sözleşme bulunamadı veya bu acenteye ait değil")
+    if not contract.get("is_active"):
+        raise HTTPException(status_code=409, detail="Pasif sözleşmeye kontenjan tanımlanamaz")
+    if data.start_date < contract.get("start_date", "") or data.end_date > contract.get("end_date", ""):
+        raise HTTPException(status_code=400, detail="Kontenjan tarihleri sözleşme tarihleri içinde olmalıdır")
+
+    room_exists = await db.rooms.find_one(
+        {"tenant_id": current_user.tenant_id, "room_type": data.room_type_id, "is_active": {"$ne": False}},
+        {"_id": 0, "id": 1},
+    )
+    if not room_exists:
+        raise HTTPException(status_code=400, detail="Kontenjan için geçerli bir oda tipi seçin")
+
+    overlapping = await db.agency_allotments.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "agency_id": agency_id,
+            "room_type_id": data.room_type_id,
+            "start_date": {"$lt": data.end_date},
+            "end_date": {"$gt": data.start_date},
+        },
+        {"_id": 0, "id": 1},
+    )
+    if overlapping:
+        raise HTTPException(status_code=409, detail="Bu oda tipi ve tarih aralığı için çakışan kontenjan zaten var")
 
     allotment_id = str(uuid.uuid4())
     allotment_doc = {
