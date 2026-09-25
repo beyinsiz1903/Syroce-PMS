@@ -18,8 +18,10 @@ class _Collection:
         self.document = document
         self.rows = rows or []
         self.inserted = []
+        self.find_one_queries = []
 
-    async def find_one(self, *_args, **_kwargs):
+    async def find_one(self, query, *_args, **_kwargs):
+        self.find_one_queries.append(query)
         return self.document
 
     def find(self, *_args, **_kwargs):
@@ -65,3 +67,38 @@ async def test_unassigned_booking_still_generates_service_offers(monkeypatch):
         "airport_transfer",
     }
     assert all(offer["booking_id"] == "booking-1" for offer in offers.inserted)
+
+
+@pytest.mark.asyncio
+async def test_stale_ui_id_can_resolve_by_stable_booking_reference(monkeypatch):
+    booking = {
+        "id": "canonical-booking-id",
+        "booking_number": "R370795907",
+        "tenant_id": "tenant-1",
+        "guest_id": "guest-1",
+        "guest_name": "İrfan Ayaz",
+        "room_id": "room-208",
+        "check_in": "2099-10-10",
+        "check_out": "2099-10-11",
+    }
+    bookings = _Collection(document=booking)
+    offers = _Collection()
+    fake_db = SimpleNamespace(
+        bookings=bookings,
+        guests=_Collection(document={"id": "guest-1", "name": "İrfan Ayaz"}),
+        rooms=_Collection(document={"id": "room-208", "base_price": 6000}, rows=[]),
+        upsell_settings=_Collection(document=None),
+        upsell_offers=offers,
+    )
+    monkeypatch.setattr(upsell, "db", fake_db)
+
+    result = await upsell.generate_upsell_offers(
+        booking_id="R370795907",
+        current_user=SimpleNamespace(tenant_id="tenant-1"),
+    )
+
+    lookup = bookings.find_one_queries[0]
+    assert lookup["tenant_id"] == "tenant-1"
+    assert {"booking_number": "R370795907"} in lookup["$or"]
+    assert result["booking_id"] == "canonical-booking-id"
+    assert all(offer["booking_id"] == "canonical-booking-id" for offer in offers.inserted)

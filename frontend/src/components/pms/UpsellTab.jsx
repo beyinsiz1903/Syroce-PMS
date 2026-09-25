@@ -166,7 +166,32 @@ const UpsellTab = ({
     return (b.guest_name || '').toLowerCase().includes(term) || (b.id || '').toLowerCase().includes(term) || (b.room_number || '').toString().includes(term);
   });
   const bookingId = booking => booking?.id || booking?.booking_id || booking?.reservation_id || '';
+  const bookingReferences = booking => [...new Set([
+    booking?.id,
+    booking?.booking_id,
+    booking?.reservation_id,
+    booking?.booking_number,
+    booking?.channel_booking_id,
+    booking?.external_id,
+    booking?.external_reservation_id,
+  ].filter(Boolean).map(String))];
   const roomLabel = booking => booking?.room_number || 'Atanmamış';
+  const generateOffers = async booking => {
+    const references = bookingReferences(booking);
+    if (references.length === 0) throw new Error('Rezervasyon kimliği bulunamadı');
+    let lastError;
+    for (const reference of references) {
+      try {
+        return await axios.post(`/ai/upsell/generate?booking_id=${encodeURIComponent(reference)}`, {}, {
+          timeout: 10000
+        });
+      } catch (error) {
+        lastError = error;
+        if (error.response?.status !== 404) throw error;
+      }
+    }
+    throw lastError;
+  };
   const selectBooking = async booking => {
     const id = bookingId(booking);
     if (!id) {
@@ -183,9 +208,7 @@ const UpsellTab = ({
         if (selectionRequestRef.current === requestId) setOffers(existing);
         return;
       }
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${encodeURIComponent(id)}`, {}, {
-        timeout: 10000
-      });
+      const res = await generateOffers(booking);
       if (selectionRequestRef.current !== requestId) return;
       setOffers(res.data.offers || []);
       toast.success(`${res.data.total_offers} teklif üretildi`);
@@ -206,11 +229,7 @@ const UpsellTab = ({
     if (!selectedBooking) return;
     setLoading(true);
     try {
-      const id = bookingId(selectedBooking);
-      if (!id) throw new Error('Rezervasyon kimliği bulunamadı');
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${encodeURIComponent(id)}`, {}, {
-        timeout: 10000
-      });
+      const res = await generateOffers(selectedBooking);
       setOffers(res.data.offers || []);
       toast.success(`${res.data.total_offers} yeni teklif üretildi`);
       loadAllOffers();
