@@ -325,6 +325,7 @@ async def _marketplace_stay_price(
     agency_by_date = {row.get("date"): row for row in agency_rows}
     base_by_date = {row.get("date"): row for row in base_rows}
     nightly_rates: list[dict] = []
+    shared_availability: list[int] = []
     for date in dates:
         row = agency_by_date.get(date) or base_by_date.get(date) or {}
         if row.get("stop_sell") is True or (
@@ -336,12 +337,19 @@ async def _marketplace_stay_price(
         rate = row.get("rate")
         if rate is None:
             rate = fallback_rate
+        if date in agency_by_date and row.get("availability") is not None:
+            shared_availability.append(max(0, int(row["availability"])))
         nightly_rates.append({"date": date, "rate": round(float(rate or 0), 2)})
-    return {
+    result = {
         "sellable": True,
         "nightly_rates": nightly_rates,
         "total_price": round(sum(item["rate"] for item in nightly_rates), 2),
     }
+    if shared_availability:
+        # A stay can only sell the lowest allotment available on any occupied
+        # night. Physical PMS inventory remains the upper safety bound.
+        result["shared_availability"] = min(shared_availability)
+    return result
 
 
 async def _marketplace_occupancy_price(
@@ -915,6 +923,17 @@ async def agency_search(
                     check_out=req.check_out,
                     fallback_rate=float(rt_data["base_price"] or 0),
                 )
+                pricing = await _marketplace_occupancy_price(
+                    tenant_id=tenant_id,
+                    room=rt_data,
+                    pricing=pricing,
+                    adults=req.adults,
+                    child_ages=req.child_ages,
+                )
+                if pricing.get("shared_availability") is not None:
+                    rt_data["available_rooms"] = min(
+                        rt_data["available_rooms"], pricing["shared_availability"]
+                    )
                 rt_data["pricing"] = pricing
                 del rt_data["_room_ids"]
 
@@ -1041,6 +1060,10 @@ async def agency_hotel_availability(
                 adults=req.adults,
                 child_ages=req.child_ages,
             )
+            if pricing.get("shared_availability") is not None:
+                rt_data["available_rooms"] = min(
+                    rt_data["available_rooms"], pricing["shared_availability"]
+                )
             rt_data["nights"] = nights
             rt_data["total_price"] = pricing["total_price"]
             rt_data["nightly_rates"] = pricing["nightly_rates"]

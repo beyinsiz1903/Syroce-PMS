@@ -415,6 +415,12 @@ async def register_guest(data: GuestRegister, request: Request, response: Respon
     return _build_token_response(user, None, response)
 
 
+def _is_marketplace_identity(user_doc: dict) -> bool:
+    role = getattr(user_doc.get("role"), "value", user_doc.get("role"))
+    roles = [getattr(item, "value", item) for item in (user_doc.get("roles") or [])]
+    return role == "marketplace_agent" or "marketplace_agent" in roles
+
+
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin, request: Request, response: Response):
     """Hotel staff login via (hotel_id + username) OR legacy guest login via (email).
@@ -639,6 +645,17 @@ async def login(data: UserLogin, request: Request, response: Response):
             }
         )
         await _record_failure_and_raise(401, "Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
+
+    if _is_marketplace_identity(user_doc):
+        # Marketplace identities deliberately share the global users store,
+        # but they are not PMS tenant users and cannot be parsed by the PMS
+        # UserRole model. A valid agency password entered on the hotel login
+        # page must therefore fail as a controlled portal-boundary response,
+        # not bubble up as a Pydantic ValidationError / HTTP 500.
+        raise HTTPException(
+            status_code=403,
+            detail="Acente hesapları Acente Portalı üzerinden giriş yapmalıdır.",
+        )
 
     user_data = {k: v for k, v in user_doc.items() if k not in ["password", "hashed_password", "password_hash"]}
     user = User(**user_data)
