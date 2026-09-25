@@ -363,6 +363,27 @@ def _syroce_b2b_fee(total: float, source: str) -> tuple[float, float]:
     return fee_pct, round(float(total) * fee_pct / 100, 2)
 
 
+def _reservation_room_snapshot(room: dict) -> dict:
+    """Canonical room fields shared by PMS, ledger and API responses."""
+    return {
+        "room_type": room.get("room_type", ""),
+        "room_number": room.get("room_number", ""),
+    }
+
+
+def _reservation_agency_snapshot(agency: dict) -> dict:
+    """Canonical marketplace source fields shared by PMS and ledger records."""
+    return {
+        "marketplace_agency_id": agency["agency_id"],
+        "marketplace_agency_name": agency["agency_name"],
+        "agency_id": agency["agency_id"],
+        "agency_name": agency["agency_name"],
+        "channel": "marketplace",
+        "source_channel": "marketplace",
+        "origin": "syroce_marketplace",
+    }
+
+
 # ─── Pydantic Modelleri ───────────────────────────────────────────────────
 
 
@@ -1145,13 +1166,14 @@ async def agency_create_reservation(
 
         booking_id = _uuid()
         confirmation_code = f"MKT-{booking_id[:8].upper()}"
+        room_snapshot = _reservation_room_snapshot(available_room)
+        agency_snapshot = _reservation_agency_snapshot(agency)
         booking_doc = {
             "id": booking_id,
             "tenant_id": data.tenant_id,
             "guest_id": guest_id,
             "room_id": available_room["id"],
-            "room_number": available_room.get("room_number", ""),
-            "room_type": available_room.get("room_type", ""),
+            **room_snapshot,
             "check_in": data.check_in + "T14:00:00",
             "check_out": data.check_out + "T11:00:00",
             "adults": data.adults,
@@ -1165,14 +1187,9 @@ async def agency_create_reservation(
             "currency": listing.get("currency", "TRY"),
             "nightly_rates": pricing["nightly_rates"],
             "balance": total,
-            "channel": "marketplace",
-            "source_channel": "marketplace",
-            "marketplace_agency_id": agency["agency_id"],
-            "marketplace_agency_name": agency["agency_name"],
             # Canonical fields are shared with hotel-created agency bookings so
             # every PMS surface can identify the exact seller consistently.
-            "agency_id": agency["agency_id"],
-            "agency_name": agency["agency_name"],
+            **agency_snapshot,
             "agency_commission_rate": commission_pct,
             "agency_commission_amount": commission_amount,
             "net_to_hotel": net_to_hotel,
@@ -1182,7 +1199,6 @@ async def agency_create_reservation(
             "guest_name": data.guest_name.strip(),
             "guest_email": str(data.guest_email or "").strip().lower(),
             "guest_phone": data.guest_phone.strip(),
-            "origin": "syroce_marketplace",
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
         }
@@ -1266,9 +1282,10 @@ async def agency_create_reservation(
     # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
     ledger_doc = {
             "id": booking_id,
-            "agency_id": agency["agency_id"],
+            **agency_snapshot,
             "tenant_id": data.tenant_id,
             "hotel_name": listing.get("hotel_name"),
+            **room_snapshot,
             "confirmation_code": confirmation_code,
             "external_reference": data.external_reference,
             "idempotency_key": data.idempotency_key,
@@ -1331,8 +1348,7 @@ async def agency_create_reservation(
             "tenant_id": data.tenant_id,
             "hotel_name": listing.get("hotel_name"),
             "status": "confirmed",
-            "room_type": available_room.get("room_type"),
-            "room_number": available_room.get("room_number"),
+            **room_snapshot,
             "check_in": data.check_in,
             "check_out": data.check_out,
             "guest_name": data.guest_name,
