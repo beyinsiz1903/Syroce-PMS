@@ -59,6 +59,8 @@ const AgencyRequests = () => {
   const [rejectReason, setRejectReason] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [marketplaceNegotiations, setMarketplaceNegotiations] = useState([]);
+  const [negotiationDecision, setNegotiationDecision] = useState(null);
+  const [negotiationNote, setNegotiationNote] = useState('');
 
   useEffect(() => {
     loadRequests();
@@ -180,15 +182,25 @@ const AgencyRequests = () => {
     const co = new Date(checkOut);
     return Math.ceil((co - ci) / (1000 * 60 * 60 * 24));
   };
-  const decideMarketplaceModification = async (item, accept) => {
-    const responseNote = window.prompt(accept ? 'Onay notu (isteğe bağlı)' : 'Reddetme gerekçesi') || '';
-    if (!accept && responseNote.trim().length < 5) return toast.error('Reddetme gerekçesi en az 5 karakter olmalıdır');
+  const openNegotiationDecision = (item, accept) => {
+    setNegotiationDecision({ item, accept });
+    setNegotiationNote('');
+  };
+  const decideMarketplaceNegotiation = async () => {
+    const { item, accept } = negotiationDecision;
+    const responseNote = negotiationNote.trim();
+    if (!accept && responseNote.length < 5) return toast.error('Reddetme gerekçesi en az 5 karakter olmalıdır');
     try {
       setActionLoading(true);
       await axios.post(`/marketplace/v1/hotel/negotiations/${item.id}/decision`, { accept, response_note: responseNote });
-      toast.success(accept ? 'Değişiklik uygulandı ve oda müsaitliği yeniden kilitlendi' : 'Değişiklik reddedildi; mevcut rezervasyon korundu');
+      const isCancellation = item.type === 'agency_cancellation';
+      toast.success(accept
+        ? (isCancellation ? 'Karşılıklı iptal tamamlandı; kontenjan yeniden satışa açıldı' : 'Değişiklik uygulandı ve oda müsaitliği yeniden kilitlendi')
+        : (isCancellation ? 'İptal talebi reddedildi; rezervasyon ve kontenjan korundu' : 'Değişiklik reddedildi; mevcut rezervasyon korundu'));
+      setNegotiationDecision(null);
+      setNegotiationNote('');
       await loadRequests();
-    } catch (error) { toast.error(extractErrorMessage(error, 'Değişiklik yanıtı kaydedilemedi')); }
+    } catch (error) { toast.error(extractErrorMessage(error, 'Karşılıklı işlem yanıtı kaydedilemedi')); }
     finally { setActionLoading(false); }
   };
 
@@ -243,7 +255,7 @@ const AgencyRequests = () => {
         <h2 className="text-lg font-semibold text-gray-900">Acente ile Karşılıklı İşlemler</h2>
         {marketplaceNegotiations.map(item => <div key={item.id} className="bg-white rounded-lg border border-amber-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div><div className="font-semibold">{item.confirmation_code} · {item.guest_name}</div><div className="text-sm text-gray-600 mt-1">{item.type === 'agency_modification' ? `Değişiklik talebi: ${item.requested?.check_in} – ${item.requested?.check_out} · ${item.requested?.room_type}` : `İptal önerisi: ${item.reason}`}</div><div className="text-xs text-gray-500 mt-1">{item.reason} · Tek taraflı uygulanmaz.</div></div>
-          <div className="flex items-center gap-2">{item.type === 'agency_modification' && item.status === 'awaiting_hotel' && <><Button size="sm" variant="outline" disabled={actionLoading} onClick={() => decideMarketplaceModification(item, false)}>Reddet</Button><Button size="sm" disabled={actionLoading} onClick={() => decideMarketplaceModification(item, true)}>Onayla</Button></>}{getStatusBadge(['awaiting_agency', 'awaiting_hotel'].includes(item.status) ? 'hotel_review' : item.status === 'accepted' ? 'approved' : 'rejected')}</div>
+          <div className="flex items-center gap-2">{item.status === 'awaiting_hotel' && <><Button size="sm" variant="outline" disabled={actionLoading} onClick={() => openNegotiationDecision(item, false)}>Reddet</Button><Button size="sm" disabled={actionLoading} onClick={() => openNegotiationDecision(item, true)}>Onayla</Button></>}{getStatusBadge(['awaiting_agency', 'awaiting_hotel'].includes(item.status) ? 'hotel_review' : item.status === 'accepted' ? 'approved' : 'rejected')}</div>
         </div>)}
       </div>}
       {loading && (
@@ -644,6 +656,47 @@ const AgencyRequests = () => {
               ) : (
                 'Reddet'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(negotiationDecision)} onOpenChange={open => !open && !actionLoading && setNegotiationDecision(null)}>
+        <DialogContent data-testid="marketplace-negotiation-decision-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {negotiationDecision?.accept ? 'Karşılıklı işlemi onayla' : 'Karşılıklı işlemi reddet'}
+            </DialogTitle>
+            <DialogDescription>
+              {negotiationDecision?.item?.type === 'agency_cancellation'
+                ? (negotiationDecision?.accept
+                  ? 'Onaylandığında rezervasyon iptal edilir ve oda kontenjanı yeniden satışa açılır.'
+                  : 'Reddedildiğinde rezervasyon ve mevcut oda kontenjanı korunur.')
+                : (negotiationDecision?.accept
+                  ? 'Onaylandığında rezervasyon değişikliği uygulanır ve müsaitlik yeniden doğrulanır.'
+                  : 'Reddedildiğinde mevcut rezervasyon korunur.')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              value={negotiationNote}
+              onChange={event => setNegotiationNote(event.target.value)}
+              placeholder={negotiationDecision?.accept ? 'Onay notu (isteğe bağlı)' : 'Reddetme gerekçesi (en az 5 karakter)'}
+              rows={4}
+              maxLength={500}
+              data-testid="marketplace-negotiation-note"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNegotiationDecision(null)} disabled={actionLoading}>Vazgeç</Button>
+            <Button
+              variant={negotiationDecision?.accept ? 'default' : 'destructive'}
+              onClick={decideMarketplaceNegotiation}
+              disabled={actionLoading || (!negotiationDecision?.accept && negotiationNote.trim().length < 5)}
+              data-testid="submit-marketplace-negotiation-decision"
+            >
+              {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {negotiationDecision?.accept ? 'Onayla' : 'Reddet'}
             </Button>
           </DialogFooter>
         </DialogContent>

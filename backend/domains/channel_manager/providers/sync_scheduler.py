@@ -7,8 +7,8 @@ of reservations for all active tenants.
 
 import asyncio
 import logging
-import time
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from core.database import db
@@ -43,7 +43,7 @@ class ReservationPullScheduler:
         self._suppressed_lock_errors = 0
 
     def _record_lock_acquisition_failure(self, error: Exception) -> None:
-        now = time.monotonic()
+        now = monotonic()
         if self._last_lock_error_log_at is None or now - self._last_lock_error_log_at >= self._lock_error_log_interval:
             logger.error(
                 "[PULL] Distributed lock acquisition failed; skipping cycle to prevent split-brain exception_class=%s suppressed=%d",
