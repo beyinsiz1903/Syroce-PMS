@@ -519,6 +519,15 @@ async def _execute_pipeline(
         projected_room_revenue = round(sum(float(item.get("amount") or 0) for item in room_items), 2)
         projected_tax = round(sum(float(item.get("tax_amount") or 0) for item in room_items), 2)
         projected_total = round(sum(float(item.get("total") or 0) for item in pending_items), 2)
+        room_ids = list({item.get("room_id") for item in items if item.get("room_id")})
+        room_docs = await db.rooms.find(
+            {"tenant_id": tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1},
+        ).to_list(len(room_ids) or 1)
+        room_numbers = {
+            room["id"]: room.get("room_number") or room.get("room_no")
+            for room in room_docs
+        }
         await db.night_audit_runs.update_one(
             {"id": run_id},
             {
@@ -547,6 +556,21 @@ async def _execute_pipeline(
             "projected_total": projected_total,
             "would_post": pending,
             "would_skip": skipped,
+            "candidate_details": [
+                {
+                    "booking_id": item.get("booking_id"),
+                    "room_id": item.get("room_id"),
+                    "room_no": room_numbers.get(item.get("room_id")),
+                    "posting_type": item.get("posting_type"),
+                    "status": item.get("status"),
+                    "reason": item.get("reason"),
+                    "amount": round(float(item.get("amount") or 0), 2),
+                    "tax_amount": round(float(item.get("tax_amount") or 0), 2),
+                    "total": round(float(item.get("total") or 0), 2),
+                    "currency": item.get("currency") or DEFAULT_CURRENCY,
+                }
+                for item in items
+            ],
             "blockers": simulation_blockers,
             "warnings": simulation_warnings,
             "run": run,

@@ -356,6 +356,11 @@ async def test_dry_run_reports_blockers_and_financial_projection_without_live_wr
         assert result["total_room_revenue"] == 892.86
         assert result["total_tax_amount"] == 107.14
         assert result["projected_total"] == 1000.0
+        assert len(result["candidate_details"]) == 2
+        skipped = next(item for item in result["candidate_details"] if item["status"] == "skipped")
+        assert skipped["reason"] == "no_open_folio"
+        assert skipped["booking_id"]
+        assert skipped["total"] == 750.0
 
         # Audit trace/candidates may be recorded, but hotel operations stay read-only.
         assert await db.folio_charges.count_documents({"tenant_id": TENANT}) == 0

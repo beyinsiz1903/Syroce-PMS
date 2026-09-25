@@ -7,6 +7,7 @@ import {
 export const statusConfig = {
   completed: { label: "Tamamlandı", color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
   completed_with_exceptions: { label: "İstisnalı Tamamlandı", color: "bg-amber-100 text-amber-700 border-amber-200", icon: AlertTriangle },
+  dry_run_completed: { label: "Simülasyon", color: "bg-indigo-100 text-indigo-700 border-indigo-200", icon: CheckCircle2 },
   running: { label: "Çalışıyor", color: "bg-blue-100 text-blue-700 border-blue-200", icon: Loader2 },
   failed: { label: "Başarısız", color: "bg-red-100 text-red-700 border-red-200", icon: XCircle },
   pending: { label: "Bekliyor", color: "bg-gray-100 text-gray-600 border-gray-200", icon: Clock },
