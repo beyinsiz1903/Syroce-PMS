@@ -135,11 +135,11 @@ export default function FinancialTab(props) {
                 </div>
                 <div className="p-3 bg-amber-50 rounded-lg">
                   <p className="text-2xl font-bold text-amber-700">{money(financialSummary.open_folios?.balance?.receivable)}</p>
-                  <p className="text-xs text-amber-600">Alacak</p>
+                  <p className="text-xs text-amber-600">Çıkışta tahsil edilecek</p>
                 </div>
                 <div className="p-3 bg-blue-50 rounded-lg">
                   <p className="text-2xl font-bold text-blue-700">{money(financialSummary.open_folios?.balance?.overpayment)}</p>
-                  <p className="text-xs text-blue-600">{t('cm.components_nightaudit_tabs_FinancialTab.fazla_odeme')}</p>
+                  <p className="text-xs text-blue-600">Ön ödeme / kredi bakiyesi</p>
                 </div>
               </div>
 

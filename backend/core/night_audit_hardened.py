@@ -106,7 +106,9 @@ def _partition_due_bookings(
         normalized = _normalize_booking_date(booking.get(field_name))
         if normalized is None:
             invalid.append(booking)
-        elif normalized <= target_date:
+        # Çıkış tarihi iş gününün kendisiyse misafirin çıkış günü henüz
+        # başlamıştır; ancak bir sonraki iş gününde hâlâ içerideyse gecikmiştir.
+        elif normalized < target_date:
             due.append(booking)
     return due, invalid
 

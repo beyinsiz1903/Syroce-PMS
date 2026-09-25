@@ -10,6 +10,7 @@ import os
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_service import accounting_day_match
+from core.channel_room_charge_pricing import calculate_room_charge
 
 logger = logging.getLogger(__name__)
 
@@ -875,64 +876,62 @@ class FinancialService:
             )
 
         async def _check4_rate():
-            # DB-level filter — Python truthy fallback semantiği:
-            # effective = room_rate if truthy else (rate if truthy else 0)
-            # issue iff effective <= 0. "Truthy" burada None/missing/0 değil.
-            # Örn: room_rate=0, rate=120 → effective=120 → NO issue (eski mantık).
-            q = {
-                "tenant_id": tid,
-                "status": "checked_in",
-                "is_complimentary": {"$ne": True},
-                "$expr": {
-                    "$lte": [
-                        {
-                            "$cond": [
-                                # room_rate truthy mi?  (not null AND not 0)
-                                {
-                                    "$and": [
-                                        {"$ne": [{"$ifNull": ["$room_rate", None]}, None]},
-                                        {"$ne": ["$room_rate", 0]},
-                                    ]
-                                },
-                                "$room_rate",
-                                {
-                                    "$cond": [
-                                        # rate truthy mi?
-                                        {
-                                            "$and": [
-                                                {"$ne": [{"$ifNull": ["$rate", None]}, None]},
-                                                {"$ne": ["$rate", 0]},
-                                            ]
-                                        },
-                                        "$rate",
-                                        0,
-                                    ]
-                                },
-                            ]
-                        },
-                        0,
-                    ],
+            # Denetim, masraf motoruyla aynı fiyat doğruluk kaynağını kullanmalı.
+            # Yalnızca room_rate/rate alanına bakmak; total_amount, total_price
+            # veya daily_rates ile fiyatlanmış geçerli rezervasyonları yanlışlıkla
+            # "0 TL" gösteriyordu.
+            bookings = await self._db.bookings.find(
+                {
+                    "tenant_id": tid,
+                    "status": "checked_in",
+                    "is_complimentary": {"$ne": True},
                 },
-            }
-            return await asyncio.gather(
-                self._db.bookings.count_documents(q, maxTimeMS=_FIN_AGG_MAX_MS),
-                self._db.bookings.find(
-                    q,
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "room_rate": 1,
+                    "rate": 1,
+                    "rate_per_night": 1,
+                    "base_rate": 1,
+                    "total_amount": 1,
+                    "provider_total_amount": 1,
+                    "total_price": 1,
+                    "pricing_tax_inclusive": 1,
+                    "source": 1,
+                    "origin": 1,
+                    "booking_source": 1,
+                    "created_by": 1,
+                    "check_in": 1,
+                    "check_out": 1,
+                    "guest_name": 1,
+                    "room_no": 1,
+                    "guest_id": 1,
+                    "room_id": 1,
+                },
+            ).max_time_ms(_FIN_AGG_MAX_MS).to_list(2000)
+            booking_ids = [booking["id"] for booking in bookings if booking.get("id")]
+            daily_rates: dict[str, float] = {}
+            if booking_ids:
+                async for daily_rate in self._db.daily_rates.find(
                     {
-                        "_id": 0,
-                        "id": 1,
-                        "room_rate": 1,
-                        "rate": 1,
-                        "guest_name": 1,
-                        "room_no": 1,
-                        "guest_id": 1,
-                        "room_id": 1,
+                        "tenant_id": tid,
+                        "booking_id": {"$in": booking_ids},
+                        "date": {"$gte": business_date, "$lt": business_date + "T99"},
                     },
+                    {"_id": 0, "booking_id": 1, "rate": 1},
+                ).sort([("updated_at", -1), ("id", -1)]).max_time_ms(_FIN_AGG_MAX_MS):
+                    daily_rates.setdefault(daily_rate["booking_id"], float(daily_rate.get("rate") or 0))
+            invalid = []
+            for booking in bookings:
+                pricing = calculate_room_charge(
+                    booking,
+                    business_date,
+                    explicit_daily_rate=daily_rates.get(booking.get("id")),
                 )
-                .limit(ITEM_LIMIT)
-                .max_time_ms(_FIN_AGG_MAX_MS)
-                .to_list(ITEM_LIMIT),
-            )
+                if pricing["total"] <= 0:
+                    booking["effective_rate"] = pricing["total"]
+                    invalid.append(booking)
+            return len(invalid), invalid[:ITEM_LIMIT]
 
         async def _check5_closed():
             closed_folios = (
@@ -1043,7 +1042,7 @@ class FinancialService:
         rate_items = [
             {
                 "booking_id": b["id"],
-                "rate": b.get("room_rate") or b.get("rate") or 0,
+                "rate": b.get("effective_rate", 0),
                 "guest_name": b.get("guest_name"),
                 "room_no": b.get("room_no"),
                 "guest_id": b.get("guest_id"),

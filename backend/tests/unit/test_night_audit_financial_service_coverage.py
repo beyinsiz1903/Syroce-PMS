@@ -423,6 +423,7 @@ async def test_integrity_check_surfaces_each_operational_issue_and_audit_mismatc
     folio_charges.count_documents = AsyncMock(side_effect=[1, 1, 1])
     database = SimpleNamespace(
         bookings=bookings,
+        daily_rates=_find_collection(AsyncCursor()),
         folios=folios,
         folio_charges=folio_charges,
         night_audit_runs=SimpleNamespace(
@@ -447,6 +448,6 @@ async def test_integrity_check_surfaces_each_operational_issue_and_audit_mismatc
     assert result.data["summary"]["overall_status"] == "fail"
     assert any(
         call.args[0].get("is_complimentary") == {"$ne": True}
-        for call in bookings.count_documents.await_args_list
+        for call in bookings.find.call_args_list
     )
     service._enrich_with_guest_room.assert_awaited_once()

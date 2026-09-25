@@ -54,6 +54,20 @@ COLLECTIONS = [
 ]
 
 
+def test_checkout_on_business_date_is_not_overdue_until_next_day():
+    from core.night_audit_hardened import _partition_due_bookings
+
+    bookings = [
+        {"id": "due-today", "check_out": "2026-09-25T00:00:00+00:00"},
+        {"id": "already-past", "check_out": "2026-09-24"},
+    ]
+
+    overdue, invalid = _partition_due_bookings(bookings, "check_out", "2026-09-25")
+
+    assert [booking["id"] for booking in overdue] == ["already-past"]
+    assert invalid == []
+
+
 async def _get_db():
     """Create a fresh Motor client bound to the current event loop."""
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
