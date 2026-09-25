@@ -2971,6 +2971,8 @@
       "saveError": "Ayarlar kaydedilemedi",
       "walkOutCompleted": "Walk-out işlemi tamamlandı",
       "walkOutError": "Walk-out işlemi başarısız",
+      "loadError": "Gelir ayarları yüklenemedi. Mevcut ayarların üzerine yazmamak için kaydetme kapatıldı.",
+      "retry": "Tekrar Dene",
       "days": {
         "mon": "Pzt",
         "tue": "Sal",

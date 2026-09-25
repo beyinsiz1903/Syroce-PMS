@@ -1071,7 +1071,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'concierge' && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
           {activeTab === 'revenue' && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}
           {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport businessDate={businessDate} rooms={rooms} bookings={bookings} /></TabsContent>}
-          {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
+          {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification tenantId={tenant?.id || tenant?._id || tenant?.tenant_id} bookings={bookings} guests={guests} /></TabsContent>}
           {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
           </Suspense>}
             </div>

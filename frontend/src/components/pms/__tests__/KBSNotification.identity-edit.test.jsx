@@ -98,7 +98,7 @@ describe('KBSNotification pending guest identity editing', () => {
     await waitFor(() => {
       expect(axiosPatch).toHaveBeenCalledWith(
         '/pms/guests/guest-110/preferences',
-        { id_number: '12345678901', birth_date: '1990-05-12' },
+        { id_number: '12345678901', birth_date: '1990-05-12', nationality: 'TC' },
       );
     });
 

@@ -20,7 +20,7 @@ async def test_guest_preferences_accepts_public_id_with_tenant_scope(monkeypatch
 
     result = await operations_router.update_guest_preferences(
         "guest-public-id",
-        {"preferences": {"pillow_type": "firm"}},
+        {"preferences": {"pillow_type": "firm"}, "nationality": " tr "},
         current_user=SimpleNamespace(tenant_id="tenant-a", email="operator@example.invalid"),
     )
 
@@ -29,6 +29,8 @@ async def test_guest_preferences_accepts_public_id_with_tenant_scope(monkeypatch
         "tenant_id": "tenant-a",
         "$or": [{"id": "guest-public-id"}, {"_id": "guest-public-id"}],
     }
+    update = guests.update_one.await_args.args[1]["$set"]
+    assert update["nationality"] == "TR"
     assert result == {"id": "guest-public-id", "status": "updated"}
     audit.insert_one.assert_awaited_once()
 

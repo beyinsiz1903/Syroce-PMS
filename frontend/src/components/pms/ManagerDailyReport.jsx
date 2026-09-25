@@ -129,7 +129,7 @@ const ManagerDailyReport = ({ rooms = [], bookings = [], businessDate = null }) 
           <FileText className="h-5 w-5" /> {tm('title')}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="w-full sm:w-40" />
+          <Input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="min-w-40 flex-1 sm:flex-none" />
           <Button onClick={printReport}><Printer className="h-4 w-4 mr-1" /> {tm('print')}</Button>
         </div>
       </div>

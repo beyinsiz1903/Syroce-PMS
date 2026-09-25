@@ -32,21 +32,31 @@ const KVKKManager = () => {
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadWarning, setLoadWarning] = useState('');
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [reqRes, consentRes, auditRes] = await Promise.allSettled([
-      axios.get('/kvkk/requests'),
-      axios.get('/kvkk/consents'),
-      axios.get('/kvkk/audit-log'),
-    ]);
-    setRequests(reqRes.status === 'fulfilled' ? reqRes.value.data.requests || [] : []);
-    setConsents(consentRes.status === 'fulfilled' ? consentRes.value.data.consents || [] : []);
-    setAuditLogs(auditRes.status === 'fulfilled' ? auditRes.value.data.logs || [] : []);
-    if ([reqRes, consentRes, auditRes].some(result => result.status === 'rejected')) {
+    setLoadWarning('');
+    try {
+      const [reqRes, consentRes, auditRes] = await Promise.allSettled([
+        axios.get('/kvkk/requests'),
+        axios.get('/kvkk/consents'),
+        axios.get('/kvkk/audit-log'),
+      ]);
+      if (reqRes.status === 'fulfilled') setRequests(reqRes.value.data.requests || []); else setRequests([]);
+      if (consentRes.status === 'fulfilled') setConsents(consentRes.value.data.consents || []); else setConsents([]);
+      if (auditRes.status === 'fulfilled') setAuditLogs(auditRes.value.data.logs || []); else setAuditLogs([]);
+      const failed = [reqRes, consentRes, auditRes].filter(result => result.status === 'rejected').length;
+      if (failed) {
+        const message = `${failed} KVKK veri kaynağı yüklenemedi. Eksik bilgiler gösterilmiyor.`;
+        setLoadWarning(message);
+        toast.warning(message);
+      }
+    } catch {
       toast.error(tv('loadError'));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [tv]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -86,6 +96,7 @@ const KVKKManager = () => {
         <Button onClick={() => setShowNewRequest(true)}>{tv('newRequest')}</Button>
       </div>
 
+      {loadWarning && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{loadWarning}</div>}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{requests.length}</div><div className="text-xs text-muted-foreground">{tv('totalRequests')}</div></CardContent></Card>
         <Card className="border-yellow-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{requests.filter(r => r.status === 'pending').length}</div><div className="text-xs text-muted-foreground">{tv('pending')}</div></CardContent></Card>
@@ -143,7 +154,7 @@ const KVKKManager = () => {
                   </div>
                 </div>
                 {req.status !== 'completed' && (
-                  <Button size="sm" onClick={() => completeRequest(req.id)}><CheckCircle className="h-3 w-3 mr-1" />{tv('completeRequest')}</Button>
+                  <Button className="w-full sm:w-auto" size="sm" onClick={() => completeRequest(req.id)}><CheckCircle className="h-3 w-3 mr-1" />{tv('completeRequest')}</Button>
                 )}
               </CardContent>
             </Card>
@@ -178,7 +189,7 @@ const KVKKManager = () => {
               <div className="space-y-3">
                 {auditLogs.length === 0 && <p className="text-center text-muted-foreground py-4">{tv('noAuditLogs')}</p>}
                 {auditLogs.map((log) => (
-                  <div key={log.id} className="flex items-center justify-between border-b pb-2 last:border-0">
+                  <div key={log.id} className="flex flex-col gap-1 border-b pb-2 last:border-0 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <Database className="h-3 w-3 text-muted-foreground" />
@@ -186,7 +197,7 @@ const KVKKManager = () => {
                       </div>
                       <div className="text-xs text-muted-foreground">{tv('user')} {log.user} | {tv('target')} {log.target}</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">{log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}</div>
+                    <div className="text-xs text-muted-foreground">{log.timestamp ? new Date(log.timestamp).toLocaleString('tr-TR') : ''}</div>
                   </div>
                 ))}
               </div>
