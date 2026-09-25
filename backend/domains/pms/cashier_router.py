@@ -116,7 +116,7 @@ async def get_current_shift(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     await _ensure_shift_indexes()
-    from domains.pms.cashier_service import reconcile_open_shift_payments
+    from domains.pms.cashier_service import reconcile_open_shift_payments, summarize_shift_transactions
 
     await reconcile_open_shift_payments(current_user.tenant_id)
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"}, sort=[("opened_at", -1)])
@@ -124,10 +124,11 @@ async def get_current_shift(
         shift["id"] = str(shift.pop("_id"))
         # Embedded transactions array (Atlas 500-koleksiyon limiti pattern'i)
         txns = list(shift.pop("transactions", []) or [])
+        summary = summarize_shift_transactions(txns)
         # En yeni önce
         txns.sort(key=lambda t: t.get("created_at") or "", reverse=True)
-        return {"shift": shift, "transactions": txns[:200]}
-    return {"shift": None, "transactions": []}
+        return {"shift": shift, "transactions": txns[:200], "summary": summary}
+    return {"shift": None, "transactions": [], "summary": None}
 
 
 @router.post("/cashier/open-shift")
