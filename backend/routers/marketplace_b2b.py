@@ -21,8 +21,9 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
+import jwt as pyjwt
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
@@ -58,7 +59,7 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest):
     # Assuming marketplace_agent users are in the global users collection.
     user = await sysdb.users.find_one({"email": req.email.lower()})
 
-    if not user or not verify_password(req.password, user.get("hashed_password", "")):
+    if not user or user.get("is_active") is False or not verify_password(req.password, user.get("hashed_password", "")):
         raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
 
     role = getattr(user.get("role"), "value", user.get("role"))
@@ -90,18 +91,32 @@ async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-A
     agency_id = None
 
     if authorization and authorization.lower().startswith("bearer "):
-        from fastapi.security import HTTPAuthorizationCredentials
-
-        from core.security import get_current_user
-
         try:
-            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization.split(" ", 1)[1])
-            user = await get_current_user(creds)
-            role = getattr(user.role, "value", user.role) if hasattr(user, "role") else user.get("role")
+            from core.security import JWT_ALGORITHM, JWT_SECRET, is_jti_revoked
+
+            token = authorization.split(" ", 1)[1]
+            payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            if payload.get("type") not in (None, "access") or not payload.get("user_id"):
+                raise HTTPException(401, "Geçersiz acente erişim token'ı")
+            if payload.get("jti") and await is_jti_revoked(payload["jti"]):
+                raise HTTPException(401, "Acente oturumu sonlandırılmış")
+            user = await sysdb.users.find_one(
+                {"$or": [{"id": payload["user_id"]}, {"user_id": payload["user_id"]}]},
+                {"_id": 0},
+            )
+            if not user or user.get("is_active") is False:
+                raise HTTPException(401, "Acente kullanıcısı aktif değil")
+            invalid_before = user.get("tokens_invalid_before")
+            if invalid_before and float(payload.get("iat") or 0) < float(invalid_before):
+                raise HTTPException(401, "Acente oturumu artık geçerli değil")
+            raw_role = user.get("role")
+            role = getattr(raw_role, "value", raw_role)
             roles = user.get("roles") or []
             if role != "marketplace_agent" and "marketplace_agent" not in roles:
                 raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
             agency_id = user.get("agency_id")
+        except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
+            raise HTTPException(401, "Geçersiz veya süresi dolmuş acente token'ı")
         except Exception as e:
             if isinstance(e, HTTPException):
                 raise e
@@ -141,22 +156,41 @@ async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-A
 @router.get("/extranet/my-hotels")
 async def marketplace_my_hotels(agency: dict = Depends(get_marketplace_agency)):
     """Acentenin aktif sözleşmesi olan otelleri listeler."""
-    sysdb = get_system_db()
-    # Query all active contracts for this global agency across all tenants
-    contracts = await sysdb.agency_contracts.find({"agency_id": agency["agency_id"], "is_active": True}).to_list(1000)
+    from routers.agency_contracts import list_partner_tenant_ids
 
-    tenant_ids = list({c.get("tenant_id") for c in contracts if c.get("tenant_id")})
+    sysdb = get_system_db()
+    tenant_ids = await list_partner_tenant_ids(agency["agency_id"])
 
     hotels = []
     if tenant_ids:
-        # Assuming there is a db.tenants or sysdb.tenants collection with hotel info
-        # Let's query marketplace_listings instead, since that's what marketplace uses
-        listings = await sysdb.marketplace_listings.find({"tenant_id": {"$in": tenant_ids}, "is_active": True}, {"_id": 0}).to_list(1000)
+        listings = await sysdb.marketplace_listings.find(
+            {"tenant_id": {"$in": tenant_ids}, "is_listed": True}, {"_id": 0}
+        ).to_list(1000)
 
         for listing in listings:
-            hotels.append({"tenant_id": listing["tenant_id"], "name": listing.get("hotel_name", "Bilinmeyen Otel"), "city": listing.get("city", ""), "country": listing.get("country", "")})
+            hotels.append({
+                "tenant_id": listing["tenant_id"],
+                "name": listing.get("hotel_name", "Bilinmeyen Otel"),
+                "city": listing.get("city", ""),
+                "country": listing.get("country", ""),
+                "currency": listing.get("currency", "TRY"),
+            })
 
     return {"hotels": hotels}
+
+
+@router.get("/extranet/profile")
+async def marketplace_extranet_profile(agency: dict = Depends(get_marketplace_agency)):
+    """Reload-safe identity for the multi-property agency portal."""
+    hotel_result = await marketplace_my_hotels(agency)
+    return {
+        "agency": {
+            "id": agency["agency_id"],
+            "name": agency.get("agency_name", ""),
+            "contact_email": agency.get("contact_email", ""),
+        },
+        "hotels": hotel_result["hotels"],
+    }
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
@@ -168,6 +202,17 @@ def _now_iso() -> str:
 
 def _uuid() -> str:
     return str(uuid.uuid4())
+
+
+def _last_occupied_date(check_in: str, check_out: str) -> str:
+    """Convert the exclusive checkout boundary to the final sold room-night."""
+    from datetime import timedelta
+
+    ci = datetime.fromisoformat(check_in).date()
+    co = datetime.fromisoformat(check_out).date()
+    if co <= ci:
+        raise HTTPException(400, "check_out, check_in'den sonra olmalı")
+    return (co - timedelta(days=1)).isoformat()
 
 
 def _hash_key(key: str) -> str:
@@ -286,8 +331,8 @@ class MarketplaceListingUpdate(BaseModel):
 class MarketplaceSearchRequest(BaseModel):
     check_in: str  # YYYY-MM-DD
     check_out: str  # YYYY-MM-DD
-    adults: int = 2
-    children: int = 0
+    adults: int = Field(default=2, ge=1, le=20)
+    children: int = Field(default=0, ge=0, le=20)
     city: str | None = None
     country: str | None = None
     q: str | None = None
@@ -296,18 +341,19 @@ class MarketplaceSearchRequest(BaseModel):
 
 
 class MarketplaceReservationCreate(BaseModel):
-    tenant_id: str
-    room_type: str
+    tenant_id: str = Field(..., min_length=1, max_length=128)
+    room_type: str = Field(..., min_length=1, max_length=160)
     check_in: str  # YYYY-MM-DD
     check_out: str  # YYYY-MM-DD
-    guest_name: str
-    guest_email: str = ""
-    guest_phone: str = ""
-    adults: int = 2
-    children: int = 0
-    special_requests: str = ""
-    total_amount: float = 0
-    external_reference: str = ""  # Acentenin kendi PNR/voucher kodu
+    guest_name: str = Field(..., min_length=2, max_length=160)
+    guest_email: EmailStr | None = None
+    guest_phone: str = Field(default="", max_length=40)
+    adults: int = Field(default=2, ge=1, le=20)
+    children: int = Field(default=0, ge=0, le=20)
+    special_requests: str = Field(default="", max_length=1000)
+    total_amount: float = Field(default=0, ge=0)
+    external_reference: str = Field(default="", max_length=160)  # Acentenin kendi PNR/voucher kodu
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -560,6 +606,8 @@ async def agency_get_hotel(
         rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
     room_types = {}
     for r in rooms:
+        if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
+            continue
         rt = r.get("room_type", "Standard")
         if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
             continue
@@ -597,7 +645,10 @@ async def agency_search(
 
     from routers.agency_contracts import list_partner_tenant_ids
 
-    partner_tenant_ids = await list_partner_tenant_ids(agency["agency_id"], on_date=req.check_in)
+    last_night = _last_occupied_date(req.check_in, req.check_out)
+    partner_tenant_ids = await list_partner_tenant_ids(
+        agency["agency_id"], on_date=req.check_in, through_date=last_night
+    )
     if not partner_tenant_ids:
         return {"check_in": req.check_in, "check_out": req.check_out, "results": [], "total_hotels": 0, "message": "Henüz onaylı sözleşmeniz olan otel yok."}
 
@@ -631,6 +682,8 @@ async def agency_search(
 
             room_types: dict[str, dict] = {}
             for r in rooms:
+                if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
+                    continue
                 rt = r.get("room_type", "Standard")
                 if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
                     continue
@@ -659,7 +712,7 @@ async def agency_search(
                         # Half-open hotel-night overlap. A same-day departure
                         # must not consume the arriving guest's room-night.
                         "check_in": {"$lt": req.check_out + "T00:00:00"},
-                        "check_out": {"$gt": req.check_in + "T23:59:59.999999"},
+                        "check_out": {"$gt": req.check_in + "T00:00:00"},
                     }
                 )
                 rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
@@ -715,7 +768,10 @@ async def agency_hotel_availability(
 ):
     from routers.agency_contracts import has_active_contract
 
-    if not await has_active_contract(agency["agency_id"], tenant_id, on_date=check_in):
+    last_night = _last_occupied_date(check_in, check_out)
+    if not await has_active_contract(
+        agency["agency_id"], tenant_id, on_date=check_in, through_date=last_night
+    ):
         raise HTTPException(403, "Bu otelle bu tarih için aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
     if any(d in listing.get("blocked_dates", []) for d in _date_range(check_in, check_out)):
@@ -733,6 +789,8 @@ async def agency_hotel_availability(
         rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
         room_types: dict[str, dict] = {}
         for r in rooms:
+            if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
+                continue
             rt = r.get("room_type", "Standard")
             if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
                 continue
@@ -760,7 +818,7 @@ async def agency_hotel_availability(
                     "room_id": {"$in": rt_data["_room_ids"]},
                     "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
                     "check_in": {"$lt": check_out + "T00:00:00"},
-                    "check_out": {"$gt": check_in + "T23:59:59.999999"},
+                    "check_out": {"$gt": check_in + "T00:00:00"},
                 }
             )
             rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
@@ -788,7 +846,9 @@ async def agency_hotel_rates(
 ):
     from routers.agency_contracts import has_active_contract
 
-    if not await has_active_contract(agency["agency_id"], tenant_id, on_date=start_date):
+    if not await has_active_contract(
+        agency["agency_id"], tenant_id, on_date=start_date, through_date=end_date
+    ):
         raise HTTPException(403, "Bu otelle aktif sözleşmeniz yok")
     await _get_listing_or_404(tenant_id)
     base_query = {
@@ -819,7 +879,27 @@ async def agency_create_reservation(
     """Listed otele cross-tenant rezervasyon oluştur. Mevcut bookings koleksiyonuna düşer."""
     from routers.agency_contracts import has_active_contract
 
-    contract = await has_active_contract(agency["agency_id"], data.tenant_id, on_date=data.check_in)
+    sysdb = get_system_db()
+    if data.idempotency_key:
+        existing = await sysdb.marketplace_bookings.find_one(
+            {
+                "agency_id": agency["agency_id"],
+                "idempotency_key": data.idempotency_key,
+            },
+            {"_id": 0},
+        )
+        if existing:
+            if existing.get("tenant_id") != data.tenant_id:
+                raise HTTPException(409, "Bu işlem anahtarı farklı bir tesis rezervasyonunda kullanılmış")
+            return {"ok": True, "reservation": existing, "idempotent_replay": True}
+
+    last_night = _last_occupied_date(data.check_in, data.check_out)
+    contract = await has_active_contract(
+        agency["agency_id"],
+        data.tenant_id,
+        on_date=data.check_in,
+        through_date=last_night,
+    )
     if not contract:
         raise HTTPException(403, "Bu otelle bu tarih için aktif sözleşmeniz yok. Önce sözleşme teklifi gönderip otelin onayını bekleyin.")
 
@@ -846,9 +926,18 @@ async def agency_create_reservation(
     # Room selection is followed by create_booking_atomic below; its room-night
     # lock is the authoritative race-safety guard under concurrent requests.
     with tenant_context(data.tenant_id):
-        rooms = await db.rooms.find({"tenant_id": data.tenant_id, "room_type": data.room_type}, {"_id": 0}).to_list(500)
+        rooms = await db.rooms.find(
+            {
+                "tenant_id": data.tenant_id,
+                "room_type": data.room_type,
+                "is_active": {"$ne": False},
+                "status": {"$nin": ["maintenance", "out_of_order", "blocked"]},
+            },
+            {"_id": 0},
+        ).to_list(500)
+        rooms = [room for room in rooms if int(room.get("capacity") or 2) >= data.adults + data.children]
         if not rooms:
-            raise HTTPException(404, "Oda tipi bulunamadı")
+            raise HTTPException(404, "Uygun kapasitede, satışa açık oda tipi bulunamadı")
 
         available_room = None
         for room in rooms:
@@ -858,7 +947,7 @@ async def agency_create_reservation(
                     "room_id": room["id"],
                     "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
                     "check_in": {"$lt": data.check_out + "T00:00:00"},
-                    "check_out": {"$gt": data.check_in + "T23:59:59.999999"},
+                    "check_out": {"$gt": data.check_in + "T00:00:00"},
                 }
             )
             if conflict == 0:
@@ -893,7 +982,7 @@ async def agency_create_reservation(
                     "id": guest_id,
                     "tenant_id": data.tenant_id,
                     "name": data.guest_name.strip(),
-                    "email": data.guest_email.strip(),
+                    "email": str(data.guest_email or "").strip().lower() or f"agency-{guest_id[:8]}@placeholder.local",
                     "phone": data.guest_phone.strip(),
                     "id_number": "",
                     "vip_status": False,
@@ -927,6 +1016,10 @@ async def agency_create_reservation(
             "source_channel": "marketplace",
             "marketplace_agency_id": agency["agency_id"],
             "marketplace_agency_name": agency["agency_name"],
+            # Canonical fields are shared with hotel-created agency bookings so
+            # every PMS surface can identify the exact seller consistently.
+            "agency_id": agency["agency_id"],
+            "agency_name": agency["agency_name"],
             "agency_commission_rate": commission_pct,
             "agency_commission_amount": commission_amount,
             "net_to_hotel": net_to_hotel,
@@ -934,7 +1027,7 @@ async def agency_create_reservation(
             "external_reference": data.external_reference,
             "special_requests": data.special_requests,
             "guest_name": data.guest_name.strip(),
-            "guest_email": data.guest_email.strip(),
+            "guest_email": str(data.guest_email or "").strip().lower(),
             "guest_phone": data.guest_phone.strip(),
             "origin": "syroce_marketplace",
             "created_at": _now_iso(),
@@ -946,8 +1039,17 @@ async def agency_create_reservation(
         # through create_booking_atomic.
         try:
             booking_doc = await create_booking_atomic(tenant_id=data.tenant_id, booking_doc=booking_doc)
+        except BookingConflictError as conflict_err:
+            await db.guests.delete_one({"id": guest_id, "tenant_id": data.tenant_id})
+            raise HTTPException(status_code=409, detail=str(conflict_err))
+        except Exception:
+            await db.guests.delete_one({"id": guest_id, "tenant_id": data.tenant_id})
+            raise
 
-            # ---- FOLIO CREATION ----
+        # The booking is durable from this point. Ancillary delivery failures
+        # are logged instead of returning an error that could cause a duplicate
+        # agency retry.
+        try:
             from models.schemas import Folio, FolioType
 
             folio = Folio(
@@ -960,31 +1062,54 @@ async def agency_create_reservation(
             folio_dict = folio.model_dump()
             folio_dict["created_at"] = folio_dict["created_at"].isoformat()
             await db.folios.insert_one(folio_dict)
+        except Exception as exc:
+            logger.warning("Marketplace folio creation failed booking=%s error=%s", booking_id, type(exc).__name__)
 
-            # ---- BROADCAST & OUTBOX ----
-            try:
-                from routers.pms_bookings import _publish_multi_room_booking_created_events
+        try:
+            from routers.pms_bookings import _publish_multi_room_booking_created_events
 
-                property_id = data.tenant_id
-                await _publish_multi_room_booking_created_events(
-                    tenant_id=data.tenant_id,
-                    property_id=property_id,
-                    bookings=[booking_doc],
-                )
-                from core.ws_rooms import tenant_broadcast_room
-                from websocket_server import sio
+            property_id = data.tenant_id
+            await _publish_multi_room_booking_created_events(
+                tenant_id=data.tenant_id,
+                property_id=property_id,
+                bookings=[booking_doc],
+            )
+            from core.ws_rooms import tenant_broadcast_room
+            from websocket_server import sio
 
-                await sio.emit("booking_created", {"booking": booking_doc}, room=tenant_broadcast_room(data.tenant_id))
-            except Exception as e:
-                import logging
+            await sio.emit("booking_created", {"booking": booking_doc}, room=tenant_broadcast_room(data.tenant_id))
+        except Exception as exc:
+            logger.warning("Marketplace live publish failed booking=%s error=%s", booking_id, type(exc).__name__)
 
-                logging.getLogger("marketplace").warning(f"Failed to publish B2B booking events: {e}")
-
-        except BookingConflictError as conflict_err:
-            raise HTTPException(status_code=409, detail=str(conflict_err))
+        try:
+            await db.notifications.insert_one(
+                {
+                    "id": _uuid(),
+                    "tenant_id": data.tenant_id,
+                    "user_id": None,
+                    "type": "reservation",
+                    "title": f"Yeni Acente Rezervasyonu: {data.guest_name.strip()}",
+                    "message": (
+                        f"{agency['agency_name']} tarafından yeni rezervasyon oluşturuldu. "
+                        f"Giriş: {data.check_in}, Çıkış: {data.check_out}, "
+                        f"Oda: {available_room.get('room_number', '-')}, Tutar: {total:.2f}"
+                    ),
+                    "priority": "high",
+                    "read": False,
+                    "action_url": f"/reservations?booking_id={booking_id}",
+                    "metadata": {
+                        "booking_id": booking_id,
+                        "agency_id": agency["agency_id"],
+                        "agency_name": agency["agency_name"],
+                        "channel": "marketplace",
+                    },
+                    "created_at": _now_iso(),
+                }
+            )
+        except Exception as exc:
+            logger.warning("Marketplace notification failed booking=%s error=%s", booking_id, type(exc).__name__)
 
     # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
-    sysdb = get_system_db()
     await sysdb.marketplace_bookings.insert_one(
         {
             "id": booking_id,
@@ -993,6 +1118,7 @@ async def agency_create_reservation(
             "hotel_name": listing.get("hotel_name"),
             "confirmation_code": confirmation_code,
             "external_reference": data.external_reference,
+            "idempotency_key": data.idempotency_key,
             "check_in": data.check_in,
             "check_out": data.check_out,
             "guest_name": data.guest_name,

@@ -47,6 +47,9 @@ const AgencyPortalDashboard = () => {
   const [agencyInfo, setAgencyInfo] = useState(null);
   const [hotelInfo, setHotelInfo] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('agency_token'));
+  const [portalMode, setPortalMode] = useState(localStorage.getItem('agency_portal_mode') || 'hotel');
+  const [hotels, setHotels] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState(localStorage.getItem('agency_selected_hotel') || '');
   const [profileLoading, setProfileLoading] = useState(Boolean(localStorage.getItem('agency_token')));
   const [profileError, setProfileError] = useState('');
   const [profileRevision, setProfileRevision] = useState(0);
@@ -77,7 +80,8 @@ const AgencyPortalDashboard = () => {
     adults: 2,
     children: 0,
     special_requests: '',
-    total_amount: 0
+    total_amount: 0,
+    idempotency_key: ''
   });
   const [bookingLoading, setBookingLoading] = useState(false);
 
@@ -90,12 +94,20 @@ const AgencyPortalDashboard = () => {
     e.preventDefault();
     setLoginLoading(true);
     try {
-      const {
-        data
-      } = await agencyApi.post('/agency-portal/auth/login', {
-        email: loginForm.email.trim().toLowerCase(), password: loginForm.password,
-      });
+      const credentials = { email: loginForm.email.trim().toLowerCase(), password: loginForm.password };
+      let response;
+      let mode = 'hotel';
+      try {
+        response = await agencyApi.post('/agency-portal/auth/login', credentials);
+      } catch (localError) {
+        if (![401, 403, 404].includes(localError.response?.status)) throw localError;
+        response = await agencyApi.post('/marketplace/v1/extranet/auth/login', credentials);
+        mode = 'marketplace';
+      }
+      const { data } = response;
       localStorage.setItem('agency_token', data.token);
+      localStorage.setItem('agency_portal_mode', mode);
+      setPortalMode(mode);
       setProfileLoading(true);
       setToken(data.token);
       setAgencyUser(data.user);
@@ -110,6 +122,8 @@ const AgencyPortalDashboard = () => {
   };
   const handleLogout = () => {
     localStorage.removeItem('agency_token');
+    localStorage.removeItem('agency_portal_mode');
+    localStorage.removeItem('agency_selected_hotel');
     setToken(null);
     setAgencyUser(null);
     setAgencyInfo(null);
@@ -117,6 +131,8 @@ const AgencyPortalDashboard = () => {
     setContent(null);
     setAvailability(null);
     setReservations([]);
+    setHotels([]);
+    setSelectedTenantId('');
     setProfileLoading(false);
     setProfileError('');
   };
@@ -126,12 +142,24 @@ const AgencyPortalDashboard = () => {
     if (!token) return;
     const loadProfile = async () => {
       try {
-        const {
-          data
-        } = await agencyApi.get('/agency-portal/profile');
-        setAgencyUser(data.user || null);
-        setAgencyInfo(data.agency);
-        setHotelInfo(data.hotel || null);
+        if (portalMode === 'marketplace') {
+          const { data } = await agencyApi.get('/marketplace/v1/extranet/profile');
+          const availableHotels = data.hotels || [];
+          const storedHotel = localStorage.getItem('agency_selected_hotel') || '';
+          const allowedSelected = availableHotels.some(h => h.tenant_id === storedHotel)
+            ? storedHotel : (availableHotels[0]?.tenant_id || '');
+          setAgencyInfo(data.agency || null);
+          setHotels(availableHotels);
+          setSelectedTenantId(allowedSelected);
+          if (allowedSelected) localStorage.setItem('agency_selected_hotel', allowedSelected);
+          const selected = availableHotels.find(h => h.tenant_id === allowedSelected);
+          setHotelInfo(selected ? { name: selected.name, currency: selected.currency || 'TRY', ...selected } : null);
+        } else {
+          const { data } = await agencyApi.get('/agency-portal/profile');
+          setAgencyUser(data.user || null);
+          setAgencyInfo(data.agency);
+          setHotelInfo(data.hotel || null);
+        }
         setProfileError('');
       } catch (err) {
         if (err.response?.status === 401 || err.response?.status === 403) handleLogout();
@@ -141,16 +169,27 @@ const AgencyPortalDashboard = () => {
       }
     };
     loadProfile();
-  }, [token, profileRevision]);
+  }, [token, profileRevision, portalMode]);
 
   // Load content
   const loadContent = async () => {
     setContentLoading(true);
     try {
-      const {
-        data
-      } = await agencyApi.get('/agency-portal/content');
-      setContent(data);
+      if (portalMode === 'marketplace') {
+        if (!selectedTenantId) return setContent({ published: false, hotel_content: null });
+        const { data } = await agencyApi.get(`/marketplace/v1/hotels/${encodeURIComponent(selectedTenantId)}`);
+        setContent({
+          published: true,
+          hotel_content: {
+            ...data.listing,
+            hotel_name: data.listing?.hotel_name,
+            room_types: data.room_types || [],
+          },
+        });
+      } else {
+        const { data } = await agencyApi.get('/agency-portal/content');
+        setContent(data);
+      }
     } catch {
       toast.error('Otel bilgileri yüklenemedi');
     } finally {
@@ -164,10 +203,28 @@ const AgencyPortalDashboard = () => {
     if (searchForm.check_out <= searchForm.check_in) return toast.error('Çıkış tarihi girişten sonra olmalıdır');
     setSearchLoading(true);
     try {
-      const {
-        data
-      } = await agencyApi.get('/agency-portal/availability', { params: searchForm });
-      setAvailability(data);
+      if (portalMode === 'marketplace') {
+        if (!selectedTenantId) return toast.error('Aktif sözleşmeli bir otel seçin');
+        const { data } = await agencyApi.post('/marketplace/v1/search', searchForm);
+        const hotelResult = (data.results || []).find(result => result.tenant_id === selectedTenantId);
+        const selectedHotel = hotels.find(h => h.tenant_id === selectedTenantId);
+        setAvailability({
+          check_in: data.check_in,
+          check_out: data.check_out,
+          night_count: Math.max(1, Math.round((new Date(data.check_out) - new Date(data.check_in)) / 86400000)),
+          adults: searchForm.adults,
+          children: searchForm.children,
+          currency: selectedHotel?.currency || 'TRY',
+          room_types: (hotelResult?.available_room_types || []).map(room => ({
+            ...room,
+            base_price: room.base_price,
+            stay_total: room.total_price,
+          })),
+        });
+      } else {
+        const { data } = await agencyApi.get('/agency-portal/availability', { params: searchForm });
+        setAvailability(data);
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Arama hatası');
     } finally {
@@ -186,7 +243,8 @@ const AgencyPortalDashboard = () => {
       adults: searchForm.adults,
       children: searchForm.children,
       special_requests: '',
-      total_amount: roomType.stay_total ?? roomType.base_price * nights
+      total_amount: roomType.stay_total ?? roomType.base_price * nights,
+      idempotency_key: crypto.randomUUID()
     });
     setShowBookingForm(true);
   };
@@ -197,10 +255,7 @@ const AgencyPortalDashboard = () => {
     }
     setBookingLoading(true);
     try {
-      const {
-        data
-      } = await agencyApi.post('/agency-portal/reservations', {
-        room_type_id: selectedRoomType.room_type,
+      const payload = {
         check_in: searchForm.check_in,
         check_out: searchForm.check_out,
         guest_name: bookingForm.guest_name.trim(),
@@ -209,8 +264,23 @@ const AgencyPortalDashboard = () => {
         adults: bookingForm.adults,
         children: bookingForm.children,
         special_requests: bookingForm.special_requests.trim(),
-      });
-      toast.success(data.message || 'Rezervasyon oluşturuldu');
+      };
+      let response;
+      if (portalMode === 'marketplace') {
+        response = await agencyApi.post('/marketplace/v1/reservations', {
+          ...payload,
+          tenant_id: selectedTenantId,
+          room_type: selectedRoomType.room_type,
+          total_amount: bookingForm.total_amount,
+          idempotency_key: bookingForm.idempotency_key,
+        });
+      } else {
+        response = await agencyApi.post('/agency-portal/reservations', {
+          ...payload,
+          room_type_id: selectedRoomType.room_type,
+        });
+      }
+      toast.success(response.data.message || `Rezervasyon oluşturuldu: ${response.data.reservation?.confirmation_code || ''}`);
       setShowBookingForm(false);
       setAvailability(null);
       loadReservations();
@@ -225,10 +295,15 @@ const AgencyPortalDashboard = () => {
   const loadReservations = async () => {
     setReservationsLoading(true);
     try {
-      const {
-        data
-      } = await agencyApi.get('/agency-portal/reservations');
-      setReservations(Array.isArray(data) ? data : data.items || []);
+      if (portalMode === 'marketplace') {
+        const { data } = await agencyApi.get('/marketplace/v1/reservations', {
+          params: selectedTenantId ? { tenant_id: selectedTenantId } : {},
+        });
+        setReservations(data.reservations || []);
+      } else {
+        const { data } = await agencyApi.get('/agency-portal/reservations');
+        setReservations(Array.isArray(data) ? data : data.items || []);
+      }
     } catch {
       toast.error('Rezervasyonlar yüklenemedi');
     } finally {
@@ -311,7 +386,7 @@ const AgencyPortalDashboard = () => {
               <Building2 size={18} className="text-emerald-700" />
             </div>
             <div>
-              <div className="font-semibold text-slate-800 text-sm">{hotelInfo?.name || 'Otel Satış Portalı'}</div>
+              <div className="font-semibold text-slate-800 text-sm">{portalMode === 'marketplace' ? 'Acente Otel Satış Portalı' : (hotelInfo?.name || 'Otel Satış Portalı')}</div>
               <div className="text-xs text-slate-500">{agencyInfo?.name || 'Acente'} · {agencyUser?.name || ''}</div>
             </div>
           </div>
@@ -332,6 +407,33 @@ const AgencyPortalDashboard = () => {
 
           {/* Search Tab */}
           <TabsContent value="search" className="mt-4 space-y-4">
+            {portalMode === 'marketplace' && <Card className="border-emerald-200 bg-emerald-50/40">
+              <CardContent className="pt-5">
+                <Label htmlFor="agency-hotel-select" className="text-xs">Rezervasyon yapılacak otel</Label>
+                <select
+                  id="agency-hotel-select"
+                  data-testid="agency-hotel-select"
+                  value={selectedTenantId}
+                  onChange={event => {
+                    const tenantId = event.target.value;
+                    const selected = hotels.find(hotel => hotel.tenant_id === tenantId);
+                    setSelectedTenantId(tenantId);
+                    localStorage.setItem('agency_selected_hotel', tenantId);
+                    setHotelInfo(selected ? { name: selected.name, currency: selected.currency || 'TRY', ...selected } : null);
+                    setAvailability(null);
+                    setReservations([]);
+                    setContent(null);
+                  }}
+                  className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                >
+                  {hotels.length === 0 && <option value="">Aktif sözleşmeli otel bulunmuyor</option>}
+                  {hotels.map(hotel => <option key={hotel.tenant_id} value={hotel.tenant_id}>
+                    {hotel.name}{hotel.city ? ` · ${hotel.city}` : ''}
+                  </option>)}
+                </select>
+                <p className="mt-2 text-xs text-emerald-800 flex items-start gap-1.5"><ShieldCheck size={14} className="shrink-0" />Yalnız aktif ve tüm konaklama tarihini kapsayan sözleşmeli oteller listelenir. Tesis yetkisi rezervasyon kaydında sunucuda tekrar doğrulanır.</p>
+              </CardContent>
+            </Card>}
             <Card>
               <CardContent className="pt-5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
@@ -428,6 +530,7 @@ const AgencyPortalDashboard = () => {
                         <div className="font-semibold text-slate-800">{r.guest_name || 'Misafir'}</div>
                         <div className="text-xs text-slate-600 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                           <span className="font-mono">{r.confirmation_code || r.id}</span>
+                          {r.hotel_name && <span className="font-medium text-emerald-700">{r.hotel_name}</span>}
                           <span>{r.room_type || 'Oda tipi belirtilmemiş'}</span>
                           <span>{r.room_number ? `Oda ${r.room_number}` : 'Oda ataması bekliyor'}</span>
                         </div>

@@ -121,26 +121,33 @@ async def _ensure_indexes() -> None:
 # ─── Public helper (marketplace_b2b.py'den çağrılır) ──────────────────────
 
 
-async def has_active_contract(agency_id: str, tenant_id: str, on_date: str | None = None) -> dict | None:
+async def has_active_contract(
+    agency_id: str,
+    tenant_id: str,
+    on_date: str | None = None,
+    through_date: str | None = None,
+) -> dict | None:
     """O acentenin o otelle on_date için aktif (approved + tarih içinde) sözleşmesi
     var mı? Varsa sözleşme dict'i, yoksa None döner.
     """
     sysdb = get_system_db()
     today = on_date or datetime.now(UTC).strftime("%Y-%m-%d")
-    contract = await sysdb.agency_contracts.find_one(
-        {
+    query = {
             "agency_id": agency_id,
             "tenant_id": tenant_id,
             "status": "approved",
             "valid_from": {"$lte": today},
-            "valid_to": {"$gte": today},
-        },
-        {"_id": 0},
-    )
+            "valid_to": {"$gte": through_date or today},
+        }
+    contract = await sysdb.agency_contracts.find_one(query, {"_id": 0})
     return contract
 
 
-async def list_partner_tenant_ids(agency_id: str, on_date: str | None = None) -> list[str]:
+async def list_partner_tenant_ids(
+    agency_id: str,
+    on_date: str | None = None,
+    through_date: str | None = None,
+) -> list[str]:
     """Bu acentenin bugün aktif sözleşmesi olan tüm tenant_id listesi."""
     sysdb = get_system_db()
     today = on_date or datetime.now(UTC).strftime("%Y-%m-%d")
@@ -149,7 +156,7 @@ async def list_partner_tenant_ids(agency_id: str, on_date: str | None = None) ->
             "agency_id": agency_id,
             "status": "approved",
             "valid_from": {"$lte": today},
-            "valid_to": {"$gte": today},
+            "valid_to": {"$gte": through_date or today},
         },
         {"_id": 0, "tenant_id": 1},
     )
