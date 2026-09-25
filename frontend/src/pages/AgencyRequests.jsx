@@ -180,6 +180,17 @@ const AgencyRequests = () => {
     const co = new Date(checkOut);
     return Math.ceil((co - ci) / (1000 * 60 * 60 * 24));
   };
+  const decideMarketplaceModification = async (item, accept) => {
+    const responseNote = window.prompt(accept ? 'Onay notu (isteğe bağlı)' : 'Reddetme gerekçesi') || '';
+    if (!accept && responseNote.trim().length < 5) return toast.error('Reddetme gerekçesi en az 5 karakter olmalıdır');
+    try {
+      setActionLoading(true);
+      await axios.post(`/marketplace/v1/hotel/negotiations/${item.id}/decision`, { accept, response_note: responseNote });
+      toast.success(accept ? 'Değişiklik uygulandı ve oda müsaitliği yeniden kilitlendi' : 'Değişiklik reddedildi; mevcut rezervasyon korundu');
+      await loadRequests();
+    } catch (error) { toast.error(extractErrorMessage(error, 'Değişiklik yanıtı kaydedilemedi')); }
+    finally { setActionLoading(false); }
+  };
 
   const pendingRequests = requests.filter(r => ['submitted', 'hotel_review'].includes(r.status));
 
@@ -231,8 +242,8 @@ const AgencyRequests = () => {
       {marketplaceNegotiations.length > 0 && <div className="mb-6 space-y-3">
         <h2 className="text-lg font-semibold text-gray-900">Acente ile Karşılıklı İşlemler</h2>
         {marketplaceNegotiations.map(item => <div key={item.id} className="bg-white rounded-lg border border-amber-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div><div className="font-semibold">{item.confirmation_code} · {item.guest_name}</div><div className="text-sm text-gray-600 mt-1">İptal önerisi: {item.reason}</div><div className="text-xs text-gray-500 mt-1">Tek taraflı iptal edilmez; acente yanıtı: {item.status === 'awaiting_agency' ? 'Bekleniyor' : item.status === 'accepted' ? 'Kabul edildi' : 'Reddedildi'}</div></div>
-          {getStatusBadge(item.status === 'awaiting_agency' ? 'hotel_review' : item.status === 'accepted' ? 'approved' : 'rejected')}
+          <div><div className="font-semibold">{item.confirmation_code} · {item.guest_name}</div><div className="text-sm text-gray-600 mt-1">{item.type === 'agency_modification' ? `Değişiklik talebi: ${item.requested?.check_in} – ${item.requested?.check_out} · ${item.requested?.room_type}` : `İptal önerisi: ${item.reason}`}</div><div className="text-xs text-gray-500 mt-1">{item.reason} · Tek taraflı uygulanmaz.</div></div>
+          <div className="flex items-center gap-2">{item.type === 'agency_modification' && item.status === 'awaiting_hotel' && <><Button size="sm" variant="outline" disabled={actionLoading} onClick={() => decideMarketplaceModification(item, false)}>Reddet</Button><Button size="sm" disabled={actionLoading} onClick={() => decideMarketplaceModification(item, true)}>Onayla</Button></>}{getStatusBadge(['awaiting_agency', 'awaiting_hotel'].includes(item.status) ? 'hotel_review' : item.status === 'accepted' ? 'approved' : 'rejected')}</div>
         </div>)}
       </div>}
       {loading && (

@@ -331,6 +331,23 @@ const AgencyPortalDashboard = () => {
       loadReservations();
     } catch (err) { toast.error(err.response?.data?.detail || 'İptal işlemi tamamlanamadı'); }
   };
+  const proposeModification = async reservation => {
+    const checkIn = window.prompt('Yeni giriş tarihi (YYYY-AA-GG)', String(reservation.check_in || '').slice(0, 10));
+    if (!checkIn) return;
+    const checkOut = window.prompt('Yeni çıkış tarihi (YYYY-AA-GG)', String(reservation.check_out || '').slice(0, 10));
+    if (!checkOut) return;
+    const roomType = window.prompt('İstenen oda tipi', reservation.room_type || '');
+    if (!roomType) return;
+    const reason = window.prompt('Değişiklik gerekçesi (en az 5 karakter)', 'Misafir talebi');
+    if (!reason || reason.trim().length < 5) return toast.error('Değişiklik gerekçesi en az 5 karakter olmalıdır');
+    try {
+      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/modification-proposals`, {
+        check_in: checkIn, check_out: checkOut, room_type: roomType.trim(), reason: reason.trim(),
+      });
+      toast.success('Değişiklik talebi otele iletildi; onay verilene kadar rezervasyon korunur');
+      loadReservations();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Değişiklik talebi iletilemedi'); }
+  };
   const printVoucher = async reservation => {
     try {
       const { data } = await agencyApi.get(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/voucher.pdf`, { responseType: 'blob' });
@@ -358,6 +375,17 @@ const AgencyPortalDashboard = () => {
     const end = toDateInput(new Date()); const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
     try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params: { period_start: toDateInput(startDate), period_end: end } }); setReconciliation(data); }
     catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat yüklenemedi'); }
+  };
+  const downloadReconciliation = async () => {
+    const end = toDateInput(new Date()); const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
+    try {
+      const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency.csv', {
+        params: { period_start: toDateInput(startDate), period_end: end }, responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([data], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `acente-mutabakat-${end}.csv`; link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat dosyası indirilemedi'); }
   };
   const statusLabels = {
     confirmed: 'Onaylandı',
@@ -597,6 +625,7 @@ const AgencyPortalDashboard = () => {
                         <div className="flex gap-1 mt-2">
                           <Button size="sm" variant="outline" onClick={() => printVoucher(r)}><Printer size={13} className="mr-1" />Voucher</Button>
                           {portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => emailVoucher(r)}><Mail size={13} className="mr-1" />E-posta</Button>}
+                          {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => proposeModification(r)}>Değişiklik</Button>}
                           {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" className="text-red-700" onClick={() => cancelReservation(r)}><XCircle size={13} className="mr-1" />İptal</Button>}
                         </div>
                       </div>
@@ -606,7 +635,7 @@ const AgencyPortalDashboard = () => {
           </TabsContent>
 
           {portalMode === 'marketplace' && <TabsContent value="finance" className="mt-4 space-y-4">
-            <div><h2 className="font-semibold text-slate-800">Son 30 gün mutabakatı</h2><p className="text-xs text-slate-500">Brüt satış, acente komisyonu ve otele aktarılacak net tutar</p></div>
+            <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-800">Son 30 gün mutabakatı</h2><p className="text-xs text-slate-500">Brüt satış, acente komisyonu ve otele aktarılacak net tutar</p></div><Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV indir</Button></div>
             {!reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[['Brüt satış', reconciliation.totals?.gross_revenue], ['Komisyon', reconciliation.totals?.commission], ['Otele net', reconciliation.totals?.net_to_hotels], ['Rezervasyon', reconciliation.totals?.bookings]].map(([label, value], index) => <Card key={label}><CardContent className="pt-4"><div className="text-xs text-slate-500">{label}</div><div className="text-lg font-bold">{index === 3 ? value : formatMoney(value, hotelInfo?.currency)}</div></CardContent></Card>)}

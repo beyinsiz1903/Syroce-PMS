@@ -14,19 +14,21 @@ Mimari farklar (mevcut /api/b2b ile karşılaştırma):
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import html
+import io
 import logging
 import os
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import jwt as pyjwt
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from core.atomic_booking import BookingConflictError, create_booking_atomic
+from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
 from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db, tenant_context
@@ -55,18 +57,30 @@ class MarketplaceLoginRequest(BaseModel):
 
 
 @router.post("/extranet/auth/login")
-async def marketplace_extranet_login(req: MarketplaceLoginRequest):
+async def marketplace_extranet_login(req: MarketplaceLoginRequest, request: Request):
     """Global B2B Extranet arayüzü (Marketplace UI) için giriş."""
     from core.security import create_token
     from security.passwords import verify_password
 
     sysdb = get_system_db()
+    normalized_email = req.email.strip().lower()
+    client_ip = request.client.host if request.client else "unknown"
+    attempt_key = hashlib.sha256(f"{normalized_email}|{client_ip}".encode()).hexdigest()
+    window_start = datetime.now(UTC) - timedelta(minutes=15)
+    recent_failures = await sysdb.marketplace_login_attempts.count_documents(
+        {"key": attempt_key, "success": False, "created_at": {"$gte": window_start}}
+    )
+    if recent_failures >= 5:
+        raise HTTPException(status_code=429, detail="Çok fazla başarısız giriş. 15 dakika sonra tekrar deneyin")
 
     # Global users (tenant_id = null or "SYROCE_GLOBAL" etc.)
     # Assuming marketplace_agent users are in the global users collection.
-    user = await sysdb.users.find_one({"email": req.email.lower()})
+    user = await sysdb.users.find_one({"email": normalized_email})
 
     if not user or user.get("is_active") is False or not verify_password(req.password, user.get("hashed_password", "")):
+        await sysdb.marketplace_login_attempts.insert_one(
+            {"key": attempt_key, "email_hash": hashlib.sha256(normalized_email.encode()).hexdigest(), "success": False, "created_at": datetime.now(UTC)}
+        )
         raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
 
     role = getattr(user.get("role"), "value", user.get("role"))
@@ -82,6 +96,7 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest):
         raise HTTPException(status_code=403, detail="Marketplace acentesi aktif değil")
 
     token = create_token(user["id"], None)
+    await sysdb.marketplace_login_attempts.delete_many({"key": attempt_key})
 
     return {
         "token": token,
@@ -416,6 +431,13 @@ class CancellationProposalDecision(BaseModel):
 
 class VoucherEmailRequest(BaseModel):
     email: EmailStr
+
+
+class ModificationProposalCreate(BaseModel):
+    check_in: str
+    check_out: str
+    room_type: str = Field(..., min_length=1, max_length=160)
+    reason: str = Field(..., min_length=5, max_length=1000)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1511,6 +1533,155 @@ async def agency_cancel_reservation(
     return {"ok": True, "message": "Rezervasyon iptal edildi", "penalty_pct": penalty_pct, "penalty_amount": penalty_amount}
 
 
+@router.post("/reservations/{reservation_id}/modification-proposals")
+async def agency_propose_reservation_modification(
+    reservation_id: str,
+    data: ModificationProposalCreate,
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Request a stay/room change; PMS approval is mandatory before mutation."""
+    if data.check_out <= data.check_in:
+        raise HTTPException(400, "Çıkış tarihi giriş tarihinden sonra olmalıdır")
+    sysdb = get_system_db()
+    booking = await sysdb.marketplace_bookings.find_one(
+        {"id": reservation_id, "agency_id": agency["agency_id"], "status": "confirmed"}, {"_id": 0}
+    )
+    if not booking:
+        raise HTTPException(404, "Değiştirilebilir aktif rezervasyon bulunamadı")
+    existing = await sysdb.marketplace_negotiations.find_one(
+        {"reservation_id": reservation_id, "type": "agency_modification", "status": "awaiting_hotel"}
+    )
+    if existing:
+        raise HTTPException(409, "Bu rezervasyon için otel yanıtı bekleyen değişiklik zaten var")
+    proposal = {
+        "id": _uuid(),
+        "reservation_id": reservation_id,
+        "tenant_id": booking["tenant_id"],
+        "agency_id": agency["agency_id"],
+        "hotel_name": booking.get("hotel_name"),
+        "confirmation_code": booking.get("confirmation_code"),
+        "guest_name": booking.get("guest_name"),
+        "type": "agency_modification",
+        "reason": data.reason.strip(),
+        "requested": data.model_dump(exclude={"reason"}),
+        "current": {key: booking.get(key) for key in ("check_in", "check_out", "room_type", "total_amount")},
+        "status": "awaiting_hotel",
+        "expires_at": (datetime.now(UTC) + timedelta(hours=48)).isoformat(),
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    await sysdb.marketplace_negotiations.insert_one(proposal)
+    with tenant_context(booking["tenant_id"]):
+        await db.notifications.insert_one(
+            {
+                "id": _uuid(),
+                "tenant_id": booking["tenant_id"],
+                "type": "agency_negotiation",
+                "title": "Acente değişiklik onayı bekliyor",
+                "message": f"{booking.get('confirmation_code')} için tarih/oda tipi değişikliği talep edildi.",
+                "read": False,
+                "metadata": {"proposal_id": proposal["id"], "reservation_id": reservation_id},
+                "created_at": _now_iso(),
+            }
+        )
+    proposal.pop("_id", None)
+    return {"ok": True, "proposal": proposal}
+
+
+@router.post("/hotel/negotiations/{proposal_id}/decision")
+async def hotel_decide_marketplace_modification(
+    proposal_id: str,
+    data: CancellationProposalDecision,
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = _require_hotel_admin(current_user)
+    sysdb = get_system_db()
+    proposal = await sysdb.marketplace_negotiations.find_one(
+        {"id": proposal_id, "tenant_id": tenant_id, "type": "agency_modification", "status": "awaiting_hotel"},
+        {"_id": 0},
+    )
+    if not proposal:
+        raise HTTPException(404, "Yanıt bekleyen değişiklik talebi bulunamadı")
+    if datetime.fromisoformat(proposal["expires_at"]) < datetime.now(UTC):
+        await sysdb.marketplace_negotiations.update_one({"id": proposal_id}, {"$set": {"status": "expired"}})
+        raise HTTPException(409, "Değişiklik teklifinin 48 saatlik süresi dolmuş")
+
+    if data.accept:
+        requested = proposal["requested"]
+        from routers.agency_contracts import has_active_contract
+
+        last_night = _last_occupied_date(requested["check_in"], requested["check_out"])
+        contract = await has_active_contract(
+            proposal["agency_id"], tenant_id, on_date=requested["check_in"], through_date=last_night
+        )
+        if not contract:
+            raise HTTPException(409, "Yeni tarihler aktif acente sözleşmesi kapsamında değil")
+        listing = await _get_listing_or_404(tenant_id)
+        allowed = contract.get("allowed_room_types") or listing.get("allowed_room_types") or []
+        if allowed and requested["room_type"] not in allowed:
+            raise HTTPException(409, "İstenen oda tipi acente satışına açık değil")
+        with tenant_context(tenant_id):
+            rooms = await db.rooms.find(
+                {"tenant_id": tenant_id, "room_type": requested["room_type"], "is_active": {"$ne": False}}, {"_id": 0}
+            ).to_list(500)
+            booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"_id": 0})
+        if not booking or booking.get("status") != "confirmed":
+            raise HTTPException(409, "Rezervasyon artık değiştirilebilir durumda değil")
+        if not rooms:
+            raise HTTPException(409, "İstenen oda tipinde aktif oda bulunamadı")
+        pricing = await _marketplace_stay_price(
+            tenant_id=tenant_id,
+            agency_id=proposal["agency_id"],
+            room_type=requested["room_type"],
+            check_in=requested["check_in"],
+            check_out=requested["check_out"],
+            fallback_rate=float(rooms[0].get("base_price", 0) or 0),
+        )
+        if not pricing["sellable"]:
+            raise HTTPException(409, "Yeni tarihler satışa kapalı")
+        selected_room = None
+        for room in rooms:
+            try:
+                await assign_room_atomic(
+                    tenant_id=tenant_id,
+                    booking_id=proposal["reservation_id"],
+                    room_id=room["id"],
+                    check_in=requested["check_in"] + "T14:00:00",
+                    check_out=requested["check_out"] + "T11:00:00",
+                )
+                selected_room = room
+                break
+            except BookingConflictError:
+                continue
+        if not selected_room:
+            raise HTTPException(409, "İstenen tarihlerde uygun fiziksel oda bulunamadı")
+        total = float(pricing["total_price"])
+        paid = float(booking.get("total_paid", 0) or 0)
+        changes = {
+            "check_in": requested["check_in"] + "T14:00:00",
+            "check_out": requested["check_out"] + "T11:00:00",
+            "room_id": selected_room["id"],
+            "room_number": selected_room.get("room_number", ""),
+            "room_type": requested["room_type"],
+            "nightly_rates": pricing["nightly_rates"],
+            "total_amount": total,
+            "balance": max(0, round(total - paid, 2)),
+            "updated_at": _now_iso(),
+        }
+        with tenant_context(tenant_id):
+            await db.bookings.update_one({"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"$set": changes})
+        await sysdb.marketplace_bookings.update_one(
+            {"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"$set": changes}
+        )
+
+    status_value = "accepted" if data.accept else "declined"
+    await sysdb.marketplace_negotiations.update_one(
+        {"id": proposal_id, "status": "awaiting_hotel"},
+        {"$set": {"status": status_value, "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso()}},
+    )
+    return {"ok": True, "status": status_value, "reservation_modified": bool(data.accept)}
+
+
 @router.post("/hotel/reservations/{reservation_id}/cancellation-proposals")
 async def hotel_propose_marketplace_cancellation(
     reservation_id: str,
@@ -1657,6 +1828,49 @@ async def agency_reconciliation(
         "totals": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items()},
         "by_hotel": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission": round(v["commission"], 2), "net_to_hotel": round(v["net_to_hotel"], 2)} for v in by_hotel.values()],
     }
+
+
+@router.get("/reconciliation/agency.csv")
+async def agency_reconciliation_csv(
+    period_start: str = Query(..., description="YYYY-MM-DD"),
+    period_end: str = Query(..., description="YYYY-MM-DD"),
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Download an agency-owned, spreadsheet-safe reconciliation detail."""
+    docs = await get_system_db().marketplace_bookings.find(
+        {
+            "agency_id": agency["agency_id"],
+            "check_in": {"$gte": period_start, "$lte": period_end},
+        },
+        {"_id": 0},
+    ).sort("check_in", 1).to_list(5000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Onay Kodu", "Otel", "Misafir", "Giriş", "Çıkış", "Durum", "Para Birimi", "Brüt", "Komisyon", "Otele Net"])
+    for item in docs:
+        # A leading apostrophe prevents spreadsheet formula execution while
+        # preserving user-entered references as visible text.
+        safe_code = "'" + str(item.get("confirmation_code") or item.get("id") or "").replace("\n", " ").replace("\r", " ")
+        writer.writerow(
+            [
+                safe_code,
+                item.get("hotel_name", ""),
+                item.get("guest_name", ""),
+                str(item.get("check_in", ""))[:10],
+                str(item.get("check_out", ""))[:10],
+                item.get("status", ""),
+                item.get("currency", "TRY"),
+                round(float(item.get("total_amount", 0) or 0), 2),
+                round(float(item.get("commission_amount", 0) or 0), 2),
+                round(float(item.get("net_to_hotel", 0) or 0), 2),
+            ]
+        )
+    filename = f"acente-mutabakat-{period_start}-{period_end}.csv"
+    return Response(
+        "\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/reconciliation/hotel")
