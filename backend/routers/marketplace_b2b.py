@@ -30,6 +30,12 @@ from core.database import db
 from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
+from shared_kernel.idempotency import (
+    build_request_hash,
+    claim_idempotency,
+    complete_idempotency,
+    release_idempotency,
+)
 
 # Server-side fiyat hesaplamasının istemciden gelen total_amount'tan tolerans
 # (TRY) — bu eşiği aşan farklarda istek reddedilir (price-spoofing koruması).
@@ -277,7 +283,49 @@ async def _get_listing_or_404(tenant_id: str) -> dict:
     listing = await sysdb.marketplace_listings.find_one({"tenant_id": tenant_id, "is_listed": True}, {"_id": 0})
     if not listing:
         raise HTTPException(404, "Bu otel marketplace'te listelenmemiş")
+    tenant = await sysdb.tenants.find_one({"id": tenant_id}, {"_id": 0, "subscription_status": 1, "is_active": 1})
+    if not tenant or tenant.get("is_active") is False or tenant.get("subscription_status", "active") != "active":
+        raise HTTPException(404, "Bu otel şu anda rezervasyon kabul etmiyor")
     return listing
+
+
+async def _marketplace_stay_price(
+    *, tenant_id: str, agency_id: str, room_type: str, check_in: str, check_out: str, fallback_rate: float
+) -> dict:
+    """Return the exact sellable nightly rates shared with this agency.
+
+    Agency calendar wins per night, then the hotel's public calendar, then the
+    room base rate. A stop-sell or zero agency allotment closes the whole stay.
+    """
+    dates = _date_range(check_in, check_out)
+    query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": {"$in": dates}}
+    agency_rows = await db.agency_rate_calendar.find(
+        {**query, "agency_id": agency_id}, {"_id": 0}
+    ).to_list(max(len(dates) * 8, 32))
+    base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
+    if not base_rows:
+        base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
+
+    agency_by_date = {row.get("date"): row for row in agency_rows}
+    base_by_date = {row.get("date"): row for row in base_rows}
+    nightly_rates: list[dict] = []
+    for date in dates:
+        row = agency_by_date.get(date) or base_by_date.get(date) or {}
+        if row.get("stop_sell") is True or (
+            date in agency_by_date
+            and row.get("availability") is not None
+            and int(row["availability"]) <= 0
+        ):
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0}
+        rate = row.get("rate")
+        if rate is None:
+            rate = fallback_rate
+        nightly_rates.append({"date": date, "rate": round(float(rate or 0), 2)})
+    return {
+        "sellable": True,
+        "nightly_rates": nightly_rates,
+        "total_price": round(sum(item["rate"] for item in nightly_rates), 2),
+    }
 
 
 def _commission_for(agency: dict, listing: dict) -> float:
@@ -716,6 +764,15 @@ async def agency_search(
                     }
                 )
                 rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
+                pricing = await _marketplace_stay_price(
+                    tenant_id=tenant_id,
+                    agency_id=agency["agency_id"],
+                    room_type=rt_data["room_type"],
+                    check_in=req.check_in,
+                    check_out=req.check_out,
+                    fallback_rate=float(rt_data["base_price"] or 0),
+                )
+                rt_data["pricing"] = pricing
                 del rt_data["_room_ids"]
 
         # Sadece müsait oda tipleri olan otelleri ekle
@@ -723,9 +780,10 @@ async def agency_search(
         commission_pct = _commission_for(agency, listing)
         available = []
         for rt_data in room_types.values():
-            if rt_data["available_rooms"] <= 0:
+            pricing = rt_data.pop("pricing")
+            if rt_data["available_rooms"] <= 0 or not pricing["sellable"]:
                 continue
-            total_price = rt_data["base_price"] * nights
+            total_price = pricing["total_price"]
             if req.max_price and total_price > req.max_price:
                 continue
             available.append(
@@ -733,6 +791,8 @@ async def agency_search(
                     **rt_data,
                     "nights": nights,
                     "total_price": total_price,
+                    "nightly_rates": pricing["nightly_rates"],
+                    "currency": listing.get("currency", "TRY"),
                     "commission_pct": commission_pct,
                     "agency_payable": round(total_price * (1 - commission_pct / 100), 2),
                 }
@@ -747,6 +807,7 @@ async def agency_search(
                     "country": listing.get("country"),
                     "star_rating": listing.get("star_rating"),
                     "photos": listing.get("photos", [])[:3],
+                    "currency": listing.get("currency", "TRY"),
                     "available_room_types": available,
                 }
             )
@@ -822,8 +883,19 @@ async def agency_hotel_availability(
                 }
             )
             rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
+            pricing = await _marketplace_stay_price(
+                tenant_id=tenant_id,
+                agency_id=agency["agency_id"],
+                room_type=rt_data["room_type"],
+                check_in=check_in,
+                check_out=check_out,
+                fallback_rate=float(rt_data["base_price"] or 0),
+            )
             rt_data["nights"] = nights
-            rt_data["total_price"] = rt_data["base_price"] * nights
+            rt_data["total_price"] = pricing["total_price"]
+            rt_data["nightly_rates"] = pricing["nightly_rates"]
+            if not pricing["sellable"]:
+                rt_data["available_rooms"] = 0
             rt_data["commission_pct"] = commission_pct
             rt_data["agency_payable"] = round(rt_data["total_price"] * (1 - commission_pct / 100), 2)
             del rt_data["_room_ids"]
@@ -832,6 +904,7 @@ async def agency_hotel_availability(
         "check_in": check_in,
         "check_out": check_out,
         "hotel_name": listing.get("hotel_name"),
+        "currency": listing.get("currency", "TRY"),
         "room_types": list(room_types.values()),
     }
 
@@ -859,10 +932,17 @@ async def agency_hotel_rates(
         base_query["room_type_code"] = room_type
 
     with tenant_context(tenant_id):
-        rates = await db.hr_rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0}).sort("date", 1).to_list(5000)
+        rates = await db.agency_rate_calendar.find(
+            {**base_query, "agency_id": agency["agency_id"]},
+            {"_id": 0, "tenant_id": 0, "agency_id": 0},
+        ).sort("date", 1).to_list(5000)
+        source = "agency_rates"
+        if not rates:
+            source = "hotel_rates"
+            rates = await db.hr_rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0}).sort("date", 1).to_list(5000)
         if not rates:
             rates = await db.rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0}).sort("date", 1).to_list(5000)
-    return {"start_date": start_date, "end_date": end_date, "rates": rates}
+    return {"start_date": start_date, "end_date": end_date, "source": source, "rates": rates}
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -870,7 +950,6 @@ async def agency_hotel_rates(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-@router.post("/reservations")
 async def agency_create_reservation(
     data: MarketplaceReservationCreate,
     background_tasks: BackgroundTasks,
@@ -959,10 +1038,22 @@ async def agency_create_reservation(
 
         # Komisyon: sözleşmede otelin onayladığı oran (override edilmiş olabilir) kullanılır
         commission_pct = float(contract.get("commission_pct", _commission_for(agency, listing)))
-        # Calendar nights must not lose a night to 14:00/11:00 stay times.
+        # Retain the explicit calendar-night/base calculation as a safe
+        # fallback and as executable documentation of checkout exclusivity.
         nights = (co.date() - ci.date()).days
-        # Server-side "ground truth" fiyat — istemcinin gönderdiği total_amount'a güvenme.
         server_total = float(available_room.get("base_price", 0)) * max(nights, 1)
+        pricing = await _marketplace_stay_price(
+            tenant_id=data.tenant_id,
+            agency_id=agency["agency_id"],
+            room_type=data.room_type,
+            check_in=data.check_in,
+            check_out=data.check_out,
+            fallback_rate=float(available_room.get("base_price", 0) or 0),
+        )
+        if not pricing["sellable"]:
+            raise HTTPException(409, "Seçilen oda tipi bu tarihlerde acente satışına kapalı")
+        # Server-side "ground truth" price. Search and booking use this exact helper.
+        server_total: float = pricing["total_price"]
         if data.total_amount and data.total_amount > 0:
             if abs(data.total_amount - server_total) > PRICE_TOLERANCE:
                 raise HTTPException(
@@ -1011,6 +1102,8 @@ async def agency_create_reservation(
             "status": "confirmed",
             "payment_status": "pending",
             "total_amount": total,
+            "currency": listing.get("currency", "TRY"),
+            "nightly_rates": pricing["nightly_rates"],
             "balance": total,
             "channel": "marketplace",
             "source_channel": "marketplace",
@@ -1092,7 +1185,8 @@ async def agency_create_reservation(
                     "message": (
                         f"{agency['agency_name']} tarafından yeni rezervasyon oluşturuldu. "
                         f"Giriş: {data.check_in}, Çıkış: {data.check_out}, "
-                        f"Oda: {available_room.get('room_number', '-')}, Tutar: {total:.2f}"
+                        f"Oda: {available_room.get('room_number', '-')}, "
+                        f"Tutar: {total:.2f} {listing.get('currency', 'TRY')}"
                     ),
                     "priority": "high",
                     "read": False,
@@ -1110,8 +1204,7 @@ async def agency_create_reservation(
             logger.warning("Marketplace notification failed booking=%s error=%s", booking_id, type(exc).__name__)
 
     # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
-    await sysdb.marketplace_bookings.insert_one(
-        {
+    ledger_doc = {
             "id": booking_id,
             "agency_id": agency["agency_id"],
             "tenant_id": data.tenant_id,
@@ -1123,6 +1216,8 @@ async def agency_create_reservation(
             "check_out": data.check_out,
             "guest_name": data.guest_name,
             "total_amount": total,
+            "currency": listing.get("currency", "TRY"),
+            "nightly_rates": pricing["nightly_rates"],
             "commission_pct": commission_pct,
             "commission_amount": commission_amount,
             "syroce_b2b_fee_pct": syroce_b2b_fee_pct,
@@ -1131,7 +1226,16 @@ async def agency_create_reservation(
             "status": "confirmed",
             "created_at": _now_iso(),
         }
-    )
+    try:
+        await sysdb.marketplace_bookings.update_one(
+            {"agency_id": agency["agency_id"], "id": booking_id},
+            {"$setOnInsert": ledger_doc},
+            upsert=True,
+        )
+    except Exception as exc:
+        # The PMS booking is already durable. Never return a false failure that
+        # encourages the agency to submit a second reservation.
+        logger.error("Marketplace ledger write failed booking=%s error=%s", booking_id, type(exc).__name__)
 
     # Webhook bildirimi (otele)
     try:
@@ -1170,6 +1274,8 @@ async def agency_create_reservation(
             "check_out": data.check_out,
             "guest_name": data.guest_name,
             "total_amount": total,
+            "currency": listing.get("currency", "TRY"),
+            "nightly_rates": pricing["nightly_rates"],
             "commission_pct": commission_pct,
             "commission_amount": commission_amount,
             "syroce_b2b_fee_pct": syroce_b2b_fee_pct,
@@ -1177,6 +1283,53 @@ async def agency_create_reservation(
             "net_to_hotel": net_to_hotel,
         },
     }
+
+
+@router.post("/reservations")
+async def agency_create_reservation_endpoint(
+    data: MarketplaceReservationCreate,
+    background_tasks: BackgroundTasks,
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Create once even when the agency retries concurrently after a timeout."""
+    sysdb = get_system_db()
+    guard = None
+    if data.idempotency_key:
+        claim = await claim_idempotency(
+            sysdb,
+            tenant_id=agency["agency_id"],
+            scope="marketplace_reservation",
+            idempotency_key=data.idempotency_key,
+            request_hash=build_request_hash(data.model_dump()),
+        )
+        if claim["status"] == "replay":
+            response = claim.get("response") or {}
+            if response:
+                return response
+            existing = await sysdb.marketplace_bookings.find_one(
+                {"agency_id": agency["agency_id"], "idempotency_key": data.idempotency_key}, {"_id": 0}
+            )
+            if existing:
+                return {"ok": True, "reservation": existing, "idempotent_replay": True}
+            raise HTTPException(409, "Önceki rezervasyon işlendi; sonucu rezervasyon listesinden kontrol edin")
+        if claim["status"] == "in_flight":
+            raise HTTPException(409, "Aynı rezervasyon isteği halen işleniyor")
+        if claim["status"] == "mismatch":
+            raise HTTPException(409, "Bu işlem anahtarı farklı rezervasyon bilgileriyle kullanılmış")
+        guard = claim["lock_id"]
+    try:
+        result = await agency_create_reservation(data, background_tasks, agency)
+        if guard:
+            try:
+                await complete_idempotency(sysdb, lock_id=guard, response_body=result)
+            except Exception as exc:
+                # Reservation and cross-tenant ledger are already durable.
+                logger.error("Marketplace idempotency completion failed: %s", type(exc).__name__)
+        return result
+    except Exception as exc:
+        if guard:
+            await release_idempotency(sysdb, lock_id=guard, error=type(exc).__name__)
+        raise
 
 
 @router.get("/reservations")
