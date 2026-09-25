@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from routers import marketplace_b2b
-from routers.marketplace_b2b import MarketplaceReservationCreate, _last_occupied_date, _require_hotel_admin
+from routers.marketplace_b2b import MarketplaceReservationCreate, _last_occupied_date, _require_hotel_admin, _syroce_b2b_fee
 
 
 class _Cursor:
@@ -59,6 +59,11 @@ def test_marketplace_listing_management_allows_hotel_management():
 def test_marketplace_stay_authorization_uses_final_occupied_night():
     assert _last_occupied_date("2026-09-25", "2026-09-26") == "2026-09-25"
     assert _last_occupied_date("2026-09-25", "2026-09-29") == "2026-09-28"
+
+
+def test_marketplace_service_fee_is_defined_for_both_sales_channels():
+    assert _syroce_b2b_fee(5000, "extranet_ui") == (2.0, 100.0)
+    assert _syroce_b2b_fee(5000, "syroce_agency_app") == (1.0, 50.0)
 
 
 def test_marketplace_booking_payload_rejects_invalid_capacity_and_identity():
