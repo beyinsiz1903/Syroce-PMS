@@ -38,6 +38,7 @@ const CashierTab = () => {
   const [shift, setShift] = useState(null);
   const [shiftHistory, setShiftHistory] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [shiftSummary, setShiftSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
@@ -122,9 +123,11 @@ const CashierTab = () => {
       const res = await axios.get('/cashier/current-shift');
       setShift(res.data.shift || null);
       setTransactions(res.data.transactions || []);
+      setShiftSummary(res.data.summary || null);
     } catch (err) {
       setShift(null);
       setTransactions([]);
+      setShiftSummary(null);
       if (err?.response?.status !== 404) {
         toast.error('Kasa vardiyası yüklenemedi');
       }
@@ -359,11 +362,21 @@ const CashierTab = () => {
   const cashOutTotal = shift && Number.isFinite(Number(shift.cash_out))
     ? Number(shift.cash_out)
     : transactions.filter(t => t.direction === 'out' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
-  const cardCount = transactions.filter(t => t.method === 'card').length;
-  const cardTotal = transactions.filter(t => t.method === 'card').reduce((s, t) => s + (t.amount || 0), 0);
+  const methodSummary = (method) => shiftSummary?.methods?.[method] || null;
+  const methodFallback = (method) => {
+    const rows = transactions.filter(t => t.method === method);
+    const incoming = rows.filter(t => t.direction === 'in').reduce((s, t) => s + Number(t.amount || 0), 0);
+    const outgoing = rows.filter(t => t.direction === 'out').reduce((s, t) => s + Number(t.amount || 0), 0);
+    return { count: rows.length, in: incoming, out: outgoing, net: incoming - outgoing };
+  };
+  const cardSummary = methodSummary('card') || methodFallback('card');
+  const bankSummary = methodSummary('bank_transfer') || methodFallback('bank_transfer');
+  const onlineSummary = methodSummary('online') || methodFallback('online');
   const countedTotal = calcTotal(closingCounts);
   const expectedCash = shift ? (shift.opening_amount || 0) + cashInTotal - cashOutTotal : 0;
   const difference = countedTotal - expectedCash;
+  const shiftBusinessDate = String(shift?.business_date || shift?.opened_at || '').slice(0, 10);
+  const staleShift = Boolean(shiftBusinessDate && shiftBusinessDate < todayIso());
 
   const txnTypeLabel = (type) => {
     const map = {
@@ -521,7 +534,17 @@ const CashierTab = () => {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {staleShift && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-semibold">Vardiya {shiftBusinessDate} tarihinden beri açık</p>
+                <p className="text-amber-800">Aşağıdaki tutarlar bugünü değil, vardiyanın açıldığı andan bugüne kadar kaydedilen işlemleri kapsar. Günlük mutabakat için vardiyayı kapatıp yeni vardiya açın.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
             <Card className="bg-emerald-50 border-emerald-200">
               <CardContent className="p-3">
                 <p className="text-xs text-emerald-600">{t('cm.components_pms_CashierTab.acilis_tutari')}</p>
@@ -542,14 +565,28 @@ const CashierTab = () => {
             </Card>
             <Card className="bg-indigo-50 border-indigo-200">
               <CardContent className="p-3">
-                <p className="text-xs text-indigo-600">{t('cm.components_pms_CashierTab.kredi_karti')}</p>
-                <p className="text-lg font-bold text-indigo-700">{formatTry(cardTotal)}</p>
-                <p className="text-[10px] text-indigo-500">{cardCount} {t('cm.components_pms_CashierTab.islem')}</p>
+                <p className="text-xs text-indigo-600">Kart (Net)</p>
+                <p className="text-lg font-bold text-indigo-700">{formatTry(cardSummary.net)}</p>
+                <p className="text-[10px] text-indigo-500">{cardSummary.count} {t('cm.components_pms_CashierTab.islem')}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-cyan-50 border-cyan-200">
+              <CardContent className="p-3">
+                <p className="text-xs text-cyan-700">Havale (Net)</p>
+                <p className="text-lg font-bold text-cyan-800">{formatTry(bankSummary.net)}</p>
+                <p className="text-[10px] text-cyan-600">{bankSummary.count} {t('cm.components_pms_CashierTab.islem')}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-violet-50 border-violet-200">
+              <CardContent className="p-3">
+                <p className="text-xs text-violet-700">Online (Net)</p>
+                <p className="text-lg font-bold text-violet-800">{formatTry(onlineSummary.net)}</p>
+                <p className="text-[10px] text-violet-600">{onlineSummary.count} {t('cm.components_pms_CashierTab.islem')}</p>
               </CardContent>
             </Card>
             <Card className="bg-gray-50 border-gray-200">
               <CardContent className="p-3">
-                <p className="text-xs text-gray-600">Beklenen Kasa</p>
+                <p className="text-xs text-gray-600">Beklenen Nakit</p>
                 <p className="text-lg font-bold text-gray-800">{formatTry(expectedCash)}</p>
               </CardContent>
             </Card>

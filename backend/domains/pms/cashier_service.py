@@ -35,6 +35,49 @@ CASH_METHODS = {"cash"}
 ALL_METHODS = {"cash", "card", "bank_transfer", "online"}
 
 
+def summarize_shift_transactions(transactions: list[dict] | None) -> dict:
+    """Return complete-shift payment totals without depending on UI row limits."""
+    methods = {
+        method: {"count": 0, "in": 0.0, "out": 0.0, "net": 0.0}
+        for method in (*sorted(ALL_METHODS), "other")
+    }
+    total_in = 0.0
+    total_out = 0.0
+    valid_count = 0
+    for transaction in transactions or []:
+        try:
+            amount = float(transaction.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue
+        direction = str(transaction.get("direction") or "").lower()
+        if direction not in {"in", "out"}:
+            continue
+        method = str(transaction.get("method") or "other").lower()
+        if method not in ALL_METHODS:
+            method = "other"
+        methods[method]["count"] += 1
+        methods[method][direction] += amount
+        valid_count += 1
+        if direction == "in":
+            total_in += amount
+        else:
+            total_out += amount
+
+    for values in methods.values():
+        values["net"] = round(values["in"] - values["out"], 2)
+        values["in"] = round(values["in"], 2)
+        values["out"] = round(values["out"], 2)
+    return {
+        "transaction_count": valid_count,
+        "total_in": round(total_in, 2),
+        "total_out": round(total_out, 2),
+        "net": round(total_in - total_out, 2),
+        "methods": methods,
+    }
+
+
 async def get_active_shift(tenant_id: str) -> dict | None:
     """Tenant'ın açık vardiyasını döner (yoksa None)."""
     return await db.cashier_shifts.find_one(
