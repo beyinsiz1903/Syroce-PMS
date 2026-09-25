@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -22,7 +22,7 @@ const REQUEST_TYPE_KEYS = ['access', 'erasure', 'rectification', 'portability', 
 
 const KVKKManager = () => {
   const { t } = useTranslation();
-  const tv = (k) => t(`pmsComponents.kvkk.${k}`);
+  const tv = useCallback((k) => t(`pmsComponents.kvkk.${k}`), [t]);
 
   const [activeTab, setActiveTab] = useState('policies');
   const [requests, setRequests] = useState([]);
@@ -31,12 +31,10 @@ const KVKKManager = () => {
   const [consents, setConsents] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [loadWarning, setLoadWarning] = useState('');
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { loadData(); }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setLoadWarning('');
     try {
@@ -59,10 +57,13 @@ const KVKKManager = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tv]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   const createRequest = async () => {
     if (!newRequest.guest_name || !newRequest.type) return;
+    setSubmitting(true);
     try {
       const res = await axios.post('/kvkk/requests', newRequest);
       setRequests(prev => [res.data, ...prev]);
@@ -71,6 +72,8 @@ const KVKKManager = () => {
       toast.success(tv('requestCreated'));
     } catch {
       toast.error(tv('createError'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -94,7 +97,6 @@ const KVKKManager = () => {
       </div>
 
       {loadWarning && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{loadWarning}</div>}
-
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{requests.length}</div><div className="text-xs text-muted-foreground">{tv('totalRequests')}</div></CardContent></Card>
         <Card className="border-yellow-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{requests.filter(r => r.status === 'pending').length}</div><div className="text-xs text-muted-foreground">{tv('pending')}</div></CardContent></Card>
@@ -160,9 +162,9 @@ const KVKKManager = () => {
         </TabsContent>
 
         <TabsContent value="consents">
-          <Card>
+          <Card className="overflow-hidden">
             <CardContent className="p-0">
-              <div className="overflow-x-auto"><table className="min-w-[640px] w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
                 <thead className="bg-muted"><tr><th className="p-3 text-left">{tv('guestLabel')}</th><th className="p-3 text-center">{tv('emailMarketing')}</th><th className="p-3 text-center">{tv('smsMarketing')}</th><th className="p-3 text-center">{tv('dataSharing')}</th><th className="p-3 text-left">{tv('date')}</th></tr></thead>
                 <tbody>
                   {consents.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-muted-foreground">{tv('noConsents')}</td></tr>}
@@ -220,7 +222,7 @@ const KVKKManager = () => {
               </Select>
             </div>
             <div><Label>{tv('details')}</Label><Textarea value={newRequest.details} onChange={e => setNewRequest(p => ({ ...p, details: e.target.value }))} placeholder={tv('detailsPlaceholder')} /></div>
-            <Button className="w-full" onClick={createRequest}>{tv('createRequest')}</Button>
+            <Button className="w-full" onClick={createRequest} disabled={submitting || !newRequest.guest_name.trim() || !newRequest.type}>{tv('createRequest')}</Button>
           </div>
         </DialogContent>
       </Dialog>

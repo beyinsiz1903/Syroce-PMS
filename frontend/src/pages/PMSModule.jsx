@@ -1062,15 +1062,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'cashier' && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
           {activeTab === 'upsell' && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
           {activeTab === 'reports' && <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>}
-          {activeTab === 'flash' && <TabsContent value="flash" className="space-y-4"><FlashReportContent businessDate={businessDate} rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
-          {activeTab === 'tasks' && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager currentUser={user} /></TabsContent>}
+          {activeTab === 'flash' && <TabsContent value="flash" className="space-y-4"><FlashReportContent rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {activeTab === 'tasks' && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>}
           {activeTab === 'feedback' && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
-          {activeTab === 'allotment' && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid rooms={rooms} /></TabsContent>}
+          {activeTab === 'allotment' && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>}
           {activeTab === 'pos' && <TabsContent value="pos" className="space-y-4"><POSTab businessDate={businessDate} /></TabsContent>}
           {activeTab === 'laundry' && <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>}
           {activeTab === 'concierge' && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
           {activeTab === 'revenue' && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}
-          {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport businessDate={businessDate} rooms={rooms} bookings={bookings} /></TabsContent>}
           {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification tenantId={tenant?.id || tenant?._id || tenant?.tenant_id} bookings={bookings} guests={guests} /></TabsContent>}
           {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
           </Suspense>}
@@ -1104,7 +1104,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <RoomBlockCreateDialog open={openDialog === 'roomblock'} onClose={() => { setOpenDialog(null); setSelectedRoom(null); }} rooms={rooms} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} newRoomBlock={newRoomBlock} setNewRoomBlock={setNewRoomBlock} onSubmit={createRoomBlock} />
         <RoomBlockViewDialog open={openDialog === 'roomblock-view'} onClose={() => setOpenDialog(null)} roomBlocks={roomBlocks} onCancel={cancelRoomBlock} />
         <FindRoomDialog open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} criteria={findRoomCriteria} setCriteria={setFindRoomCriteria} />
-        <PaymentDialog open={openDialog === 'payment'} onClose={() => setOpenDialog(null)} paymentForm={paymentForm} setPaymentForm={setPaymentForm} bookingId={selectedBooking} onPaymentSuccess={() => { loadData(); loadFrontDeskData(); }} />
+        <PaymentDialog
+          open={openDialog === 'payment'}
+          onClose={() => setOpenDialog(null)}
+          paymentForm={paymentForm}
+          setPaymentForm={setPaymentForm}
+          selectedBooking={bookings.find((booking) => booking.id === selectedBooking) || null}
+          onPaymentDone={() => { loadData(); loadFrontDeskData(); }}
+        />
 
         {selectedBookingDetail && (
           <BookingDetailDialog

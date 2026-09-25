@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -26,10 +26,16 @@ const defaultOverbooking = (total) => ({ enabled: false, max_percentage: 5, walk
 
 const RevenueControls = ({ rooms = [] }) => {
   const { t } = useTranslation();
-  const tr = (k) => t(`pmsComponents.revenue.${k}`);
-  const currency = cachedTenantCurrency();
-  const actualRoomTypes = useMemo(() => [...new Set(rooms.map(room => room.room_type || room.type).filter(Boolean))], [rooms]);
-  const roomTypeKeys = actualRoomTypes.length ? actualRoomTypes : RT_KEYS;
+  const tr = useCallback((k) => t(`pmsComponents.revenue.${k}`), [t]);
+  const cur = cachedTenantCurrency();
+  const roomTypeLabels = useMemo(() => {
+    const labels = {};
+    rooms.forEach(room => {
+      const key = String(room.room_type_id || room.type_id || room.room_type || room.type || '').trim();
+      if (key) labels[key] = room.room_type_name || room.type_name || room.room_type || room.type || key;
+    });
+    return labels;
+  }, [rooms]);
 
   const [activeTab, setActiveTab] = useState('hurdle');
   const [hurdleRates, setHurdleRates] = useState(defaultHurdle());
@@ -41,31 +47,37 @@ const RevenueControls = ({ rooms = [] }) => {
   const [loadError, setLoadError] = useState(false);
   const [walkData, setWalkData] = useState({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { loadSettings(); }, []);
-
-  useEffect(() => {
-    if (!rooms.length) return;
-    setOverbooking(prev => ({ ...prev, total_rooms: rooms.length }));
-  }, [rooms.length]);
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     setLoadError(false);
     try {
       const res = await axios.get('/revenue/settings');
       if (res.data.hurdle_rates && Object.keys(res.data.hurdle_rates).length > 0) setHurdleRates(res.data.hurdle_rates);
       if (res.data.day_pricing && Object.keys(res.data.day_pricing).length > 0) setDayPricing(res.data.day_pricing);
-      if (res.data.overbooking) setOverbooking(prev => ({ ...prev, ...res.data.overbooking, total_rooms: rooms.length || prev.total_rooms }));
+      if (res.data.overbooking) setOverbooking(prev => ({ ...prev, ...res.data.overbooking, total_rooms: rooms.length }));
       setSettingsLoaded(true);
     } catch {
       setLoadError(true);
       setSettingsLoaded(false);
       toast.error(tr('loadError'));
     }
-  };
+  }, [rooms.length, tr]);
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
+
+  const roomTypeKeys = useMemo(() => {
+    const liveKeys = Object.keys(roomTypeLabels);
+    const configuredKeys = Array.from(new Set([...Object.keys(hurdleRates), ...Object.keys(dayPricing)]));
+    const relevantConfigured = configuredKeys.filter(key => !RT_KEYS.includes(key) || liveKeys.includes(key));
+    return liveKeys.length > 0 ? Array.from(new Set([...liveKeys, ...relevantConfigured])) : configuredKeys.length > 0 ? configuredKeys : RT_KEYS;
+  }, [roomTypeLabels, hurdleRates, dayPricing]);
+  const roomTypeLabel = key => roomTypeLabels[key] || (RT_KEYS.includes(key) ? tr(`roomTypes.${key}`) : key);
+
+  useEffect(() => {
+    setOverbooking(prev => ({ ...prev, total_rooms: rooms.length }));
+  }, [rooms.length]);
 
   const updateHurdle = (rt, field, value) => {
-    setHurdleRates(prev => ({ ...prev, [rt]: { ...prev[rt], [field]: field === 'active' ? value : parseFloat(value) || 0 } }));
+    setHurdleRates(prev => ({ ...prev, [rt]: { ...(prev[rt] || { min_rate: 0, bar: 0, active: false }), [field]: field === 'active' ? value : parseFloat(value) || 0 } }));
   };
 
   const updateDayPrice = (rt, day, field, value) => {
@@ -75,10 +87,6 @@ const RevenueControls = ({ rooms = [] }) => {
   };
 
   const saveAll = async (section) => {
-    if (!settingsLoaded) {
-      toast.error(tr('loadError'));
-      return;
-    }
     setSaving(true);
     try {
       await axios.put('/revenue/settings', { hurdle_rates: hurdleRates, day_pricing: dayPricing, overbooking });
@@ -129,11 +137,11 @@ const RevenueControls = ({ rooms = [] }) => {
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted"><tr><th className="p-2 text-left">{tr('roomType')}</th><th className="p-2 text-center">{tr('minPrice')} ({currency})</th><th className="p-2 text-center">{tr('barPrice')} ({currency})</th><th className="p-2 text-center">{tr('activeLabel')}</th></tr></thead>
+                  <thead className="bg-muted"><tr><th className="p-2 text-left">{tr('roomType')}</th><th className="p-2 text-center">{tr('minPrice')} ({cur})</th><th className="p-2 text-center">{tr('barPrice')} ({cur})</th><th className="p-2 text-center">{tr('activeLabel')}</th></tr></thead>
                   <tbody>
                     {roomTypeKeys.map(rt => (
                       <tr key={rt} className="border-t">
-                        <td className="p-2 font-medium">{RT_KEYS.includes(rt) ? tr(`roomTypes.${rt}`) : rt}</td>
+                        <td className="p-2 font-medium">{roomTypeLabel(rt)}</td>
                         <td className="p-2"><Input type="number" className="w-28 h-8 text-sm mx-auto" value={hurdleRates[rt]?.min_rate || ''} onChange={e => updateHurdle(rt, 'min_rate', e.target.value)} placeholder="0" /></td>
                         <td className="p-2"><Input type="number" className="w-28 h-8 text-sm mx-auto" value={hurdleRates[rt]?.bar || ''} onChange={e => updateHurdle(rt, 'bar', e.target.value)} placeholder="0" /></td>
                         <td className="p-2 text-center">
@@ -174,7 +182,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   <tbody>
                     {roomTypeKeys.map(rt => (
                       <tr key={rt} className="border-t">
-                        <td className="p-2 font-medium text-xs">{RT_KEYS.includes(rt) ? tr(`roomTypes.${rt}`) : rt}</td>
+                        <td className="p-2 font-medium text-xs">{roomTypeLabel(rt)}</td>
                         {DAY_KEYS.map(day => (
                           <td key={day} className="p-1">
                             <Input type="number" className="w-16 h-7 text-xs" value={dayPricing[rt]?.[day]?.rate || ''} onChange={e => updateDayPrice(rt, day, 'rate', e.target.value)} placeholder="0" />
@@ -229,7 +237,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   </Select>
                 </div>
                 <div>
-                  <Label>{tr('compensationAmount')} ({currency})</Label>
+                  <Label>{tr('compensationAmount')} ({cur})</Label>
                   <Input type="number" value={overbooking.walk_amount} onChange={e => setOverbooking(p => ({ ...p, walk_amount: parseInt(e.target.value) || 0 }))} />
                 </div>
                 <Button className="w-full" onClick={() => saveAll('overbooking')} disabled={saving || !settingsLoaded}><Save className="h-4 w-4 mr-1" /> {tr('saveSettings')}</Button>
@@ -268,7 +276,7 @@ const RevenueControls = ({ rooms = [] }) => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div><Label>{tr('compensationAmount')} ({currency})</Label><Input type="number" value={walkData.compensation_amount} onChange={e => setWalkData(p => ({ ...p, compensation_amount: e.target.value }))} /></div>
+                <div><Label>{tr('compensationAmount')} ({cur})</Label><Input type="number" value={walkData.compensation_amount} onChange={e => setWalkData(p => ({ ...p, compensation_amount: e.target.value }))} /></div>
                 <div><Label>{tr('nearbyHotel')}</Label><Input value={walkData.nearby_hotel} onChange={e => setWalkData(p => ({ ...p, nearby_hotel: e.target.value }))} placeholder={tr('nearbyPlaceholder')} /></div>
                 <div><Label>{tr('notes')}</Label><Input value={walkData.notes} onChange={e => setWalkData(p => ({ ...p, notes: e.target.value }))} /></div>
                 <Button className="w-full" variant="destructive" onClick={processWalk}>{tr('completeWalkOut')}</Button>
