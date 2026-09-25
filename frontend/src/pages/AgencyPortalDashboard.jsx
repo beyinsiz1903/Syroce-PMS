@@ -102,6 +102,9 @@ const AgencyPortalDashboard = () => {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [voucherEmailTarget, setVoucherEmailTarget] = useState(null);
+  const [voucherEmail, setVoucherEmail] = useState('');
+  const [voucherEmailLoading, setVoucherEmailLoading] = useState(false);
 
   // Login handler
   const handleLogin = async e => {
@@ -403,13 +406,21 @@ const AgencyPortalDashboard = () => {
       window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err) { toast.error(err.response?.data?.detail || 'Voucher PDF oluşturulamadı'); }
   };
-  const emailVoucher = async reservation => {
-    const email = window.prompt('Voucher gönderilecek e-posta adresi', reservation.guest_email || '');
-    if (!email) return;
+  const openVoucherEmailDialog = reservation => {
+    setVoucherEmailTarget(reservation);
+    setVoucherEmail(reservation.guest_email || '');
+  };
+  const emailVoucher = async () => {
+    const email = voucherEmail.trim();
+    if (!email || !voucherEmailTarget) return;
+    setVoucherEmailLoading(true);
     try {
-      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/voucher-email`, { email: email.trim() });
+      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(voucherEmailTarget.id)}/voucher-email`, { email });
       toast.success('Voucher e-posta ile gönderildi');
+      setVoucherEmailTarget(null);
+      setVoucherEmail('');
     } catch (err) { toast.error(err.response?.data?.detail || 'Voucher gönderilemedi'); }
+    finally { setVoucherEmailLoading(false); }
   };
   const loadReconciliation = async () => {
     if (portalMode !== 'marketplace') return;
@@ -671,7 +682,7 @@ const AgencyPortalDashboard = () => {
                         <div className="text-sm font-bold text-slate-700 sm:mt-1">{formatMoney(r.total_amount, r.currency || hotelInfo?.currency)}</div>
                         <div className="flex gap-1 mt-2">
                           <Button size="sm" variant="outline" onClick={() => printVoucher(r)}><Printer size={13} className="mr-1" />Voucher</Button>
-                          {portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => emailVoucher(r)}><Mail size={13} className="mr-1" />E-posta</Button>}
+                          {portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => openVoucherEmailDialog(r)}><Mail size={13} className="mr-1" />E-posta</Button>}
                           {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => proposeModification(r)}>Değişiklik</Button>}
                           {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" className="text-red-700" onClick={() => openCancellationDialog(r)}><XCircle size={13} className="mr-1" />İptal</Button>}
                         </div>
@@ -853,6 +864,42 @@ const AgencyPortalDashboard = () => {
             >
               {cancelLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : <XCircle className="mr-2" size={14} />}
               İptal Talebini Gönder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(voucherEmailTarget)} onOpenChange={open => !open && !voucherEmailLoading && setVoucherEmailTarget(null)}>
+        <DialogContent className="max-w-md" data-testid="voucher-email-dialog">
+          <DialogHeader>
+            <DialogTitle>Voucher'ı e-posta ile gönder</DialogTitle>
+            <p className="text-sm text-slate-500">
+              {voucherEmailTarget?.confirmation_code || voucherEmailTarget?.id} rezervasyonunun voucher PDF'i belirtilen adrese gönderilir.
+            </p>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="voucher-email-address">Alıcı e-posta adresi</Label>
+            <Input
+              id="voucher-email-address"
+              type="email"
+              value={voucherEmail}
+              onChange={event => setVoucherEmail(event.target.value)}
+              placeholder="ornek@eposta.com"
+              autoComplete="email"
+              autoFocus
+              data-testid="voucher-email-address"
+            />
+            <p className="text-xs text-slate-500">Gönderim sonucu ekranda açıkça bildirilecektir.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVoucherEmailTarget(null)} disabled={voucherEmailLoading}>Vazgeç</Button>
+            <Button
+              onClick={emailVoucher}
+              disabled={voucherEmailLoading || !/^\S+@\S+\.\S+$/.test(voucherEmail.trim())}
+              data-testid="send-voucher-email"
+            >
+              {voucherEmailLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : <Mail className="mr-2" size={14} />}
+              E-posta Gönder
             </Button>
           </DialogFooter>
         </DialogContent>
