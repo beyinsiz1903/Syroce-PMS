@@ -786,6 +786,92 @@ class UpdateUserAccessRequest(BaseModel):
     reset_to_role: bool = False
 
 
+class UpdateTenantUserProfileRequest(BaseModel):
+    name: str
+    email: EmailStr
+
+
+@router.patch("/admin/users/{user_id}/profile")
+async def update_tenant_user_profile(
+    user_id: str,
+    payload: UpdateTenantUserProfileRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Update a non-administrator login identity inside the active hotel.
+
+    E-mail is both PII and the login identifier, so the encrypted value, blind
+    lookup hash and linked staff record are changed in one transaction.
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    from core.security import invalidate_user_doc_cache
+    from security.encrypted_lookup import build_user_email_query, encrypt_user_doc
+
+    _require_admin_for_target_user(current_user, current_user.tenant_id)
+    if not current_user.tenant_id:
+        raise HTTPException(403, "Hotel context required")
+
+    query = {"id": user_id, "tenant_id": current_user.tenant_id}
+    target = await db.users.find_one(query)
+    if not target:
+        raise HTTPException(404, "User not found")
+    protected = {"admin", "super_admin", "guest", "agency_admin", "agency_agent"}
+    if user_id == current_user.id or target.get("role") in protected or "super_admin" in (target.get("roles") or []):
+        raise HTTPException(403, "Yönetici, kendi hesabınız ve portal hesapları bu ekrandan değiştirilemez.")
+
+    name = (payload.name or "").strip()
+    email = str(payload.email).strip().lower()
+    if not name:
+        raise HTTPException(400, "Ad Soyad zorunludur.")
+
+    duplicate_query = build_user_email_query(email)
+    duplicate_query["id"] = {"$ne": user_id}
+    if await db.users.find_one(duplicate_query):
+        raise HTTPException(409, "Bu e-posta başka bir kullanıcı tarafından kullanılıyor.")
+
+    encrypted = encrypt_user_doc({"email": email})
+    user_fields = {
+        "name": name,
+        "email": encrypted["email"],
+        "_hash_email": encrypted.get("_hash_email"),
+        "_enc_version": encrypted.get("_enc_version", target.get("_enc_version", 1)),
+        "_encrypted_at": encrypted.get("_encrypted_at", target.get("_encrypted_at")),
+    }
+    # Crypto-disabled development installations must not persist null metadata.
+    user_fields = {key: value for key, value in user_fields.items() if value is not None}
+
+    async def _update_profile_txn(session):
+        result = await db.users.update_one(query, {"$set": user_fields}, session=session)
+        if result.matched_count != 1:
+            raise HTTPException(404, "User not found")
+        await db.staff_members.update_one(
+            {"tenant_id": current_user.tenant_id, "user_id": user_id},
+            {"$set": {"name": name, "email": email}},
+            session=session,
+        )
+
+    # Audit the intent before the write so an audit outage cannot leave an
+    # unrecorded login-identity mutation behind.
+    await log_audit_event(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        action="admin.user.profile_update_requested",
+        entity_type="user",
+        entity_id=user_id,
+        details={"name_changed": name != target.get("name"), "email_changed": True},
+        severity="warning",
+        db=db,
+    )
+    try:
+        async with await db.client.start_session() as session:
+            await session.with_transaction(_update_profile_txn)
+    except DuplicateKeyError:
+        raise HTTPException(409, "Bu e-posta başka bir kullanıcı tarafından kullanılıyor.")
+
+    invalidate_user_doc_cache(user_id)
+    return {"success": True, "user_id": user_id, "name": name, "email": email}
+
+
 @router.get("/admin/user-access-catalog")
 async def user_access_catalog(current_user: User = Depends(get_current_user)):
     _require_admin_for_target_user(current_user, current_user.tenant_id)

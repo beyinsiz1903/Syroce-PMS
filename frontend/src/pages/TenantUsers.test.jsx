@@ -7,7 +7,7 @@ import { NAV_ITEMS } from '@/config/navItems';
 import { moduleScopesForNavItem, moduleScopesForPath } from '@/utils/moduleAccess';
 import { securityAdminRoutes } from '@/routes/sections/securityAdmin';
 
-vi.mock('axios', () => ({ default: { get: vi.fn() } }));
+vi.mock('axios', () => ({ default: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock('@/components/UserProvisionDialog', () => ({ default: ({ onCreated, disabled }) =>
   <button disabled={disabled} onClick={onCreated}>Kullanıcı Ekle</button> }));
 const admin = { id: 'admin', tenant_id: 'hotel', role: 'admin', module_scopes: [] };
@@ -23,6 +23,13 @@ describe('tenant user administration independent of HR', () => {
     expect(axios.get.mock.calls.every(([url]) => url === '/admin/tenant-users')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Kullanıcı Ekle' }));
     await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+  });
+  it('offers profile editing for a hotel staff account', async () => {
+    render(<TenantUsers user={admin} />);
+    await screen.findByText('QA Finans');
+    fireEvent.click(screen.getByRole('button', { name: 'Bilgileri düzenle' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Kullanıcı Bilgilerini Düzenle');
+    expect(screen.getByLabelText('E-posta')).toHaveValue('qa@example.com');
   });
   it.each(['front_desk', 'finance', 'supervisor', 'staff', undefined])('denies %s before fetching or creating', role => {
     render(<TenantUsers user={{ ...admin, role }} />);
