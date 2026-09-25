@@ -33,8 +33,14 @@ const initialDates = () => {
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
-  return { check_in: toDateInput(today), check_out: toDateInput(tomorrow), adults: 2, children: 0, child_ages: [] };
+  return { check_in: toDateInput(today), check_out: toDateInput(tomorrow), adults: 2, children: 0, child_ages: [], q: '', city: '', amenities: [], meal_plans: [], min_star_rating: null, max_price: null };
 };
+const AMENITY_FILTERS = [
+  ['pool', 'Havuz'], ['jacuzzi', 'Jakuzi'], ['beach', 'Plaj'], ['sea_view', 'Deniz manzarası'],
+  ['spa', 'Spa'], ['parking', 'Otopark'], ['wifi', 'Wi-Fi'], ['family_room', 'Aile odası'],
+];
+const MEAL_FILTERS = [['RO', 'Sadece oda'], ['BB', 'Oda kahvaltı'], ['HB', 'Yarım pansiyon'], ['FB', 'Tam pansiyon'], ['AI', 'Her şey dahil']];
+const toggleFilter = (values, value) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 const resizeChildAges = (ages, count) => Array.from({ length: count }, (_, index) => ages?.[index] ?? 0);
 const formatMoney = (amount, currency = 'TRY') => new Intl.NumberFormat('tr-TR', {
   style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -149,13 +155,13 @@ const AgencyPortalDashboard = () => {
         if (portalMode === 'marketplace') {
           const { data } = await agencyApi.get('/marketplace/v1/extranet/profile');
           const availableHotels = data.hotels || [];
-          const storedHotel = localStorage.getItem('agency_selected_hotel') || '';
-          const allowedSelected = availableHotels.some(h => h.tenant_id === storedHotel)
-            ? storedHotel : (availableHotels[0]?.tenant_id || '');
+          // Discovery starts from the whole contracted portfolio. A hotel is
+          // selected only when the agent explicitly narrows the search or books.
+          const allowedSelected = '';
           setAgencyInfo(data.agency || null);
           setHotels(availableHotels);
           setSelectedTenantId(allowedSelected);
-          if (allowedSelected) localStorage.setItem('agency_selected_hotel', allowedSelected);
+          localStorage.removeItem('agency_selected_hotel');
           const selected = availableHotels.find(h => h.tenant_id === allowedSelected);
           setHotelInfo(selected ? { name: selected.name, currency: selected.currency || 'TRY', ...selected } : null);
         } else {
@@ -208,10 +214,20 @@ const AgencyPortalDashboard = () => {
     setSearchLoading(true);
     try {
       if (portalMode === 'marketplace') {
-        if (!selectedTenantId) return toast.error('Aktif sözleşmeli bir otel seçin');
         const { data } = await agencyApi.post('/marketplace/v1/search', searchForm);
-        const hotelResult = (data.results || []).find(result => result.tenant_id === selectedTenantId);
-        const selectedHotel = hotels.find(h => h.tenant_id === selectedTenantId);
+        const hotelResults = selectedTenantId
+          ? (data.results || []).filter(result => result.tenant_id === selectedTenantId)
+          : (data.results || []);
+        const roomTypes = hotelResults.flatMap(hotel => (hotel.available_room_types || []).map(room => ({
+          ...room,
+          tenant_id: hotel.tenant_id,
+          hotel_name: hotel.hotel_name,
+          hotel_city: hotel.city,
+          hotel_amenities: hotel.amenities || [],
+          currency: hotel.currency || 'TRY',
+          base_price: room.nightly_rates?.[0]?.rate ?? room.base_price,
+          stay_total: room.total_price,
+        })));
         setAvailability({
           check_in: data.check_in,
           check_out: data.check_out,
@@ -219,12 +235,10 @@ const AgencyPortalDashboard = () => {
           adults: searchForm.adults,
           children: searchForm.children,
           child_ages: searchForm.child_ages,
-          currency: selectedHotel?.currency || 'TRY',
-          room_types: (hotelResult?.available_room_types || []).map(room => ({
-            ...room,
-            base_price: room.nightly_rates?.[0]?.rate ?? room.base_price,
-            stay_total: room.total_price,
-          })),
+          currency: 'TRY',
+          hotels: hotelResults,
+          room_types: roomTypes,
+          total_hotels: hotelResults.length,
         });
       } else {
         const { data } = await agencyApi.get('/agency-portal/availability', { params: searchForm });
@@ -240,6 +254,12 @@ const AgencyPortalDashboard = () => {
   // Book
   const openBookingForm = roomType => {
     setSelectedRoomType(roomType);
+    if (roomType.tenant_id) {
+      setSelectedTenantId(roomType.tenant_id);
+      localStorage.setItem('agency_selected_hotel', roomType.tenant_id);
+      const selected = hotels.find(hotel => hotel.tenant_id === roomType.tenant_id);
+      setHotelInfo(selected ? { name: selected.name, currency: roomType.currency || selected.currency || 'TRY', ...selected } : null);
+    }
     const nights = Math.max(1, Math.ceil((new Date(searchForm.check_out) - new Date(searchForm.check_in)) / (1000 * 60 * 60 * 24)));
     setBookingForm({
       guest_name: '',
@@ -276,7 +296,7 @@ const AgencyPortalDashboard = () => {
       if (portalMode === 'marketplace') {
         response = await agencyApi.post('/marketplace/v1/reservations', {
           ...payload,
-          tenant_id: selectedTenantId,
+          tenant_id: selectedRoomType.tenant_id,
           room_type: selectedRoomType.room_type,
           total_amount: bookingForm.total_amount,
           idempotency_key: bookingForm.idempotency_key,
@@ -492,35 +512,22 @@ const AgencyPortalDashboard = () => {
 
           {/* Search Tab */}
           <TabsContent value="search" className="mt-4 space-y-4">
-            {portalMode === 'marketplace' && <Card className="border-emerald-200 bg-emerald-50/40">
-              <CardContent className="pt-5">
-                <Label htmlFor="agency-hotel-select" className="text-xs">Rezervasyon yapılacak otel</Label>
-                <select
-                  id="agency-hotel-select"
-                  data-testid="agency-hotel-select"
-                  value={selectedTenantId}
-                  onChange={event => {
-                    const tenantId = event.target.value;
-                    const selected = hotels.find(hotel => hotel.tenant_id === tenantId);
-                    setSelectedTenantId(tenantId);
-                    localStorage.setItem('agency_selected_hotel', tenantId);
-                    setHotelInfo(selected ? { name: selected.name, currency: selected.currency || 'TRY', ...selected } : null);
-                    setAvailability(null);
-                    setReservations([]);
-                    setContent(null);
-                  }}
-                  className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-                >
-                  {hotels.length === 0 && <option value="">Aktif sözleşmeli otel bulunmuyor</option>}
-                  {hotels.map(hotel => <option key={hotel.tenant_id} value={hotel.tenant_id}>
-                    {hotel.name}{hotel.city ? ` · ${hotel.city}` : ''}
-                  </option>)}
-                </select>
-                <p className="mt-2 text-xs text-emerald-800 flex items-start gap-1.5"><ShieldCheck size={14} className="shrink-0" />Yalnız aktif ve tüm konaklama tarihini kapsayan sözleşmeli oteller listelenir. Tesis yetkisi rezervasyon kaydında sunucuda tekrar doğrulanır.</p>
-              </CardContent>
-            </Card>}
             <Card>
               <CardContent className="pt-5">
+                {portalMode === 'marketplace' && <div className="mb-5 space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                  <div>
+                    <div className="font-semibold text-slate-800">Uygun tesisleri keşfedin</div>
+                    <p className="text-xs text-emerald-800 flex items-start gap-1.5 mt-1"><ShieldCheck size={14} className="shrink-0" />Tarih ve tercihlerinize uyan, aktif sözleşmeli ve satışa açık tesisler birlikte listelenir.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div><Label className="text-xs">Tesis, bölge veya açıklama</Label><Input value={searchForm.q} onChange={e => setSearchForm(p => ({ ...p, q: e.target.value }))} placeholder="Kapadokya, sahil, butik…" /></div>
+                    <div><Label className="text-xs">Şehir</Label><Input value={searchForm.city} onChange={e => setSearchForm(p => ({ ...p, city: e.target.value }))} placeholder="Tüm şehirler" /></div>
+                    <div><Label className="text-xs">Tesis (isteğe bağlı)</Label><select value={selectedTenantId} onChange={e => { setSelectedTenantId(e.target.value); setAvailability(null); }} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Tüm sözleşmeli tesisler</option>{hotels.map(hotel => <option key={hotel.tenant_id} value={hotel.tenant_id}>{hotel.name}{hotel.city ? ` · ${hotel.city}` : ''}</option>)}</select></div>
+                  </div>
+                  <div><Label className="text-xs">Tesis ve oda özellikleri</Label><div className="mt-2 flex flex-wrap gap-2">{AMENITY_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, amenities: toggleFilter(p.amenities, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.amenities.includes(value) ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-emerald-400'}`}>{label}</button>)}</div></div>
+                  <div><Label className="text-xs">Pansiyon tipi</Label><div className="mt-2 flex flex-wrap gap-2">{MEAL_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, meal_plans: toggleFilter(p.meal_plans, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.meal_plans.includes(value) ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-blue-400'}`}>{label}</button>)}</div></div>
+                  <div className="grid grid-cols-2 gap-3"><div><Label className="text-xs">En az yıldız</Label><select value={searchForm.min_star_rating || ''} onChange={e => setSearchForm(p => ({ ...p, min_star_rating: e.target.value ? Number(e.target.value) : null }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Farketmez</option>{[3,4,5].map(star => <option key={star} value={star}>{star} yıldız ve üzeri</option>)}</select></div><div><Label className="text-xs">Azami toplam fiyat</Label><Input type="number" min="0" value={searchForm.max_price || ''} onChange={e => setSearchForm(p => ({ ...p, max_price: e.target.value ? Number(e.target.value) : null }))} placeholder="Sınırsız" /></div></div>
+                </div>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
                   <div className="space-y-1">
                     <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.giris_tarihi')}</Label>
@@ -574,8 +581,9 @@ const AgencyPortalDashboard = () => {
                   <h3 className="text-sm font-medium text-slate-700">{formatDate(availability.check_in)} – {formatDate(availability.check_out)}</h3>
                   <span className="text-xs text-slate-500">{availability.night_count} gece · {availability.adults + availability.children} misafir</span>
                 </div>
-                {availability.room_types.length === 0 ? <Card><CardContent className="py-8 text-center text-slate-400">{t('cm.pages_AgencyPortalDashboard.bu_tarihler_icin_musait_oda_bulunamadi')}</CardContent></Card> : availability.room_types.map(rt => <Card key={rt.room_type} className="hover:shadow-sm transition" data-testid={`result-${rt.room_type}`}>
+                {availability.room_types.length === 0 ? <Card><CardContent className="py-8 text-center text-slate-400">Tercihlerinize ve tarihlere uygun satışa açık tesis bulunamadı. Filtreleri azaltarak tekrar deneyin.</CardContent></Card> : availability.room_types.map(rt => <Card key={`${rt.tenant_id || 'hotel'}-${rt.room_type}`} className="hover:shadow-sm transition" data-testid={`result-${rt.room_type}`}>
                       <CardContent className="py-4">
+                        {portalMode === 'marketplace' && <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3"><Building2 size={15} className="text-emerald-600" /><span className="font-semibold text-slate-800">{rt.hotel_name}</span>{rt.hotel_city && <span className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={11} />{rt.hotel_city}</span>}</div>}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex items-center gap-4">
                             <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
@@ -591,11 +599,11 @@ const AgencyPortalDashboard = () => {
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-4">
                             <div className="text-right">
-                              <div className="text-lg font-bold text-slate-800">{formatMoney(rt.stay_total, availability.currency)}</div>
-                              <div className="text-[11px] text-slate-500">{availability.night_count} gece toplam · {formatMoney(rt.base_price, availability.currency)}/gece</div>
+                              <div className="text-lg font-bold text-slate-800">{formatMoney(rt.stay_total, rt.currency || availability.currency)}</div>
+                              <div className="text-[11px] text-slate-500">{availability.night_count} gece toplam · {formatMoney(rt.base_price, rt.currency || availability.currency)}/gece</div>
                               {rt.occupancy_pricing?.children_ages?.length > 0 && <div className="mt-1 text-[11px] text-violet-700" data-testid={`child-price-${rt.room_type}`}>
                                 Çocuk yaşları ({rt.occupancy_pricing.children_ages.join(', ')}) fiyata dahil
-                                {rt.occupancy_pricing.child_supplement_nightly > 0 ? ` · ${formatMoney(rt.occupancy_pricing.child_supplement_nightly, availability.currency)}/gece çocuk farkı` : ' · ücretsiz'}
+                                {rt.occupancy_pricing.child_supplement_nightly > 0 ? ` · ${formatMoney(rt.occupancy_pricing.child_supplement_nightly, rt.currency || availability.currency)}/gece çocuk farkı` : ' · ücretsiz'}
                               </div>}
                               {rt.has_contract && <Badge variant="outline" className="mt-1 text-[10px] border-emerald-300 text-emerald-700">Acente sözleşme fiyatı</Badge>}
                             </div>
