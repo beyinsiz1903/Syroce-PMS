@@ -30,7 +30,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
-from core.security import _is_super_admin, get_current_user
+from core.security import _is_super_admin, get_current_user, verify_password
 from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
 from shared_kernel.idempotency import (
@@ -60,7 +60,6 @@ class MarketplaceLoginRequest(BaseModel):
 async def marketplace_extranet_login(req: MarketplaceLoginRequest, request: Request):
     """Global B2B Extranet arayüzü (Marketplace UI) için giriş."""
     from core.security import create_token
-    from security.passwords import verify_password
 
     sysdb = get_system_db()
     normalized_email = req.email.strip().lower()

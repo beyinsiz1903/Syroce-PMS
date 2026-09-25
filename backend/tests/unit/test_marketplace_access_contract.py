@@ -1,3 +1,4 @@
+import importlib
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +23,25 @@ class _Collection:
 
     def find(self, *_args, **_kwargs):
         return _Cursor(self.rows)
+
+
+class _LoginCollection:
+    def __init__(self, row=None):
+        self.row = row
+        self.inserted = []
+        self.deleted = []
+
+    async def count_documents(self, *_args, **_kwargs):
+        return 0
+
+    async def find_one(self, *_args, **_kwargs):
+        return self.row
+
+    async def insert_one(self, document):
+        self.inserted.append(document)
+
+    async def delete_many(self, query):
+        self.deleted.append(query)
 
 
 def test_marketplace_listing_management_rejects_guest_and_staff_roles():
@@ -52,6 +72,42 @@ def test_marketplace_booking_payload_rejects_invalid_capacity_and_identity():
             adults=0,
             children=99,
         )
+
+
+@pytest.mark.asyncio
+async def test_marketplace_extranet_login_uses_core_password_verifier(monkeypatch):
+    attempts = _LoginCollection()
+    users = _LoginCollection(
+        {
+            "id": "user-1",
+            "name": "Test Agent",
+            "email": "agent@example.com",
+            "hashed_password": "stored-hash",
+            "role": "marketplace_agent",
+            "agency_id": "agency-1",
+            "is_active": True,
+        }
+    )
+    agencies = _LoginCollection({"id": "agency-1", "name": "Test Travel", "status": "active"})
+    fake_system_db = SimpleNamespace(
+        marketplace_login_attempts=attempts,
+        users=users,
+        marketplace_agencies=agencies,
+    )
+
+    monkeypatch.setattr(marketplace_b2b, "get_system_db", lambda: fake_system_db)
+    monkeypatch.setattr(marketplace_b2b, "verify_password", lambda password, hashed: (password, hashed) == ("secret", "stored-hash"))
+    security_module = importlib.import_module("core.security")
+    monkeypatch.setattr(security_module, "create_token", lambda user_id, tenant_id: f"token:{user_id}:{tenant_id}")
+
+    result = await marketplace_b2b.marketplace_extranet_login(
+        marketplace_b2b.MarketplaceLoginRequest(email=" AGENT@EXAMPLE.COM ", password="secret"),
+        SimpleNamespace(client=SimpleNamespace(host="127.0.0.1")),
+    )
+
+    assert result["token"] == "token:user-1:None"
+    assert result["agency"] == {"id": "agency-1", "name": "Test Travel"}
+    assert attempts.deleted
 
 
 @pytest.mark.asyncio
