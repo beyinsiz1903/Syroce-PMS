@@ -26,6 +26,9 @@ const defaultProps = {
   onShowConflicts: vi.fn(),
   viewPreferences: { compactMode: true, showOccupancy: true, showTimeline: false },
   onViewPreferenceChange: vi.fn(),
+  canCreateBooking: true,
+  canManageRooms: true,
+  canSyncChannels: true,
 };
 
 describe('CalendarHeader mobile toolbar', () => {
@@ -62,5 +65,28 @@ describe('CalendarHeader mobile toolbar', () => {
     expect(onPrevious).toHaveBeenCalledTimes(1);
     expect(onGoToDate).toHaveBeenCalledTimes(1);
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose mutation controls to a read-only calendar user', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <CalendarHeader
+          {...defaultProps}
+          canCreateBooking={false}
+          canManageRooms={false}
+          canSyncChannels={false}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('mobile-add-reservation-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('add-reservation-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('calendar-room-block-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ota-sync-button')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('mobile-calendar-actions'));
+    expect(screen.getByRole('menu')).not.toHaveTextContent('Odayı blokla / arıza bildir');
+    expect(screen.getByRole('menu')).not.toHaveTextContent('OTA senkronizasyonu');
   });
 });
