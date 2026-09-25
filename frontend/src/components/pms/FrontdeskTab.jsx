@@ -122,6 +122,9 @@ const FrontdeskTab = ({
   ), []);
 
   const formatBookingChannel = useCallback((booking) => {
+    if (booking?.agency_name && (booking?.agency_id || booking?.source_channel === 'agency' || booking?.channel === 'agency')) {
+      return `Acente · ${booking.agency_name}`;
+    }
     const rawChannel = booking?.ota_channel
       || booking?.source_channel
       || booking?.channel
@@ -144,6 +147,7 @@ const FrontdeskTab = ({
       airbnb: 'Airbnb',
       hotelrunner: 'HotelRunner',
       exely: 'Exely',
+      agency: 'Acente',
     };
     return labels[normalized] || String(rawChannel).trim() || 'Belirtilmemiş';
   }, []);

@@ -177,6 +177,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
   const nights = booking ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
   const nightlyRate = booking ? (booking.total_amount || 0) / nights : 0;
+  const isMarketplaceAgency = booking?.channel === 'marketplace' || booking?.source_channel === 'marketplace' || booking?.marketplace_agency_id;
 
   useEffect(() => {
     if (noshowChargeType === 'per_night') setNoshowAmount(String(Math.round(nightlyRate)));
@@ -188,7 +189,13 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     if (!await confirmDialog({ message: applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?', variant: 'danger' })) return;
     setLoading(true);
     try {
-      if (applyNoshow) {
+      if (isMarketplaceAgency) {
+        await axios.post(`/marketplace/v1/hotel/reservations/${bookingId}/cancellation-proposals`, { reason: `${cancelTypes[cancelType]}: ${reason}` });
+        toast.success('İptal önerisi acenteye iletildi; rezervasyon acente kabul edene kadar korunacak');
+        onRefresh?.();
+        setLoading(false);
+        return;
+      } else if (applyNoshow) {
         await axios.post('/pms-core/no-show', { booking_id: bookingId });
         if (noshowChargeType && parseFloat(noshowAmount) > 0) {
           await axios.post(`/pms/reservations/${bookingId}/add-extra-charge`, {
@@ -214,6 +221,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     <div data-testid="cancel-tab" className="space-y-4 max-w-lg">
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <div className="text-sm font-semibold text-red-800 mb-3">{t('cm.pages_reservationdetail_OperationTabs.rezervasyon_iptali')}</div>
+        {isMarketplaceAgency && <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">Bu rezervasyon acente kanalıyla geldi. İşlem rezervasyonu tek taraflı iptal etmez; gerekçeli öneri acenteye gönderilir ve yalnız acente kabul ederse uygulanır.</div>}
         <div className="space-y-3">
           <div>
             <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.iptal_nedeni')}</Label>
@@ -226,14 +234,14 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
             <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder={t('cm.pages_reservationdetail_OperationTabs.iptal_aciklamasi')} data-testid="cancel-reason-input" />
           </div>
 
-          <div className="border-t pt-3">
+          {!isMarketplaceAgency && <div className="border-t pt-3">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={applyNoshow} onChange={e => setApplyNoshow(e.target.checked)} className="rounded" data-testid="noshow-checkbox" />
               <span className="text-sm font-medium text-red-700">No-Show Uygula</span>
             </label>
-          </div>
+          </div>}
 
-          {applyNoshow && (
+          {applyNoshow && !isMarketplaceAgency && (
             <div className="bg-white border rounded-lg p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_OperationTabs.no_show_ucreti')}</div>
               <div className="flex gap-2">
@@ -256,7 +264,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
           <Button onClick={handleCancel} disabled={loading || !reason} className="bg-red-600 hover:bg-red-700 text-white h-9 text-sm w-full" data-testid="cancel-submit-btn">
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <AlertTriangle className="w-4 h-4 mr-1" />}
-            {applyNoshow ? 'No-Show Olarak İptal Et' : 'Rezervasyonu İptal Et'}
+            {isMarketplaceAgency ? 'İptal Önerisini Acenteye Gönder' : applyNoshow ? 'No-Show Olarak İptal Et' : 'Rezervasyonu İptal Et'}
           </Button>
         </div>
       </div>

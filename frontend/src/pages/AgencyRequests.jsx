@@ -58,6 +58,7 @@ const AgencyRequests = () => {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [marketplaceNegotiations, setMarketplaceNegotiations] = useState([]);
 
   useEffect(() => {
     loadRequests();
@@ -68,8 +69,12 @@ const AgencyRequests = () => {
     try {
       setLoading(true);
       const params = filterStatus !== 'all' ? { status: filterStatus } : {};
-      const response = await axios.get('/hotel/booking-requests', { params });
+      const [response, negotiationResponse] = await Promise.all([
+        axios.get('/hotel/booking-requests', { params }),
+        axios.get('/marketplace/v1/hotel/negotiations').catch(() => ({ data: { items: [] } })),
+      ]);
       setRequests(response.data.items || []);
+      setMarketplaceNegotiations(negotiationResponse.data.items || []);
     } catch (error) {
       console.error('Failed to load agency requests:', error);
       toast.error('Acenta talepleri yüklenemedi');
@@ -175,6 +180,17 @@ const AgencyRequests = () => {
     const co = new Date(checkOut);
     return Math.ceil((co - ci) / (1000 * 60 * 60 * 24));
   };
+  const decideMarketplaceModification = async (item, accept) => {
+    const responseNote = window.prompt(accept ? 'Onay notu (isteğe bağlı)' : 'Reddetme gerekçesi') || '';
+    if (!accept && responseNote.trim().length < 5) return toast.error('Reddetme gerekçesi en az 5 karakter olmalıdır');
+    try {
+      setActionLoading(true);
+      await axios.post(`/marketplace/v1/hotel/negotiations/${item.id}/decision`, { accept, response_note: responseNote });
+      toast.success(accept ? 'Değişiklik uygulandı ve oda müsaitliği yeniden kilitlendi' : 'Değişiklik reddedildi; mevcut rezervasyon korundu');
+      await loadRequests();
+    } catch (error) { toast.error(extractErrorMessage(error, 'Değişiklik yanıtı kaydedilemedi')); }
+    finally { setActionLoading(false); }
+  };
 
   const pendingRequests = requests.filter(r => ['submitted', 'hotel_review'].includes(r.status));
 
@@ -223,6 +239,13 @@ const AgencyRequests = () => {
       </div>
 
       {/* Loading */}
+      {marketplaceNegotiations.length > 0 && <div className="mb-6 space-y-3">
+        <h2 className="text-lg font-semibold text-gray-900">Acente ile Karşılıklı İşlemler</h2>
+        {marketplaceNegotiations.map(item => <div key={item.id} className="bg-white rounded-lg border border-amber-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div><div className="font-semibold">{item.confirmation_code} · {item.guest_name}</div><div className="text-sm text-gray-600 mt-1">{item.type === 'agency_modification' ? `Değişiklik talebi: ${item.requested?.check_in} – ${item.requested?.check_out} · ${item.requested?.room_type}` : `İptal önerisi: ${item.reason}`}</div><div className="text-xs text-gray-500 mt-1">{item.reason} · Tek taraflı uygulanmaz.</div></div>
+          <div className="flex items-center gap-2">{item.type === 'agency_modification' && item.status === 'awaiting_hotel' && <><Button size="sm" variant="outline" disabled={actionLoading} onClick={() => decideMarketplaceModification(item, false)}>Reddet</Button><Button size="sm" disabled={actionLoading} onClick={() => decideMarketplaceModification(item, true)}>Onayla</Button></>}{getStatusBadge(['awaiting_agency', 'awaiting_hotel'].includes(item.status) ? 'hotel_review' : item.status === 'accepted' ? 'approved' : 'rejected')}</div>
+        </div>)}
+      </div>}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />

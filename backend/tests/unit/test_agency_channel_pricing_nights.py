@@ -28,7 +28,7 @@ def test_calendar_nights_total_and_commission(relative_path, function_name, arri
     tree = ast.parse(source.read_text())
     fn = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef)
               and node.name == function_name)
-    names = {"nights", "server_total", "total", "commission_amount", "net_to_hotel"}
+    names = {"nights", "public_unit_price", "server_total", "total", "commission_amount", "net_to_hotel"}
     expressions = sorted([
         node for node in ast.walk(fn) if isinstance(node, ast.Assign)
         and any(isinstance(t, ast.Name) and t.id in names for t in node.targets)
@@ -38,6 +38,9 @@ def test_calendar_nights_total_and_commission(relative_path, function_name, arri
         "co": datetime.fromisoformat(departure + "T11:00:00+00:00"),
         "data": SimpleNamespace(total_amount=0),
         "available_room": {"base_price": 1500},
+        "ci_date": datetime.fromisoformat(arrival).date(),
+        "co_date": datetime.fromisoformat(departure).date(),
+        "rooms": [{"base_price": 1500}],
         "commission_rate": 10, "commission_pct": 10,
     }
     exec(compile(ast.Module(body=expressions, type_ignores=[]), str(source), "exec"), scope)
