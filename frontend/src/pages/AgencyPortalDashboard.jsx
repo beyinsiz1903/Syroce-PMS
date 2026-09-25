@@ -71,6 +71,7 @@ const AgencyPortalDashboard = () => {
   // Content
   const [content, setContent] = useState(null);
   const [contentLoading, setContentLoading] = useState(false);
+  const [contentTenantId, setContentTenantId] = useState('');
 
   // Availability
   const [searchForm, setSearchForm] = useState(initialDates);
@@ -150,6 +151,7 @@ const AgencyPortalDashboard = () => {
     setReservations([]);
     setHotels([]);
     setSelectedTenantId('');
+    setContentTenantId('');
     setProfileLoading(false);
     setProfileError('');
   };
@@ -168,6 +170,7 @@ const AgencyPortalDashboard = () => {
           const allowedSelected = '';
           setAgencyInfo(data.agency || null);
           setHotels(availableHotels);
+          setContentTenantId(current => availableHotels.some(hotel => hotel.tenant_id === current) ? current : (availableHotels[0]?.tenant_id || ''));
           setSelectedTenantId(allowedSelected);
           localStorage.removeItem('agency_selected_hotel');
           const selected = availableHotels.find(h => h.tenant_id === allowedSelected);
@@ -190,12 +193,16 @@ const AgencyPortalDashboard = () => {
   }, [token, profileRevision, portalMode]);
 
   // Load content
-  const loadContent = async () => {
+  const loadContent = async tenantIdOverride => {
     setContentLoading(true);
     try {
       if (portalMode === 'marketplace') {
-        if (!selectedTenantId) return setContent({ published: false, hotel_content: null });
-        const { data } = await agencyApi.get(`/marketplace/v1/hotels/${encodeURIComponent(selectedTenantId)}`);
+        const tenantId = typeof tenantIdOverride === 'string' && tenantIdOverride
+          ? tenantIdOverride
+          : (contentTenantId || selectedTenantId || hotels[0]?.tenant_id || '');
+        if (!tenantId) return setContent({ published: false, hotel_content: null });
+        setContentTenantId(tenantId);
+        const { data } = await agencyApi.get(`/marketplace/v1/hotels/${encodeURIComponent(tenantId)}`);
         setContent({
           published: true,
           hotel_content: {
@@ -445,7 +452,7 @@ const AgencyPortalDashboard = () => {
     pending: 'Beklemede',
     checked_in: 'Giriş Yaptı',
     checked_out: 'Çıkış Yaptı',
-    cancelled: 'İptal'
+    cancelled: 'İptal edildi'
   };
   const statusColors = {
     confirmed: 'bg-emerald-100 text-emerald-800',
@@ -560,7 +567,7 @@ const AgencyPortalDashboard = () => {
           <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
             <TabsTrigger value="search" data-testid="tab-search" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
             <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Rezervasyonlarım</TabsTrigger>
-            <TabsTrigger value="content" onClick={loadContent} data-testid="tab-content" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Otel Bilgileri</TabsTrigger>
+            <TabsTrigger value="content" onClick={() => loadContent()} data-testid="tab-content" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Tesis Bilgileri</TabsTrigger>
             {portalMode === 'marketplace' && <TabsTrigger value="finance" onClick={loadReconciliation} className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Mutabakat</TabsTrigger>}
           </TabsList>
 
@@ -584,7 +591,7 @@ const AgencyPortalDashboard = () => {
                     <div><Label className="text-xs">Belirli tesis</Label><select value={selectedTenantId} onChange={e => { setSelectedTenantId(e.target.value); setAvailability(null); }} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Tüm sözleşmeli tesisler</option>{hotels.map(hotel => <option key={hotel.tenant_id} value={hotel.tenant_id}>{hotel.name}{hotel.city ? ` · ${hotel.city}` : ''}</option>)}</select></div>
                     <div><Label className="text-xs">Tesis ve oda özellikleri</Label><div className="mt-2 flex flex-wrap gap-2">{AMENITY_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, amenities: toggleFilter(p.amenities, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.amenities.includes(value) ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-emerald-400'}`}>{label}</button>)}</div></div>
                     <div><Label className="text-xs">Pansiyon tipi</Label><div className="mt-2 flex flex-wrap gap-2">{MEAL_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, meal_plans: toggleFilter(p.meal_plans, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.meal_plans.includes(value) ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-blue-400'}`}>{label}</button>)}</div></div>
-                    <div className="grid grid-cols-2 gap-3"><div><Label className="text-xs">En az yıldız</Label><select value={searchForm.min_star_rating || ''} onChange={e => setSearchForm(p => ({ ...p, min_star_rating: e.target.value ? Number(e.target.value) : null }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Farketmez</option>{[3,4,5].map(star => <option key={star} value={star}>{star} yıldız ve üzeri</option>)}</select></div><div><Label className="text-xs">Azami toplam fiyat</Label><Input type="number" min="0" value={searchForm.max_price || ''} onChange={e => setSearchForm(p => ({ ...p, max_price: e.target.value ? Number(e.target.value) : null }))} placeholder="Sınırsız" /></div></div>
+                    <div className="grid grid-cols-2 gap-3"><div><Label className="text-xs">En az yıldız</Label><select value={searchForm.min_star_rating || ''} onChange={e => setSearchForm(p => ({ ...p, min_star_rating: e.target.value ? Number(e.target.value) : null }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Fark etmez</option>{[3,4,5].map(star => <option key={star} value={star}>{star} yıldız ve üzeri</option>)}</select></div><div><Label className="text-xs">Azami toplam fiyat</Label><Input type="number" min="0" value={searchForm.max_price || ''} onChange={e => setSearchForm(p => ({ ...p, max_price: e.target.value ? Number(e.target.value) : null }))} placeholder="Sınırsız" /></div></div>
                   </div>}
                 </div>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
@@ -725,17 +732,19 @@ const AgencyPortalDashboard = () => {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><div><h2 className="font-semibold text-slate-900">Son 30 gün mutabakat özeti</h2><p className="text-xs leading-5 text-slate-500">Brüt satış, acente komisyonu, platform hizmet bedeli ve otellere aktarılacak net tutar.</p></div><Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV olarak indir</Button></div>
             {!reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                {[['Brüt satış', reconciliation.totals?.gross_revenue, true], ['Acente komisyonu', reconciliation.totals?.commission, true], ['Platform hizmet bedeli', reconciliation.totals?.platform_fee, true], ['Otellere aktarılacak net', reconciliation.totals?.net_to_hotels, true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? formatMoney(value, hotelInfo?.currency) : value}</div></CardContent></Card>)}
+                {[['Brüt satış', reconciliation.totals?.gross_revenue, true], ['Acente komisyonu', reconciliation.totals?.commission, true], ['Platform hizmet bedeli', reconciliation.totals?.platform_fee, true], ['Otellere aktarılacak net', reconciliation.totals?.net_to_hotels, true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''} ${index === 4 ? 'col-span-2 lg:col-span-1' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? formatMoney(value, hotelInfo?.currency) : value}</div></CardContent></Card>)}
               </div>
               {(reconciliation.by_hotel || []).map(row => <Card key={row.tenant_id}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatMoney(row.commission, hotelInfo?.currency)} · Platform {formatMoney(row.platform_fee, hotelInfo?.currency)}</div></div><div className="text-right"><div className="font-bold">{formatMoney(row.gross_revenue, hotelInfo?.currency)}</div><div className="text-xs text-emerald-700">Net {formatMoney(row.net_to_hotel, hotelInfo?.currency)}</div></div></CardContent></Card>)}
             </>}
           </TabsContent>}
 
           {/* Content Tab */}
-          <TabsContent value="content" className="mt-4">
+          <TabsContent value="content" className="mt-4 space-y-4">
+            {portalMode === 'marketplace' && <Card className="border-slate-200 shadow-sm"><CardContent className="py-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-semibold text-slate-900">Tesis bilgileri</h2><p className="mt-1 text-xs text-slate-500">Sözleşmeli tesislerin oda tiplerini, özelliklerini ve iletişim bilgilerini inceleyin.</p></div><div className="w-full sm:w-80"><Label htmlFor="content-hotel-select" className="sr-only">Görüntülenecek tesis</Label><select id="content-hotel-select" value={contentTenantId} onChange={event => loadContent(event.target.value)} className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="content-hotel-select"><option value="" disabled>Tesis seçin</option>{hotels.map(hotel => <option key={hotel.tenant_id} value={hotel.tenant_id}>{hotel.name}{hotel.city ? ` · ${hotel.city}` : ''}</option>)}</select></div></div></CardContent></Card>}
             {contentLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" size={24} /></div> : !content?.published ? <Card><CardContent className="py-12 text-center text-slate-400">
                 <Eye size={40} className="mx-auto mb-3 opacity-40" />
-                <p>{t('cm.pages_AgencyPortalDashboard.otel_henuz_size_icerik_yayinlamamis')}</p>
+                <p className="font-medium text-slate-700">Görüntülenecek tesis bilgisi bulunamadı</p>
+                <p className="mt-1 text-sm">Sözleşmeli bir tesis seçin veya içerik paylaşımı için tesisle iletişime geçin.</p>
               </CardContent></Card> : <div className="space-y-4">
                 <Card>
                   <CardHeader>
