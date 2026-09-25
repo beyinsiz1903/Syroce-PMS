@@ -6,6 +6,7 @@ import { TrendingUp, BedDouble, DollarSign, LogIn, LogOut, AlertTriangle, Refres
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 const PIE_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6366f1'];
 
 const dateKey = value => value ? String(value).slice(0, 10) : '';
@@ -68,6 +69,8 @@ export const buildFallbackFlashReport = ({ targetDate, rooms = [], bookings = []
   const fallbackArrivals = datedArrivals || arrivals.filter(booking => bookingArrival(booking) === targetDate).length;
   const fallbackDepartures = datedDepartures || departures.filter(booking => bookingDeparture(booking) === targetDate).length;
   const fallbackInhouse = inhouse.filter(booking => activeOnDate(booking, targetDate)).length;
+  const noShowBookings = bookings.filter(booking => ['no_show', 'noshow'].includes(bookingStatus(booking)) && bookingArrival(booking) === targetDate);
+  const cancelledBookings = bookings.filter(booking => ['cancelled', 'canceled'].includes(bookingStatus(booking)) && dateKey(booking.cancelled_at || booking.canceled_at || booking.updated_at) === targetDate);
 
   return {
     date: targetDate,
@@ -92,10 +95,21 @@ export const buildFallbackFlashReport = ({ targetDate, rooms = [], bookings = []
       arrivals: fallbackArrivals,
       departures: fallbackDepartures,
       inhouse: activeBookings.length || fallbackInhouse,
-      no_shows: bookings.filter(booking => ['no_show', 'noshow'].includes(bookingStatus(booking)) && bookingArrival(booking) === targetDate).length,
+      no_shows: noShowBookings.length,
       walk_ins: bookings.filter(booking => bookingArrival(booking) === targetDate && ['walk_in', 'walkin'].includes(String(booking.channel || booking.booking_source || '').toLowerCase())).length,
-      cancellations: bookings.filter(booking => ['cancelled', 'canceled'].includes(bookingStatus(booking)) && dateKey(booking.cancelled_at || booking.canceled_at || booking.updated_at) === targetDate).length,
+      cancellations: cancelledBookings.length,
       overstays: 0,
+    },
+    attention_details: {
+      cancellations: cancelledBookings,
+      no_shows: noShowBookings,
+    },
+    scope: {
+      business_date: targetDate,
+      occupancy: 'Seçili iş gecesinde dolu ve satılabilir odalar',
+      revenue: 'Seçili iş gününe dağıtılan konaklama ve ek gelirler',
+      collections: 'Seçili iş gününe dağıtılan tahsilatlar',
+      operations: 'Seçili iş günündeki giriş, çıkış ve durum hareketleri',
     },
     departments: [
       { name: 'Oda Geliri', amount: roomRevenue },
@@ -119,6 +133,7 @@ const FlashReportContent = ({
   departures,
   inhouse
 }) => {
+  const navigate = useNavigate();
   const {
     t
   } = useTranslation();
@@ -178,6 +193,9 @@ const FlashReportContent = ({
     if (!printWindow || !reportData) return;
     const d = reportData;
     const totalRev = d.revenue?.total || 0;
+    const collected = Number(d.revenue?.collected || 0);
+    const openBalance = Math.max(0, totalRev - collected);
+    const advance = Math.max(0, collected - totalRev);
     printWindow.document.write(`
       <html><head><title>Günlük Flash Rapor - ${d.date}</title>
       <style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
@@ -210,8 +228,10 @@ const FlashReportContent = ({
       <tbody>${(d.departments || []).map(dep => `<tr><td>${dep.name}</td><td style="text-align:right">${fmtMoney(dep.amount || 0)}</td><td style="text-align:right">${totalRev > 0 ? ((dep.amount || 0) / totalRev * 100).toFixed(1) : 0}%</td></tr>`).join('')}</tbody></table>
       <h3>Tahsilat Durumu</h3>
       <table><tr><td>Toplam Gelir</td><td style="text-align:right">${fmtMoney(totalRev)}</td></tr>
-      <tr><td>Tahsil Edilen</td><td style="text-align:right">${fmtMoney(d.revenue?.collected || 0)}</td></tr>
-      <tr style="color:red"><td>Açık Bakiye</td><td style="text-align:right">${fmtMoney(d.revenue?.outstanding || 0)}</td></tr></table>
+      <tr><td>Tahsil Edilen</td><td style="text-align:right">${fmtMoney(collected)}</td></tr>
+      ${openBalance > 0 ? `<tr style="color:red"><td>Açık Bakiye</td><td style="text-align:right">${fmtMoney(openBalance)}</td></tr>` : ''}
+      ${advance > 0 ? `<tr style="color:#1d4ed8"><td>Avans / Önceki Dönem Tahsilatı</td><td style="text-align:right">+${fmtMoney(advance)}</td></tr>` : ''}</table>
+      <p style="font-size:10px;color:#666">Gelir ve tahsilat seçili iş gününün farklı hareketleridir. Tahsilat; avans veya önceki dönem borç ödemesi içerdiğinde geliri aşabilir.</p>
       <p style="margin-top:20px;font-size:10px;color:#999">Bu rapor ${new Date().toLocaleString('tr-TR')} tarihinde otomatik oluşturulmuştur.</p>
       </body></html>
     `);
@@ -244,8 +264,19 @@ const FlashReportContent = ({
   }
   const d = reportData;
   const totalRev = d.revenue?.total || 0;
+  const collected = Number(d.revenue?.collected || 0);
+  const outstandingDue = Math.max(0, totalRev - collected);
+  const advanceCollected = Math.max(0, collected - totalRev);
   const trevpar = d.occupancy?.total > 0 ? totalRev / d.occupancy.total : 0;
-  const collectionPct = totalRev > 0 ? (d.revenue?.collected || 0) / totalRev * 100 : 0;
+  const collectionPct = totalRev > 0 ? collected / totalRev * 100 : 0;
+  const attentionItems = [
+    ...(d.attention_details?.no_shows || []).map(item => ({ ...item, attentionType: 'No-show' })),
+    ...(d.attention_details?.cancellations || []).map(item => ({ ...item, attentionType: 'İptal' })),
+  ];
+  const openBooking = booking => {
+    const bookingId = booking.id || booking.booking_id;
+    if (bookingId) navigate(`/app/pms?edit=${encodeURIComponent(bookingId)}#bookings`);
+  };
   const pieData = (d.departments || []).filter(dep => dep.amount > 0).map(dep => ({
     name: dep.name,
     value: dep.amount
@@ -270,6 +301,11 @@ const FlashReportContent = ({
         </div>
       )}
 
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-testid="flash-scope">
+        <p className="font-semibold text-slate-800">Rapor kapsamı: {d.scope?.business_date || d.date}</p>
+        <p className="mt-1">Tüm göstergeler seçili iş gününe aittir. Gelir o gün kaydedilen harcamaları, tahsilat ise o gün alınan ödemeleri gösterir; farklı rezervasyon dönemlerinden avans veya borç tahsilatı içerebilir.</p>
+      </div>
+
       {/* Ana KPI'lar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="bg-blue-50 border-blue-200" data-testid="flash-kpi-occupancy">
@@ -278,7 +314,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-blue-700 font-medium">{t('cm.components_pms_FlashReportContent.doluluk_orani')}</p>
                 <p className="text-2xl font-bold text-blue-900">{(d.occupancy?.rate || 0).toFixed(1)}%</p>
-                <p className="text-xs text-blue-600 mt-0.5">{d.occupancy?.occupied || 0}/{d.occupancy?.total || 0} oda</p>
+                <p className="text-xs text-blue-600 mt-0.5">{d.occupancy?.occupied || 0}/{d.occupancy?.total || 0} oda · gece doluluğu</p>
               </div>
               <BedDouble className="w-7 h-7 text-blue-500" />
             </div>
@@ -290,7 +326,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-emerald-700 font-medium">ADR</p>
                 <p className="text-2xl font-bold text-emerald-900">{fmtMoney(d.kpi?.adr || 0)}</p>
-                <p className="text-xs text-emerald-600 mt-0.5">{t('cm.components_pms_FlashReportContent.ort_oda_fiyati')}</p>
+                <p className="text-xs text-emerald-600 mt-0.5">Dolu oda başına oda geliri</p>
               </div>
               <DollarSign className="w-7 h-7 text-emerald-500" />
             </div>
@@ -302,7 +338,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-indigo-700 font-medium">RevPAR</p>
                 <p className="text-2xl font-bold text-indigo-900">{fmtMoney(d.kpi?.revpar || 0)}</p>
-                <p className="text-xs text-indigo-600 mt-0.5">{t('cm.components_pms_FlashReportContent.mevcut_oda')}</p>
+                <p className="text-xs text-indigo-600 mt-0.5">Mevcut oda başına oda geliri</p>
               </div>
               <TrendingUp className="w-7 h-7 text-indigo-500" />
             </div>
@@ -314,7 +350,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-amber-700 font-medium">TRevPAR</p>
                 <p className="text-2xl font-bold text-amber-900">{fmtMoney(trevpar)}</p>
-                <p className="text-xs text-amber-600 mt-0.5">{t('cm.components_pms_FlashReportContent.toplam_mevcut_oda')}</p>
+                <p className="text-xs text-amber-600 mt-0.5">Mevcut oda başına toplam gelir</p>
               </div>
               <Sparkles className="w-7 h-7 text-amber-500" />
             </div>
@@ -323,12 +359,16 @@ const FlashReportContent = ({
       </div>
 
       {/* Operasyonel KPI'lar */}
+      <div className="-mb-2 text-xs text-slate-500">
+        Operasyonel hareketler · seçili iş gününün rezervasyon giriş, çıkış ve durum kayıtları
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <Card data-testid="flash-ops-arrivals">
           <CardContent className="p-3 text-center">
             <LogIn className="w-5 h-5 mx-auto text-emerald-500" />
             <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_FlashReportContent.girisler')}</p>
             <p className="text-xl font-bold text-emerald-700">{d.operations?.arrivals || 0}</p>
+            <p className="text-[10px] text-gray-400">Bugün giriş</p>
           </CardContent>
         </Card>
         <Card data-testid="flash-ops-departures">
@@ -336,6 +376,7 @@ const FlashReportContent = ({
             <LogOut className="w-5 h-5 mx-auto text-blue-500" />
             <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_FlashReportContent.cikislar')}</p>
             <p className="text-xl font-bold text-blue-700">{d.operations?.departures || 0}</p>
+            <p className="text-[10px] text-gray-400">Bugün çıkış</p>
           </CardContent>
         </Card>
         <Card data-testid="flash-ops-inhouse">
@@ -343,6 +384,7 @@ const FlashReportContent = ({
             <Users className="w-5 h-5 mx-auto text-indigo-500" />
             <p className="text-[11px] text-gray-500 mt-1">In-House</p>
             <p className="text-xl font-bold text-indigo-700">{d.operations?.inhouse || 0}</p>
+            <p className="text-[10px] text-gray-400">Geceleyen oda</p>
           </CardContent>
         </Card>
         <Card data-testid="flash-ops-noshow">
@@ -350,6 +392,7 @@ const FlashReportContent = ({
             <UserX className="w-5 h-5 mx-auto text-red-500" />
             <p className="text-[11px] text-gray-500 mt-1">No-Show</p>
             <p className="text-xl font-bold text-red-700">{d.operations?.no_shows || 0}</p>
+            <p className="text-[10px] text-gray-400">Bugün işaretlenen</p>
           </CardContent>
         </Card>
         <Card data-testid="flash-ops-walkin">
@@ -357,6 +400,7 @@ const FlashReportContent = ({
             <UserPlus className="w-5 h-5 mx-auto text-teal-500" />
             <p className="text-[11px] text-gray-500 mt-1">Walk-In</p>
             <p className="text-xl font-bold text-teal-700">{d.operations?.walk_ins || 0}</p>
+            <p className="text-[10px] text-gray-400">Bugün gelen</p>
           </CardContent>
         </Card>
         <Card data-testid="flash-ops-cancel">
@@ -364,6 +408,7 @@ const FlashReportContent = ({
             <XCircle className="w-5 h-5 mx-auto text-amber-500" />
             <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_FlashReportContent.iptal')}</p>
             <p className="text-xl font-bold text-amber-700">{d.operations?.cancellations || 0}</p>
+            <p className="text-[10px] text-gray-400">Bugün iptal edilen</p>
           </CardContent>
         </Card>
       </div>
@@ -417,6 +462,7 @@ const FlashReportContent = ({
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-blue-500" /> Tahsilat Durumu
             </CardTitle>
+            <p className="text-xs text-slate-500">Seçili iş günündeki gelir kayıtları ve ödeme hareketleri</p>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
@@ -425,12 +471,16 @@ const FlashReportContent = ({
             </div>
             <div className="flex items-center justify-between bg-emerald-50 px-3 py-2 rounded">
               <span className="text-sm text-emerald-700 font-medium">Tahsil Edilen</span>
-              <span className="text-lg font-bold text-emerald-700">{fmtMoney(d.revenue?.collected || 0)}</span>
+              <span className="text-lg font-bold text-emerald-700">{fmtMoney(collected)}</span>
             </div>
-            <div className="flex items-center justify-between bg-red-50 px-3 py-2 rounded">
-              <span className="text-sm text-red-700 font-medium">{t('cm.components_pms_FlashReportContent.acik_bakiye')}</span>
-              <span className="text-lg font-bold text-red-700">{fmtMoney(d.revenue?.outstanding || 0)}</span>
-            </div>
+            {outstandingDue > 0 && <div className="flex items-center justify-between bg-red-50 px-3 py-2 rounded">
+                <span className="text-sm text-red-700 font-medium">{t('cm.components_pms_FlashReportContent.acik_bakiye')}</span>
+                <span className="text-lg font-bold text-red-700">{fmtMoney(outstandingDue)}</span>
+              </div>}
+            {advanceCollected > 0 && <div className="flex items-center justify-between bg-blue-50 px-3 py-2 rounded" data-testid="flash-advance-collected">
+                <span className="text-sm text-blue-700 font-medium">Avans / Önceki Dönem Tahsilatı</span>
+                <span className="text-lg font-bold text-blue-700">+{fmtMoney(advanceCollected)}</span>
+              </div>}
             <div className="pt-2">
               <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
                 <span>{t('cm.components_pms_FlashReportContent.tahsilat_orani')}</span>
@@ -442,6 +492,9 @@ const FlashReportContent = ({
               }} />
               </div>
             </div>
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              Tahsilat geliri aşabilir: bugün alınan ön ödemeler veya önceki dönem borç tahsilatları bu toplama dahildir. Bu nedenle oran %100'ün üzerinde olabilir.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -453,7 +506,7 @@ const FlashReportContent = ({
               <AlertTriangle className="w-4 h-4" /> Dikkat Gerektiren Durumlar
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-4 text-sm">
               {(d.operations?.no_shows || 0) > 0 && <div className="flex items-center gap-2 text-amber-700">
                   <XCircle className="w-4 h-4" />
@@ -464,6 +517,30 @@ const FlashReportContent = ({
                   <span className="font-semibold">{d.operations.cancellations} {t('cm.components_pms_FlashReportContent.iptal_25174')}</span>
                 </div>}
             </div>
+            {attentionItems.length > 0 ? <div className="grid gap-2" data-testid="flash-alert-details">
+                {attentionItems.map((item, index) => {
+                  const bookingId = item.id || item.booking_id;
+                  return <div key={bookingId || item.booking_number || index} className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-white/80 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-800">{item.attentionType}</span>
+                          <span className="font-semibold text-slate-900">{item.guest_name || 'Misafir bilgisi yok'}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600">
+                          {item.booking_number ? `Rez. ${item.booking_number}` : 'Rezervasyon numarası yok'}
+                          {item.room_number ? ` · Oda ${item.room_number}` : ' · Oda atanmamış'}
+                          {(item.check_in || item.check_out) ? ` · ${dateKey(item.check_in) || '?'} → ${dateKey(item.check_out) || '?'}` : ''}
+                        </p>
+                        {item.cancellation_reason && <p className="mt-1 text-xs text-amber-800">Neden: {item.cancellation_reason}</p>}
+                      </div>
+                      {bookingId && <Button variant="outline" size="sm" className="shrink-0" onClick={() => openBooking(item)}>
+                          Rezervasyonu Aç
+                        </Button>}
+                    </div>;
+                })}
+              </div> : <p className="text-xs text-amber-800">
+                Sayı mevcut, ancak kayıt ayrıntısı bu rapor yanıtında bulunmuyor. Raporu yenileyerek ayrıntıları yükleyin.
+              </p>}
           </CardContent>
         </Card>}
 
