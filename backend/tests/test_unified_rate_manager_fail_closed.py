@@ -8,6 +8,43 @@ from domains.channel_manager import unified_rate_manager_router as rate_router
 
 
 @pytest.mark.asyncio
+async def test_detect_provider_exposes_agency_distribution_without_ota(monkeypatch):
+    fake_db = SimpleNamespace(
+        agencies=SimpleNamespace(count_documents=AsyncMock(return_value=2)),
+        rooms=SimpleNamespace(distinct=AsyncMock(return_value=["Standard", "Suite"])),
+    )
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": None}),
+    )
+
+    result = await rate_router.detect_provider(SimpleNamespace(tenant_id="tenant-test"))
+
+    assert result["provider"] == "agency"
+    assert result["provider_name"] == "Acente Dağıtımı"
+    assert result["room_count"] == 2
+    assert result["has_connection"] is False
+
+
+@pytest.mark.asyncio
+async def test_detect_provider_stays_fail_closed_for_configuration_error(monkeypatch):
+    fake_db = SimpleNamespace(agencies=SimpleNamespace(count_documents=AsyncMock(return_value=2)))
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": "multiple_active_providers"}),
+    )
+
+    result = await rate_router.detect_provider(SimpleNamespace(tenant_id="tenant-test"))
+
+    assert result["provider"] is None
+    assert result["configuration_error"] == "multiple_active_providers"
+
+
+@pytest.mark.asyncio
 async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeypatch):
     fake_db = SimpleNamespace()
     monkeypatch.setattr(rate_router, "db", fake_db)
