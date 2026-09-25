@@ -135,3 +135,49 @@ async def test_guest_360_handles_legacy_dates_source_and_profile_race(monkeypatc
     assert result["stats"]["channel_distribution"] == {"Exely": 1, "direct": 1}
     assert len(result["stay_history"]) == 2
     guest_profiles.update_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_guest_360_normalizes_legacy_scalar_notes_and_tags(monkeypatch):
+    monkeypatch.setattr("security.encrypted_lookup.decrypt_guest_doc", lambda doc: doc)
+    monkeypatch.setattr(
+        crm_guest.db,
+        "guests",
+        SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "guest-legacy",
+                    "name": "Legacy Guest",
+                    "notes": "Sessiz oda tercih ediyor",
+                    "tags": "VIP",
+                }
+            )
+        ),
+    )
+    bookings = MagicMock()
+    bookings.find.return_value = _cursor([])
+    monkeypatch.setattr(crm_guest.db, "bookings", bookings)
+    monkeypatch.setattr(crm_guest.db, "guest_preferences", SimpleNamespace(find_one=AsyncMock(return_value=None)))
+    monkeypatch.setattr(crm_guest.db, "guest_behavior", SimpleNamespace(find_one=AsyncMock(return_value=None)))
+    monkeypatch.setattr(
+        crm_guest.db,
+        "guest_profiles",
+        SimpleNamespace(find_one=AsyncMock(return_value={"id": "profile-legacy"})),
+    )
+    upsells = MagicMock()
+    upsells.find.return_value = _cursor([])
+    monkeypatch.setattr(crm_guest.db, "upsell_offers", upsells)
+
+    result = await crm_guest.get_guest_360(
+        guest_id="guest-legacy",
+        current_user=SimpleNamespace(tenant_id="tenant-a"),
+    )
+
+    assert result["guest"]["notes"] == [
+        {
+            "text": "Sessiz oda tercih ediyor",
+            "created_by": "Eski kayıt",
+            "created_at": None,
+        }
+    ]
+    assert result["guest"]["tags"] == ["VIP"]
