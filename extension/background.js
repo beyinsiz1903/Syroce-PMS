@@ -161,7 +161,9 @@ function payloadMissingFields(body) {
   if (!['checkin', 'checkout'].includes(action)) return ["action"];
   const nationality = String(body.nationality || "").trim().toLocaleUpperCase("tr-TR");
   const turkish = ["", "TC", "TR", "TUR", "TURKIYE", "TÜRKİYE", "TURKEY"].includes(nationality);
-  if (turkish) {
+  const foreignIdentityCard = ["foreign_identity_card", "foreign_id", "yabanci_kimlik", "yabanci_kimlik_karti", "ykn"]
+    .includes(String(body.id_type || "").trim().toLowerCase());
+  if (turkish || foreignIdentityCard) {
     if (!/^\d{11}$/.test(String(body.id_number || ""))) missing.push("id_number");
   } else if (!String(body.passport_number || "").trim()) {
     missing.push("passport_number");
@@ -169,7 +171,7 @@ function payloadMissingFields(body) {
   if (action === "checkin") {
     if (!body.room_number) missing.push("room_number");
     if (!body.check_in) missing.push("check_in");
-    if (!turkish) {
+    if (!turkish && !foreignIdentityCard) {
       if (!body.guest_name) missing.push("guest_name");
       if (!body.birth_date) missing.push("birth_date");
       if (!body.gender) missing.push("gender");

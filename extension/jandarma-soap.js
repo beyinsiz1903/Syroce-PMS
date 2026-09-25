@@ -52,6 +52,11 @@
     return countryEnum(payload.nationality) === "TURKIYE" && /^\d{11}$/.test(String(payload.id_number || ""));
   }
 
+  function isForeignIdentityCard(payload) {
+    return ["FOREIGNIDENTITYCARD", "FOREIGNID", "YABANCIKIMLIK", "YABANCIKIMLIKKARTI", "YKN"]
+      .includes(normalizeText(payload.id_type));
+  }
+
   function toIsoDateTime(value, fallback) {
     const d = new Date(value || fallback || Date.now());
     if (Number.isNaN(d.getTime())) throw new Error("invalid_date");
@@ -87,23 +92,27 @@
     if (!payload || !["checkin", "checkout"].includes(action)) throw new Error("invalid_action");
 
     const turkish = isTurkish(payload);
-    const method = turkish
+    const identityNumber = turkish || isForeignIdentityCard(payload);
+    const method = identityNumber
       ? (action === "checkin" ? "MusteriKimlikNoGiris" : "MusteriKimlikNoCikis")
       : (action === "checkin" ? "MusteriYabanciGiris" : "MusteriYabanciCikis");
-    const identity = turkish ? String(payload.id_number) : String(payload.passport_number || "").trim();
+    const identity = identityNumber ? String(payload.id_number) : String(payload.passport_number || "").trim();
     if (!identity) throw new Error("missing_guest_identity");
+    if (identityNumber && !/^\d{11}$/.test(identity)) throw new Error("invalid_identity_number");
     if (action === "checkin" && !String(payload.room_number || "").trim()) {
       throw new Error("missing_room_number");
     }
 
     let fields = "";
-    if (turkish && action === "checkin") {
+    if (identityNumber && action === "checkin") {
+      const identityCountry = turkish ? "TURKIYE" : countryEnum(payload.nationality, credentials.countryMap);
+      if (!identityCountry) throw new Error("unsupported_foreign_country");
       fields = tag("GRSTRH", toIsoDateTime(payload.check_in, now))
         + tag("ILERITARIHLI", new Date(payload.check_in).getTime() > now.getTime() ? "true" : "false")
         + tag("KIMLIKNO", identity) + tag("KULLANIMSEKLI", "KONAKLAMA")
         + tag("ODANO", payload.room_number) + tag("PLKNO", payload.plate_number || "")
-        + tag("TELNO", optionalPhone(payload.phone)) + tag("ULKKOD", "TURKIYE");
-    } else if (turkish) {
+        + tag("TELNO", optionalPhone(payload.phone)) + tag("ULKKOD", identityCountry);
+    } else if (identityNumber) {
       fields = tag("CKSTIP", "TESISTENCIKIS") + tag("CKSTRH", toIsoDateTime(payload.check_out, now))
         + tag("KIMLIKNO", identity);
     } else if (action === "checkin") {
@@ -172,5 +181,5 @@
     return { ok: true, code: code || "100", message, method };
   }
 
-  root.SyroceJandarmaSoap = { buildRequest, buildConnectionTest, parseResponse, countryEnum, escapeXml, optionalPhone };
+  root.SyroceJandarmaSoap = { buildRequest, buildConnectionTest, parseResponse, countryEnum, escapeXml, optionalPhone, isForeignIdentityCard };
 })(typeof self !== "undefined" ? self : globalThis);

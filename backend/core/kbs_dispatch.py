@@ -227,17 +227,26 @@ async def _complete(db, job: dict, reference: str) -> None:
         logger.warning("KBS dispatch complete CAS no-op (lease drift?): job=%s", job_id)
         return
 
-    booking_update = {
-        "kbs_reported": True,
-        "kbs_reported_at": now_iso,
-        "kbs_reference": reference,
-    }
+    if job.get("action") == "checkout":
+        booking_update = {
+            "kbs_checkout_reported": True,
+            "kbs_checkout_reported_at": now_iso,
+            "kbs_checkout_reference": reference,
+        }
+    else:
+        booking_update = {
+            "kbs_reported": True,
+            "kbs_reported_at": now_iso,
+            "kbs_reference": reference,
+        }
     if is_test_ref:
-        booking_update["kbs_test"] = True
-    await db.bookings.update_one(
-        {"tenant_id": tenant_id, "id": job["booking_id"]},
-        {"$set": booking_update},
-    )
+        booking_update["kbs_checkout_test" if job.get("action") == "checkout" else "kbs_test"] = True
+    booking_query = {"tenant_id": tenant_id, "id": job["booking_id"]}
+    # New queue jobs are person-scoped. Legacy jobs did not persist guest_id;
+    # retain their original primary-booking behavior during migration.
+    if job.get("guest_id"):
+        booking_query["guest_id"] = job["guest_id"]
+    await db.bookings.update_one(booking_query, {"$set": booking_update})
     await db.kbs_reports.insert_one(
         {
             "_kind": REPORT_KIND,

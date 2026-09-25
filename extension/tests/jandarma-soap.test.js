@@ -27,6 +27,17 @@ test("builds Turkish checkout with actual checkout type", () => {
   assert.match(req.envelope, /<d:CKSTIP>TESISTENCIKIS<\/d:CKSTIP>/);
 });
 
+test("routes a foreign identity card through the official YKN identity-number flow", () => {
+  const req = soap.buildRequest({
+    nationality: "SY", id_type: "foreign_identity_card", id_number: "99999999999",
+    room_number: "208", check_in: "2026-09-25T14:00:00+03:00",
+  }, "checkin", credentials);
+  assert.equal(req.method, "MusteriKimlikNoGiris");
+  assert.match(req.envelope, /<d:KIMLIKNO>99999999999<\/d:KIMLIKNO>/);
+  assert.match(req.envelope, /<d:ULKKOD>SYRIAN_ARAB_REPUBLIC<\/d:ULKKOD>/);
+  assert.doesNotMatch(req.envelope, /<d:BELGENO>/);
+});
+
 test("builds foreign check-in and rejects unknown country", () => {
   const req = soap.buildRequest({ nationality: "DE", passport_number: "C01X", guest_name: "Ada Lovelace", gender: "female", birth_date: "1990-01-02", check_in: "2026-08-23", room_number: "4" }, "checkin", credentials);
   assert.equal(req.method, "MusteriYabanciGiris");

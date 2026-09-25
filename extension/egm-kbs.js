@@ -14,6 +14,11 @@
     return ["TR", "TC", "TUR", "TURKIYE", "TÜRKİYE", "TURKEY"].includes(n);
   }
 
+  function isForeignIdentityCard(body) {
+    const kind = text(body && body.id_type).toLocaleLowerCase("tr-TR").replace(/[\s_-]+/g, "");
+    return ["foreignidentitycard", "foreignid", "yabancıkimlik", "yabancikimlik", "yabancıkimlikkartı", "yabancikimlikkarti", "ykn"].includes(kind);
+  }
+
   function splitName(fullName) {
     const parts = text(fullName).split(/\s+/).filter(Boolean);
     if (parts.length < 2) throw new Error("egm_foreign_name_required");
@@ -44,7 +49,7 @@
   function buildCheckin(body, countries = []) {
     const room = text(body.room_number);
     if (!room) throw new Error("egm_room_required");
-    if (isTurkish(body.nationality) && text(body.id_number)) {
+    if ((isTurkish(body.nationality) || isForeignIdentityCard(body)) && text(body.id_number)) {
       const id = text(body.id_number);
       if (!/^\d{11}$/.test(id)) throw new Error("egm_tckn_invalid");
       return {
@@ -103,7 +108,7 @@
   }
 
   root.SyroceEgmKbs = {
-    API_BASE, buildCheckin, countryCode, genderCode, isTurkish, localReceipt,
+    API_BASE, buildCheckin, countryCode, genderCode, isTurkish, isForeignIdentityCard, localReceipt,
     selectActiveGuest, splitName, unwrapList,
   };
 })(globalThis);

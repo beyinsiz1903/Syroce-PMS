@@ -227,6 +227,73 @@ async def test_kbs_guests_keep_checkin_and_checkout_receipts_as_separate_sent_ro
 
 
 @pytest.mark.asyncio
+async def test_kbs_guest_list_includes_every_occupant_and_foreign_ykn(monkeypatch):
+    from routers import kbs
+
+    bookings = FakeCollection([
+        {
+            "id": "booking-208",
+            "guest_id": "guest-primary",
+            "guest_name": "Ana Misafir",
+            "room_number": "208",
+            "check_in": "2026-09-25T14:00:00",
+            "check_out": "2026-09-26T12:00:00",
+            "status": "checked_in",
+        }
+    ])
+    booking_guests = FakeCollection([
+        {"booking_id": "booking-208", "guest_id": "guest-companion"}
+    ])
+    guests = FakeCollection([
+        {
+            "id": "guest-primary",
+            "name": "Ana Misafir",
+            "nationality": "TR",
+            "id_type": "tc_kimlik",
+            "id_number": "12345678901",
+        },
+        {
+            "id": "guest-companion",
+            "name": "Yabancı Misafir",
+            "nationality": "DE",
+            "id_type": "foreign_identity_card",
+            "id_number": "99123456789",
+            "birth_date": "1990-01-01",
+            "gender": "female",
+        },
+    ])
+    monkeypatch.setattr(
+        kbs,
+        "db",
+        SimpleNamespace(
+            bookings=bookings,
+            booking_guests=booking_guests,
+            guests=guests,
+            kbs_reports=FakeCollection([]),
+        ),
+    )
+    monkeypatch.setattr(
+        kbs,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-09-25"}),
+    )
+
+    result = await kbs.kbs_guest_list(
+        date=None,
+        status=None,
+        limit=200,
+        current_user=SimpleNamespace(tenant_id="tenant-1"),
+    )
+
+    assert [(row["guest_id"], row["guest_name"]) for row in result["guests"]] == [
+        ("guest-primary", "Ana Misafir"),
+        ("guest-companion", "Yabancı Misafir"),
+    ]
+    assert result["guests"][1]["id_type"] == "foreign_identity_card"
+    assert result["guests"][1]["kbs_ready"] is True
+
+
+@pytest.mark.asyncio
 async def test_kbs_queue_hides_obsolete_checkout_after_verified_delivery(monkeypatch):
     from routers import kbs
 

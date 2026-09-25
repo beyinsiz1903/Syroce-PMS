@@ -91,6 +91,11 @@ const isTurkishGuest = (guest) => {
   return ['', 'TC', 'TR', 'TUR', 'TURKIYE'].includes(nationality);
 };
 
+const isForeignIdentityCard = (guest) => (
+  ['foreign_identity_card', 'foreign_id', 'yabanci_kimlik', 'yabanci_kimlik_karti', 'ykn']
+    .includes(String(guest?.id_type || '').trim().toLowerCase())
+);
+
 const hasMissingKbsData = (guest) => (
   !guest?.id_number || (!isTurkishGuest(guest) && !guest?.birth_date)
 );
@@ -115,8 +120,9 @@ const toKbsGuest = (booking, linkedGuest, unknownLabel) => ({
 
 const kbsDeliveryKey = (row) => {
   const bookingId = String(row?.booking_id || row?.id || '');
+  const guestId = String(row?.guest_id || '');
   const action = String(row?.kbs_action || row?.action || 'checkin');
-  return bookingId ? `${bookingId}:${action}` : '';
+  return bookingId ? `${bookingId}:${guestId}:${action}` : '';
 };
 
 const readTenantKbsSetting = (name, tenantId) => {
@@ -137,7 +143,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const [activeTab, setActiveTab] = useState('pending');
   const [sending, setSending] = useState(false);
   const [editDialog, setEditDialog] = useState(null);
-  const [editForm, setEditForm] = useState({ id_number: '', birth_date: '', nationality: '' });
+  const [editForm, setEditForm] = useState({ id_type: 'tc_kimlik', id_number: '', birth_date: '', nationality: '' });
   const [savingGuestInfo, setSavingGuestInfo] = useState(false);
 
   // Faz 1 kuyruk altyapısı entegrasyonu
@@ -217,13 +223,13 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     };
   }, [fetchQueue]);
 
-  const enqueueBooking = async (bookingId, action = 'checkin') => {
+  const enqueueBooking = async (bookingId, action = 'checkin', guestId = null) => {
     if (!bookingId) return;
     const deliveryKey = `${bookingId}:${action}`;
     setEnqueuingId(deliveryKey);
     try {
       const res = await axios.post('/kbs/queue', {
-        booking_id: bookingId, action,
+        booking_id: bookingId, action, guest_id: guestId || undefined,
       });
       toast.success(res.data?.created ? tk('addedToQueue') : tk('alreadyQueued'));
       fetchQueue();
@@ -303,9 +309,14 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const markBookingSent = useCallback((job, reference) => {
     const bookingId = String(job?.booking_id || '');
     if (!bookingId) return;
-    const deliveryKey = kbsDeliveryKey(job);
+    const existingPending = pendingGuestsRef.current.find(row => (
+      kbsDeliveryKey(row) === kbsDeliveryKey(job)
+      || (!job?.guest_id
+        && String(row?.booking_id || row?.id || '') === bookingId
+        && String(row?.kbs_action || 'checkin') === String(job?.action || 'checkin'))
+    ));
+    const deliveryKey = kbsDeliveryKey(existingPending || job);
     const sentAt = new Date().toISOString();
-    const existingPending = pendingGuestsRef.current.find(row => kbsDeliveryKey(row) === deliveryKey);
     const sentGuest = {
       id: job.booking_id,
       booking_id: job.booking_id,
@@ -543,6 +554,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
       const res = await axios.post('/kbs/queue', {
         booking_id: guest.booking_id || guest.id,
         action: guest.kbs_action || 'checkin',
+        guest_id: guest.guest_id || undefined,
       });
       const job = res.data?.job;
       if (!extReady || !extInfo.installId) {
@@ -580,6 +592,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
         const res = await axios.post('/kbs/queue', {
           booking_id: guest.booking_id || guest.id,
           action: guest.kbs_action || 'checkin',
+          guest_id: guest.guest_id || undefined,
         });
         if (res.data?.job) jobs.push(res.data.job);
       }
@@ -638,7 +651,12 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   };
 
   const openEditDialog = (guest) => {
-    setEditForm({ id_number: guest.id_number || '', birth_date: guest.birth_date || '', nationality: guest.nationality || '' });
+    setEditForm({
+      id_type: guest.id_type || (isTurkishGuest(guest) ? 'tc_kimlik' : 'passport'),
+      id_number: guest.id_number || '',
+      birth_date: guest.birth_date || '',
+      nationality: guest.nationality || '',
+    });
     setEditDialog(guest);
   };
 
@@ -647,11 +665,13 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     setSavingGuestInfo(true);
     try {
       const normalizedForm = {
+        id_type: editForm.id_type,
         id_number: editForm.id_number.trim(),
         birth_date: editForm.birth_date,
         nationality: String(editForm.nationality || '').trim().toUpperCase(),
       };
       await axios.patch(`/pms/guests/${editDialog.guest_id}/preferences`, {
+        id_type: normalizedForm.id_type,
         id_number: normalizedForm.id_number,
         birth_date: normalizedForm.birth_date,
         nationality: normalizedForm.nationality,
@@ -677,9 +697,15 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const missingData = pendingGuests.filter(hasMissingKbsData);
   const visibleQueueJobs = useMemo(() => {
     const sentDeliveries = new Set(sentHistory.map(kbsDeliveryKey).filter(Boolean));
+    const sentLegacyDeliveries = new Set(sentHistory.map(row => {
+      const bookingId = String(row?.booking_id || row?.id || '');
+      const action = String(row?.kbs_action || row?.action || 'checkin');
+      return bookingId ? `${bookingId}:${action}` : '';
+    }).filter(Boolean));
     return queueJobs.filter(job => (
       job.status !== 'done'
       && !sentDeliveries.has(kbsDeliveryKey(job))
+      && !(!job.guest_id && sentLegacyDeliveries.has(`${job.booking_id}:${job.action || 'checkin'}`))
     ));
   }, [queueJobs, sentHistory]);
   const visibleQueueStats = useMemo(() => {
@@ -902,7 +928,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
                     type="button"
                     onClick={(event) => {
                       event.preventDefault();
-                      enqueueBooking(bookingId, action);
+                      enqueueBooking(bookingId, action, guest.guest_id);
                     }}
                     disabled={enqueuingId === deliveryKey}>
                     <ListPlus className="h-3 w-3 mr-1" /> {tk('addToQueue')}
@@ -968,7 +994,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
                     <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
                   </div>
                   <div className="text-xs text-red-600 mt-1">
-                    {tk('missing')} {!guest.id_number ? (isTurkishGuest(guest) ? tk('idNumber') + ' ' : 'Pasaport No ') : ''}{!isTurkishGuest(guest) && !guest.birth_date ? tk('birthDate') : ''}
+                    {tk('missing')} {!guest.id_number ? (isTurkishGuest(guest) ? tk('idNumber') + ' ' : isForeignIdentityCard(guest) ? 'YKN ' : 'Pasaport No ') : ''}{!isTurkishGuest(guest) && !guest.birth_date ? tk('birthDate') : ''}
                   </div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
@@ -1092,7 +1118,23 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
                 </Select>
               </div>
               <div>
-                <Label htmlFor="kbs-guest-id-number">{tk('idLabel')} / Pasaport No</Label>
+                <Label htmlFor="kbs-guest-id-type">Belge türü</Label>
+                <Select value={editForm.id_type} onValueChange={val => setEditForm({ ...editForm, id_type: val })}>
+                  <SelectTrigger id="kbs-guest-id-type"><SelectValue placeholder="Belge türünü seçin" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tc_kimlik">T.C. Kimlik Kartı</SelectItem>
+                    <SelectItem value="foreign_identity_card">Yabancı Kimlik Kartı (YKN)</SelectItem>
+                    <SelectItem value="passport">Pasaport</SelectItem>
+                    <SelectItem value="driver_license">Ehliyet</SelectItem>
+                    <SelectItem value="other">Diğer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="kbs-guest-id-number">
+                  {editForm.id_type === 'foreign_identity_card' ? 'Yabancı Kimlik No (YKN)'
+                    : editForm.id_type === 'passport' ? 'Pasaport No' : tk('idLabel')}
+                </Label>
                 <Input
                   id="kbs-guest-id-number"
                   value={editForm.id_number}

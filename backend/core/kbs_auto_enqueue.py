@@ -63,7 +63,23 @@ async def _enqueue_single_guest(
             {"_id": 0, "guest_id": 1, "kbs_reported": 1, "kbs_test": 1},
         )
 
-        if action == "checkout" and not ((booking or {}).get("kbs_reported") and not (booking or {}).get("kbs_test")):
+        checkin_confirmed = bool((booking or {}).get("kbs_reported")) and not bool((booking or {}).get("kbs_test"))
+        if action == "checkout" and guest_id and guest_id != (booking or {}).get("guest_id"):
+            guest_receipt = await db.kbs_reports.find_one(
+                {
+                    "_kind": QUEUE_KIND,
+                    "tenant_id": tenant_id,
+                    "booking_id": booking_id,
+                    "guest_id": guest_id,
+                    "action": "checkin",
+                    "status": "done",
+                    "kbs_test": {"$ne": True},
+                },
+                {"_id": 0, "id": 1},
+            )
+            checkin_confirmed = bool(guest_receipt)
+
+        if action == "checkout" and not checkin_confirmed:
             await db.kbs_alerts.insert_one(
                 {
                     "id": str(uuid.uuid4()),

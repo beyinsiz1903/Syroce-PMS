@@ -614,6 +614,8 @@ async def update_guest_preferences(
         update_fields["vip_level"] = body["vip_level"]
     if "id_number" in body:
         update_fields["id_number"] = body["id_number"]
+    if "id_type" in body:
+        update_fields["id_type"] = str(body["id_type"] or "").strip().lower()
     if "birth_date" in body:
         update_fields["birth_date"] = body["birth_date"]
     if "nationality" in body:
