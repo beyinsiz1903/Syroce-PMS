@@ -111,6 +111,7 @@ async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-A
     Global Extranet UI üzerinden giriş için JWT Bearer token kullanabilir."""
     sysdb = get_system_db()
     agency_id = None
+    actor_user = None
 
     if authorization and authorization.lower().startswith("bearer "):
         try:
@@ -137,6 +138,12 @@ async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-A
             if role != "marketplace_agent" and "marketplace_agent" not in roles:
                 raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
             agency_id = user.get("agency_id")
+            actor_user = {
+                "id": user.get("id") or user.get("user_id"),
+                "name": user.get("name", ""),
+                "email": user.get("email", ""),
+                "role": "marketplace_agent",
+            }
         except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
             raise HTTPException(401, "Geçersiz veya süresi dolmuş acente token'ı")
         except Exception as e:
@@ -173,6 +180,7 @@ async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-A
         "default_commission_pct": agency.get("default_commission_pct", 12.0),
         "contact_email": agency.get("contact_email", ""),
         "source": source,
+        "user": actor_user,
     }
 
 @router.get("/extranet/my-hotels")
@@ -211,6 +219,7 @@ async def marketplace_extranet_profile(agency: dict = Depends(get_marketplace_ag
             "name": agency.get("agency_name", ""),
             "contact_email": agency.get("contact_email", ""),
         },
+        "user": agency.get("user"),
         "hotels": hotel_result["hotels"],
     }
 

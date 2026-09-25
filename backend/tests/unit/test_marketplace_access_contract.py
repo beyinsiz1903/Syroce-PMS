@@ -146,6 +146,35 @@ async def test_marketplace_extranet_login_uses_core_password_verifier(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_marketplace_extranet_profile_preserves_signed_in_user_identity(monkeypatch):
+    async def fake_hotels(_agency):
+        return {"hotels": [{"tenant_id": "hotel-1", "name": "Hotel One"}]}
+
+    monkeypatch.setattr(
+        marketplace_b2b,
+        "marketplace_my_hotels",
+        fake_hotels,
+    )
+    agency = {
+        "agency_id": "agency-1",
+        "agency_name": "Cengizhan Travel",
+        "contact_email": "agency@example.com",
+        "user": {
+            "id": "user-1",
+            "name": "Cengizhan Travel Marketplace Admin",
+            "email": "marketplace+cengizhan-travel@syroce.com",
+            "role": "marketplace_agent",
+        },
+    }
+
+    result = await marketplace_b2b.marketplace_extranet_profile(agency)
+
+    assert result["user"]["email"] == "marketplace+cengizhan-travel@syroce.com"
+    assert result["agency"]["name"] == "Cengizhan Travel"
+    assert result["hotels"][0]["tenant_id"] == "hotel-1"
+
+
+@pytest.mark.asyncio
 async def test_marketplace_price_prefers_shared_agency_calendar(monkeypatch):
     fake_db = SimpleNamespace(
         agency_rate_calendar=_Collection([
