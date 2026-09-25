@@ -818,9 +818,10 @@ async def unified_bulk_grid_update(
         detection["provider"],
     )
 
-    # Keep `detection` / `provider_type` populated for downstream code that
-    # still references the "primary" provider (e.g. cal_collection choice).
-    detection = targets[0]
+    # Standalone agency distribution intentionally has no channel target. Keep
+    # the synthetic provider selected above instead of indexing the empty
+    # target list; downstream code only needs its provider type to choose the
+    # local calendar collection.
     provider_type = detection["provider"]
     now = datetime.now(UTC).isoformat()
 
