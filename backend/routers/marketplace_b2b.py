@@ -352,7 +352,7 @@ def _commission_for(agency: dict, listing: dict) -> float:
 
 
 def _syroce_b2b_fee(total: float, source: str) -> tuple[float, float]:
-    """Return the marketplace service fee without changing the hotel net.
+    """Return the marketplace service fee used in the hotel net calculation.
 
     Direct API integrations are billed at 1%; reservations created in the
     hosted extranet include the additional UI/operations service and are
@@ -361,6 +361,16 @@ def _syroce_b2b_fee(total: float, source: str) -> tuple[float, float]:
     """
     fee_pct = 2.0 if source == "extranet_ui" else 1.0
     return fee_pct, round(float(total) * fee_pct / 100, 2)
+
+
+def _marketplace_financials(total: float, commission_pct: float, fee_pct: float) -> dict[str, float]:
+    commission_amount = round(float(total) * float(commission_pct) / 100, 2)
+    fee_amount = round(float(total) * float(fee_pct) / 100, 2)
+    return {
+        "commission_amount": commission_amount,
+        "syroce_b2b_fee_amount": fee_amount,
+        "net_to_hotel": round(float(total) - commission_amount - fee_amount, 2),
+    }
 
 
 def _reservation_room_snapshot(room: dict) -> dict:
@@ -1449,7 +1459,19 @@ async def agency_get_reservation(
     with tenant_context(doc["tenant_id"]):
         booking = await db.bookings.find_one(
             {"id": reservation_id, "tenant_id": doc["tenant_id"]},
-            {"_id": 0, "tenant_id": 0, "guest_id": 0, "room_id": 0},
+            {
+                "_id": 0,
+                "tenant_id": 0,
+                "guest_id": 0,
+                "room_id": 0,
+                "guest_email": 0,
+                "guest_phone": 0,
+                "_hash_guest_email": 0,
+                "_hash_guest_phone": 0,
+                "_enc_version": 0,
+                "_encrypted_at": 0,
+                "guest_name_lower": 0,
+            },
         )
     return {"summary": doc, "booking": booking}
 
@@ -1493,72 +1515,54 @@ async def agency_email_reservation_voucher(
 @router.delete("/reservations/{reservation_id}")
 async def agency_cancel_reservation(
     reservation_id: str,
-    background_tasks: BackgroundTasks,
     reason: str = Query("agency_request"),
     agency: dict = Depends(get_marketplace_agency),
 ):
+    """Open a cancellation negotiation; hotel approval is mandatory."""
     sysdb = get_system_db()
     summary = await sysdb.marketplace_bookings.find_one({"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0})
     if not summary:
         raise HTTPException(404, "Rezervasyon bulunamadı")
     if summary.get("status") == "cancelled":
         return {"ok": True, "message": "Rezervasyon zaten iptal edilmiş"}
-
+    normalized_reason = reason.strip()
+    if len(normalized_reason) < 5:
+        raise HTTPException(400, "İptal gerekçesi en az 5 karakter olmalıdır")
+    existing = await sysdb.marketplace_negotiations.find_one(
+        {"reservation_id": reservation_id, "type": "agency_cancellation", "status": "awaiting_hotel"},
+        {"_id": 0},
+    )
+    if existing:
+        raise HTTPException(409, "Bu rezervasyon için otel yanıtı bekleyen iptal talebi zaten var")
+    proposal = {
+        "id": _uuid(),
+        "reservation_id": reservation_id,
+        "tenant_id": summary["tenant_id"],
+        "agency_id": agency["agency_id"],
+        "hotel_name": summary.get("hotel_name"),
+        "confirmation_code": summary.get("confirmation_code"),
+        "guest_name": summary.get("guest_name"),
+        "type": "agency_cancellation",
+        "reason": normalized_reason,
+        "status": "awaiting_hotel",
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    await sysdb.marketplace_negotiations.insert_one(proposal)
     with tenant_context(summary["tenant_id"]):
-        booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": summary["tenant_id"]})
-        if booking and booking.get("status") in ("checked_in", "checked_out"):
-            raise HTTPException(409, "Otele giriş yapılmış rezervasyon iptal edilemez")
-
-        await db.bookings.update_one(
-            {"id": reservation_id, "tenant_id": summary["tenant_id"]},
+        await db.notifications.insert_one(
             {
-                "$set": {
-                    "status": "cancelled",
-                    "cancellation_reason": reason,
-                    "cancelled_by": "marketplace_agency",
-                    "cancelled_at": _now_iso(),
-                    "updated_at": _now_iso(),
-                }
-            },
-        )
-        from core.atomic_booking import release_booking_nights
-
-        await release_booking_nights(summary["tenant_id"], reservation_id, reason="agency_cancelled")
-        await db.audit_logs.insert_one(
-            {
-                "id": _uuid(), "tenant_id": summary["tenant_id"], "action": "marketplace_reservation_cancelled",
-                "entity_type": "booking", "entity_id": reservation_id, "actor_id": agency["agency_id"],
-                "actor_name": agency.get("agency_name"), "details": {"reason": reason}, "created_at": _now_iso(),
+                "id": _uuid(),
+                "tenant_id": summary["tenant_id"],
+                "type": "agency_negotiation",
+                "title": "Acente iptal onayı bekliyor",
+                "message": f"{summary.get('confirmation_code')} için iptal talebi iletildi.",
+                "read": False,
+                "metadata": {"proposal_id": proposal["id"], "reservation_id": reservation_id},
+                "created_at": _now_iso(),
             }
         )
-    policy = summary.get("cancellation_policy") or {}
-    days_before = (datetime.fromisoformat(summary["check_in"]).date() - datetime.now(UTC).date()).days
-    free_until = int(policy.get("free_until_days_before", 7))
-    penalty_pct = 0.0 if days_before >= free_until else float(policy.get("penalty_pct", 50.0))
-    penalty_amount = round(float(summary.get("total_amount", 0)) * penalty_pct / 100, 2)
-    await sysdb.marketplace_bookings.update_one(
-        {"id": reservation_id},
-        {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": reason, "cancellation_penalty_pct": penalty_pct, "cancellation_penalty_amount": penalty_amount}},
-    )
-
-    try:
-        from routers.b2b_api import fire_webhooks
-
-        background_tasks.add_task(
-            fire_webhooks,
-            summary["tenant_id"],
-            agency["agency_id"],
-            "marketplace.reservation.cancelled",
-            {
-                "reservation_id": reservation_id,
-                "confirmation_code": summary.get("confirmation_code"),
-                "reason": reason,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Marketplace cancel webhook failed: {e}")
-
-    return {"ok": True, "message": "Rezervasyon iptal edildi", "penalty_pct": penalty_pct, "penalty_amount": penalty_amount}
+    return {"ok": True, "message": "İptal talebi otele iletildi", "proposal": {k: v for k, v in proposal.items() if k != "_id"}}
 
 
 @router.post("/reservations/{reservation_id}/modification-proposals")
@@ -1625,16 +1629,21 @@ async def hotel_decide_marketplace_modification(
     tenant_id = _require_hotel_admin(current_user)
     sysdb = get_system_db()
     proposal = await sysdb.marketplace_negotiations.find_one(
-        {"id": proposal_id, "tenant_id": tenant_id, "type": "agency_modification", "status": "awaiting_hotel"},
+        {
+            "id": proposal_id,
+            "tenant_id": tenant_id,
+            "type": {"$in": ["agency_modification", "agency_cancellation"]},
+            "status": "awaiting_hotel",
+        },
         {"_id": 0},
     )
     if not proposal:
         raise HTTPException(404, "Yanıt bekleyen değişiklik talebi bulunamadı")
-    if datetime.fromisoformat(proposal["expires_at"]) < datetime.now(UTC):
+    if proposal.get("expires_at") and datetime.fromisoformat(proposal["expires_at"]) < datetime.now(UTC):
         await sysdb.marketplace_negotiations.update_one({"id": proposal_id}, {"$set": {"status": "expired"}})
         raise HTTPException(409, "Değişiklik teklifinin 48 saatlik süresi dolmuş")
 
-    if data.accept:
+    if data.accept and proposal["type"] == "agency_modification":
         requested = proposal["requested"]
         from routers.agency_contracts import has_active_contract
 
@@ -1685,6 +1694,14 @@ async def hotel_decide_marketplace_modification(
             raise HTTPException(409, "İstenen tarihlerde uygun fiziksel oda bulunamadı")
         total = float(pricing["total_price"])
         paid = float(booking.get("total_paid", 0) or 0)
+        commission_pct = float(booking.get("agency_commission_rate", 0) or 0)
+        fee_pct = float(booking.get("syroce_b2b_fee_pct", 0) or 0)
+        if not fee_pct:
+            fee_pct = float((await sysdb.marketplace_bookings.find_one(
+                {"id": proposal["reservation_id"], "tenant_id": tenant_id},
+                {"syroce_b2b_fee_pct": 1, "_id": 0},
+            ) or {}).get("syroce_b2b_fee_pct", 0) or 0)
+        financials = _marketplace_financials(total, commission_pct, fee_pct)
         changes = {
             "check_in": requested["check_in"] + "T14:00:00",
             "check_out": requested["check_out"] + "T11:00:00",
@@ -1694,6 +1711,9 @@ async def hotel_decide_marketplace_modification(
             "nightly_rates": pricing["nightly_rates"],
             "total_amount": total,
             "balance": max(0, round(total - paid, 2)),
+            "agency_commission_amount": financials["commission_amount"],
+            "syroce_b2b_fee_pct": fee_pct,
+            **financials,
             "updated_at": _now_iso(),
         }
         with tenant_context(tenant_id):
@@ -1701,13 +1721,34 @@ async def hotel_decide_marketplace_modification(
         await sysdb.marketplace_bookings.update_one(
             {"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"$set": changes}
         )
+    elif data.accept:
+        with tenant_context(tenant_id):
+            booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": tenant_id})
+            if not booking or booking.get("status") in {"checked_in", "checked_out", "cancelled"}:
+                raise HTTPException(409, "Rezervasyon artık iptal edilebilir durumda değil")
+            await db.bookings.update_one(
+                {"id": proposal["reservation_id"], "tenant_id": tenant_id},
+                {"$set": {"status": "cancelled", "cancellation_reason": proposal["reason"], "cancelled_by": "mutual_agreement", "cancelled_at": _now_iso(), "updated_at": _now_iso()}},
+            )
+            from core.atomic_booking import release_booking_nights
+
+            await release_booking_nights(tenant_id, proposal["reservation_id"], reason="mutual_agreement")
+        await sysdb.marketplace_bookings.update_one(
+            {"id": proposal["reservation_id"], "tenant_id": tenant_id},
+            {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": proposal["reason"]}},
+        )
 
     status_value = "accepted" if data.accept else "declined"
     await sysdb.marketplace_negotiations.update_one(
         {"id": proposal_id, "status": "awaiting_hotel"},
         {"$set": {"status": status_value, "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso()}},
     )
-    return {"ok": True, "status": status_value, "reservation_modified": bool(data.accept)}
+    return {
+        "ok": True,
+        "status": status_value,
+        "reservation_modified": bool(data.accept and proposal["type"] == "agency_modification"),
+        "reservation_cancelled": bool(data.accept and proposal["type"] == "agency_cancellation"),
+    }
 
 
 @router.post("/hotel/reservations/{reservation_id}/cancellation-proposals")
@@ -1820,7 +1861,7 @@ async def agency_reconciliation(
     ).to_list(5000)
 
     by_hotel: dict[str, dict] = {}
-    totals = {"gross_revenue": 0.0, "commission": 0.0, "net_to_hotels": 0.0, "bookings": 0, "cancelled": 0}
+    totals = {"gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotels": 0.0, "bookings": 0, "cancelled": 0}
     for d in docs:
         if d.get("status") == "cancelled":
             totals["cancelled"] += 1
@@ -1834,19 +1875,23 @@ async def agency_reconciliation(
                 "bookings": 0,
                 "gross_revenue": 0.0,
                 "commission": 0.0,
+                "platform_fee": 0.0,
                 "net_to_hotel": 0.0,
             },
         )
         gross = float(d.get("total_amount", 0))
         comm = float(d.get("commission_amount", 0))
+        platform_fee = float(d.get("syroce_b2b_fee_amount", 0))
         net = float(d.get("net_to_hotel", gross - comm))
         bucket["bookings"] += 1
         bucket["gross_revenue"] += gross
         bucket["commission"] += comm
+        bucket["platform_fee"] += platform_fee
         bucket["net_to_hotel"] += net
         totals["bookings"] += 1
         totals["gross_revenue"] += gross
         totals["commission"] += comm
+        totals["platform_fee"] += platform_fee
         totals["net_to_hotels"] += net
 
     return {
@@ -1854,7 +1899,7 @@ async def agency_reconciliation(
         "period_end": period_end,
         "agency_id": agency["agency_id"],
         "totals": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items()},
-        "by_hotel": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission": round(v["commission"], 2), "net_to_hotel": round(v["net_to_hotel"], 2)} for v in by_hotel.values()],
+        "by_hotel": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission": round(v["commission"], 2), "platform_fee": round(v["platform_fee"], 2), "net_to_hotel": round(v["net_to_hotel"], 2)} for v in by_hotel.values()],
     }
 
 
@@ -1874,7 +1919,7 @@ async def agency_reconciliation_csv(
     ).sort("check_in", 1).to_list(5000)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Onay Kodu", "Otel", "Misafir", "Giriş", "Çıkış", "Durum", "Para Birimi", "Brüt", "Komisyon", "Otele Net"])
+    writer.writerow(["Onay Kodu", "Otel", "Misafir", "Giriş", "Çıkış", "Durum", "Para Birimi", "Brüt", "Komisyon", "Platform Bedeli", "Otele Net"])
     for item in docs:
         # A leading apostrophe prevents spreadsheet formula execution while
         # preserving user-entered references as visible text.
@@ -1890,6 +1935,7 @@ async def agency_reconciliation_csv(
                 item.get("currency", "TRY"),
                 round(float(item.get("total_amount", 0) or 0), 2),
                 round(float(item.get("commission_amount", 0) or 0), 2),
+                round(float(item.get("syroce_b2b_fee_amount", 0) or 0), 2),
                 round(float(item.get("net_to_hotel", 0) or 0), 2),
             ]
         )
@@ -1919,7 +1965,7 @@ async def hotel_reconciliation(
     ).to_list(5000)
 
     by_agency: dict[str, dict] = {}
-    totals = {"gross_revenue": 0.0, "commission": 0.0, "net_to_hotel": 0.0, "bookings": 0, "cancelled": 0}
+    totals = {"gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotel": 0.0, "bookings": 0, "cancelled": 0}
     for d in docs:
         if d.get("status") == "cancelled":
             totals["cancelled"] += 1
@@ -1932,19 +1978,23 @@ async def hotel_reconciliation(
                 "bookings": 0,
                 "gross_revenue": 0.0,
                 "commission_owed": 0.0,
+                "platform_fee": 0.0,
                 "net_received": 0.0,
             },
         )
         gross = float(d.get("total_amount", 0))
         comm = float(d.get("commission_amount", 0))
+        platform_fee = float(d.get("syroce_b2b_fee_amount", 0))
         net = float(d.get("net_to_hotel", gross - comm))
         bucket["bookings"] += 1
         bucket["gross_revenue"] += gross
         bucket["commission_owed"] += comm
+        bucket["platform_fee"] += platform_fee
         bucket["net_received"] += net
         totals["bookings"] += 1
         totals["gross_revenue"] += gross
         totals["commission"] += comm
+        totals["platform_fee"] += platform_fee
         totals["net_to_hotel"] += net
 
     return {
@@ -1952,7 +2002,7 @@ async def hotel_reconciliation(
         "period_end": period_end,
         "tenant_id": tenant_id,
         "totals": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items()},
-        "by_agency": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission_owed": round(v["commission_owed"], 2), "net_received": round(v["net_received"], 2)} for v in by_agency.values()],
+        "by_agency": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission_owed": round(v["commission_owed"], 2), "platform_fee": round(v["platform_fee"], 2), "net_received": round(v["net_received"], 2)} for v in by_agency.values()],
     }
 
 
