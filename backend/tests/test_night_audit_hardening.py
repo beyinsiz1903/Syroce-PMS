@@ -54,6 +54,25 @@ COLLECTIONS = [
 ]
 
 
+def test_checkout_on_business_date_is_not_overdue_until_next_day():
+    from core.night_audit_hardened import _partition_due_bookings
+
+    bookings = [
+        {"id": "due-today", "check_out": "2026-09-25T00:00:00+00:00"},
+        {"id": "already-past", "check_out": "2026-09-24"},
+    ]
+
+    overdue, invalid = _partition_due_bookings(
+        bookings,
+        "check_out",
+        "2026-09-25",
+        include_business_date=False,
+    )
+
+    assert [booking["id"] for booking in overdue] == ["already-past"]
+    assert invalid == []
+
+
 async def _get_db():
     """Create a fresh Motor client bound to the current event loop."""
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
@@ -356,6 +375,11 @@ async def test_dry_run_reports_blockers_and_financial_projection_without_live_wr
         assert result["total_room_revenue"] == 892.86
         assert result["total_tax_amount"] == 107.14
         assert result["projected_total"] == 1000.0
+        assert len(result["candidate_details"]) == 2
+        skipped = next(item for item in result["candidate_details"] if item["status"] == "skipped")
+        assert skipped["reason"] == "no_open_folio"
+        assert skipped["booking_id"]
+        assert skipped["total"] == 750.0
 
         # Audit trace/candidates may be recorded, but hotel operations stay read-only.
         assert await db.folio_charges.count_documents({"tenant_id": TENANT}) == 0

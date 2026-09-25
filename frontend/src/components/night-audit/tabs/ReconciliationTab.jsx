@@ -9,15 +9,20 @@ export default function ReconciliationTab(props) {
   const {
     StatCard,
     reconciliation,
+    reportingDate,
     t
   } = props;
+  const money = value => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
   return <TabsContent value="reconciliation" className="space-y-4 mt-4">
       {reconciliation ? <>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <strong>Mutabakat iş günü:</strong> {reconciliation.business_date || reconciliation.date || reportingDate || '-'} · Masraflar, tahsilatlar ve açık folyo riskleri birlikte değerlendirilir
+          </div>
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard icon={Receipt} label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')} value={`${reconciliation.charges_total?.toFixed(2) || "0.00"} TL`} subValue={`${reconciliation.charges_count || 0} masraf`} color="text-blue-600" />
-            <StatCard icon={CreditCard} label={t('common.paymentTotal')} value={`${reconciliation.payments_total?.toFixed(2) || "0.00"} TL`} subValue={`${reconciliation.payments_count || 0} ödeme`} color="text-emerald-600" />
-            <StatCard icon={Scale} label="Fark" value={`${reconciliation.variance?.toFixed(2) || "0.00"} TL`} subValue={reconciliation.is_balanced ? "Dengeli" : "Dengesiz"} color={reconciliation.is_balanced ? "text-emerald-600" : "text-red-600"} />
+            <StatCard icon={Receipt} label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')} value={money(reconciliation.charges_total)} subValue={`${reconciliation.charges_count || 0} masraf`} color="text-blue-600" />
+            <StatCard icon={CreditCard} label={t('common.paymentTotal')} value={money(reconciliation.payments_total)} subValue={`${reconciliation.payments_count || 0} ödeme`} color="text-emerald-600" />
+            <StatCard icon={Scale} label="Fark" value={money(reconciliation.variance)} subValue={reconciliation.is_balanced ? "Dengeli" : "Dengesiz"} color={reconciliation.is_balanced ? "text-emerald-600" : "text-red-600"} />
             <StatCard icon={AlertOctagon} label={t('cm.components_nightaudit_tabs_ReconciliationTab.tutarsizlik')} value={reconciliation.discrepancy_count || 0} subValue={`${reconciliation.high_balance_count || 0} yüksek bakiye`} color={reconciliation.discrepancy_count > 0 ? "text-red-600" : "text-emerald-600"} />
           </div>
 
@@ -44,7 +49,7 @@ export default function ReconciliationTab(props) {
                           <Badge className={`text-[10px] ${d.type === "duplicate_charge" ? "bg-amber-50 text-amber-700 border-amber-200" : d.type === "rate_discrepancy" ? "bg-blue-50 text-blue-700 border-blue-200" : d.type === "high_balance" ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-50 text-gray-600 border-gray-200"} border`}>
                             {d.type === "duplicate_charge" ? "Tekrar Masraf" : d.type === "rate_discrepancy" ? "Oran Tutarsızlığı" : d.type === "high_balance" ? "Yüksek Bakiye" : d.type === "orphan_charge" ? "Sahipsiz Masraf" : d.type}
                           </Badge>
-                          {d.amount && <span className="text-[11px] text-gray-400">{d.amount} TL</span>}
+                        {d.amount && <span className="text-[11px] text-gray-500">{money(d.amount)}</span>}
                         </div>
                       </div>
                     </div>)}
@@ -75,7 +80,7 @@ export default function ReconciliationTab(props) {
                         </div>
                       </div>
                       <span className={`font-bold ${f.balance > 0 ? "text-red-600" : "text-blue-600"}`}>
-                        {f.balance?.toFixed(2)} TL
+                        {money(f.balance)}
                       </span>
                     </div>)}
                 </div>

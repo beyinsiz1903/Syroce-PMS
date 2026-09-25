@@ -35,6 +35,9 @@ const CalendarHeader = ({
   onShowConflicts,
   viewPreferences,
   onViewPreferenceChange,
+  canCreateBooking = false,
+  canManageRooms = false,
+  canSyncChannels = false,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -120,7 +123,7 @@ const CalendarHeader = ({
             </span>
           </button>
 
-          <Button
+          {canCreateBooking && <Button
             type="button"
             onClick={onShowNewBookingDialog}
             size="icon"
@@ -129,7 +132,7 @@ const CalendarHeader = ({
             aria-label={t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
           >
             <Plus className="h-4 w-4" />
-          </Button>
+          </Button>}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -151,13 +154,13 @@ const CalendarHeader = ({
               <DropdownMenuItem onSelect={onShowFindRoomDialog}>
                 <SlidersHorizontal /> {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onShowRoomBlockDialog} data-testid="mobile-calendar-room-block">
+              {canManageRooms && <DropdownMenuItem onSelect={onShowRoomBlockDialog} data-testid="mobile-calendar-room-block">
                 <Wrench /> Odayı blokla / arıza bildir
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onSyncReservations} disabled={syncing}>
+              </DropdownMenuItem>}
+              {canSyncChannels && <DropdownMenuItem onSelect={onSyncReservations} disabled={syncing}>
                 {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
                 {syncing ? 'Senkronize ediliyor…' : 'OTA senkronizasyonu'}
-              </DropdownMenuItem>
+              </DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuLabel>Gün aralığı</DropdownMenuLabel>
               {[7, 14, 30].map((dayCount) => (
@@ -341,7 +344,7 @@ const CalendarHeader = ({
 
       {/* ─── RIGHT GROUP: sync / view / overview / status / primary CTA ─── */}
       <div className={`items-center ml-auto ${compactMode ? 'flex flex-nowrap gap-1.5' : 'flex flex-wrap gap-2'}`}>
-        <Button
+        {canSyncChannels && <Button
           variant="outline"
           size="sm"
           onClick={onSyncReservations}
@@ -351,7 +354,7 @@ const CalendarHeader = ({
         >
           {syncing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
           <span className={compactMode ? 'hidden xl:inline' : ''}>{syncing ? 'Senkronize...' : 'OTA Sync'}</span>
-        </Button>
+        </Button>}
 
         <select
           className="border border-gray-300 rounded-md px-2 text-xs h-8 bg-white"
@@ -373,7 +376,7 @@ const CalendarHeader = ({
         >
           {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
         </Button>
-        <Button
+        {canManageRooms && <Button
           variant="outline"
           size="sm"
           onClick={onShowRoomBlockDialog}
@@ -382,7 +385,7 @@ const CalendarHeader = ({
         >
           <Wrench className="mr-1 h-3.5 w-3.5" />
           <span className={compactMode ? 'hidden 2xl:inline' : ''}>Odayı Blokla</span>
-        </Button>
+        </Button>}
 
         <div className="flex items-center gap-1.5">
           {!compactMode && <span className="text-xs text-gray-600 whitespace-nowrap">{t('cm.pages_calendar_CalendarHeader.rezervasyon_durumu')}</span>}
@@ -441,14 +444,14 @@ const CalendarHeader = ({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
+        {canCreateBooking && <Button
           onClick={onShowNewBookingDialog}
           className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm hover:shadow-md"
           data-testid="add-reservation-button"
         >
           <Plus className="w-3.5 h-3.5 mr-1" />
           {t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
-        </Button>
+        </Button>}
       </div>
       </div>
     </>

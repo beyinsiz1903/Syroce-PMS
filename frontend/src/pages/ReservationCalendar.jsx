@@ -207,6 +207,10 @@ const newBookingDraft = (overrides = {}) => ({
 
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
+  const effectivePermissions = user?.effective_permissions || [];
+  const canCreateBooking = effectivePermissions.includes('create_booking');
+  const canManageRooms = effectivePermissions.includes('update_room_status');
+  const canSyncChannels = effectivePermissions.includes('manage_system_settings');
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -1486,6 +1490,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onShowConflicts={() => setShowConflictsModal(true)}
           viewPreferences={viewPreferences}
           onViewPreferenceChange={updateViewPreference}
+          canCreateBooking={canCreateBooking}
+          canManageRooms={canManageRooms}
+          canSyncChannels={canSyncChannels}
         />
         </div>
 

@@ -13,7 +13,7 @@ import { KpiCard } from "@/components/ui/kpi-card";
 import {
   Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle,
   RefreshCw, Calendar, FileText, ChevronDown, ChevronUp,
-  DollarSign, Users, Building2, BarChart3, Eye, Loader2,
+  Users, Building2, BarChart3, Eye, Loader2,
   Shield, Info, Timer, Settings2, Zap, RotateCcw,
   TrendingUp, CreditCard, ShieldCheck, Scale, Receipt,
   PieChart, ArrowUpDown, Banknote, AlertOctagon, Search
@@ -63,6 +63,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [financialSummary, setFinancialSummary] = useState(null);
   const [reconciliation, setReconciliation] = useState(null);
   const [integrityCheck, setIntegrityCheck] = useState(null);
+  const [reportingDate, setReportingDate] = useState(null);
   const [financialReport, setFinancialReport] = useState(null);
   const [finLoading, setFinLoading] = useState(false);
   const [reportDates, setReportDates] = useState({ start: "", end: "" });
@@ -121,8 +122,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       }));
       setHistory(normalizedRuns);
       setHistoryTotal(res.data.total || 0);
+      return normalizedRuns;
     } catch (err) {
       console.error("History fetch failed:", err);
+      return [];
     }
   }, []);
 
@@ -209,14 +212,19 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const loadAll = useCallback(async () => {
     setLoading(true);
     initialLoadRef.current = true; // skip the businessDate effect after this
-    await Promise.all([
+    const [, runs] = await Promise.all([
       fetchBusinessDate(),
       fetchHistory(),
       fetchSchedule(),
       fetchScheduleStatus(),
-      fetchFinancialSummary(),
-      fetchReconciliation(),
-      fetchIntegrityCheck(),
+    ]);
+    const latestCompletedRun = runs.find((run) => !run.is_dry_run && run.status?.startsWith("completed"));
+    const financeDate = latestCompletedRun?.business_date || null;
+    setReportingDate(financeDate);
+    await Promise.all([
+      fetchFinancialSummary(financeDate),
+      fetchReconciliation(financeDate),
+      fetchIntegrityCheck(financeDate),
     ]);
     setLoading(false);
   }, [fetchBusinessDate, fetchHistory, fetchSchedule, fetchScheduleStatus, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
@@ -231,12 +239,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       initialLoadRef.current = false;
       return;
     }
-    if (businessDate) {
+    if (businessDate && !reportingDate) {
       fetchFinancialSummary(businessDate);
       fetchReconciliation(businessDate);
       fetchIntegrityCheck(businessDate);
     }
-  }, [businessDate, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
+  }, [businessDate, reportingDate, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
 
   const handleRunAudit = async () => {
     setRunning(true);
@@ -443,6 +451,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     showRunDialog, setShowRunDialog, showScheduleDialog, setShowScheduleDialog,
     activeTab, setActiveTab, runOptions, setRunOptions,
     financialSummary, reconciliation, integrityCheck, financialReport, finLoading,
+    reportingDate,
     reportDates, setReportDates,
     fetchBusinessDate, fetchHistory, fetchExceptions, fetchSchedule, fetchScheduleStatus,
     fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck, fetchFinancialReport,
@@ -554,17 +563,17 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             sub={todayCompleted ? "Bugün tamamlandı" : "Bugün bekliyor"}
           />
           <KpiCard
-            icon={DollarSign}
+            icon={Banknote}
             intent="info"
             label="Son Oda Geliri"
-            value={lastRun ? `${lastRun.total_room_revenue?.toFixed(2) || "0.00"} TL` : "-"}
-            sub={lastRun ? `Vergi: ${lastRun.total_tax_amount?.toFixed(2) || "0.00"} TL` : undefined}
+            value={lastRun ? `${Number(lastRun.total_room_revenue || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : "-"}
+            sub={lastRun ? `Vergi: ${Number(lastRun.total_tax_amount || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : undefined}
           />
           <KpiCard
-            icon={DollarSign}
+            icon={CreditCard}
             intent="success"
             label="Son Tahsilat"
-            value={lastRun ? `${lastRun.total_payments_amount?.toFixed(2) || "0.00"} TL` : "-"}
+            value={lastRun ? `${Number(lastRun.total_payments_amount || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : "-"}
             sub="Kasaya Giren Net Tutar"
           />
           <KpiCard
@@ -976,6 +985,37 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     <ul className="list-disc pl-5 space-y-1 text-xs text-amber-800">
                       {simulationResult.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
                     </ul>
+                  </div>
+                )}
+                {simulationResult.candidate_details?.length > 0 && (
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">
+                      İşlem planı ({simulationResult.candidate_details.length})
+                    </div>
+                    <div className="divide-y max-h-64 overflow-y-auto">
+                      {simulationResult.candidate_details.map((item, index) => (
+                        <div key={`${item.booking_id}-${index}`} className="grid grid-cols-[1fr_auto] gap-3 px-3 py-2 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-800">
+                              {item.room_no ? `Oda ${item.room_no}` : item.room_id ? "Oda kaydı mevcut" : "Oda atanmamış"} · Rezervasyon {item.booking_id || "-"}
+                            </p>
+                            <p className={item.status === "skipped" ? "text-amber-700" : "text-gray-500"}>
+                              {item.status === "skipped"
+                                ? ({
+                                    complimentary_accommodation: "Ücretsiz konaklama olduğu için atlanacak",
+                                    zero_or_missing_rate: "Oda fiyatı sıfır veya eksik olduğu için atlanacak",
+                                    no_open_folio: "Açık misafir folyosu olmadığı için atlanacak",
+                                    already_posted_for_business_date: "Bu iş günü için masraf daha önce işlendiği için atlanacak",
+                                  }[item.reason] || `Atlanacak: ${item.reason || "neden belirtilmedi"}`)
+                                : item.posting_type === "no_show" ? "No-show masrafı yazılacak" : "Oda masrafı yazılacak"}
+                            </p>
+                          </div>
+                          <strong className="whitespace-nowrap text-gray-900">
+                            {Number(item.total || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 <div className="flex justify-end">

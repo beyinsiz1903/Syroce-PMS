@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import UserProvisionDialog from '@/components/UserProvisionDialog';
 import UserAccessDialog from '@/components/UserAccessDialog';
+import UserProfileDialog from '@/components/UserProfileDialog';
 
 function TenantUserList() {
   const [users, setUsers] = useState([]);
@@ -12,6 +13,7 @@ function TenantUserList() {
   const [filter, setFilter] = useState('');
   const [revision, setRevision] = useState(0);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [profileUser, setProfileUser] = useState(null);
   const refresh = () => setRevision(value => value + 1);
   useEffect(() => {
     const controller = new AbortController();
@@ -47,17 +49,21 @@ function TenantUserList() {
     {loading ? <p role="status">Kullanıcılar yükleniyor…</p> : !error && <div className="overflow-x-auto rounded border">
       <table className="w-full text-sm">
         <thead><tr className="border-b bg-muted text-left">
-          <th className="p-3">Ad Soyad</th><th className="p-3">E-posta</th><th className="p-3">Rol</th><th className="p-3">Yetkiler</th>
+          <th className="p-3">Ad Soyad</th><th className="p-3">E-posta</th><th className="p-3">Rol</th><th className="p-3">İşlemler</th>
         </tr></thead>
         <tbody>{filtered.map(user => <tr key={user.id} className="border-b">
           <td className="p-3">{user.name || '—'}</td><td className="p-3">{user.email || '—'}</td><td className="p-3">{user.role}</td>
           <td className="p-3">{!['admin', 'super_admin', 'guest', 'agency_admin', 'agency_agent'].includes(user.role) &&
-            <Button variant="outline" onClick={() => setSelectedUser(user)}>Yetkileri düzenle</Button>}</td>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setProfileUser(user)}>Bilgileri düzenle</Button>
+              <Button variant="outline" onClick={() => setSelectedUser(user)}>Yetkileri düzenle</Button>
+            </div>}</td>
         </tr>)}</tbody>
       </table>
       {!filtered.length && <p className="p-3">Kullanıcı bulunamadı.</p>}
     </div>}
     {selectedUser && <UserAccessDialog target={selectedUser} onClose={() => setSelectedUser(null)} onSaved={refresh} />}
+    {profileUser && <UserProfileDialog target={profileUser} onClose={() => setProfileUser(null)} onSaved={refresh} />}
   </section>;
 }
 

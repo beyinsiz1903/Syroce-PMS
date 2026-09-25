@@ -15,6 +15,7 @@ class Collection:
     def __init__(self, records):
         self.records = records
         self.insert_one = AsyncMock()
+        self.update_one = AsyncMock(return_value=SimpleNamespace(matched_count=1, modified_count=1))
 
     def find(self, query):
         async def cursor():
@@ -24,6 +25,10 @@ class Collection:
         return cursor()
 
     async def find_one(self, *args, **kwargs):
+        query = args[0] if args else {}
+        if isinstance(query.get("id"), str):
+            return next((record for record in self.records if record.get("id") == query["id"] and
+                         ("tenant_id" not in query or record.get("tenant_id") == query["tenant_id"])), None)
         return None
 
 
@@ -96,3 +101,32 @@ async def test_admin_cannot_create_superadmin_or_see_global_users(app):
         assert (await client.patch("/api/admin/users/a/role", json={"role": "super_admin"})).status_code == 404
         assert (await client.post("/api/admin/users", json={"name": "QA", "email": "qa@example.com", "role": "super_admin"})).status_code == 400
     database.users.insert_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_can_update_staff_login_email_inside_own_hotel(app, monkeypatch):
+    application, _, database = app
+    monkeypatch.setattr(import_module("core.security"), "invalidate_user_doc_cache", lambda _user_id: None)
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
+        response = await client.patch(
+            "/api/admin/users/a/profile",
+            json={"name": "Zeliha", "email": "zeliha@thecanyonkartepe.com"},
+        )
+    assert response.status_code == 200
+    assert response.json()["email"] == "zeliha@thecanyonkartepe.com"
+    user_update = database.users.update_one.call_args.args[1]["$set"]
+    assert user_update["email"] == "zeliha@thecanyonkartepe.com"
+    database.staff_members.update_one.assert_awaited_once()
+    assert database.staff_members.update_one.call_args.args[1]["$set"]["email"] == "zeliha@thecanyonkartepe.com"
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_update_another_hotel_user(app):
+    application, _, database = app
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
+        response = await client.patch(
+            "/api/admin/users/b/profile",
+            json={"name": "Other Hotel", "email": "other@example.com"},
+        )
+    assert response.status_code == 404
+    database.users.update_one.assert_not_awaited()

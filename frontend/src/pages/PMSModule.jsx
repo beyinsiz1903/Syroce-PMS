@@ -100,6 +100,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     tenant?.subscription_tier ||
     'core_small_hotel';
   const isLite = plan === 'pms_lite';
+  const effectivePermissions = user?.effective_permissions || [];
+  const canCreateBooking = effectivePermissions.includes('create_booking');
 
   const { data: setup } = useSetupStatus({ enabled: isLite });
   const roomsCount = setup?.rooms_count ?? 0;
@@ -986,10 +988,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                     {t('pms.quickActions', 'Hızlı İşlemler')}
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    {validTabKeys.has('bookings') && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
+                    {validTabKeys.has('bookings') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
                       <Plus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newBooking', 'Yeni Rezervasyon')}
                     </Button>}
-                    {validTabKeys.has('guests') && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
+                    {validTabKeys.has('guests') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
                       <UserPlus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newGuest', 'Yeni Misafir')}
                     </Button>}
                     {validTabKeys.has('reports') && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={async () => {

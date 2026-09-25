@@ -9,38 +9,42 @@ import { useTranslation } from 'react-i18next';
 
 export default function FinancialTab(props) {
   const { t } = useTranslation();
-  const { StatCard, categoryLabels, financialSummary, paymentMethodLabels } = props;
+  const { StatCard, categoryLabels, financialSummary, paymentMethodLabels, reportingDate } = props;
+  const money = (value) => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
   return (
     <TabsContent value="financial" className="space-y-4 mt-4">
       {financialSummary ? (
         <>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <strong>Rapor iş günü:</strong> {financialSummary.business_date || financialSummary.date || reportingDate || '-'} · Son tamamlanan gece denetiminin finansal hareketleri
+          </div>
           {/* Revenue & Payment Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
               icon={TrendingUp}
               label={t('cm.components_nightaudit_tabs_FinancialTab.toplam_gelir')}
-              value={`${financialSummary.revenue?.total?.toFixed(2) || "0.00"} TL`}
+              value={money(financialSummary.revenue?.total)}
               subValue={`${financialSummary.revenue?.charges_count || 0} masraf`}
               color="text-emerald-600"
             />
             <StatCard
               icon={Receipt}
               label={t('cm.components_nightaudit_tabs_FinancialTab.vergi_toplami')}
-              value={`${financialSummary.tax?.total?.toFixed(2) || "0.00"} TL`}
-              subValue={`KDV: ${financialSummary.tax?.breakdown?.vat?.toFixed(2) || "0"} TL`}
+              value={money(financialSummary.tax?.total)}
+              subValue={`KDV: ${money(financialSummary.tax?.breakdown?.vat)}`}
               color="text-blue-600"
             />
             <StatCard
               icon={CreditCard}
               label={t('cm.components_nightaudit_tabs_FinancialTab.toplam_odeme')}
-              value={`${financialSummary.payments?.total?.toFixed(2) || "0.00"} TL`}
+              value={money(financialSummary.payments?.total)}
               subValue={`${financialSummary.payments?.payments_count || 0} ödeme`}
               color="text-indigo-600"
             />
             <StatCard
               icon={ArrowUpDown}
               label="Net Pozisyon"
-              value={`${financialSummary.net_position?.toFixed(2) || "0.00"} TL`}
+              value={money(financialSummary.net_position)}
               subValue={financialSummary.net_position > 0 ? "Alacak" : financialSummary.net_position < 0 ? "Fazla ödeme" : "Dengeli"}
               color={financialSummary.net_position > 0 ? "text-amber-600" : financialSummary.net_position < 0 ? "text-red-600" : "text-emerald-600"}
             />
@@ -72,7 +76,7 @@ export default function FinancialTab(props) {
                             <span className="text-[11px] text-gray-400">({data.count})</span>
                           </div>
                           <div className="text-right">
-                            <span className="text-sm font-semibold text-gray-900">{data.amount.toFixed(2)} TL</span>
+                            <span className="text-sm font-semibold text-gray-900">{money(data.amount)}</span>
                             <span className="text-[11px] text-gray-400 ml-2">{pct}%</span>
                           </div>
                         </div>
@@ -102,7 +106,7 @@ export default function FinancialTab(props) {
                           <span className="text-sm font-medium text-gray-700">{paymentMethodLabels[method] || method}</span>
                           <span className="text-[11px] text-gray-400">({data.count})</span>
                         </div>
-                        <span className="text-sm font-semibold text-gray-900">{data.amount.toFixed(2)} TL</span>
+                        <span className="text-sm font-semibold text-gray-900">{money(data.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -126,16 +130,16 @@ export default function FinancialTab(props) {
                   <p className="text-xs text-gray-500">{t('cm.components_nightaudit_tabs_FinancialTab.toplam_acik_folyo')}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-2xl font-bold text-gray-900">{financialSummary.open_folios?.balance?.total?.toFixed(2) || "0.00"} TL</p>
+                  <p className="text-2xl font-bold text-gray-900">{money(financialSummary.open_folios?.balance?.total)}</p>
                   <p className="text-xs text-gray-500">{t('cm.components_nightaudit_tabs_FinancialTab.toplam_bakiye')}</p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-lg">
-                  <p className="text-2xl font-bold text-amber-700">{financialSummary.open_folios?.balance?.receivable?.toFixed(2) || "0.00"} TL</p>
-                  <p className="text-xs text-amber-600">Alacak</p>
+                  <p className="text-2xl font-bold text-amber-700">{money(financialSummary.open_folios?.balance?.receivable)}</p>
+                  <p className="text-xs text-amber-600">Çıkışta tahsil edilecek</p>
                 </div>
                 <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-2xl font-bold text-blue-700">{financialSummary.open_folios?.balance?.overpayment?.toFixed(2) || "0.00"} TL</p>
-                  <p className="text-xs text-blue-600">{t('cm.components_nightaudit_tabs_FinancialTab.fazla_odeme')}</p>
+                  <p className="text-2xl font-bold text-blue-700">{money(financialSummary.open_folios?.balance?.overpayment)}</p>
+                  <p className="text-xs text-blue-600">Ön ödeme / kredi bakiyesi</p>
                 </div>
               </div>
 
@@ -159,7 +163,7 @@ export default function FinancialTab(props) {
                             <td className="px-3 py-2">{fol.room_no || '?'}</td>
                             <td className="px-3 py-2">{fol.guest_name || 'İsimsiz'}</td>
                             <td className={`px-3 py-2 text-right font-semibold ${fol.balance > 0 ? 'text-amber-600' : (fol.balance < 0 ? 'text-blue-600' : 'text-gray-500')}`}>
-                              {fol.balance?.toFixed(2)} TL
+                              {money(fol.balance)}
                             </td>
                           </tr>
                         ))}
