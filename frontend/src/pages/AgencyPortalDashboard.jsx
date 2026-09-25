@@ -324,10 +324,12 @@ const AgencyPortalDashboard = () => {
     } catch (err) { toast.error(err.response?.data?.detail || 'Yanıt kaydedilemedi'); }
   };
   const cancelReservation = async reservation => {
-    if (!window.confirm(`${reservation.confirmation_code || reservation.id} numaralı rezervasyon iptal edilsin mi?`)) return;
+    const reason = window.prompt(`${reservation.confirmation_code || reservation.id} için iptal gerekçesi (en az 5 karakter)`);
+    if (!reason) return;
+    if (reason.trim().length < 5) return toast.error('İptal gerekçesi en az 5 karakter olmalıdır');
     try {
-      const { data } = await agencyApi.delete(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}`, { params: { reason: 'agency_portal' } });
-      toast.success(data.penalty_amount ? `İptal edildi. Ceza: ${formatMoney(data.penalty_amount, reservation.currency)}` : 'Ücretsiz iptal edildi');
+      await agencyApi.delete(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}`, { params: { reason: reason.trim() } });
+      toast.success('İptal talebi otele iletildi; otel kabul edene kadar rezervasyon korunur');
       loadReservations();
     } catch (err) { toast.error(err.response?.data?.detail || 'İptal işlemi tamamlanamadı'); }
   };
@@ -635,12 +637,12 @@ const AgencyPortalDashboard = () => {
           </TabsContent>
 
           {portalMode === 'marketplace' && <TabsContent value="finance" className="mt-4 space-y-4">
-            <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-800">Son 30 gün mutabakatı</h2><p className="text-xs text-slate-500">Brüt satış, acente komisyonu ve otele aktarılacak net tutar</p></div><Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV indir</Button></div>
+            <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-800">Son 30 gün mutabakatı</h2><p className="text-xs text-slate-500">Brüt satıştan acente komisyonu ve platform bedeli düşüldükten sonra otele aktarılacak net tutar</p></div><Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV indir</Button></div>
             {!reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {[['Brüt satış', reconciliation.totals?.gross_revenue], ['Komisyon', reconciliation.totals?.commission], ['Otele net', reconciliation.totals?.net_to_hotels], ['Rezervasyon', reconciliation.totals?.bookings]].map(([label, value], index) => <Card key={label}><CardContent className="pt-4"><div className="text-xs text-slate-500">{label}</div><div className="text-lg font-bold">{index === 3 ? value : formatMoney(value, hotelInfo?.currency)}</div></CardContent></Card>)}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                {[['Brüt satış', reconciliation.totals?.gross_revenue, true], ['Acente komisyonu', reconciliation.totals?.commission, true], ['Platform bedeli', reconciliation.totals?.platform_fee, true], ['Otele net', reconciliation.totals?.net_to_hotels, true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary]) => <Card key={label}><CardContent className="pt-4"><div className="text-xs text-slate-500">{label}</div><div className="text-lg font-bold">{monetary ? formatMoney(value, hotelInfo?.currency) : value}</div></CardContent></Card>)}
               </div>
-              {(reconciliation.by_hotel || []).map(row => <Card key={row.tenant_id}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon</div></div><div className="text-right"><div className="font-bold">{formatMoney(row.gross_revenue, hotelInfo?.currency)}</div><div className="text-xs text-emerald-700">Net {formatMoney(row.net_to_hotel, hotelInfo?.currency)}</div></div></CardContent></Card>)}
+              {(reconciliation.by_hotel || []).map(row => <Card key={row.tenant_id}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatMoney(row.commission, hotelInfo?.currency)} · Platform {formatMoney(row.platform_fee, hotelInfo?.currency)}</div></div><div className="text-right"><div className="font-bold">{formatMoney(row.gross_revenue, hotelInfo?.currency)}</div><div className="text-xs text-emerald-700">Net {formatMoney(row.net_to_hotel, hotelInfo?.currency)}</div></div></CardContent></Card>)}
             </>}
           </TabsContent>}
 

@@ -9,6 +9,7 @@ from routers import marketplace_b2b
 from routers.marketplace_b2b import (
     MarketplaceReservationCreate,
     _last_occupied_date,
+    _marketplace_financials,
     _require_hotel_admin,
     _reservation_agency_snapshot,
     _reservation_room_snapshot,
@@ -71,6 +72,14 @@ def test_marketplace_stay_authorization_uses_final_occupied_night():
 def test_marketplace_service_fee_is_defined_for_both_sales_channels():
     assert _syroce_b2b_fee(5000, "extranet_ui") == (2.0, 100.0)
     assert _syroce_b2b_fee(5000, "syroce_agency_app") == (1.0, 50.0)
+
+
+def test_marketplace_financials_reconcile_after_price_change():
+    assert _marketplace_financials(7500, 15, 2) == {
+        "commission_amount": 1125.0,
+        "syroce_b2b_fee_amount": 150.0,
+        "net_to_hotel": 6225.0,
+    }
 
 
 def test_marketplace_room_snapshot_keeps_ledger_and_pms_fields_consistent():
