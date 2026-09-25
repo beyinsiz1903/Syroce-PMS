@@ -39,7 +39,7 @@ vi.mock('axios', () => ({ default: axiosMock }));
 
 import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
 import { OnlinePaymentTab } from '@/pages/reservation-detail/OnlinePaymentTab';
-import { DailyRatesTab, ExtraChargesTab, distributeTotalAcrossEditableRates } from '@/pages/reservation-detail/PricingTabs';
+import { DailyRatesTab, ExtraChargesTab, distributeTotalAcrossEditableRates, filterDailyRatesForStay } from '@/pages/reservation-detail/PricingTabs';
 
 beforeEach(() => {
   axiosGet.mockReset();
@@ -52,6 +52,19 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('reservation detail action feedback', () => {
+  it('excludes the checkout date from the chargeable nightly-rate plan', () => {
+    const rates = filterDailyRatesForStay(
+      [
+        { date: '2026-09-21', rate: 2500 },
+        { date: '2026-09-24', rate: 2500 },
+        { date: '2026-09-25', rate: 2500 },
+      ],
+      { check_in: '2026-09-21', check_out: '2026-09-25' },
+    );
+
+    expect(rates.map(rate => rate.date)).toEqual(['2026-09-21', '2026-09-24']);
+  });
+
   it('rejects a same-account cari transfer before posting', async () => {
     axiosGet.mockResolvedValue({
       data: { accounts: [{ id: 'agency-a', name: 'Test Acente', account_type: 'agency' }] },

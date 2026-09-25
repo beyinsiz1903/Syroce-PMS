@@ -1058,8 +1058,17 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
 
         # Daily rates
         daily_rates = []
+        check_in_date = _reservation_calendar_date(booking.get("check_in"))
+        check_out_date = _reservation_calendar_date(booking.get("check_out"))
         async for dr in db.daily_rates.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("date", 1):
-            daily_rates.append(dr)
+            rate_date = _reservation_calendar_date(dr.get("date"))
+            if (
+                rate_date is not None
+                and check_in_date is not None
+                and check_out_date is not None
+                and check_in_date <= rate_date < check_out_date
+            ):
+                daily_rates.append(dr)
 
         # If no daily rates exist, generate from booking
         if not daily_rates and booking.get("check_in") and booking.get("check_out"):
@@ -3601,6 +3610,18 @@ async def update_daily_rates(
                             status_code=409,
                             detail=f"{rate_date} için eşzamanlı günlük fiyat güncellemesi tespit edildi; lütfen yeniden deneyin",
                         ) from exc
+
+                # The departure date is not a chargeable night. Remove legacy
+                # checkout-day/out-of-range rows whenever the rate plan is
+                # saved so they cannot inflate later totals.
+                await db.daily_rates.delete_many(
+                    {
+                        "booking_id": booking_id,
+                        "tenant_id": tid,
+                        "date": {"$nin": list(submitted_rates)},
+                    },
+                    session=session,
+                )
 
                 # Recalculate total
                 new_total = round(sum(submitted_rates.values()), 2)

@@ -33,6 +33,16 @@ export const distributeTotalAcrossEditableRates = (rates, total, isLocked = () =
   });
 };
 
+export const filterDailyRatesForStay = (dailyRates = [], booking = {}) => {
+  const checkIn = String(booking?.check_in || '').slice(0, 10);
+  const checkOut = String(booking?.check_out || '').slice(0, 10);
+  if (!checkIn || !checkOut || checkOut <= checkIn) return dailyRates;
+  return dailyRates.filter(rate => {
+    const date = String(rate?.date || '').slice(0, 10);
+    return date >= checkIn && date < checkOut;
+  });
+};
+
 export function DailyRatesTab({
   dailyRates,
   booking,
@@ -53,10 +63,18 @@ export function DailyRatesTab({
   const [showCompForm, setShowCompForm] = useState(false);
   const [compReason, setCompReason] = useState('');
   const [compScope, setCompScope] = useState('accommodation_only');
+  const bookingCheckIn = booking?.check_in;
+  const bookingCheckOut = booking?.check_out;
+  const stayRange = { check_in: bookingCheckIn, check_out: bookingCheckOut };
+  const applicableDailyRates = filterDailyRatesForStay(dailyRates, stayRange);
   useEffect(() => {
-    setRates(dailyRates || []);
-    setTotalInput(((dailyRates || []).reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0)).toFixed(2));
-  }, [dailyRates]);
+    const stayRates = filterDailyRatesForStay(dailyRates, {
+      check_in: bookingCheckIn,
+      check_out: bookingCheckOut,
+    });
+    setRates(stayRates);
+    setTotalInput(stayRates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0).toFixed(2));
+  }, [dailyRates, bookingCheckIn, bookingCheckOut]);
   const normalizedBusinessDate = String(businessDate || '').slice(0, 10);
   const isClosedRate = rate => Boolean(normalizedBusinessDate && String(rate?.date || '').slice(0, 10) < normalizedBusinessDate);
   const anyEditable = rates.some(rate => !isClosedRate(rate));
@@ -64,7 +82,7 @@ export function DailyRatesTab({
   const isComplimentary = Boolean(booking?.is_complimentary);
   const hasComplimentaryTotalDrift = isComplimentary && Number(booking?.total_amount || 0) > 0;
   const ratesTotal = rates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
-  const originalTotal = (dailyRates || []).reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
+  const originalTotal = applicableDailyRates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
   const paidTotal = Number(summary?.total_payments ?? summary?.paid_amount ?? summary?.prepayment_total ?? booking?.paid_amount ?? 0) || 0;
   const remainingAfterChange = Math.max(0, ratesTotal - paidTotal);
   const beginEditing = () => {
@@ -73,7 +91,7 @@ export function DailyRatesTab({
     setEditMode(true);
   };
   const cancelEditing = () => {
-    setRates(dailyRates || []);
+    setRates(applicableDailyRates);
     setTotalInput(originalTotal.toFixed(2));
     setSaveError('');
     setEditMode(false);
