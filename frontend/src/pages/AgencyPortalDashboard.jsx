@@ -331,11 +331,27 @@ const AgencyPortalDashboard = () => {
       loadReservations();
     } catch (err) { toast.error(err.response?.data?.detail || 'İptal işlemi tamamlanamadı'); }
   };
-  const printVoucher = reservation => {
-    const popup = window.open('', '_blank', 'noopener,noreferrer');
-    if (!popup) return toast.error('Yazdırma penceresine tarayıcı tarafından izin verilmedi');
-    popup.document.write(`<!doctype html><html><head><title>${reservation.confirmation_code}</title><style>body{font-family:Arial;padding:40px;color:#172033}h1{font-size:24px}.box{border:1px solid #ccd5e1;border-radius:12px;padding:24px;max-width:700px}.row{display:flex;justify-content:space-between;border-bottom:1px solid #eee;padding:10px 0}</style></head><body><div class="box"><h1>Rezervasyon Voucher</h1><div class="row"><b>Onay kodu</b><span>${reservation.confirmation_code || reservation.id}</span></div><div class="row"><b>Otel</b><span>${reservation.hotel_name || '—'}</span></div><div class="row"><b>Misafir</b><span>${reservation.guest_name || '—'}</span></div><div class="row"><b>Konaklama</b><span>${formatDate(reservation.check_in)} – ${formatDate(reservation.check_out)}</span></div><div class="row"><b>Tutar</b><span>${formatMoney(reservation.total_amount, reservation.currency)}</span></div><p>Bu belge Syroce Acente Portalı tarafından oluşturulmuştur.</p></div><script>window.print()</script></body></html>`);
-    popup.document.close();
+  const printVoucher = async reservation => {
+    try {
+      const { data } = await agencyApi.get(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/voucher.pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
+      const popup = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!popup) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${reservation.confirmation_code || reservation.id}.pdf`;
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Voucher PDF oluşturulamadı'); }
+  };
+  const emailVoucher = async reservation => {
+    const email = window.prompt('Voucher gönderilecek e-posta adresi', reservation.guest_email || '');
+    if (!email) return;
+    try {
+      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/voucher-email`, { email: email.trim() });
+      toast.success('Voucher e-posta ile gönderildi');
+    } catch (err) { toast.error(err.response?.data?.detail || 'Voucher gönderilemedi'); }
   };
   const loadReconciliation = async () => {
     if (portalMode !== 'marketplace') return;
@@ -580,6 +596,7 @@ const AgencyPortalDashboard = () => {
                         <div className="text-sm font-bold text-slate-700 sm:mt-1">{formatMoney(r.total_amount, r.currency || hotelInfo?.currency)}</div>
                         <div className="flex gap-1 mt-2">
                           <Button size="sm" variant="outline" onClick={() => printVoucher(r)}><Printer size={13} className="mr-1" />Voucher</Button>
+                          {portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => emailVoucher(r)}><Mail size={13} className="mr-1" />E-posta</Button>}
                           {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" className="text-red-700" onClick={() => cancelReservation(r)}><XCircle size={13} className="mr-1" />İptal</Button>}
                         </div>
                       </div>

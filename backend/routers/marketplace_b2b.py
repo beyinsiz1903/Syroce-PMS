@@ -15,6 +15,7 @@ Mimari farklar (mevcut /api/b2b ile karşılaştırma):
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import os
 import secrets
@@ -22,7 +23,7 @@ import uuid
 from datetime import UTC, datetime
 
 import jwt as pyjwt
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, EmailStr, Field
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
@@ -411,6 +412,10 @@ class CancellationProposalCreate(BaseModel):
 class CancellationProposalDecision(BaseModel):
     accept: bool
     response_note: str = Field(default="", max_length=1000)
+
+
+class VoucherEmailRequest(BaseModel):
+    email: EmailStr
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1397,6 +1402,42 @@ async def agency_get_reservation(
             {"_id": 0, "tenant_id": 0, "guest_id": 0, "room_id": 0},
         )
     return {"summary": doc, "booking": booking}
+
+
+def _voucher_html(doc: dict) -> str:
+    safe = lambda value: html.escape(str(value or "—"))
+    return f"""<!doctype html><html><head><meta charset='utf-8'><style>body{{font-family:Arial;color:#172033;padding:32px}}.sheet{{border:1px solid #ccd5e1;border-radius:12px;padding:24px}}table{{width:100%;border-collapse:collapse}}td{{padding:10px;border-bottom:1px solid #eee}}</style></head><body><div class='sheet'><h1>Rezervasyon Voucher</h1><table><tr><td>Onay kodu</td><td>{safe(doc.get('confirmation_code'))}</td></tr><tr><td>Otel</td><td>{safe(doc.get('hotel_name'))}</td></tr><tr><td>Misafir</td><td>{safe(doc.get('guest_name'))}</td></tr><tr><td>Giriş / Çıkış</td><td>{safe(doc.get('check_in'))} / {safe(doc.get('check_out'))}</td></tr><tr><td>Tutar</td><td>{safe(doc.get('total_amount'))} {safe(doc.get('currency', 'TRY'))}</td></tr></table><p>Syroce Acente Portalı tarafından oluşturulmuştur.</p></div></body></html>"""
+
+
+@router.get("/reservations/{reservation_id}/voucher.pdf")
+async def agency_reservation_voucher_pdf(reservation_id: str, agency: dict = Depends(get_marketplace_agency)):
+    doc = await get_system_db().marketplace_bookings.find_one(
+        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(404, "Rezervasyon bulunamadı")
+    try:
+        from weasyprint import HTML
+        pdf = HTML(string=_voucher_html(doc)).write_pdf()
+    except Exception as exc:
+        raise HTTPException(503, "PDF oluşturucu şu anda kullanılamıyor") from exc
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={doc.get('confirmation_code', reservation_id)}.pdf"})
+
+
+@router.post("/reservations/{reservation_id}/voucher-email")
+async def agency_email_reservation_voucher(
+    reservation_id: str, data: VoucherEmailRequest, agency: dict = Depends(get_marketplace_agency)
+):
+    doc = await get_system_db().marketplace_bookings.find_one(
+        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(404, "Rezervasyon bulunamadı")
+    from core.email import send_email
+    result = await send_email(str(data.email), f"Rezervasyon Voucher · {doc.get('confirmation_code')}", _voucher_html(doc))
+    if not result:
+        raise HTTPException(502, "Voucher e-postası gönderilemedi")
+    return {"ok": True, "message": "Voucher e-postası gönderildi"}
 
 
 @router.delete("/reservations/{reservation_id}")
