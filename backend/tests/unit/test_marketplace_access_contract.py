@@ -72,6 +72,7 @@ def test_marketplace_stay_authorization_uses_final_occupied_night():
 def test_marketplace_service_fee_is_defined_for_both_sales_channels():
     assert _syroce_b2b_fee(5000, "extranet_ui") == (2.0, 100.0)
     assert _syroce_b2b_fee(5000, "syroce_agency_app") == (1.0, 50.0)
+    assert _syroce_b2b_fee(5000, "extranet_ui", 1.5) == (1.5, 75.0)
 
 
 def test_marketplace_financials_reconcile_after_price_change():

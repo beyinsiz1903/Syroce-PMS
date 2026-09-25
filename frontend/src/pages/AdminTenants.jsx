@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -16,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Calendar, Building2, ChevronDown, ChevronUp, Shield,
+  Calendar, Building2, ChevronDown, ChevronUp, Shield, Handshake,
   Search, RefreshCw,
   Plus, Pencil, Users, UsersRound, ArrowUpDown,
   Settings2, LogIn,
@@ -232,6 +233,12 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
+      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" aria-label="Süperadmin kayıt türü">
+        <Button size="sm" className="pointer-events-none"><Building2 className="mr-1.5 h-4 w-4" />Oteller</Button>
+        <Button asChild variant="ghost" size="sm" className="text-slate-600">
+          <Link to="/admin/agencies"><Handshake className="mr-1.5 h-4 w-4" />Acenteler</Link>
+        </Button>
+      </div>
       <PageHeader
         icon={Shield}
         title={_t('cm.pages_AdminTenants.otel_modul_yonetimi')}
