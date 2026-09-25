@@ -18,14 +18,17 @@ import { useTranslation } from 'react-i18next';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
 export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo }) => confirmDialog({
-  title: 'Kanal güncellemesini onayla',
-  message: `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek ve kanal yöneticisine teslimat başlatılacak. Kuyruğa alınması provider tarafından uygulandığı anlamına gelmez. Devam edilsin mi?`,
+  title: 'Fiyat ve müsaitlik güncellemesini onayla',
+  message: `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek; seçilen acentelere ve bağlı kanallara iletim başlatılacak. Devam edilsin mi?`,
   confirmText: 'Güncellemeyi Başlat',
   cancelText: 'Vazgeç',
   variant: 'danger'
 });
 
 export const getUnifiedRateDeliveryFeedback = data => {
+  if (data?.provider === 'agency' && data?.agency_push_count > 0) {
+    return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve ${data.agency_push_count} acenteye anında iletildi.` };
+  }
   if (data?.provider_verified === true) {
     return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve provider teslimatı doğrulandı.` };
   }

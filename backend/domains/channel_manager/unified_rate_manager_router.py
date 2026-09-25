@@ -251,6 +251,16 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
     provider = detection.get("provider")
     conn = detection.get("connection") or {}
     if not provider:
+        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
+        if agency_count > 0 and not detection.get("configuration_error"):
+            room_count = len(await db.rooms.distinct("room_type", {"tenant_id": tenant_id, "is_active": {"$ne": False}}))
+            return {
+                "provider": "agency",
+                "provider_name": "Acente Dağıtımı",
+                "has_connection": False,
+                "room_count": room_count,
+                "available": [{"provider": "agency", "provider_name": "Acente Dağıtımı", "room_count": room_count}],
+            }
         return {
             "provider": None,
             "provider_name": None,
@@ -319,6 +329,9 @@ async def get_unified_grid(
         }
 
     if not detection["provider"]:
+        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
+        if agency_count > 0 and not detection.get("configuration_error"):
+            return await _build_agency_grid(tenant_id, start_date, end_date)
         return {
             "grid": [],
             "room_types": [],
@@ -338,6 +351,62 @@ async def get_unified_grid(
         return await _build_hr_grid(tenant_id, conn, start_date, end_date)
     else:
         return await _build_exely_grid(tenant_id, conn, start_date, end_date)
+
+
+async def _build_agency_grid(tenant_id, start_date, end_date):
+    """Build an OTA-independent grid for direct agency distribution."""
+    rooms = await db.rooms.find(
+        {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+        {"_id": 0, "room_type": 1},
+    ).to_list(500)
+    names = sorted({str(room.get("room_type") or "").strip() for room in rooms if room.get("room_type")})
+    room_types = [{"code": name, "name": name} for name in names]
+    rate_plans = [{"code": "AGENCY", "name": "Acente Satış"}]
+    calendar_data = await db.rate_calendar.find(
+        {
+            "tenant_id": tenant_id,
+            "room_type_code": {"$in": names},
+            "rate_plan_code": "AGENCY",
+            "date": {"$gte": start_date, "$lte": end_date},
+        },
+        {"_id": 0},
+    ).to_list(5000)
+    cal_index = {
+        f"{entry['room_type_code']}|{entry['rate_plan_code']}|{entry['date']}": entry
+        for entry in calendar_data
+    }
+    room_counts, room_ids_by_type = await _get_room_counts(tenant_id)
+    active_bookings = await _get_active_bookings(tenant_id, start_date, end_date)
+    grid = []
+    for room_type in room_types:
+        code = room_type["code"]
+        counts = room_counts.get(code, {"total": 0, "available": 0})
+        grid.append(
+            {
+                "room_type_code": code,
+                "room_type_name": code,
+                "rate_plan_code": "AGENCY",
+                "rate_plan_name": "Acente Satış",
+                "pms_room_type": code,
+                "total_rooms": counts["total"],
+                "dates": _build_dates(
+                    start_date, end_date, code, "AGENCY", cal_index, code, counts, room_ids_by_type, active_bookings
+                ),
+            }
+        )
+    pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+    pricing_map, pricing_rules = _pricing_payload(pricing_docs)
+    return {
+        "grid": grid,
+        "room_types": room_types,
+        "rate_plans": rate_plans,
+        "pricing_settings": pricing_map,
+        "occupancy_pricing_rules": pricing_rules,
+        "currency": "TRY",
+        "start_date": start_date,
+        "end_date": end_date,
+        "provider": "agency",
+    }
 
 
 async def _build_hr_grid(tenant_id, conn, start_date, end_date):
@@ -620,6 +689,21 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
     detection = await _detect_active_provider(tenant_id)
 
     if not detection["provider"]:
+        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
+        if agency_count > 0 and not detection.get("configuration_error"):
+            rooms = await db.rooms.find(
+                {"tenant_id": tenant_id, "is_active": {"$ne": False}}, {"_id": 0, "room_type": 1}
+            ).to_list(500)
+            names = sorted({str(room.get("room_type") or "").strip() for room in rooms if room.get("room_type")})
+            pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+            pricing_map, pricing_rules = _pricing_payload(pricing_docs)
+            return {
+                "room_types": [{"code": name, "name": name} for name in names],
+                "rate_plans": [{"code": "AGENCY", "name": "Acente Satış"}],
+                "pricing_settings": pricing_map,
+                "occupancy_pricing_rules": pricing_rules,
+                "provider": "agency",
+            }
         return {
             "room_types": [],
             "rate_plans": [],
@@ -665,17 +749,23 @@ async def unified_bulk_grid_update(
     # auto-detect it, while two active unconfigured providers fail closed.
     detection = await _detect_active_provider(tenant_id)
     if not detection["provider"]:
-        error_code = detection.get("configuration_error") or "connection_missing"
-        raise HTTPException(
-            status_code=409 if error_code == "multiple_active_providers" else 404,
-            detail={
-                "error_code": f"CHANNEL_MANAGER_{error_code.upper()}",
-                "delivery_state": "BLOCKED",
-                "provider_status_class": "NOT_SENT",
-                "provider_write_count": 0,
-            },
-        )
-    targets = [detection]
+        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
+        if agency_count > 0 and request.agency_ids and not detection.get("configuration_error"):
+            detection = {"provider": "agency", "connection": {}}
+            targets = []
+        else:
+            error_code = detection.get("configuration_error") or "connection_missing"
+            raise HTTPException(
+                status_code=409 if error_code == "multiple_active_providers" else 404,
+                detail={
+                    "error_code": f"CHANNEL_MANAGER_{error_code.upper()}",
+                    "delivery_state": "BLOCKED",
+                    "provider_status_class": "NOT_SENT",
+                    "provider_write_count": 0,
+                },
+            )
+    else:
+        targets = [detection]
 
     runtime_block = _ari_write_block_for_targets(targets)
     if runtime_block:

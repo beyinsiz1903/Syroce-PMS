@@ -51,6 +51,17 @@ describe('UnifiedRateManager write safety', () => {
     });
   });
 
+  it('reports an OTA-independent agency delivery as completed', () => {
+    expect(getUnifiedRateDeliveryFeedback({
+      saved: 4,
+      provider: 'agency',
+      agency_push_count: 2,
+    })).toEqual({
+      level: 'success',
+      message: '4 kayıt güncellendi ve 2 acenteye anında iletildi.',
+    });
+  });
+
   it('makes partial and rejected provider deliveries visible', () => {
     expect(getUnifiedRateDeliveryFeedback({ saved: 3, provider_delivery_state: 'PARTIAL' }).level).toBe('error');
     expect(getUnifiedRateDeliveryFeedback({
