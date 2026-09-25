@@ -193,3 +193,28 @@ async def test_marketplace_price_honors_agency_stop_sell(monkeypatch):
     )
 
     assert result == {"sellable": False, "nightly_rates": [], "total_price": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_marketplace_price_exposes_lowest_shared_allotment(monkeypatch):
+    fake_db = SimpleNamespace(
+        agency_rate_calendar=_Collection([
+            {"date": "2026-10-15", "rate": 5432, "availability": 4},
+            {"date": "2026-10-16", "rate": 5432, "availability": 3},
+        ]),
+        hr_rate_calendar=_Collection([]),
+        rate_calendar=_Collection([]),
+    )
+    monkeypatch.setattr(marketplace_b2b, "db", fake_db)
+
+    result = await marketplace_b2b._marketplace_stay_price(
+        tenant_id="hotel-1",
+        agency_id="agency-1",
+        room_type="Cave Suite",
+        check_in="2026-10-15",
+        check_out="2026-10-17",
+        fallback_rate=5500,
+    )
+
+    assert result["shared_availability"] == 3
+    assert result["total_price"] == 10864
