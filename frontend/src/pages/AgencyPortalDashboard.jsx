@@ -99,6 +99,9 @@ const AgencyPortalDashboard = () => {
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reconciliation, setReconciliation] = useState(null);
   const [negotiations, setNegotiations] = useState([]);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   // Login handler
   const handleLogin = async e => {
@@ -349,15 +352,25 @@ const AgencyPortalDashboard = () => {
       loadReservations();
     } catch (err) { toast.error(err.response?.data?.detail || 'Yanıt kaydedilemedi'); }
   };
-  const cancelReservation = async reservation => {
-    const reason = window.prompt(`${reservation.confirmation_code || reservation.id} için iptal gerekçesi (en az 5 karakter)`);
-    if (!reason) return;
-    if (reason.trim().length < 5) return toast.error('İptal gerekçesi en az 5 karakter olmalıdır');
+  const openCancellationDialog = reservation => {
+    setCancelTarget(reservation);
+    setCancelReason('');
+  };
+  const cancelReservation = async () => {
+    const reason = cancelReason.trim();
+    if (reason.length < 5) return toast.error('İptal gerekçesi en az 5 karakter olmalıdır');
+    setCancelLoading(true);
     try {
-      await agencyApi.delete(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}`, { params: { reason: reason.trim() } });
+      await agencyApi.delete(`/marketplace/v1/reservations/${encodeURIComponent(cancelTarget.id)}`, { params: { reason } });
       toast.success('İptal talebi otele iletildi; otel kabul edene kadar rezervasyon korunur');
+      setCancelTarget(null);
+      setCancelReason('');
       loadReservations();
-    } catch (err) { toast.error(err.response?.data?.detail || 'İptal işlemi tamamlanamadı'); }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'İptal işlemi tamamlanamadı');
+    } finally {
+      setCancelLoading(false);
+    }
   };
   const proposeModification = async reservation => {
     const checkIn = window.prompt('Yeni giriş tarihi (YYYY-AA-GG)', String(reservation.check_in || '').slice(0, 10));
@@ -660,7 +673,7 @@ const AgencyPortalDashboard = () => {
                           <Button size="sm" variant="outline" onClick={() => printVoucher(r)}><Printer size={13} className="mr-1" />Voucher</Button>
                           {portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => emailVoucher(r)}><Mail size={13} className="mr-1" />E-posta</Button>}
                           {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => proposeModification(r)}>Değişiklik</Button>}
-                          {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" className="text-red-700" onClick={() => cancelReservation(r)}><XCircle size={13} className="mr-1" />İptal</Button>}
+                          {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" className="text-red-700" onClick={() => openCancellationDialog(r)}><XCircle size={13} className="mr-1" />İptal</Button>}
                         </div>
                       </div>
                     </div>
@@ -803,6 +816,43 @@ const AgencyPortalDashboard = () => {
             <Button onClick={handleBooking} disabled={bookingLoading} data-testid="confirm-booking-btn">
               {bookingLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               Rezervasyonu Oluştur
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(cancelTarget)} onOpenChange={open => !open && !cancelLoading && setCancelTarget(null)}>
+        <DialogContent className="max-w-md" data-testid="agency-cancellation-dialog">
+          <DialogHeader>
+            <DialogTitle>İptal talebi gönder</DialogTitle>
+            <p className="text-sm text-slate-500">
+              {cancelTarget?.confirmation_code || cancelTarget?.id} için talep otele iletilir. Otel kabul edene kadar rezervasyon ve kontenjan korunur.
+            </p>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="agency-cancellation-reason">İptal gerekçesi</Label>
+            <textarea
+              id="agency-cancellation-reason"
+              className="flex min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={cancelReason}
+              onChange={event => setCancelReason(event.target.value)}
+              maxLength={500}
+              placeholder="En az 5 karakterle iptal gerekçesini yazın"
+              autoFocus
+              data-testid="agency-cancellation-reason"
+            />
+            <p className="text-xs text-slate-500">Bu açıklama otel tarafındaki onay ekranında görüntülenir.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelLoading}>Vazgeç</Button>
+            <Button
+              variant="destructive"
+              onClick={cancelReservation}
+              disabled={cancelLoading || cancelReason.trim().length < 5}
+              data-testid="submit-agency-cancellation"
+            >
+              {cancelLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : <XCircle className="mr-2" size={14} />}
+              İptal Talebini Gönder
             </Button>
           </DialogFooter>
         </DialogContent>
