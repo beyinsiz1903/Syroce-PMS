@@ -26,10 +26,11 @@ from datetime import UTC, datetime, timedelta
 
 import jwt as pyjwt
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
+from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule
 from core.security import _is_super_admin, get_current_user, verify_password
 from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
@@ -343,6 +344,52 @@ async def _marketplace_stay_price(
     }
 
 
+async def _marketplace_occupancy_price(
+    *, tenant_id: str, room: dict, pricing: dict, adults: int, child_ages: list[int]
+) -> dict:
+    """Apply the hotel's saved occupancy policy to each shared nightly rate."""
+    rule = await find_occupancy_rule(db, tenant_id, room)
+    if not rule:
+        return {**pricing, "occupancy_pricing": None}
+
+    quoted_nights = []
+    total = 0.0
+    try:
+        for item in pricing.get("nightly_rates", []):
+            quote = calculate_occupancy_quote(
+                base_nightly_rate=item["rate"],
+                nights=1,
+                adults=adults,
+                children_ages=child_ages,
+                rule=rule,
+            )
+            quoted_nights.append({**item, "base_rate": item["rate"], "rate": quote["nightly_total"]})
+            total += quote["nightly_total"]
+    except OccupancyPricingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    summary = calculate_occupancy_quote(
+        base_nightly_rate=pricing["nightly_rates"][0]["rate"] if pricing.get("nightly_rates") else 0,
+        nights=max(len(quoted_nights), 1),
+        adults=adults,
+        children_ages=child_ages,
+        rule=rule,
+    )
+    return {
+        **pricing,
+        "nightly_rates": quoted_nights,
+        "total_price": round(total, 2),
+        "occupancy_pricing": {
+            "pricing_version": summary["pricing_version"],
+            "pricing_type": summary["pricing_type"],
+            "children_ages": summary["children_ages"],
+            "child_breakdown": summary["child_breakdown"],
+            "adult_supplement_nightly": summary["adult_supplement_nightly"],
+            "child_supplement_nightly": summary["child_supplement_nightly"],
+        },
+    }
+
+
 def _commission_for(agency: dict, listing: dict) -> float:
     """Listing'de komisyon override varsa onu, yoksa agency default'unu kullan."""
     pct = listing.get("commission_pct")
@@ -439,11 +486,20 @@ class MarketplaceSearchRequest(BaseModel):
     check_out: str  # YYYY-MM-DD
     adults: int = Field(default=2, ge=1, le=20)
     children: int = Field(default=0, ge=0, le=20)
+    child_ages: list[int] = Field(default_factory=list, max_length=20)
     city: str | None = None
     country: str | None = None
     q: str | None = None
     max_price: float | None = None
     limit: int = Field(default=50, le=200)
+
+    @model_validator(mode="after")
+    def validate_child_ages(self):
+        if any(age < 0 or age > 17 for age in self.child_ages):
+            raise ValueError("Çocuk yaşları 0-17 arasında olmalıdır")
+        if len(self.child_ages) != self.children:
+            raise ValueError("Her çocuk için yaş bilgisi girilmelidir")
+        return self
 
 
 class MarketplaceReservationCreate(BaseModel):
@@ -456,10 +512,19 @@ class MarketplaceReservationCreate(BaseModel):
     guest_phone: str = Field(default="", max_length=40)
     adults: int = Field(default=2, ge=1, le=20)
     children: int = Field(default=0, ge=0, le=20)
+    child_ages: list[int] = Field(default_factory=list, max_length=20)
     special_requests: str = Field(default="", max_length=1000)
     total_amount: float = Field(default=0, ge=0)
     external_reference: str = Field(default="", max_length=160)  # Acentenin kendi PNR/voucher kodu
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_child_ages(self):
+        if any(age < 0 or age > 17 for age in self.child_ages):
+            raise ValueError("Çocuk yaşları 0-17 arasında olmalıdır")
+        if len(self.child_ages) != self.children:
+            raise ValueError("Her çocuk için yaş bilgisi girilmelidir")
+        return self
 
 
 class CancellationProposalCreate(BaseModel):
@@ -969,9 +1034,17 @@ async def agency_hotel_availability(
                 check_out=check_out,
                 fallback_rate=float(rt_data["base_price"] or 0),
             )
+            pricing = await _marketplace_occupancy_price(
+                tenant_id=tenant_id,
+                room=rt_data,
+                pricing=pricing,
+                adults=req.adults,
+                child_ages=req.child_ages,
+            )
             rt_data["nights"] = nights
             rt_data["total_price"] = pricing["total_price"]
             rt_data["nightly_rates"] = pricing["nightly_rates"]
+            rt_data["occupancy_pricing"] = pricing["occupancy_pricing"]
             if not pricing["sellable"]:
                 rt_data["available_rooms"] = 0
             rt_data["commission_pct"] = commission_pct
@@ -1130,6 +1203,13 @@ async def agency_create_reservation(
         )
         if not pricing["sellable"]:
             raise HTTPException(409, "Seçilen oda tipi bu tarihlerde acente satışına kapalı")
+        pricing = await _marketplace_occupancy_price(
+            tenant_id=data.tenant_id,
+            room=available_room,
+            pricing=pricing,
+            adults=data.adults,
+            child_ages=data.child_ages,
+        )
         # Server-side "ground truth" price. Search and booking use this exact helper.
         server_total: float = pricing["total_price"]
         if data.total_amount and data.total_amount > 0:
@@ -1188,6 +1268,7 @@ async def agency_create_reservation(
             "check_out": data.check_out + "T11:00:00",
             "adults": data.adults,
             "children": data.children,
+            "child_ages": data.child_ages,
             "guests_count": data.adults + data.children,
             "status": "confirmed",
             "payment_status": "pending",

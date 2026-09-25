@@ -33,8 +33,9 @@ const initialDates = () => {
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
-  return { check_in: toDateInput(today), check_out: toDateInput(tomorrow), adults: 2, children: 0 };
+  return { check_in: toDateInput(today), check_out: toDateInput(tomorrow), adults: 2, children: 0, child_ages: [] };
 };
+const resizeChildAges = (ages, count) => Array.from({ length: count }, (_, index) => ages?.[index] ?? 0);
 const formatMoney = (amount, currency = 'TRY') => new Intl.NumberFormat('tr-TR', {
   style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
 }).format(Number(amount) || 0);
@@ -79,6 +80,7 @@ const AgencyPortalDashboard = () => {
     guest_phone: '',
     adults: 2,
     children: 0,
+    child_ages: [],
     special_requests: '',
     total_amount: 0,
     idempotency_key: ''
@@ -216,10 +218,11 @@ const AgencyPortalDashboard = () => {
           night_count: Math.max(1, Math.round((new Date(data.check_out) - new Date(data.check_in)) / 86400000)),
           adults: searchForm.adults,
           children: searchForm.children,
+          child_ages: searchForm.child_ages,
           currency: selectedHotel?.currency || 'TRY',
           room_types: (hotelResult?.available_room_types || []).map(room => ({
             ...room,
-            base_price: room.base_price,
+            base_price: room.nightly_rates?.[0]?.rate ?? room.base_price,
             stay_total: room.total_price,
           })),
         });
@@ -244,6 +247,7 @@ const AgencyPortalDashboard = () => {
       guest_phone: '',
       adults: searchForm.adults,
       children: searchForm.children,
+      child_ages: [...searchForm.child_ages],
       special_requests: '',
       total_amount: roomType.stay_total ?? roomType.base_price * nights,
       idempotency_key: crypto.randomUUID()
@@ -265,6 +269,7 @@ const AgencyPortalDashboard = () => {
         guest_phone: bookingForm.guest_phone.trim(),
         adults: bookingForm.adults,
         children: bookingForm.children,
+        child_ages: bookingForm.child_ages,
         special_requests: bookingForm.special_requests.trim(),
       };
       let response;
@@ -543,9 +548,18 @@ const AgencyPortalDashboard = () => {
                   <div className="space-y-1">
                     <Label className="text-xs">Çocuk</Label>
                     <Input type="number" min={0} max={10} value={searchForm.children} onChange={e => setSearchForm(p => ({
-                      ...p, children: Math.max(0, parseInt(e.target.value) || 0)
+                      ...p,
+                      children: Math.max(0, parseInt(e.target.value) || 0),
+                      child_ages: resizeChildAges(p.child_ages, Math.max(0, parseInt(e.target.value) || 0)),
                     }))} className="w-full" />
                   </div>
+                  {searchForm.child_ages.map((age, index) => <div className="space-y-1" key={`search-child-${index}`}>
+                    <Label className="text-xs">{index + 1}. çocuk yaşı</Label>
+                    <Input type="number" min={0} max={17} value={age} onChange={e => setSearchForm(p => ({
+                      ...p,
+                      child_ages: p.child_ages.map((value, childIndex) => childIndex === index ? Math.max(0, Math.min(17, parseInt(e.target.value) || 0)) : value),
+                    }))} data-testid={`search-child-age-${index}`} className="w-full" />
+                  </div>)}
                   <Button onClick={handleSearch} disabled={searchLoading} data-testid="search-availability-btn" className="gap-2 w-full">
                     {searchLoading ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
                     {t('cm.pages_AgencyPortalDashboard.ara')}
@@ -579,6 +593,10 @@ const AgencyPortalDashboard = () => {
                             <div className="text-right">
                               <div className="text-lg font-bold text-slate-800">{formatMoney(rt.stay_total, availability.currency)}</div>
                               <div className="text-[11px] text-slate-500">{availability.night_count} gece toplam · {formatMoney(rt.base_price, availability.currency)}/gece</div>
+                              {rt.occupancy_pricing?.children_ages?.length > 0 && <div className="mt-1 text-[11px] text-violet-700" data-testid={`child-price-${rt.room_type}`}>
+                                Çocuk yaşları ({rt.occupancy_pricing.children_ages.join(', ')}) fiyata dahil
+                                {rt.occupancy_pricing.child_supplement_nightly > 0 ? ` · ${formatMoney(rt.occupancy_pricing.child_supplement_nightly, availability.currency)}/gece çocuk farkı` : ' · ücretsiz'}
+                              </div>}
                               {rt.has_contract && <Badge variant="outline" className="mt-1 text-[10px] border-emerald-300 text-emerald-700">Acente sözleşme fiyatı</Badge>}
                             </div>
                             <Button size="sm" onClick={() => openBookingForm(rt)} data-testid={`book-${rt.room_type}`} className="gap-1">
@@ -739,19 +757,20 @@ const AgencyPortalDashboard = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Yetişkin</Label>
-                <Input type="number" min={1} max={selectedRoomType?.capacity || 20} value={bookingForm.adults} onChange={e => setBookingForm(p => ({
-                ...p,
-                adults: parseInt(e.target.value) || 1
-              }))} />
+                <Input type="number" value={bookingForm.adults} readOnly aria-describedby="quoted-occupancy-note" />
               </div>
               <div>
                 <Label>Çocuk</Label>
-                <Input type="number" min={0} max={selectedRoomType?.capacity || 20} value={bookingForm.children} onChange={e => setBookingForm(p => ({
-                ...p,
-                children: parseInt(e.target.value) || 0
-              }))} />
+                <Input type="number" value={bookingForm.children} readOnly aria-describedby="quoted-occupancy-note" />
               </div>
             </div>
+            {bookingForm.child_ages.length > 0 && <div className="grid grid-cols-2 gap-3">
+              {bookingForm.child_ages.map((age, index) => <div key={`booking-child-${index}`}>
+                <Label>{index + 1}. çocuk yaşı</Label>
+                <Input type="number" value={age} readOnly data-testid={`booking-child-age-${index}`} aria-describedby="quoted-occupancy-note" />
+              </div>)}
+            </div>}
+            <p id="quoted-occupancy-note" className="text-xs text-slate-500">Kişi ve çocuk yaşları arama fiyatına dahildir. Değiştirmek için aramaya dönün.</p>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-testid="booking-amount">
               <div className="flex items-center justify-between gap-3"><span className="text-sm text-emerald-900">Konaklama toplamı</span><strong className="text-emerald-900">{formatMoney(bookingForm.total_amount, availability?.currency || hotelInfo?.currency)}</strong></div>
               <p className="mt-1 text-xs text-emerald-700">{availability?.night_count || 1} gece · Tutar otelin geçerli acente fiyatından sunucu tarafından hesaplanır.</p>
