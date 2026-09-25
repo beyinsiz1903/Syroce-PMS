@@ -32,6 +32,7 @@ from core.tga_outbound import (
     build_batch_envelope,
     build_daily_payload,
     build_monthly_v6_payload,
+    calculate_automatic_average_price_eur,
     get_tga_config,
     list_send_log,
     send_batch,
@@ -238,7 +239,7 @@ async def tuik_monthly(
             "due_on_day": 10,
             "correction_until_day": 25,
             "portal_url": "https://is.kultur.gov.tr/public/login.xhtml",
-            "automatic_submission": False,
+            "automatic_submission": bool(tga_config.get("enabled") and tga_config.get("auto_submit") and tga_config.get("panel_mapping_confirmed")),
         },
         "calculation_rules": {
             "stay_interval": "check_in <= day < check_out",
@@ -534,6 +535,9 @@ class TgaConfigPayload(BaseModel):
     api_key: str | None = None  # boş bırakılırsa mevcut korunur
     environment: str | None = Field(default=None, pattern="^(test|live)$")
     enabled: bool | None = None
+    auto_submit: bool | None = None
+    auto_submit_hour: int | None = Field(default=None, ge=0, le=23)
+    panel_mapping_confirmed: bool | None = None
 
 
 @router.get("/tga/config")
@@ -563,6 +567,9 @@ async def tga_config_set(
             ilce_kodu=payload.ilce_kodu,
             licensed_room_count=payload.licensed_room_count,
             licensed_bed_count=payload.licensed_bed_count,
+            auto_submit=payload.auto_submit,
+            auto_submit_hour=payload.auto_submit_hour,
+            panel_mapping_confirmed=payload.panel_mapping_confirmed,
         )
     except ValueError as ve:
         raise HTTPException(400, str(ve)) from ve
@@ -596,6 +603,32 @@ async def tga_monthly_preview(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"api_version": "v6.0.0", "payload": payload, "sent": False}
+
+
+@router.get("/tga/monthly/automatic-preview")
+async def tga_monthly_automatic_preview(
+    year: int,
+    month: int,
+    data_through: str,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    """Preview the exact fail-closed price and payload used by automation."""
+    try:
+        cutoff = datetime.fromisoformat(data_through).date()
+        pricing = await calculate_automatic_average_price_eur(
+            current_user.tenant_id, year, month, data_through=cutoff
+        )
+        payload = await build_monthly_v6_payload(
+            current_user.tenant_id,
+            year,
+            month,
+            average_price_eur=pricing["average_price_eur"],
+            data_through=cutoff,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"api_version": "v6.0.0", "payload": payload, "pricing": pricing, "sent": False}
 
 
 @router.post("/tga/monthly/send")

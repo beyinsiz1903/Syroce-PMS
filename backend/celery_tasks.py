@@ -29,6 +29,22 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(name="celery_tasks.tga_automatic_submission_task")
+def tga_automatic_submission_task():
+    """Dispatch due tenant-local TGA v6 cumulative monthly reports."""
+    from core.tga_outbound import run_automatic_submissions
+
+    return asyncio.run(run_automatic_submissions())
+
+
+@celery_app.task(name="celery_tasks.tga_monthly_v6_retry_task")
+def tga_monthly_v6_retry_task():
+    """Retry transient failures from the official TGA v6 endpoint."""
+    from core.tga_outbound import retry_failed_monthly_v6
+
+    return asyncio.run(retry_failed_monthly_v6())
+
+
 # MongoDB connection for tasks
 def get_db():
     """Get database connection"""

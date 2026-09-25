@@ -141,6 +141,16 @@ celery_app.conf.update(
             "task": "celery_tasks.kbs_nightly_sweep_dispatch_task",
             "schedule": crontab(minute="*"),
         },
+        # TGA v6 automatic reporting. The task evaluates each hotel's local
+        # configured hour and uses a per-local-day atomic claim.
+        "tga-automatic-submission": {
+            "task": "celery_tasks.tga_automatic_submission_task",
+            "schedule": crontab(minute=10),
+        },
+        "tga-monthly-v6-retry": {
+            "task": "celery_tasks.tga_monthly_v6_retry_task",
+            "schedule": crontab(minute="*/5"),
+        },
         # Contact Center Faz 2 (Task #648) — çağrı kaydı retention sweep.
         # Her gün 02:30'da süresi dolan (CC_RECORDING_RETENTION_DAYS) kayıtları
         # ayrı nesne deposundan siler ve recording_ref'i kaldırır. Fail-closed:

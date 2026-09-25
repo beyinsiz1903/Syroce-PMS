@@ -199,7 +199,10 @@ export default function MevzuatRaporlari({
     licensed_bed_count: "",
     api_key: "",
     environment: "test",
-    enabled: false
+    enabled: false,
+    auto_submit: false,
+    auto_submit_hour: 5,
+    panel_mapping_confirmed: false
   });
   const [tgaLog, setTgaLog] = useState([]);
   const [tgaPreview, setTgaPreview] = useState(null);
@@ -221,7 +224,10 @@ export default function MevzuatRaporlari({
         licensed_bed_count: data.licensed_bed_count || "",
         api_key: "",
         environment: data.environment || "test",
-        enabled: !!data.enabled
+        enabled: !!data.enabled,
+        auto_submit: !!data.auto_submit,
+        auto_submit_hour: data.auto_submit_hour ?? 5,
+        panel_mapping_confirmed: !!data.panel_mapping_confirmed
       });
     } catch {
       toast.error("TGA ayarları yüklenemedi");
@@ -319,7 +325,7 @@ export default function MevzuatRaporlari({
   // TGA dirty flag — form değişti, henüz kaydedilmedi.
   const tgaDirty = useMemo(() => {
     if (!tgaCfg) return false;
-    return (tgaForm.facility_id || "") !== (tgaCfg.facility_id || "") || (tgaForm.il_kodu || "") !== (tgaCfg.il_kodu || "") || (tgaForm.ilce_kodu || "") !== (tgaCfg.ilce_kodu || "") || Number(tgaForm.licensed_room_count || 0) !== Number(tgaCfg.licensed_room_count || 0) || Number(tgaForm.licensed_bed_count || 0) !== Number(tgaCfg.licensed_bed_count || 0) || (tgaForm.environment || "test") !== (tgaCfg.environment || "test") || !!tgaForm.enabled !== !!tgaCfg.enabled || !!tgaForm.api_key;
+    return (tgaForm.facility_id || "") !== (tgaCfg.facility_id || "") || (tgaForm.il_kodu || "") !== (tgaCfg.il_kodu || "") || (tgaForm.ilce_kodu || "") !== (tgaCfg.ilce_kodu || "") || Number(tgaForm.licensed_room_count || 0) !== Number(tgaCfg.licensed_room_count || 0) || Number(tgaForm.licensed_bed_count || 0) !== Number(tgaCfg.licensed_bed_count || 0) || (tgaForm.environment || "test") !== (tgaCfg.environment || "test") || !!tgaForm.enabled !== !!tgaCfg.enabled || !!tgaForm.auto_submit !== !!tgaCfg.auto_submit || Number(tgaForm.auto_submit_hour) !== Number(tgaCfg.auto_submit_hour ?? 5) || !!tgaForm.panel_mapping_confirmed !== !!tgaCfg.panel_mapping_confirmed || !!tgaForm.api_key;
   }, [tgaForm, tgaCfg]);
   const sendDisabledReason = (() => {
     if (!tgaCfg) return "TGA ayarları yükleniyor.";
@@ -507,7 +513,7 @@ export default function MevzuatRaporlari({
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-slate-500">Bu çıktı KTB kontrolü ve TGA v6 aylık API gönderimi için ortak kaynak veridir. Syroce kullanıcı onayı olmadan resmî gönderim yapmaz.</p>
+              <p className="text-xs text-slate-500">Bu çıktı KTB kontrolü ve TGA v6 API gönderimi için ortak kaynak veridir. Otomatik gönderim yalnız canlı anahtar ve TGA panelindeki tesis eşleştirmesi doğrulandıktan sonra çalışır.</p>
             </>}
         </div>}
 
@@ -591,6 +597,32 @@ export default function MevzuatRaporlari({
                 })} />
                       Entegrasyonu etkinleştir
                     </label>
+                  </div>
+                  <div className="md:col-span-2 border rounded-lg p-3 space-y-3 bg-slate-50">
+                    <div className="text-sm font-medium">Otomatik günlük gönderim</div>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input type="checkbox" className="mt-1" checked={tgaForm.panel_mapping_confirmed} onChange={e => setTgaForm({
+                  ...tgaForm,
+                  panel_mapping_confirmed: e.target.checked
+                })} />
+                      <span>TGA web panelinde bu Syroce tesis UUID'sini doğru tesisle eşleştirdiğimi doğruluyorum.</span>
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label className="inline-flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={tgaForm.auto_submit} onChange={e => setTgaForm({
+                    ...tgaForm,
+                    auto_submit: e.target.checked
+                  })} />
+                        Otomatik gönderimi etkinleştir
+                      </label>
+                      <label className="text-xs text-slate-600">Yerel gönderim saati
+                        <input type="number" min="0" max="23" className="mt-1 w-full border rounded px-3 py-2 text-sm bg-white" value={tgaForm.auto_submit_hour} onChange={e => setTgaForm({
+                    ...tgaForm,
+                    auto_submit_hour: Number(e.target.value)
+                  })} />
+                      </label>
+                    </div>
+                    <p className="text-xs text-slate-600">Net oda fiyatı gerçekleşmiş Night Audit oda kayıtlarından; EUR dönüşümü resmî TCMB döviz satış kurundan hesaplanır. Veri veya kur eksikse gönderim güvenli biçimde durdurulur.</p>
                   </div>
                 </div>
 
