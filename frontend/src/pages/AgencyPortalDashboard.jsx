@@ -464,6 +464,10 @@ const AgencyPortalDashboard = () => {
             </div>
             <CardTitle className="text-xl">Acente Portalı</CardTitle>
             <p className="text-sm text-slate-500 mt-1">{t('cm.pages_AgencyPortalDashboard.acente_hesabinizla_giris_yapin')}</p>
+            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+              Hesap türünüz otomatik belirlenir. Global marketplace hesabı tüm sözleşmeli tesisleri,
+              otel bağlantılı hesap ise yalnız ilgili tesisi gösterir.
+            </p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -506,6 +510,8 @@ const AgencyPortalDashboard = () => {
   </div>;
 
   // ─── MAIN PORTAL ───
+  const workspaceLabel = portalMode === 'marketplace' ? 'Global marketplace' : 'Otel bağlantılı portal';
+  const signedInIdentity = agencyUser?.email || agencyUser?.name || '';
   return <div className="min-h-screen bg-slate-50" data-testid="agency-portal-dashboard">
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-30">
@@ -515,8 +521,15 @@ const AgencyPortalDashboard = () => {
               <Building2 size={18} className="text-emerald-700" />
             </div>
             <div>
-              <div className="font-semibold text-slate-800 text-sm">{portalMode === 'marketplace' ? 'Acente Otel Satış Portalı' : (hotelInfo?.name || 'Otel Satış Portalı')}</div>
-              <div className="text-xs text-slate-500">{agencyInfo?.name || 'Acente'} · {agencyUser?.name || ''}</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="font-semibold text-slate-800 text-sm">{portalMode === 'marketplace' ? 'Acente Otel Satış Portalı' : (hotelInfo?.name || 'Otel Satış Portalı')}</div>
+                <Badge variant="outline" className={portalMode === 'marketplace' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-blue-300 bg-blue-50 text-blue-800'} data-testid="agency-workspace-type">
+                  {workspaceLabel}
+                </Badge>
+              </div>
+              <div className="text-xs text-slate-500" data-testid="agency-session-identity">
+                {agencyInfo?.name || 'Acente'}{signedInIdentity ? ` · ${signedInIdentity}` : ''}
+              </div>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={handleLogout} data-testid="agency-logout-btn">
