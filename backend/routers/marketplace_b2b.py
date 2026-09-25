@@ -351,6 +351,18 @@ def _commission_for(agency: dict, listing: dict) -> float:
     return float(pct)
 
 
+def _syroce_b2b_fee(total: float, source: str) -> tuple[float, float]:
+    """Return the marketplace service fee without changing the hotel net.
+
+    Direct API integrations are billed at 1%; reservations created in the
+    hosted extranet include the additional UI/operations service and are
+    billed at 2%.  Keeping this calculation next to commission setup ensures
+    the values exist before the PMS booking becomes durable.
+    """
+    fee_pct = 2.0 if source == "extranet_ui" else 1.0
+    return fee_pct, round(float(total) * fee_pct / 100, 2)
+
+
 # ─── Pydantic Modelleri ───────────────────────────────────────────────────
 
 
@@ -1097,6 +1109,7 @@ async def agency_create_reservation(
                 )
         total = server_total
         commission_amount = round(total * commission_pct / 100, 2)
+        syroce_b2b_fee_pct, syroce_b2b_fee_amount = _syroce_b2b_fee(total, agency.get("source", "syroce_agency_app"))
         net_to_hotel = round(total - commission_amount, 2)
         credit_limit = contract.get("credit_limit")
         if credit_limit is not None:
