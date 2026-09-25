@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 
 import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
@@ -42,7 +42,7 @@ from core.security import (
 )
 from models.enums import UserRole
 from models.schemas import User
-from security.encrypted_lookup import build_user_email_query, decrypt_user_doc
+from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, encrypt_user_doc
 
 # Bug AI mirror — precomputed bcrypt hash so verify_password burns equal
 # CPU on ghost users (see `auth.py:97`). Module-level so the bcrypt cost
@@ -147,13 +147,15 @@ class AgencyReservationCreate(BaseModel):
     room_type_id: str
     check_in: str  # YYYY-MM-DD
     check_out: str  # YYYY-MM-DD
-    guest_name: str
-    guest_email: str = ""
+    guest_name: str = Field(..., min_length=2, max_length=160)
+    guest_email: EmailStr | None = None
     guest_phone: str = ""
-    adults: int = 2
-    children: int = 0
-    special_requests: str = ""
-    total_amount: float = 0
+    adults: int = Field(2, ge=1, le=20)
+    children: int = Field(0, ge=0, le=20)
+    special_requests: str = Field("", max_length=1000)
+    # Backwards-compatible input only. The server always recalculates the
+    # authoritative amount; a browser must never be able to set its own rate.
+    total_amount: float | None = Field(None, ge=0)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────
@@ -185,6 +187,30 @@ def _require_agency_user(user: User):
     if isinstance(extra_roles, list) and any(r in ("agency_admin", "agency_agent", "super_admin") for r in extra_roles):
         return
     raise HTTPException(status_code=403, detail="Bu endpoint sadece acente kullanicilari icindir")
+
+
+async def _active_agency_for(user: User) -> dict | None:
+    """Return the tenant-scoped active agency for every portal operation."""
+    if _is_super_admin(user):
+        return None
+    agency_id = getattr(user, "agency_id", None)
+    if not agency_id:
+        raise HTTPException(status_code=403, detail="Acente bağlantısı bulunamadı")
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": user.tenant_id}, {"_id": 0})
+    if not agency or agency.get("status") != "active":
+        raise HTTPException(status_code=403, detail="Acente hesabı aktif değil")
+    return agency
+
+
+def _parse_stay_dates(check_in: str, check_out: str):
+    try:
+        ci = datetime.strptime(check_in, "%Y-%m-%d").date()
+        co = datetime.strptime(check_out, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Tarihler YYYY-AA-GG biçiminde olmalıdır")
+    if co <= ci:
+        raise HTTPException(status_code=400, detail="Çıkış tarihi girişten sonra olmalıdır")
+    return ci, co
 
 
 async def _get_agency_user_from_token(token: str) -> dict:
@@ -465,11 +491,10 @@ async def create_agency_user(
         "status": "active",
         "created_at": _now_iso(),
     }
-    await db.users.insert_one(user_doc)
-    user_doc.pop("_id", None)
-    user_doc.pop("hashed_password", None)
-    user_doc.pop("password", None)  # belt-and-braces for any legacy leak
-    return user_doc
+    response_doc = {key: value for key, value in user_doc.items() if key not in {"hashed_password", "password"}}
+    encrypted_user_doc = encrypt_user_doc(user_doc)
+    await db.users.insert_one(encrypted_user_doc)
+    return response_doc
 
 
 @router.get("/agencies/{agency_id}/users")
@@ -483,7 +508,7 @@ async def list_agency_users(agency_id: str, current_user: User = Depends(get_cur
         # `password`) variant leaks into the agency-users listing.
         {"_id": 0, "password": 0, "hashed_password": 0, "password_hash": 0},
     ).to_list(100)
-    return docs
+    return [decrypt_user_doc(doc) for doc in docs]
 
 
 @router.delete("/agencies/users/{user_id}")
@@ -518,7 +543,6 @@ async def list_agency_reservations(agency_id: str | None = None, current_user: U
 # ═══════════════════════════════════════════════════════════════════
 
 
-@router.post("/agency-portal/auth/login")
 # ─── B2B Extranet (Phase 1) ──────────────────────────────────────
 
 @router.post("/agencies/{agency_id}/contracts")
@@ -591,6 +615,7 @@ async def list_agency_allotments(agency_id: str, current_user: User = Depends(ge
     return {"allotments": allotments}
 
 
+@router.post("/agency-portal/auth/login")
 async def agency_login(request: Request, data: AgencyLoginRequest):
     """Acente giris."""
     # Task-135 (P0 drain fix) — Throttle wiring uses a **verify-first,
@@ -742,10 +767,11 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
 async def agency_portal_profile(current_user: User = Depends(get_current_user)):
     """Acente profil ve otel bilgisi."""
     _require_agency_user(current_user)
+    active_agency = await _active_agency_for(current_user)
     agency_id = getattr(current_user, "agency_id", None)
     agency = None
     if agency_id:
-        agency = await db.agencies.find_one({"id": agency_id}, {"_id": 0})
+        agency = active_agency
     elif not _is_super_admin(current_user):
         raise HTTPException(status_code=400, detail="Acente bilgisi bulunamadi")
 
@@ -753,10 +779,14 @@ async def agency_portal_profile(current_user: User = Depends(get_current_user)):
 
     return {
         "agency": agency,
+        "user": {"id": current_user.id, "name": current_user.name, "email": current_user.email,
+                 "role": getattr(current_user.role, "value", current_user.role)},
         "hotel": {
             "name": tenant.get("property_name", "") if tenant else "",
             "address": tenant.get("address", "") if tenant else "",
             "phone": tenant.get("contact_phone", "") if tenant else "",
+            "email": (tenant.get("contact_email") or tenant.get("email") or "") if tenant else "",
+            "currency": (tenant.get("currency") or "TRY") if tenant else "TRY",
         },
     }
 
@@ -765,6 +795,7 @@ async def agency_portal_profile(current_user: User = Depends(get_current_user)):
 async def agency_portal_content(current_user: User = Depends(get_current_user)):
     """Acenteye dagitilmis otel icerigi."""
     _require_agency_user(current_user)
+    await _active_agency_for(current_user)
     agency_id = getattr(current_user, "agency_id", None)
     tenant_id = current_user.tenant_id
 
@@ -815,30 +846,34 @@ async def _get_b2b_allotment(db, tenant_id: str, agency_id: str, check_in: str, 
 async def agency_portal_availability(
     check_in: str = Query(..., description="YYYY-MM-DD"),
     check_out: str = Query(..., description="YYYY-MM-DD"),
-    adults: int = Query(2),
+    adults: int = Query(2, ge=1, le=20),
+    children: int = Query(0, ge=0, le=20),
     current_user: User = Depends(get_current_user),
 ):
     """Musaitlik sorgula — acente portali."""
     _require_agency_user(current_user)
+    agency = await _active_agency_for(current_user)
     tenant_id = current_user.tenant_id
-
-    ci = datetime.fromisoformat(check_in + "T00:00:00+00:00")
-    co = datetime.fromisoformat(check_out + "T00:00:00+00:00")
-    if co <= ci:
-        raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
+    ci, co = _parse_stay_dates(check_in, check_out)
+    nights = (co - ci).days
 
     # Get all room types for this hotel
     rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+    party_size = adults + children
 
     # Group by room_type
     room_types = {}
     for r in rooms:
+        if r.get("status") in {"maintenance", "out_of_order", "blocked"} or r.get("is_active") is False:
+            continue
+        if int(r.get("capacity") or 2) < party_size:
+            continue
         rt = r.get("room_type", "Standard")
         if rt not in room_types:
             room_types[rt] = {
                 "room_type": rt,
                 "capacity": r.get("capacity", 2),
-                "base_price": r.get("base_price", 0),
+                "base_price": float(r.get("base_price") or 0),
                 "amenities": r.get("amenities", []),
                 "total_rooms": 0,
                 "booked_rooms": 0,
@@ -847,6 +882,10 @@ async def agency_portal_availability(
             }
         room_types[rt]["total_rooms"] += 1
         room_types[rt]["room_ids"].append(r.get("id"))
+        room_types[rt]["capacity"] = max(room_types[rt]["capacity"], int(r.get("capacity") or 2))
+        positive_price = float(r.get("base_price") or 0)
+        if positive_price > 0 and (room_types[rt]["base_price"] <= 0 or positive_price < room_types[rt]["base_price"]):
+            room_types[rt]["base_price"] = positive_price
 
     # Count booked rooms for date range
     for rt_name, rt_data in room_types.items():
@@ -858,17 +897,27 @@ async def agency_portal_availability(
                 # Hotel nights are [check_in, check_out): a departure date is
                 # immediately sellable for a new arrival.
                 "check_in": {"$lt": check_out + "T00:00:00"},
-                "check_out": {"$gt": check_in + "T23:59:59.999999"},
+                "check_out": {"$gt": check_in + "T00:00:00"},
             }
         )
         rt_data["booked_rooms"] = booked_count
         public_available = max(0, rt_data["total_rooms"] - booked_count)
 
         # B2B Allotment Check
-        if getattr(current_user, "agency_id", None):
+        if agency:
             allotment_count = await _get_b2b_allotment(db, tenant_id, current_user.agency_id, check_in, rt_name)
             if allotment_count is not None:
-                rt_data["available_rooms"] = max(public_available, allotment_count)
+                agency_booked = await db.bookings.count_documents(
+                    {
+                        "tenant_id": tenant_id,
+                        "agency_id": current_user.agency_id,
+                        "room_id": {"$in": rt_data["room_ids"]},
+                        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                        "check_in": {"$lt": check_out + "T00:00:00"},
+                        "check_out": {"$gt": check_in + "T00:00:00"},
+                    }
+                )
+                rt_data["available_rooms"] = min(public_available, max(0, allotment_count - agency_booked))
             else:
                 rt_data["available_rooms"] = public_available
 
@@ -878,9 +927,13 @@ async def agency_portal_availability(
         else:
             rt_data["available_rooms"] = public_available
         rt_data.pop("room_ids")  # Don't expose internal IDs
+        rt_data["night_count"] = nights
+        rt_data["stay_total"] = round(float(rt_data["base_price"]) * nights, 2)
 
-    results = [v for v in room_types.values() if v["available_rooms"] > 0]
-    return {"check_in": check_in, "check_out": check_out, "room_types": results}
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "currency": 1})
+    results = [v for v in room_types.values() if v["available_rooms"] > 0 and int(v.get("capacity") or 0) >= party_size]
+    return {"check_in": check_in, "check_out": check_out, "night_count": nights, "adults": adults,
+            "children": children, "currency": (tenant or {}).get("currency") or "TRY", "room_types": results}
 
 
 @router.post("/agency-portal/reservations")
@@ -890,19 +943,24 @@ async def agency_portal_create_reservation(
 ):
     """Acente rezervasyonu olustur — otomatik PMS'e duser."""
     _require_agency_user(current_user)
+    agency = await _active_agency_for(current_user)
     tenant_id = current_user.tenant_id
     agency_id = getattr(current_user, "agency_id", None)
 
-    ci = datetime.fromisoformat(data.check_in + "T14:00:00+00:00")
-    co = datetime.fromisoformat(data.check_out + "T11:00:00+00:00")
-    if co <= ci:
-        raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
+    ci_date, co_date = _parse_stay_dates(data.check_in, data.check_out)
+    nights = (co_date - ci_date).days
 
     # Find an available room of the requested type
     rooms = await db.rooms.find({"tenant_id": tenant_id, "room_type": data.room_type_id}, {"_id": 0}).to_list(500)
+    rooms = [room for room in rooms if room.get("status") not in {"maintenance", "out_of_order", "blocked"}
+             and room.get("is_active") is not False]
 
     if not rooms:
         raise HTTPException(status_code=404, detail="Bu oda tipi bulunamadi")
+    eligible_rooms = [room for room in rooms if int(room.get("capacity") or 2) >= data.adults + data.children]
+    if not eligible_rooms:
+        raise HTTPException(status_code=400, detail="Misafir sayısı seçilen oda tipinin kapasitesini aşıyor")
+    rooms = eligible_rooms
 
     available_room = None
     for room in rooms:
@@ -912,7 +970,7 @@ async def agency_portal_create_reservation(
                 "room_id": room["id"],
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
                 "check_in": {"$lt": data.check_out + "T00:00:00"},
-                "check_out": {"$gt": data.check_in + "T23:59:59.999999"},
+                "check_out": {"$gt": data.check_in + "T00:00:00"},
             }
         )
         if conflict == 0:
@@ -922,18 +980,36 @@ async def agency_portal_create_reservation(
     if not available_room:
         raise HTTPException(status_code=409, detail="Secilen tarihler icin musait oda bulunamadi")
 
+    # Recheck agency allotment at write time as well as search time so a
+    # direct or concurrent request cannot reserve beyond the allocation.
+    if agency_id:
+        allotment_count = await _get_b2b_allotment(db, tenant_id, agency_id, data.check_in, data.room_type_id)
+        if allotment_count is not None:
+            agency_booked = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "agency_id": agency_id,
+                    "room_id": {"$in": [room["id"] for room in rooms]},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                    "check_in": {"$lt": data.check_out + "T00:00:00"},
+                    "check_out": {"$gt": data.check_in + "T00:00:00"},
+                }
+            )
+            if agency_booked >= allotment_count:
+                raise HTTPException(status_code=409, detail="Acente kontenjanı bu tarihler için dolu")
+
     # Get agency info
-    agency = await db.agencies.find_one({"id": agency_id}, {"_id": 0})
     agency_name = agency.get("name", "Bilinmeyen Acente") if agency else "Bilinmeyen Acente"
     commission_rate = agency.get("commission_rate", 0) if agency else 0
 
     # Create guest
     guest_id = _uuid()
+    guest_email = str(data.guest_email or "").strip().lower()
     guest_doc = {
         "id": guest_id,
         "tenant_id": tenant_id,
         "name": data.guest_name.strip(),
-        "email": data.guest_email.strip() or f"agency-{guest_id[:8]}@placeholder.local",
+        "email": guest_email or f"agency-{guest_id[:8]}@placeholder.local",
         "phone": data.guest_phone.strip(),
         "id_number": "",
         "vip_status": False,
@@ -945,24 +1021,31 @@ async def agency_portal_create_reservation(
     from security.guest_write import encrypt_guest_insert
 
     guest_doc = encrypt_guest_insert(guest_doc)
-    await db.guests.insert_one(guest_doc)
 
     # Create booking directly in PMS
     booking_id = _uuid()
     confirmation_code = f"AGN-{booking_id[:8].upper()}"
     # Bill calendar nights: 14:00 check-in / 11:00 check-out must not
     # truncate a two-night stay to one night.
-    nights = (co.date() - ci.date()).days
-    total = data.total_amount if data.total_amount > 0 else available_room.get("base_price", 0) * max(nights, 1)
+    public_unit_price = min(
+        (float(room.get("base_price") or 0) for room in rooms if float(room.get("base_price") or 0) > 0),
+        default=0,
+    )
+    total = public_unit_price * nights
 
     has_contract = False
     if getattr(current_user, "agency_id", None):
-        b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, data.check_in, data.room_type_id, available_room.get("base_price", 0))
+        b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, data.check_in, data.room_type_id, public_unit_price)
         if has_contract:
             # Masked assignment to prevent breaking brittle AST parsers looking for "total ="
-            [_, total] = [None, b2b_price * max(nights, 1)]
+            [_, total] = [None, b2b_price * nights]
+    total = round(float(total), 2)
+    if total <= 0:
+        raise HTTPException(status_code=409, detail="Bu oda tipi için geçerli satış fiyatı tanımlı değil")
 
     commission_amount = round(total * commission_rate / 100, 2)
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "currency": 1})
+    currency = (tenant or {}).get("currency") or "TRY"
 
     # Credit Limit Check
     if getattr(current_user, "agency_id", None) and has_contract:
@@ -989,6 +1072,7 @@ async def agency_portal_create_reservation(
         "payment_status": "pending",
         "total_amount": total,
         "balance": total,
+        "currency": currency,
         "channel": "agency",
         "source_channel": "agency",
         "agency_id": agency_id,
@@ -999,7 +1083,7 @@ async def agency_portal_create_reservation(
         "confirmation_code": confirmation_code,
         "special_requests": data.special_requests,
         "guest_name": data.guest_name.strip(),
-        "guest_email": data.guest_email.strip(),
+        "guest_email": guest_email,
         "guest_phone": data.guest_phone.strip(),
         "origin": "agency_portal",
         "created_at": _now_iso(),
@@ -1011,9 +1095,14 @@ async def agency_portal_create_reservation(
     # unique compound index on (tenant_id, room_id, night_date) prevents
     # concurrent agency requests from claiming the same room.
     try:
+        await db.guests.insert_one(guest_doc)
         booking_doc = await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking_doc)
     except BookingConflictError as conflict_err:
+        await db.guests.delete_one({"id": guest_id, "tenant_id": tenant_id})
         raise HTTPException(status_code=409, detail=str(conflict_err))
+    except Exception:
+        await db.guests.delete_one({"id": guest_id, "tenant_id": tenant_id})
+        raise
 
     return {
         "ok": True,
@@ -1026,6 +1115,7 @@ async def agency_portal_create_reservation(
 async def agency_portal_list_reservations(current_user: User = Depends(get_current_user)):
     """Acente kendi rezervasyonlarini listele."""
     _require_agency_user(current_user)
+    await _active_agency_for(current_user)
     agency_id = getattr(current_user, "agency_id", None)
 
     docs = (

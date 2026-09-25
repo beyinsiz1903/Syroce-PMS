@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Search, CalendarDays, Users, Bed, ChevronRight, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin } from 'lucide-react';
+import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,14 +10,46 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
-const API_BASE = '';
+const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '/api';
+const API_BASE = RAW_BACKEND_URL.endsWith('/api') ? RAW_BACKEND_URL : `${RAW_BACKEND_URL.replace(/\/+$/, '')}/api`;
+// Isolated client: never inherit a hotel employee's Authorization header.
+const agencyApi = axios.create({ baseURL: API_BASE, timeout: 30000, withCredentials: false });
+agencyApi.interceptors.request.use(config => {
+  const agencyToken = localStorage.getItem('agency_token');
+  config.headers = config.headers || {};
+  if (agencyToken && !String(config.url || '').includes('/auth/login')) {
+    config.headers.Authorization = `Bearer ${agencyToken}`;
+  } else {
+    delete config.headers.Authorization;
+  }
+  return config;
+});
+
+const toDateInput = date => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+};
+const initialDates = () => {
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  return { check_in: toDateInput(today), check_out: toDateInput(tomorrow), adults: 2, children: 0 };
+};
+const formatMoney = (amount, currency = 'TRY') => new Intl.NumberFormat('tr-TR', {
+  style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
+}).format(Number(amount) || 0);
+const formatDate = value => value ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date(`${String(value).slice(0, 10)}T12:00:00`)) : '—';
 const AgencyPortalDashboard = () => {
   const {
     t
   } = useTranslation();
   const [agencyUser, setAgencyUser] = useState(null);
   const [agencyInfo, setAgencyInfo] = useState(null);
+  const [hotelInfo, setHotelInfo] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('agency_token'));
+  const [profileLoading, setProfileLoading] = useState(Boolean(localStorage.getItem('agency_token')));
+  const [profileError, setProfileError] = useState('');
+  const [profileRevision, setProfileRevision] = useState(0);
 
   // Login
   const [loginForm, setLoginForm] = useState({
@@ -31,11 +63,7 @@ const AgencyPortalDashboard = () => {
   const [contentLoading, setContentLoading] = useState(false);
 
   // Availability
-  const [searchForm, setSearchForm] = useState({
-    check_in: '',
-    check_out: '',
-    adults: 2
-  });
+  const [searchForm, setSearchForm] = useState(initialDates);
   const [availability, setAvailability] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -56,9 +84,6 @@ const AgencyPortalDashboard = () => {
   // Reservations list
   const [reservations, setReservations] = useState([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
-  const authHeaders = () => ({
-    headers: {}
-  });
 
   // Login handler
   const handleLogin = async e => {
@@ -67,12 +92,16 @@ const AgencyPortalDashboard = () => {
     try {
       const {
         data
-      } = await axios.post(`${API_BASE}/agency-portal/auth/login`, loginForm);
+      } = await agencyApi.post('/agency-portal/auth/login', {
+        email: loginForm.email.trim().toLowerCase(), password: loginForm.password,
+      });
       localStorage.setItem('agency_token', data.token);
+      setProfileLoading(true);
       setToken(data.token);
       setAgencyUser(data.user);
       setAgencyInfo(data.agency);
-      toast.success('Giriş basarili');
+      setProfileError('');
+      toast.success('Giriş başarılı');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Giriş hatası');
     } finally {
@@ -84,9 +113,12 @@ const AgencyPortalDashboard = () => {
     setToken(null);
     setAgencyUser(null);
     setAgencyInfo(null);
+    setHotelInfo(null);
     setContent(null);
     setAvailability(null);
     setReservations([]);
+    setProfileLoading(false);
+    setProfileError('');
   };
 
   // Load profile on mount if token exists
@@ -96,18 +128,20 @@ const AgencyPortalDashboard = () => {
       try {
         const {
           data
-        } = await axios.get(`${API_BASE}/agency-portal/profile`, authHeaders());
-        setAgencyUser(prev => prev || {
-          name: data.agency?.name || ''
-        });
+        } = await agencyApi.get('/agency-portal/profile');
+        setAgencyUser(data.user || null);
         setAgencyInfo(data.agency);
-      } catch {
-        handleLogout();
+        setHotelInfo(data.hotel || null);
+        setProfileError('');
+      } catch (err) {
+        if (err.response?.status === 401 || err.response?.status === 403) handleLogout();
+        else setProfileError('Acente hesabı doğrulanamadı. Bağlantınızı kontrol edip tekrar deneyin.');
+      } finally {
+        setProfileLoading(false);
       }
     };
     loadProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, []);
+  }, [token, profileRevision]);
 
   // Load content
   const loadContent = async () => {
@@ -115,10 +149,10 @@ const AgencyPortalDashboard = () => {
     try {
       const {
         data
-      } = await axios.get(`${API_BASE}/agency-portal/content`, authHeaders());
+      } = await agencyApi.get('/agency-portal/content');
       setContent(data);
     } catch {
-      toast.error('Icerik yüklenemedi');
+      toast.error('Otel bilgileri yüklenemedi');
     } finally {
       setContentLoading(false);
     }
@@ -127,14 +161,12 @@ const AgencyPortalDashboard = () => {
   // Search availability
   const handleSearch = async () => {
     if (!searchForm.check_in || !searchForm.check_out) return toast.error('Tarih seçin');
+    if (searchForm.check_out <= searchForm.check_in) return toast.error('Çıkış tarihi girişten sonra olmalıdır');
     setSearchLoading(true);
     try {
       const {
         data
-      } = await axios.get(`${API_BASE}/agency-portal/availability`, {
-        ...authHeaders(),
-        params: searchForm
-      });
+      } = await agencyApi.get('/agency-portal/availability', { params: searchForm });
       setAvailability(data);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Arama hatası');
@@ -152,24 +184,32 @@ const AgencyPortalDashboard = () => {
       guest_email: '',
       guest_phone: '',
       adults: searchForm.adults,
-      children: 0,
+      children: searchForm.children,
       special_requests: '',
-      total_amount: roomType.base_price * nights
+      total_amount: roomType.stay_total ?? roomType.base_price * nights
     });
     setShowBookingForm(true);
   };
   const handleBooking = async () => {
-    if (!bookingForm.guest_name.trim()) return toast.error('Misafir adi gerekli');
+    if (bookingForm.guest_name.trim().length < 2) return toast.error('Misafir adı en az 2 karakter olmalıdır');
+    if (bookingForm.adults + bookingForm.children > Number(selectedRoomType?.capacity || 0)) {
+      return toast.error('Misafir sayısı seçilen odanın kapasitesini aşıyor');
+    }
     setBookingLoading(true);
     try {
       const {
         data
-      } = await axios.post(`${API_BASE}/agency-portal/reservations`, {
+      } = await agencyApi.post('/agency-portal/reservations', {
         room_type_id: selectedRoomType.room_type,
         check_in: searchForm.check_in,
         check_out: searchForm.check_out,
-        ...bookingForm
-      }, authHeaders());
+        guest_name: bookingForm.guest_name.trim(),
+        guest_email: bookingForm.guest_email.trim() || null,
+        guest_phone: bookingForm.guest_phone.trim(),
+        adults: bookingForm.adults,
+        children: bookingForm.children,
+        special_requests: bookingForm.special_requests.trim(),
+      });
       toast.success(data.message || 'Rezervasyon oluşturuldu');
       setShowBookingForm(false);
       setAvailability(null);
@@ -187,8 +227,8 @@ const AgencyPortalDashboard = () => {
     try {
       const {
         data
-      } = await axios.get(`${API_BASE}/agency-portal/reservations`, authHeaders());
-      setReservations(data);
+      } = await agencyApi.get('/agency-portal/reservations');
+      setReservations(Array.isArray(data) ? data : data.items || []);
     } catch {
       toast.error('Rezervasyonlar yüklenemedi');
     } finally {
@@ -196,10 +236,10 @@ const AgencyPortalDashboard = () => {
     }
   };
   const statusLabels = {
-    confirmed: 'Onaylandi',
+    confirmed: 'Onaylandı',
     pending: 'Beklemede',
-    checked_in: 'Giriş Yapti',
-    checked_out: 'Çıkış Yapti',
+    checked_in: 'Giriş Yaptı',
+    checked_out: 'Çıkış Yaptı',
     cancelled: 'İptal'
   };
   const statusColors = {
@@ -218,21 +258,21 @@ const AgencyPortalDashboard = () => {
             <div className="w-14 h-14 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto mb-3">
               <Building2 size={28} className="text-emerald-700" />
             </div>
-            <CardTitle className="text-xl">Acente Portali</CardTitle>
+            <CardTitle className="text-xl">Acente Portalı</CardTitle>
             <p className="text-sm text-slate-500 mt-1">{t('cm.pages_AgencyPortalDashboard.acente_hesabinizla_giris_yapin')}</p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <Label>E-posta</Label>
-                <Input type="email" required value={loginForm.email} onChange={e => setLoginForm(p => ({
+                <Input type="email" autoComplete="username" required value={loginForm.email} onChange={e => setLoginForm(p => ({
                 ...p,
                 email: e.target.value
               }))} data-testid="agency-login-email" placeholder="ornek@acente.com" />
               </div>
               <div>
-                <Label>Sifre</Label>
-                <Input type="password" required value={loginForm.password} onChange={e => setLoginForm(p => ({
+                <Label>Şifre</Label>
+                <Input type="password" autoComplete="current-password" required value={loginForm.password} onChange={e => setLoginForm(p => ({
                 ...p,
                 password: e.target.value
               }))} data-testid="agency-login-password" />
@@ -247,6 +287,20 @@ const AgencyPortalDashboard = () => {
       </div>;
   }
 
+  if (profileLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center" role="status">
+    <div className="text-center text-slate-500"><Loader2 className="animate-spin mx-auto mb-3" size={28} />Acente hesabı doğrulanıyor…</div>
+  </div>;
+
+  if (profileError) return <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <Card className="max-w-md w-full"><CardContent className="py-8 text-center space-y-4">
+      <p role="alert" className="text-sm text-red-700">{profileError}</p>
+      <div className="flex justify-center gap-2">
+        <Button variant="outline" onClick={handleLogout}>Oturumu kapat</Button>
+        <Button onClick={() => { setProfileLoading(true); setProfileRevision(value => value + 1); }}>Tekrar dene</Button>
+      </div>
+    </CardContent></Card>
+  </div>;
+
   // ─── MAIN PORTAL ───
   return <div className="min-h-screen bg-slate-50" data-testid="agency-portal-dashboard">
       {/* Header */}
@@ -257,8 +311,8 @@ const AgencyPortalDashboard = () => {
               <Building2 size={18} className="text-emerald-700" />
             </div>
             <div>
-              <span className="font-semibold text-slate-800 text-sm">{agencyInfo?.name || 'Acente Portali'}</span>
-              <span className="text-xs text-slate-400 ml-2">{agencyUser?.name || ''}</span>
+              <div className="font-semibold text-slate-800 text-sm">{hotelInfo?.name || 'Otel Satış Portalı'}</div>
+              <div className="text-xs text-slate-500">{agencyInfo?.name || 'Acente'} · {agencyUser?.name || ''}</div>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={handleLogout} data-testid="agency-logout-btn">
@@ -270,9 +324,9 @@ const AgencyPortalDashboard = () => {
       {/* Content */}
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         <Tabs defaultValue="search" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className="grid w-full grid-cols-3 max-w-xl h-auto">
             <TabsTrigger value="search" data-testid="tab-search">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
-            <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations">Rezervasyonlarim</TabsTrigger>
+            <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations">Rezervasyonlarım</TabsTrigger>
             <TabsTrigger value="content" onClick={loadContent} data-testid="tab-content">Otel Bilgileri</TabsTrigger>
           </TabsList>
 
@@ -280,29 +334,37 @@ const AgencyPortalDashboard = () => {
           <TabsContent value="search" className="mt-4 space-y-4">
             <Card>
               <CardContent className="pt-5">
-                <div className="flex flex-wrap gap-3 items-end">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+                  <div className="space-y-1">
                     <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.giris_tarihi')}</Label>
-                    <Input type="date" value={searchForm.check_in} onChange={e => setSearchForm(p => ({
-                    ...p,
-                    check_in: e.target.value
-                  }))} data-testid="search-checkin" className="w-44" />
+                    <Input type="date" min={toDateInput(new Date())} value={searchForm.check_in} onChange={e => {
+                      const checkIn = e.target.value;
+                      const next = new Date(`${checkIn}T12:00:00`);
+                      next.setDate(next.getDate() + 1);
+                      setSearchForm(p => ({ ...p, check_in: checkIn, check_out: p.check_out <= checkIn ? toDateInput(next) : p.check_out }));
+                      setAvailability(null);
+                    }} data-testid="search-checkin" className="w-full" />
                   </div>
-                  <div>
+                  <div className="space-y-1">
                     <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.cikis_tarihi')}</Label>
-                    <Input type="date" value={searchForm.check_out} onChange={e => setSearchForm(p => ({
-                    ...p,
-                    check_out: e.target.value
-                  }))} data-testid="search-checkout" className="w-44" />
+                    <Input type="date" min={searchForm.check_in} value={searchForm.check_out} onChange={e => {
+                      setSearchForm(p => ({ ...p, check_out: e.target.value })); setAvailability(null);
+                    }} data-testid="search-checkout" className="w-full" />
                   </div>
-                  <div>
-                    <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.kisi')}</Label>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Yetişkin</Label>
                     <Input type="number" min={1} max={10} value={searchForm.adults} onChange={e => setSearchForm(p => ({
                     ...p,
                     adults: parseInt(e.target.value) || 1
-                  }))} className="w-20" />
+                  }))} className="w-full" />
                   </div>
-                  <Button onClick={handleSearch} disabled={searchLoading} data-testid="search-availability-btn" className="gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Çocuk</Label>
+                    <Input type="number" min={0} max={10} value={searchForm.children} onChange={e => setSearchForm(p => ({
+                      ...p, children: Math.max(0, parseInt(e.target.value) || 0)
+                    }))} className="w-full" />
+                  </div>
+                  <Button onClick={handleSearch} disabled={searchLoading} data-testid="search-availability-btn" className="gap-2 w-full">
                     {searchLoading ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
                     {t('cm.pages_AgencyPortalDashboard.ara')}
                   </Button>
@@ -312,12 +374,13 @@ const AgencyPortalDashboard = () => {
 
             {/* Results */}
             {availability && <div className="space-y-3">
-                <h3 className="text-sm font-medium text-slate-600">
-                  {availability.check_in} - {availability.check_out} {t('cm.pages_AgencyPortalDashboard.icin_musait_odalar')}
-                </h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium text-slate-700">{formatDate(availability.check_in)} – {formatDate(availability.check_out)}</h3>
+                  <span className="text-xs text-slate-500">{availability.night_count} gece · {availability.adults + availability.children} misafir</span>
+                </div>
                 {availability.room_types.length === 0 ? <Card><CardContent className="py-8 text-center text-slate-400">{t('cm.pages_AgencyPortalDashboard.bu_tarihler_icin_musait_oda_bulunamadi')}</CardContent></Card> : availability.room_types.map(rt => <Card key={rt.room_type} className="hover:shadow-sm transition" data-testid={`result-${rt.room_type}`}>
                       <CardContent className="py-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex items-center gap-4">
                             <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
                               <Bed size={20} className="text-blue-600" />
@@ -325,15 +388,16 @@ const AgencyPortalDashboard = () => {
                             <div>
                               <div className="font-semibold text-slate-800">{rt.room_type}</div>
                               <div className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
-                                <span><Users size={10} className="inline mr-1" />{rt.capacity} kisi</span>
-                                <span>{rt.available_rooms} {t('cm.pages_AgencyPortalDashboard.musait')} {rt.total_rooms} toplam</span>
+                                <span><Users size={10} className="inline mr-1" />En fazla {rt.capacity} kişi</span>
+                                <span>{rt.available_rooms} müsait / {rt.total_rooms} oda</span>
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-center justify-between sm:justify-end gap-4">
                             <div className="text-right">
-                              <div className="text-lg font-bold text-slate-800">{rt.base_price.toLocaleString('tr-TR')} TL</div>
-                              <div className="text-[10px] text-slate-400">gece / oda</div>
+                              <div className="text-lg font-bold text-slate-800">{formatMoney(rt.stay_total, availability.currency)}</div>
+                              <div className="text-[11px] text-slate-500">{availability.night_count} gece toplam · {formatMoney(rt.base_price, availability.currency)}/gece</div>
+                              {rt.has_contract && <Badge variant="outline" className="mt-1 text-[10px] border-emerald-300 text-emerald-700">Acente sözleşme fiyatı</Badge>}
                             </div>
                             <Button size="sm" onClick={() => openBookingForm(rt)} data-testid={`book-${rt.room_type}`} className="gap-1">
                               <Plus size={14} /> Rezerve Et
@@ -350,26 +414,32 @@ const AgencyPortalDashboard = () => {
 
           {/* Reservations Tab */}
           <TabsContent value="reservations" className="mt-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div><h2 className="font-semibold text-slate-800">Acente rezervasyonları</h2><p className="text-xs text-slate-500">Bu acente hesabından oluşturulan kayıtlar</p></div>
+              <Button variant="outline" size="sm" onClick={loadReservations} disabled={reservationsLoading}><RefreshCw size={14} className={reservationsLoading ? 'animate-spin mr-1' : 'mr-1'} />Yenile</Button>
+            </div>
             {reservationsLoading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-400" size={24} /></div> : reservations.length === 0 ? <Card><CardContent className="py-12 text-center text-slate-400">
                 <ClipboardList size={40} className="mx-auto mb-3 opacity-40" />
                 <p>{t('cm.pages_AgencyPortalDashboard.henuz_rezervasyonunuz_yok')}</p>
               </CardContent></Card> : reservations.map(r => <Card key={r.id} data-testid={`reservation-${r.id}`}>
                   <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="min-w-0">
                         <div className="font-semibold text-slate-800">{r.guest_name || 'Misafir'}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          {r.confirmation_code} | {r.room_type} {t('cm.pages_AgencyPortalDashboard.oda')} {r.room_number}
+                        <div className="text-xs text-slate-600 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                          <span className="font-mono">{r.confirmation_code || r.id}</span>
+                          <span>{r.room_type || 'Oda tipi belirtilmemiş'}</span>
+                          <span>{r.room_number ? `Oda ${r.room_number}` : 'Oda ataması bekliyor'}</span>
                         </div>
-                        <div className="text-xs text-slate-400 mt-0.5">
-                          {r.check_in?.split('T')[0]} - {r.check_out?.split('T')[0]}
+                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                          <CalendarDays size={12} />{formatDate(r.check_in)} – {formatDate(r.check_out)}
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="sm:text-right flex sm:block items-center justify-between gap-3">
                         <Badge className={`text-xs ${statusColors[r.status] || 'bg-slate-100'}`}>
                           {statusLabels[r.status] || r.status}
                         </Badge>
-                        <div className="text-sm font-bold text-slate-700 mt-1">{(r.total_amount || 0).toLocaleString('tr-TR')} TL</div>
+                        <div className="text-sm font-bold text-slate-700 sm:mt-1">{formatMoney(r.total_amount, r.currency || hotelInfo?.currency)}</div>
                       </div>
                     </div>
                   </CardContent>
@@ -410,8 +480,8 @@ const AgencyPortalDashboard = () => {
                             </div>
                             {rt.description && <p className="text-xs text-slate-500 mb-2">{rt.description}</p>}
                             <div className="flex gap-4 text-xs text-slate-600">
-                              <span>{rt.capacity} kisi</span>
-                              <span>{rt.base_price} TL / gece</span>
+                              <span>{rt.capacity} kişi</span>
+                              <span>{formatMoney(rt.base_price, hotelInfo?.currency)} / gece</span>
                               {rt.bed_type && <span>{rt.bed_type}</span>}
                             </div>
                           </CardContent>
@@ -440,12 +510,12 @@ const AgencyPortalDashboard = () => {
         <DialogContent className="max-w-md" data-testid="booking-form-dialog">
           <DialogHeader>
             <DialogTitle>{t('cm.pages_AgencyPortalDashboard.rezervasyon_olustur')}</DialogTitle>
-            <p className="text-sm text-slate-500">{selectedRoomType?.room_type} | {searchForm.check_in} - {searchForm.check_out}</p>
+            <p className="text-sm text-slate-500">{selectedRoomType?.room_type} · {formatDate(searchForm.check_in)} – {formatDate(searchForm.check_out)}</p>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
               <Label>{t('cm.pages_AgencyPortalDashboard.misafir_adi')}</Label>
-              <Input value={bookingForm.guest_name} onChange={e => setBookingForm(p => ({
+              <Input required autoFocus value={bookingForm.guest_name} onChange={e => setBookingForm(p => ({
               ...p,
               guest_name: e.target.value
             }))} data-testid="booking-guest-name" />
@@ -453,14 +523,14 @@ const AgencyPortalDashboard = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>E-posta</Label>
-                <Input value={bookingForm.guest_email} onChange={e => setBookingForm(p => ({
+                <Input type="email" value={bookingForm.guest_email} onChange={e => setBookingForm(p => ({
                 ...p,
                 guest_email: e.target.value
               }))} />
               </div>
               <div>
                 <Label>Telefon</Label>
-                <Input value={bookingForm.guest_phone} onChange={e => setBookingForm(p => ({
+                <Input type="tel" value={bookingForm.guest_phone} onChange={e => setBookingForm(p => ({
                 ...p,
                 guest_phone: e.target.value
               }))} />
@@ -468,40 +538,38 @@ const AgencyPortalDashboard = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Yetiskin</Label>
-                <Input type="number" min={1} value={bookingForm.adults} onChange={e => setBookingForm(p => ({
+                <Label>Yetişkin</Label>
+                <Input type="number" min={1} max={selectedRoomType?.capacity || 20} value={bookingForm.adults} onChange={e => setBookingForm(p => ({
                 ...p,
                 adults: parseInt(e.target.value) || 1
               }))} />
               </div>
               <div>
-                <Label>Cocuk</Label>
-                <Input type="number" min={0} value={bookingForm.children} onChange={e => setBookingForm(p => ({
+                <Label>Çocuk</Label>
+                <Input type="number" min={0} max={selectedRoomType?.capacity || 20} value={bookingForm.children} onChange={e => setBookingForm(p => ({
                 ...p,
                 children: parseInt(e.target.value) || 0
               }))} />
               </div>
             </div>
-            <div>
-              <Label>{t('cm.pages_AgencyPortalDashboard.toplam_tutar_tl')}</Label>
-              <Input type="number" value={bookingForm.total_amount} onChange={e => setBookingForm(p => ({
-              ...p,
-              total_amount: parseFloat(e.target.value) || 0
-            }))} data-testid="booking-amount" />
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-testid="booking-amount">
+              <div className="flex items-center justify-between gap-3"><span className="text-sm text-emerald-900">Konaklama toplamı</span><strong className="text-emerald-900">{formatMoney(bookingForm.total_amount, availability?.currency || hotelInfo?.currency)}</strong></div>
+              <p className="mt-1 text-xs text-emerald-700">{availability?.night_count || 1} gece · Tutar otelin geçerli acente fiyatından sunucu tarafından hesaplanır.</p>
             </div>
             <div>
               <Label>{t('cm.pages_AgencyPortalDashboard.ozel_istek')}</Label>
-              <Input value={bookingForm.special_requests} onChange={e => setBookingForm(p => ({
+              <textarea className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={bookingForm.special_requests} onChange={e => setBookingForm(p => ({
               ...p,
               special_requests: e.target.value
-            }))} placeholder={t('cm.pages_AgencyPortalDashboard.erken_giris_deniz_manzarasi')} />
+            }))} maxLength={1000} placeholder={t('cm.pages_AgencyPortalDashboard.erken_giris_deniz_manzarasi')} />
             </div>
+            <div className="flex items-start gap-2 text-xs text-slate-500"><ShieldCheck size={14} className="mt-0.5 shrink-0 text-emerald-600" />Rezervasyon kaydedilirken müsaitlik ve fiyat yeniden doğrulanır; çifte rezervasyon engellenir.</div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBookingForm(false)}>{t('cm.pages_AgencyPortalDashboard.iptal')}</Button>
             <Button onClick={handleBooking} disabled={bookingLoading} data-testid="confirm-booking-btn">
               {bookingLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
-              Rezervasyonu Olustur
+              Rezervasyonu Oluştur
             </Button>
           </DialogFooter>
         </DialogContent>

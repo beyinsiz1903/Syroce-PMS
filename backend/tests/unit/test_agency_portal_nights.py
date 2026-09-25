@@ -2,7 +2,6 @@
 import ast
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -18,7 +17,7 @@ import pytest
     ],
 )
 @pytest.mark.parametrize("quoted_total", [0, 12345])
-def test_portal_calendar_nights_and_existing_quote(arrival, departure, expected_nights, quoted_total):
+def test_portal_calendar_nights_and_client_quote_is_ignored(arrival, departure, expected_nights, quoted_total):
     source = Path(__file__).resolve().parents[2] / "routers" / "agency_portal.py"
     tree = ast.parse(source.read_text())
     endpoint = next(
@@ -29,16 +28,16 @@ def test_portal_calendar_nights_and_existing_quote(arrival, departure, expected_
     pricing = [
         node for node in endpoint.body
         if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id in {"nights", "total"}
+        and any(isinstance(target, ast.Name) and target.id in {"nights", "public_unit_price", "total"}
                 for target in node.targets)
     ]
-    assert len(pricing) == 2
+    assert len(pricing) == 4
+    assert "data.total_amount" not in ast.unparse(endpoint)
     scope = {
-        "ci": datetime.fromisoformat(arrival + "T14:00:00+00:00"),
-        "co": datetime.fromisoformat(departure + "T11:00:00+00:00"),
-        "data": SimpleNamespace(total_amount=quoted_total),
-        "available_room": {"base_price": 1500},
+        "ci_date": datetime.fromisoformat(arrival).date(),
+        "co_date": datetime.fromisoformat(departure).date(),
+        "rooms": [{"base_price": 1500}],
     }
     exec(compile(ast.Module(body=pricing, type_ignores=[]), str(source), "exec"), scope)
     assert scope["nights"] == expected_nights
-    assert scope["total"] == (quoted_total or expected_nights * 1500)
+    assert scope["total"] == expected_nights * 1500
