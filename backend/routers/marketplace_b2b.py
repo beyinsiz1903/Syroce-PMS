@@ -1063,6 +1063,16 @@ async def agency_create_reservation(
         total = server_total
         commission_amount = round(total * commission_pct / 100, 2)
         net_to_hotel = round(total - commission_amount, 2)
+        credit_limit = contract.get("credit_limit")
+        if credit_limit is not None:
+            debt_pipeline = [
+                {"$match": {"agency_id": agency["agency_id"], "tenant_id": data.tenant_id, "status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}}},
+                {"$group": {"_id": None, "amount": {"$sum": "$net_to_hotel"}}},
+            ]
+            debt_rows = await sysdb.marketplace_bookings.aggregate(debt_pipeline).to_list(1)
+            current_debt = float(debt_rows[0].get("amount", 0)) if debt_rows else 0.0
+            if current_debt + net_to_hotel > float(credit_limit):
+                raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
 
         guest_id = _uuid()
         from security.guest_write import encrypt_guest_insert
@@ -1101,6 +1111,8 @@ async def agency_create_reservation(
             "guests_count": data.adults + data.children,
             "status": "confirmed",
             "payment_status": "pending",
+            "payment_terms": contract.get("payment_terms", "on_arrival"),
+            "cancellation_policy": contract.get("cancellation_policy") or {},
             "total_amount": total,
             "currency": listing.get("currency", "TRY"),
             "nightly_rates": pricing["nightly_rates"],
@@ -1224,6 +1236,9 @@ async def agency_create_reservation(
             "syroce_b2b_fee_amount": syroce_b2b_fee_amount,
             "net_to_hotel": net_to_hotel,
             "status": "confirmed",
+            "payment_status": "pending",
+            "payment_terms": contract.get("payment_terms", "on_arrival"),
+            "cancellation_policy": contract.get("cancellation_policy") or {},
             "created_at": _now_iso(),
         }
     try:
@@ -1406,9 +1421,24 @@ async def agency_cancel_reservation(
                 }
             },
         )
+        from core.atomic_booking import release_booking_nights
+
+        await release_booking_nights(summary["tenant_id"], reservation_id, reason="agency_cancelled")
+        await db.audit_logs.insert_one(
+            {
+                "id": _uuid(), "tenant_id": summary["tenant_id"], "action": "marketplace_reservation_cancelled",
+                "entity_type": "booking", "entity_id": reservation_id, "actor_id": agency["agency_id"],
+                "actor_name": agency.get("agency_name"), "details": {"reason": reason}, "created_at": _now_iso(),
+            }
+        )
+    policy = summary.get("cancellation_policy") or {}
+    days_before = (datetime.fromisoformat(summary["check_in"]).date() - datetime.now(UTC).date()).days
+    free_until = int(policy.get("free_until_days_before", 7))
+    penalty_pct = 0.0 if days_before >= free_until else float(policy.get("penalty_pct", 50.0))
+    penalty_amount = round(float(summary.get("total_amount", 0)) * penalty_pct / 100, 2)
     await sysdb.marketplace_bookings.update_one(
         {"id": reservation_id},
-        {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": reason}},
+        {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": reason, "cancellation_penalty_pct": penalty_pct, "cancellation_penalty_amount": penalty_amount}},
     )
 
     try:
@@ -1428,7 +1458,7 @@ async def agency_cancel_reservation(
     except Exception as e:
         logger.warning(f"Marketplace cancel webhook failed: {e}")
 
-    return {"ok": True, "message": "Rezervasyon iptal edildi"}
+    return {"ok": True, "message": "Rezervasyon iptal edildi", "penalty_pct": penalty_pct, "penalty_amount": penalty_amount}
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck, Printer, XCircle, WalletCards } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -88,6 +88,7 @@ const AgencyPortalDashboard = () => {
   // Reservations list
   const [reservations, setReservations] = useState([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
+  const [reconciliation, setReconciliation] = useState(null);
 
   // Login handler
   const handleLogin = async e => {
@@ -310,6 +311,26 @@ const AgencyPortalDashboard = () => {
       setReservationsLoading(false);
     }
   };
+  const cancelReservation = async reservation => {
+    if (!window.confirm(`${reservation.confirmation_code || reservation.id} numaralı rezervasyon iptal edilsin mi?`)) return;
+    try {
+      const { data } = await agencyApi.delete(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}`, { params: { reason: 'agency_portal' } });
+      toast.success(data.penalty_amount ? `İptal edildi. Ceza: ${formatMoney(data.penalty_amount, reservation.currency)}` : 'Ücretsiz iptal edildi');
+      loadReservations();
+    } catch (err) { toast.error(err.response?.data?.detail || 'İptal işlemi tamamlanamadı'); }
+  };
+  const printVoucher = reservation => {
+    const popup = window.open('', '_blank', 'noopener,noreferrer');
+    if (!popup) return toast.error('Yazdırma penceresine tarayıcı tarafından izin verilmedi');
+    popup.document.write(`<!doctype html><html><head><title>${reservation.confirmation_code}</title><style>body{font-family:Arial;padding:40px;color:#172033}h1{font-size:24px}.box{border:1px solid #ccd5e1;border-radius:12px;padding:24px;max-width:700px}.row{display:flex;justify-content:space-between;border-bottom:1px solid #eee;padding:10px 0}</style></head><body><div class="box"><h1>Rezervasyon Voucher</h1><div class="row"><b>Onay kodu</b><span>${reservation.confirmation_code || reservation.id}</span></div><div class="row"><b>Otel</b><span>${reservation.hotel_name || '—'}</span></div><div class="row"><b>Misafir</b><span>${reservation.guest_name || '—'}</span></div><div class="row"><b>Konaklama</b><span>${formatDate(reservation.check_in)} – ${formatDate(reservation.check_out)}</span></div><div class="row"><b>Tutar</b><span>${formatMoney(reservation.total_amount, reservation.currency)}</span></div><p>Bu belge Syroce Acente Portalı tarafından oluşturulmuştur.</p></div><script>window.print()</script></body></html>`);
+    popup.document.close();
+  };
+  const loadReconciliation = async () => {
+    if (portalMode !== 'marketplace') return;
+    const end = toDateInput(new Date()); const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
+    try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params: { period_start: toDateInput(startDate), period_end: end } }); setReconciliation(data); }
+    catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat yüklenemedi'); }
+  };
   const statusLabels = {
     confirmed: 'Onaylandı',
     pending: 'Beklemede',
@@ -399,10 +420,11 @@ const AgencyPortalDashboard = () => {
       {/* Content */}
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         <Tabs defaultValue="search" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 max-w-xl h-auto">
+          <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-4 max-w-3xl' : 'grid-cols-3 max-w-xl'} h-auto`}>
             <TabsTrigger value="search" data-testid="tab-search">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
             <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations">Rezervasyonlarım</TabsTrigger>
             <TabsTrigger value="content" onClick={loadContent} data-testid="tab-content">Otel Bilgileri</TabsTrigger>
+            {portalMode === 'marketplace' && <TabsTrigger value="finance" onClick={loadReconciliation}>Mutabakat</TabsTrigger>}
           </TabsList>
 
           {/* Search Tab */}
@@ -543,11 +565,25 @@ const AgencyPortalDashboard = () => {
                           {statusLabels[r.status] || r.status}
                         </Badge>
                         <div className="text-sm font-bold text-slate-700 sm:mt-1">{formatMoney(r.total_amount, r.currency || hotelInfo?.currency)}</div>
+                        <div className="flex gap-1 mt-2">
+                          <Button size="sm" variant="outline" onClick={() => printVoucher(r)}><Printer size={13} className="mr-1" />Voucher</Button>
+                          {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" className="text-red-700" onClick={() => cancelReservation(r)}><XCircle size={13} className="mr-1" />İptal</Button>}
+                        </div>
                       </div>
                     </div>
                   </CardContent>
                 </Card>)}
           </TabsContent>
+
+          {portalMode === 'marketplace' && <TabsContent value="finance" className="mt-4 space-y-4">
+            <div><h2 className="font-semibold text-slate-800">Son 30 gün mutabakatı</h2><p className="text-xs text-slate-500">Brüt satış, acente komisyonu ve otele aktarılacak net tutar</p></div>
+            {!reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[['Brüt satış', reconciliation.totals?.gross_revenue], ['Komisyon', reconciliation.totals?.commission], ['Otele net', reconciliation.totals?.net_to_hotels], ['Rezervasyon', reconciliation.totals?.bookings]].map(([label, value], index) => <Card key={label}><CardContent className="pt-4"><div className="text-xs text-slate-500">{label}</div><div className="text-lg font-bold">{index === 3 ? value : formatMoney(value, hotelInfo?.currency)}</div></CardContent></Card>)}
+              </div>
+              {(reconciliation.by_hotel || []).map(row => <Card key={row.tenant_id}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon</div></div><div className="text-right"><div className="font-bold">{formatMoney(row.gross_revenue, hotelInfo?.currency)}</div><div className="text-xs text-emerald-700">Net {formatMoney(row.net_to_hotel, hotelInfo?.currency)}</div></div></CardContent></Card>)}
+            </>}
+          </TabsContent>}
 
           {/* Content Tab */}
           <TabsContent value="content" className="mt-4">
