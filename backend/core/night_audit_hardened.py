@@ -98,6 +98,8 @@ def _partition_due_bookings(
     bookings: list[dict[str, Any]],
     field_name: str,
     business_date: str,
+    *,
+    include_business_date: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     target_date = dt_date.fromisoformat(business_date)
     due: list[dict[str, Any]] = []
@@ -106,9 +108,7 @@ def _partition_due_bookings(
         normalized = _normalize_booking_date(booking.get(field_name))
         if normalized is None:
             invalid.append(booking)
-        # Çıkış tarihi iş gününün kendisiyse misafirin çıkış günü henüz
-        # başlamıştır; ancak bir sonraki iş gününde hâlâ içerideyse gecikmiştir.
-        elif normalized < target_date:
+        elif normalized < target_date or (include_business_date and normalized == target_date):
             due.append(booking)
     return due, invalid
 
@@ -812,6 +812,7 @@ async def _validate_preconditions(
         checked_in_for_dates,
         "check_out",
         bd,
+        include_business_date=False,
     )
     if overdue_checkouts:
         blocking.append(f"{len(overdue_checkouts)} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Gece denetiminden once cikis yapin veya konaklamayi uzatin.")
@@ -1754,6 +1755,7 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
         checked_in_for_dates,
         "check_out",
         bd,
+        include_business_date=False,
     )
     if overdue_bookings:
         blockers.append(

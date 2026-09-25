@@ -62,7 +62,12 @@ def test_checkout_on_business_date_is_not_overdue_until_next_day():
         {"id": "already-past", "check_out": "2026-09-24"},
     ]
 
-    overdue, invalid = _partition_due_bookings(bookings, "check_out", "2026-09-25")
+    overdue, invalid = _partition_due_bookings(
+        bookings,
+        "check_out",
+        "2026-09-25",
+        include_business_date=False,
+    )
 
     assert [booking["id"] for booking in overdue] == ["already-past"]
     assert invalid == []
