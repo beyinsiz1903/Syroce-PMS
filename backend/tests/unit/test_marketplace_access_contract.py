@@ -6,7 +6,14 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from routers import marketplace_b2b
-from routers.marketplace_b2b import MarketplaceReservationCreate, _last_occupied_date, _require_hotel_admin, _syroce_b2b_fee
+from routers.marketplace_b2b import (
+    MarketplaceReservationCreate,
+    _last_occupied_date,
+    _require_hotel_admin,
+    _reservation_agency_snapshot,
+    _reservation_room_snapshot,
+    _syroce_b2b_fee,
+)
 
 
 class _Cursor:
@@ -64,6 +71,20 @@ def test_marketplace_stay_authorization_uses_final_occupied_night():
 def test_marketplace_service_fee_is_defined_for_both_sales_channels():
     assert _syroce_b2b_fee(5000, "extranet_ui") == (2.0, 100.0)
     assert _syroce_b2b_fee(5000, "syroce_agency_app") == (1.0, 50.0)
+
+
+def test_marketplace_room_snapshot_keeps_ledger_and_pms_fields_consistent():
+    assert _reservation_room_snapshot({"room_type": "Stone Deluxe", "room_number": "101"}) == {
+        "room_type": "Stone Deluxe",
+        "room_number": "101",
+    }
+
+
+def test_marketplace_agency_snapshot_identifies_the_exact_seller():
+    snapshot = _reservation_agency_snapshot({"agency_id": "agency-1", "agency_name": "Cengizhan Travel"})
+    assert snapshot["agency_name"] == "Cengizhan Travel"
+    assert snapshot["source_channel"] == "marketplace"
+    assert snapshot["origin"] == "syroce_marketplace"
 
 
 def test_marketplace_booking_payload_rejects_invalid_capacity_and_identity():
