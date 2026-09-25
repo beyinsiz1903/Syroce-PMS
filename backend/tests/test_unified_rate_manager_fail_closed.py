@@ -55,6 +55,48 @@ async def test_detect_provider_stays_fail_closed_for_configuration_error(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_standalone_agency_update_does_not_require_channel_target(monkeypatch):
+    rate_calendar = SimpleNamespace(bulk_write=AsyncMock())
+    fake_db = MagicMock()
+    fake_db.__getitem__.return_value = rate_calendar
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": None}),
+    )
+    monkeypatch.setattr(
+        rate_router,
+        "_active_agency_docs_for_tenant",
+        AsyncMock(return_value=[{"id": "agency-1", "name": "Test Agency"}]),
+    )
+    push = AsyncMock(return_value=1)
+    monkeypatch.setattr(rate_router, "_push_to_agencies", push)
+
+    request = rate_router.UnifiedBulkUpdateRequest(
+        selections=[rate_router.RoomTypeSelection(room_type_code="Cave Suite", rate_plan_codes=["AGENCY"])],
+        start_date="2026-10-15",
+        end_date="2026-10-15",
+        rate=5432,
+        availability=4,
+        update_fields=["rate", "availability"],
+        agency_ids=["agency-1"],
+    )
+
+    result = await rate_router.unified_bulk_grid_update(
+        request,
+        current_user=SimpleNamespace(tenant_id="tenant-test", id="user-test"),
+        _perm=None,
+    )
+
+    assert result["provider"] == "agency"
+    assert result["saved"] == 1
+    assert result["agency_push_count"] == 1
+    rate_calendar.bulk_write.assert_awaited_once()
+    push.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeypatch):
     fake_db = SimpleNamespace()
     monkeypatch.setattr(rate_router, "db", fake_db)
