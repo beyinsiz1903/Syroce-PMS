@@ -22,6 +22,7 @@ Endpoints:
     GET    /api/agency-portal/reservations - List own reservations
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -50,6 +51,7 @@ from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, 
 _DUMMY_PWHASH = hash_password("__agency_portal_timing_dummy__never_a_real_password__")
 
 router = APIRouter(prefix="/api", tags=["agency-portal"])
+logger = logging.getLogger("agency_portal")
 
 
 def _date_pair(start_value: str, end_value: str):
@@ -874,9 +876,27 @@ async def agency_portal_content(current_user: User = Depends(get_current_user)):
     return {"published": True, "hotel_content": content}
 
 
-async def _get_b2b_price(db, tenant_id: str, agency_id: str, check_in: str, room_type: str, public_price: float):
+def _last_occupied_date(check_in: str, check_out: str | None) -> str:
+    """Return the final billable hotel night for an exclusive checkout date."""
+    if not check_out:
+        return check_in
+    from datetime import timedelta
+
+    return (datetime.strptime(check_out, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
+
+
+async def _get_b2b_price(
+    db,
+    tenant_id: str,
+    agency_id: str,
+    check_in: str,
+    room_type: str,
+    public_price: float,
+    check_out: str | None = None,
+):
+    last_night = _last_occupied_date(check_in, check_out)
     # Find active contract
-    contract = await db.agency_contracts.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True, "start_date": {"$lte": check_in}, "end_date": {"$gte": check_in}})
+    contract = await db.agency_contracts.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True, "start_date": {"$lte": check_in}, "end_date": {"$gte": last_night}})
 
     if not contract:
         return public_price, False
@@ -888,14 +908,22 @@ async def _get_b2b_price(db, tenant_id: str, agency_id: str, check_in: str, room
     # Net rate
     season_rates = contract.get("season_rates", [])
     for sr in season_rates:
-        if sr.get("room_type_id") == room_type and sr.get("season_start") <= check_in <= sr.get("season_end"):
+        if sr.get("room_type_id") == room_type and sr.get("season_start") <= check_in and sr.get("season_end") >= last_night:
             return float(sr.get("price")), True
 
     return public_price, False
 
 
-async def _get_b2b_allotment(db, tenant_id: str, agency_id: str, check_in: str, room_type: str):
-    allotment = await db.agency_allotments.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "room_type_id": room_type, "start_date": {"$lte": check_in}, "end_date": {"$gte": check_in}})
+async def _get_b2b_allotment(
+    db,
+    tenant_id: str,
+    agency_id: str,
+    check_in: str,
+    room_type: str,
+    check_out: str | None = None,
+):
+    last_night = _last_occupied_date(check_in, check_out)
+    allotment = await db.agency_allotments.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "room_type_id": room_type, "start_date": {"$lte": check_in}, "end_date": {"$gte": last_night}})
 
     if allotment:
         # Check release days
@@ -971,7 +999,7 @@ async def agency_portal_availability(
 
         # B2B Allotment Check
         if agency:
-            allotment_count = await _get_b2b_allotment(db, tenant_id, current_user.agency_id, check_in, rt_name)
+            allotment_count = await _get_b2b_allotment(db, tenant_id, current_user.agency_id, check_in, rt_name, check_out)
             if allotment_count is not None:
                 agency_booked = await db.bookings.count_documents(
                     {
@@ -987,7 +1015,7 @@ async def agency_portal_availability(
             else:
                 rt_data["available_rooms"] = public_available
 
-            b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, check_in, rt_name, rt_data["base_price"])
+            b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, check_in, rt_name, rt_data["base_price"], check_out)
             rt_data["base_price"] = b2b_price
             rt_data["has_contract"] = has_contract
         else:
@@ -1049,7 +1077,7 @@ async def agency_portal_create_reservation(
     # Recheck agency allotment at write time as well as search time so a
     # direct or concurrent request cannot reserve beyond the allocation.
     if agency_id:
-        allotment_count = await _get_b2b_allotment(db, tenant_id, agency_id, data.check_in, data.room_type_id)
+        allotment_count = await _get_b2b_allotment(db, tenant_id, agency_id, data.check_in, data.room_type_id, data.check_out)
         if allotment_count is not None:
             agency_booked = await db.bookings.count_documents(
                 {
@@ -1101,7 +1129,7 @@ async def agency_portal_create_reservation(
 
     has_contract = False
     if getattr(current_user, "agency_id", None):
-        b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, data.check_in, data.room_type_id, public_unit_price)
+        b2b_price, has_contract = await _get_b2b_price(db, tenant_id, current_user.agency_id, data.check_in, data.room_type_id, public_unit_price, data.check_out)
         if has_contract:
             # Masked assignment to prevent breaking brittle AST parsers looking for "total ="
             [_, total] = [None, b2b_price * nights]
@@ -1169,6 +1197,93 @@ async def agency_portal_create_reservation(
     except Exception:
         await db.guests.delete_one({"id": guest_id, "tenant_id": tenant_id})
         raise
+
+    # Keep agency reservations operationally identical to reservations created
+    # by the hotel and marketplace: create the guest folio, notify the hotel,
+    # update channel inventory and push the new card to open PMS calendars.
+    # These integrations run after the atomic room claim; a transient
+    # notification failure must not encourage the agency to submit a duplicate.
+    try:
+        from models.schemas import Folio, FolioType
+
+        folio = Folio(
+            id=_uuid(),
+            tenant_id=tenant_id,
+            booking_id=booking_id,
+            folio_type=FolioType.GUEST,
+            guest_id=guest_id,
+        )
+        folio_doc = folio.model_dump()
+        folio_doc["created_at"] = folio_doc["created_at"].isoformat()
+        await db.folios.insert_one(folio_doc)
+    except Exception as exc:
+        logger.warning("Agency booking folio creation failed booking=%s error=%s", booking_id, type(exc).__name__)
+
+    try:
+        await db.notifications.insert_one(
+            {
+                "id": _uuid(),
+                "tenant_id": tenant_id,
+                "user_id": None,
+                "type": "reservation",
+                "title": f"Yeni Acente Rezervasyonu: {data.guest_name.strip()}",
+                "message": (
+                    f"{agency_name} tarafından yeni rezervasyon oluşturuldu. "
+                    f"Giriş: {data.check_in}, Çıkış: {data.check_out}, "
+                    f"Oda: {available_room.get('room_number', '-')}, Tutar: {total:.2f} {currency}"
+                ),
+                "priority": "high",
+                "read": False,
+                "action_url": f"/reservations?booking_id={booking_id}",
+                "metadata": {
+                    "booking_id": booking_id,
+                    "agency_id": agency_id,
+                    "agency_name": agency_name,
+                    "agency_user_id": current_user.id,
+                    "channel": "agency",
+                },
+                "created_at": _now_iso(),
+            }
+        )
+    except Exception as exc:
+        logger.warning("Agency booking notification failed booking=%s error=%s", booking_id, type(exc).__name__)
+
+    try:
+        from routers.pms_bookings import _publish_multi_room_booking_created_events
+
+        await _publish_multi_room_booking_created_events(
+            tenant_id=tenant_id,
+            property_id=tenant_id,
+            bookings=[booking_doc],
+        )
+        from core.ws_rooms import tenant_broadcast_room
+        from websocket_server import sio
+
+        await sio.emit("booking_created", {"booking": booking_doc}, room=tenant_broadcast_room(tenant_id))
+    except Exception as exc:
+        logger.warning("Agency booking live publish failed booking=%s error=%s", booking_id, type(exc).__name__)
+
+    try:
+        await db.pms_audit_trail.insert_one(
+            {
+                "id": _uuid(),
+                "tenant_id": tenant_id,
+                "entity_type": "booking",
+                "entity_id": booking_id,
+                "action": "agency_portal_booking_created",
+                "details": {
+                    "agency_id": agency_id,
+                    "agency_name": agency_name,
+                    "agency_user_id": current_user.id,
+                    "room_id": available_room.get("id"),
+                    "room_number": available_room.get("room_number"),
+                },
+                "timestamp": _now_iso(),
+                "performed_by": current_user.id,
+            }
+        )
+    except Exception as exc:
+        logger.warning("Agency booking audit log failed booking=%s error=%s", booking_id, type(exc).__name__)
 
     return {
         "ok": True,

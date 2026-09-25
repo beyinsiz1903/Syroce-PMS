@@ -6,6 +6,22 @@ from pathlib import Path
 import pytest
 
 
+def test_contract_and_allotment_range_use_the_last_occupied_night():
+    source = Path(__file__).resolve().parents[2] / "routers" / "agency_portal.py"
+    tree = ast.parse(source.read_text())
+    helper = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_last_occupied_date"
+    )
+    scope = {"datetime": datetime, "__name__": "test_agency_portal_nights"}
+    exec(compile(ast.Module(body=[helper], type_ignores=[]), str(source), "exec"), scope)
+
+    last_night = scope["_last_occupied_date"]
+    assert last_night("2026-09-25", "2026-09-26") == "2026-09-25"
+    assert last_night("2026-09-25", "2026-09-28") == "2026-09-27"
+    assert last_night("2026-09-25", None) == "2026-09-25"
+
+
 @pytest.mark.parametrize(
     "arrival,departure,expected_nights",
     [

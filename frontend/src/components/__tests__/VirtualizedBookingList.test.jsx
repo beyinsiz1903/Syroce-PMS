@@ -10,6 +10,7 @@ describe('VirtualizedBookingList money presentation', () => {
     expect(bookingSourceLabel({ channel: 'ets' })).toBe('Etstur');
     expect(bookingSourceLabel({ booking_source: 'walkin' })).toBe('Walk-in');
     expect(bookingSourceLabel({ channel: 'seturapi' })).toBe('Setur');
+    expect(bookingSourceLabel({ channel: 'agency', agency_id: 'a-1', agency_name: 'Atlas Turizm' })).toBe('Acente · Atlas Turizm');
     expect(assignmentReasonLabel({ room_type: 'Suite', auto_assignment_reason: 'no_available_room' }))
       .toBe('İçe aktarıldığı anda uygun oda bulunamadı');
     expect(assignmentReasonLabel({ room_id: 'room-1' })).toBe('');

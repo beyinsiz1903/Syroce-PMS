@@ -447,6 +447,10 @@ export const getBookingStatusColor = (booking) => {
 // Source-based booking card color mapping (legacy, kept for compatibility)
 export const getSourceColor = (booking) => {
   const channel = (booking.ota_channel || booking.source_channel || booking.channel || booking.source || '').toLowerCase();
+  if ((channel === 'agency' || booking.agency_id) && booking.agency_name) {
+    return { bg: '#0F766E', border: '#115E59', label: booking.agency_name };
+  }
+  if (channel === 'agency') return { bg: '#0F766E', border: '#115E59', label: 'Acente' };
   if (channel.includes('expedia')) return { bg: '#F97316', border: '#EA580C', label: 'Expedia' };
   if (channel.includes('booking')) return { bg: '#1D4ED8', border: '#1E40AF', label: 'Booking.com' };
   if (channel.includes('tatilbudur')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Tatilbudur.com' };
