@@ -9,18 +9,22 @@ Endpoints:
   POST   /api/hotel-content/distribute   - Update publish list (atomic, additive by default)
 """
 
+import os
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user
+from core.tenant_db import get_system_db
 from models.enums import UserRole
 from models.schemas import User
 
 router = APIRouter(prefix="/api", tags=["agency-content"])
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads")))
 
 
 def _now_iso():
@@ -47,8 +51,8 @@ class RoomTypeContent(BaseModel):
     description: str = ""
     capacity: int = 2
     base_price: float = 0
-    images: list[str] = []
-    amenities: list[str] = []
+    images: list[str] = Field(default_factory=list)
+    amenities: list[str] = Field(default_factory=list)
     bed_type: str = ""
 
 
@@ -64,10 +68,14 @@ class HotelContentUpdate(BaseModel):
     address: str = ""
     phone: str = ""
     email: str = ""
-    images: list[str] = []
-    amenities: list[str] = []
-    room_types: list[RoomTypeContent] = []
-    services: list[ServiceContent] = []
+    city: str | None = None
+    country: str | None = None
+    star_rating: int | None = Field(default=None, ge=1, le=5)
+    meal_plans: list[str] | None = None
+    images: list[str] = Field(default_factory=list)
+    amenities: list[str] = Field(default_factory=list)
+    room_types: list[RoomTypeContent] = Field(default_factory=list)
+    services: list[ServiceContent] = Field(default_factory=list)
 
 
 class ContentDistributeRequest(BaseModel):
@@ -109,6 +117,7 @@ async def get_hotel_content(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
 
     content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    listing = await get_system_db().marketplace_listings.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if not content:
         # Auto-initialize from tenant and rooms
         tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
@@ -138,6 +147,10 @@ async def get_hotel_content(current_user: User = Depends(get_current_user)):
             "address": tenant.get("address", "") if tenant else "",
             "phone": tenant.get("contact_phone", "") if tenant else "",
             "email": tenant.get("contact_email", "") if tenant else "",
+            "city": (listing or {}).get("city", tenant.get("city", "") if tenant else ""),
+            "country": (listing or {}).get("country", tenant.get("country", "TR") if tenant else "TR"),
+            "star_rating": (listing or {}).get("star_rating"),
+            "meal_plans": (listing or {}).get("meal_plans", []),
             "images": [],
             "amenities": tenant.get("amenities", []) if tenant else [],
             "room_types": list(rt_map.values()),
@@ -148,7 +161,40 @@ async def get_hotel_content(current_user: User = Depends(get_current_user)):
         await db.hotel_content.insert_one(content)
         content.pop("_id", None)
 
+    # Eski içerik kayıtlarını listing'deki arama alanlarıyla geriye dönük tamamla.
+    for key, fallback in (
+        ("city", ""), ("country", "TR"), ("star_rating", None), ("meal_plans", []),
+    ):
+        if key not in content:
+            content[key] = (listing or {}).get(key, fallback)
+
     return content
+
+
+@router.post("/hotel-content/images")
+async def upload_hotel_content_images(
+    files: list[UploadFile] = File(...),
+    scope: str = Query("hotel", pattern="^(hotel|room)$"),
+    current_user: User = Depends(get_current_user),
+):
+    """Otel/acente kataloğu için güvenli görsel yüklemesi."""
+    _require_hotel_staff(current_user)
+    if len(files) > 12:
+        raise HTTPException(status_code=400, detail="Tek seferde en fazla 12 görsel yükleyebilirsiniz")
+    from security.upload_validator import MAX_IMAGE_BYTES, validate_image_bytes
+
+    folder = UPLOAD_DIR / current_user.tenant_id / "hotel-content" / scope
+    folder.mkdir(parents=True, exist_ok=True)
+    urls: list[str] = []
+    for upload in files:
+        payload = await upload.read(MAX_IMAGE_BYTES + 1)
+        _content_type, extension = validate_image_bytes(
+            payload, max_bytes=MAX_IMAGE_BYTES, field_label="Tesis görseli"
+        )
+        filename = f"{uuid.uuid4().hex}{extension}"
+        (folder / filename).write_bytes(payload)
+        urls.append(f"/api/uploads/{current_user.tenant_id}/hotel-content/{scope}/{filename}")
+    return {"ok": True, "uploaded": len(urls), "urls": urls}
 
 
 @router.put("/hotel-content")
@@ -156,6 +202,8 @@ async def update_hotel_content(data: HotelContentUpdate, current_user: User = De
     """Otel içeriğini güncelle. content_version'i +1 artirir (acente portal cache invalidation icin)."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
+    existing = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    existing = existing or {}
 
     update_data = {
         "tenant_id": tenant_id,
@@ -164,6 +212,10 @@ async def update_hotel_content(data: HotelContentUpdate, current_user: User = De
         "address": data.address,
         "phone": data.phone,
         "email": data.email,
+        "city": data.city if data.city is not None else existing.get("city", ""),
+        "country": (data.country or existing.get("country") or "TR").upper(),
+        "star_rating": data.star_rating if data.star_rating is not None else existing.get("star_rating"),
+        "meal_plans": data.meal_plans if data.meal_plans is not None else existing.get("meal_plans", []),
         "images": data.images,
         "amenities": data.amenities,
         "room_types": [rt.model_dump() for rt in data.room_types],
@@ -171,7 +223,6 @@ async def update_hotel_content(data: HotelContentUpdate, current_user: User = De
         "updated_at": _now_iso(),
     }
 
-    existing = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0, "content_version": 1})
     if existing:
         await db.hotel_content.update_one(
             {"tenant_id": tenant_id},
@@ -186,7 +237,45 @@ async def update_hotel_content(data: HotelContentUpdate, current_user: User = De
         update_data["content_version"] = 1
         await db.hotel_content.insert_one(update_data)
 
+    # Marketplace görünümü ayrı bir koleksiyondan okunur. Oteli istemeden
+    # yayına almadan, mevcut listing'in katalog alanlarını aynı yazımda güncelle.
+    sysdb = get_system_db()
+    listing_sync = {
+        "hotel_name": data.hotel_name,
+        "description": data.description,
+        "address": data.address,
+        "city": update_data["city"].strip().title(),
+        "country": update_data["country"],
+        "star_rating": update_data["star_rating"],
+        "meal_plans": update_data["meal_plans"],
+        "photos": data.images,
+        "amenities": data.amenities,
+        "phone": data.phone,
+        "email": data.email,
+        "room_content": [rt.model_dump() for rt in data.room_types],
+        "services": [s.model_dump() for s in data.services],
+        "content_version": update_data["content_version"],
+        "content_updated_at": update_data["updated_at"],
+        "updated_at": update_data["updated_at"],
+    }
+    sync_result = await sysdb.marketplace_listings.update_one(
+        {"tenant_id": tenant_id}, {"$set": listing_sync}
+    )
+    # Daha önce yayın verilmiş legacy acenteler de yeni sürümü anında görür.
+    published_result = await db.agencies.update_many(
+        {"tenant_id": tenant_id, "published_content": True},
+        {"$set": {"published_content_version": update_data["content_version"], "content_updated_at": update_data["updated_at"]}},
+    )
+    contracted_agencies = await sysdb.agency_contracts.count_documents(
+        {"tenant_id": tenant_id, "is_active": True}
+    )
+
     update_data.pop("_id", None)
+    update_data["distribution"] = {
+        "marketplace_listing_synced": bool(sync_result.matched_count),
+        "published_agencies_updated": published_result.modified_count or 0,
+        "contracted_marketplace_agencies": contracted_agencies,
+    }
     return update_data
 
 

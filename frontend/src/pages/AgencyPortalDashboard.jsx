@@ -25,6 +25,29 @@ agencyApi.interceptors.request.use(config => {
   return config;
 });
 
+const AgencyImage = ({ src, alt, className }) => {
+  const [objectUrl, setObjectUrl] = useState('');
+  useEffect(() => {
+    if (!src) return undefined;
+    if (!src.startsWith('/api/uploads/')) {
+      setObjectUrl(src);
+      return undefined;
+    }
+    let active = true;
+    let createdUrl = '';
+    agencyApi.get(src.replace(/^\/api/, ''), { responseType: 'blob' }).then(({ data }) => {
+      if (!active) return;
+      createdUrl = URL.createObjectURL(data);
+      setObjectUrl(createdUrl);
+    }).catch(() => setObjectUrl(''));
+    return () => {
+      active = false;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [src]);
+  return objectUrl ? <img src={objectUrl} alt={alt} className={className} /> : <div className={`${className} bg-slate-100`} aria-label={alt} />;
+};
+
 const toDateInput = date => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
@@ -239,6 +262,8 @@ const AgencyPortalDashboard = () => {
           hotel_name: hotel.hotel_name,
           hotel_city: hotel.city,
           hotel_amenities: hotel.amenities || [],
+          hotel_photos: hotel.photos || [],
+          hotel_description: hotel.description || '',
           currency: hotel.currency || 'TRY',
           base_price: room.nightly_rates?.[0]?.rate ?? room.base_price,
           stay_total: room.total_price,
@@ -652,14 +677,15 @@ const AgencyPortalDashboard = () => {
                         {portalMode === 'marketplace' && <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3"><Building2 size={15} className="text-emerald-600" /><span className="font-semibold text-slate-800">{rt.hotel_name}</span>{rt.hotel_city && <span className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={11} />{rt.hotel_city}</span>}</div>}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 shrink-0 bg-emerald-50 rounded-xl flex items-center justify-center ring-1 ring-emerald-100">
-                              <Bed size={20} className="text-emerald-700" />
-                            </div>
+                            {rt.images?.[0] || rt.hotel_photos?.[0]
+                              ? <AgencyImage src={rt.images?.[0] || rt.hotel_photos?.[0]} alt={rt.name || rt.room_type} className="h-20 w-28 shrink-0 rounded-xl object-cover ring-1 ring-slate-200" />
+                              : <div className="w-12 h-12 shrink-0 bg-emerald-50 rounded-xl flex items-center justify-center ring-1 ring-emerald-100"><Bed size={20} className="text-emerald-700" /></div>}
                             <div>
-                              <div className="font-semibold text-slate-800">{rt.room_type}</div>
+                              <div className="font-semibold text-slate-800">{rt.name || rt.room_type}</div>
+                              {rt.description && <div className="mt-0.5 line-clamp-2 max-w-xl text-xs text-slate-500">{rt.description}</div>}
                               <div className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
                                 <span><Users size={10} className="inline mr-1" />En fazla {rt.capacity} kişi</span>
-                                <span>{rt.available_rooms} müsait / {rt.total_rooms} oda</span>
+                                <span>{rt.available_rooms} oda müsait</span>
                               </div>
                             </div>
                           </div>
@@ -747,6 +773,10 @@ const AgencyPortalDashboard = () => {
                 <p className="mt-1 text-sm">Sözleşmeli bir tesis seçin veya içerik paylaşımı için tesisle iletişime geçin.</p>
               </CardContent></Card> : <div className="space-y-4">
                 <Card>
+                  {content.hotel_content?.photos?.[0] || content.hotel_content?.images?.[0] ? <div className="grid h-56 grid-cols-3 gap-1 overflow-hidden rounded-t-xl bg-slate-100">
+                    <AgencyImage src={(content.hotel_content.photos || content.hotel_content.images)[0]} alt={content.hotel_content?.hotel_name || 'Tesis'} className="col-span-2 h-full w-full object-cover" />
+                    <div className="grid grid-rows-2 gap-1">{(content.hotel_content.photos || content.hotel_content.images).slice(1, 3).map((url, index) => <AgencyImage key={url} src={url} alt={`${content.hotel_content?.hotel_name || 'Tesis'} ${index + 2}`} className="h-full min-h-0 w-full object-cover" />)}</div>
+                  </div> : null}
                   <CardHeader>
                     <CardTitle className="text-lg">{content.hotel_content?.hotel_name || 'Otel'}</CardTitle>
                   </CardHeader>
@@ -766,7 +796,8 @@ const AgencyPortalDashboard = () => {
                 {content.hotel_content?.room_types?.length > 0 && <div>
                     <h3 className="font-medium text-slate-700 mb-2">{t('cm.pages_AgencyPortalDashboard.oda_tipleri')}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {content.hotel_content.room_types.map(rt => <Card key={rt.room_type}>
+                      {content.hotel_content.room_types.map(rt => <Card key={rt.room_type} className="overflow-hidden">
+                          {rt.images?.[0] && <AgencyImage src={rt.images[0]} alt={rt.name || rt.room_type} className="h-36 w-full object-cover" />}
                           <CardContent className="pt-4">
                             <div className="flex items-center gap-3 mb-2">
                               <Bed size={16} className="text-blue-500" />
@@ -849,7 +880,7 @@ const AgencyPortalDashboard = () => {
             <p id="quoted-occupancy-note" className="text-xs text-slate-500">Kişi ve çocuk yaşları arama fiyatına dahildir. Değiştirmek için aramaya dönün.</p>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-testid="booking-amount">
               <div className="flex items-center justify-between gap-3"><span className="text-sm text-emerald-900">Konaklama toplamı</span><strong className="text-emerald-900">{formatMoney(bookingForm.total_amount, availability?.currency || hotelInfo?.currency)}</strong></div>
-              <p className="mt-1 text-xs text-emerald-700">{availability?.night_count || 1} gece · Tutar otelin geçerli acente fiyatından sunucu tarafından hesaplanır.</p>
+              <p className="mt-1 text-xs text-emerald-700">{availability?.night_count || 1} gece · Toplam tutar, otelin güncel acente fiyatı üzerinden güvenli biçimde hesaplanmıştır.</p>
             </div>
             <div>
               <Label>{t('cm.pages_AgencyPortalDashboard.ozel_istek')}</Label>

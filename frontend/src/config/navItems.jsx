@@ -696,7 +696,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "agency_content",
-    label: "Icerik Dagitimi",
+    label: "Tesis İçeriği ve Dağıtım",
     path: "/agency-content",
     moduleKey: "channel_manager",
     tier: "basic",
