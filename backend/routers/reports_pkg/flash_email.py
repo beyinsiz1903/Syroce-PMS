@@ -233,11 +233,15 @@ async def get_flash_report(
             amount = -amount
         collected += amount
 
-    no_shows = sum(1 for booking in day_bookings if as_date(booking.get("check_in")) == target_day and str(booking.get("status") or "").lower() in {"no_show", "noshow"})
+    no_show_bookings = [
+        booking for booking in day_bookings
+        if as_date(booking.get("check_in")) == target_day
+        and str(booking.get("status") or "").lower() in {"no_show", "noshow"}
+    ]
+    no_shows = len(no_show_bookings)
     target_start = datetime.combine(target_day, datetime.min.time(), tzinfo=UTC)
     target_end = target_start + timedelta(days=1)
-    cancellations = await db.bookings.count_documents(
-        {
+    cancellation_filter = {
             "tenant_id": current_user.tenant_id,
             "status": {"$in": ["cancelled", "canceled"]},
             "$or": [
@@ -249,7 +253,22 @@ async def get_flash_report(
                 {"cancelled_at": None, "updated_at": {"$gte": target_start, "$lt": target_end}},
             ],
         }
-    )
+    cancelled_bookings = await db.bookings.find(
+        cancellation_filter,
+        {
+            "_id": 0,
+            "id": 1,
+            "booking_number": 1,
+            "guest_name": 1,
+            "room_number": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "cancelled_at": 1,
+            "cancellation_reason": 1,
+            "channel": 1,
+        },
+    ).to_list(1000)
+    cancellations = len(cancelled_bookings)
 
     walk_ins = sum(1 for b in day_bookings if as_date(b.get("check_in")) == target_day and str(b.get("channel") or b.get("booking_source") or "").lower() == "walk_in")
     overstays = 0
@@ -320,6 +339,26 @@ async def get_flash_report(
             "walk_ins": walk_ins,
             "cancellations": cancellations,
             "overstays": overstays,
+        },
+        "attention_details": {
+            "cancellations": cancelled_bookings,
+            "no_shows": [
+                {
+                    key: booking.get(key)
+                    for key in (
+                        "id", "booking_number", "guest_name", "room_number",
+                        "check_in", "check_out", "channel",
+                    )
+                }
+                for booking in no_show_bookings
+            ],
+        },
+        "scope": {
+            "business_date": target_key,
+            "occupancy": "Seçili iş gecesinde dolu ve satılabilir odalar",
+            "revenue": "Seçili iş gününde kaydedilen folyo gelirleri",
+            "collections": "Seçili iş gününde alınan ödemeler; başka konaklamalara ait avansları içerebilir",
+            "operations": "Seçili iş günündeki giriş, çıkış ve durum hareketleri",
         },
         "departments": [
             {"name": "Oda Geliri", "amount": round(room_revenue, 2)},

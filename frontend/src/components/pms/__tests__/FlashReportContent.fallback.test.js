@@ -42,4 +42,19 @@ describe('FlashReportContent fallback consistency', () => {
     expect(report.revenue.total).toBe(0);
     expect(report.operations).toMatchObject({ arrivals: 0, departures: 0, no_shows: 0, cancellations: 0 });
   });
+
+  it('exposes the reservation behind attention counts', () => {
+    const report = buildFallbackFlashReport({
+      targetDate: '2026-09-24',
+      bookings: [
+        { id: 'cancelled-1', guest_name: 'Ayşe Yılmaz', status: 'cancelled', cancelled_at: '2026-09-24T09:30:00', check_in: '2026-09-26', check_out: '2026-09-27' },
+        { id: 'noshow-1', guest_name: 'Mehmet Demir', status: 'no_show', check_in: '2026-09-24', check_out: '2026-09-25' },
+      ],
+    });
+
+    expect(report.operations).toMatchObject({ cancellations: 1, no_shows: 1 });
+    expect(report.attention_details.cancellations[0]).toMatchObject({ id: 'cancelled-1', guest_name: 'Ayşe Yılmaz' });
+    expect(report.attention_details.no_shows[0]).toMatchObject({ id: 'noshow-1', guest_name: 'Mehmet Demir' });
+    expect(report.scope.business_date).toBe('2026-09-24');
+  });
 });
