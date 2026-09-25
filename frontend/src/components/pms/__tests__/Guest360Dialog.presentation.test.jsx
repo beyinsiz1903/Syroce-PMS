@@ -62,4 +62,32 @@ describe('Guest360Dialog sunum tutarlılığı', () => {
 
     expect(screen.getByText('Misafir profili yükleniyor…')).toBeInTheDocument();
   });
+
+  it('eski metin biçimindeki not ve etiketi sayfayı çökertmeden gösterir', () => {
+    render(
+      <Guest360Dialog
+        open
+        onClose={vi.fn()}
+        selectedGuest360="guest-legacy"
+        loadGuest360={vi.fn()}
+        loadingGuest360={false}
+        guest360Data={{
+          guest: {
+            id: 'guest-legacy',
+            name: 'Eski Misafir',
+            notes: 'Sessiz oda tercih ediyor',
+            tags: 'VIP',
+          },
+          profile: { loyalty_status: 'standard' },
+          stats: {},
+          stay_history: { unexpected: 'legacy-object' },
+        }}
+      />
+    );
+
+    expect(screen.getByText('Sessiz oda tercih ediyor')).toBeInTheDocument();
+    expect(screen.getByText('Eski kayıt')).toBeInTheDocument();
+    expect(screen.getByText('VIP')).toBeInTheDocument();
+    expect(screen.getByText('Kayıtlı konaklama geçmişi bulunamadı.')).toBeInTheDocument();
+  });
 });

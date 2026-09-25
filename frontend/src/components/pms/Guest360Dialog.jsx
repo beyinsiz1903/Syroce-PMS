@@ -18,6 +18,26 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { promptDialog } from '@/lib/dialogs';
 import CallButton from '@/components/contact-center/CallButton';
 
+export const normalizeGuestNotes = (value) => {
+  if (value == null || value === '') return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.map((note) => {
+    if (note && typeof note === 'object') {
+      return {
+        text: String(note.text || note.note || note.content || ''),
+        created_by: note.created_by || note.author || 'Sistem',
+        created_at: note.created_at || null,
+      };
+    }
+    return { text: String(note), created_by: 'Eski kayıt', created_at: null };
+  }).filter(note => note.text.trim());
+};
+
+const normalizeStringList = (value) => {
+  if (value == null || value === '') return [];
+  return (Array.isArray(value) ? value : [value]).map(item => String(item)).filter(Boolean);
+};
+
 const Guest360Dialog = ({
   open,
   onClose,
@@ -32,7 +52,10 @@ const Guest360Dialog = ({
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
   const historySectionRef = useRef(null);
-  const stayHistory = guest360Data?.stay_history || guest360Data?.recent_bookings || [];
+  const rawStayHistory = guest360Data?.stay_history || guest360Data?.recent_bookings;
+  const stayHistory = Array.isArray(rawStayHistory) ? rawStayHistory : [];
+  const guestNotes = normalizeGuestNotes(guest360Data?.guest?.notes);
+  const guestTags = normalizeStringList(guest360Data?.guest?.tags);
   const formatMoney = (value) => new Intl.NumberFormat('tr-TR', {
     style: 'currency',
     currency: 'TRY',
@@ -373,7 +396,7 @@ const Guest360Dialog = ({
             <div>
               <div className="text-sm text-gray-600 mb-2">Etiketler:</div>
               <div className="flex flex-wrap gap-2">
-                {guest360Data.guest?.tags?.map((tag, idx) => (
+                {guestTags.map((tag, idx) => (
                   <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
                     {tag}
                   </span>
@@ -392,12 +415,13 @@ const Guest360Dialog = ({
             <div>
               <div className="text-sm text-gray-600 mb-2">Notlar:</div>
               <div className="space-y-2 max-h-32 overflow-y-auto mb-2">
-                {guest360Data.guest?.notes?.map((note, idx) => (
+                {guestNotes.map((note, idx) => (
                   <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
-                    <div className="font-semibold">{note.created_by} - {new Date(note.created_at).toLocaleString()}</div>
+                    <div className="font-semibold">{note.created_by}{note.created_at ? ` · ${new Date(note.created_at).toLocaleString('tr-TR')}` : ''}</div>
                     <div>{note.text}</div>
                   </div>
                 ))}
+                {guestNotes.length === 0 && <p className="text-xs text-gray-400">Kayıtlı not bulunmuyor.</p>}
               </div>
               <div className="flex gap-2">
                 <Textarea 

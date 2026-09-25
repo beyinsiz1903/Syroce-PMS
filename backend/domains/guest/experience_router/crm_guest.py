@@ -98,6 +98,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["guest-experience"])
 
 
+def normalize_guest_notes(value) -> list[dict]:
+    """Return legacy scalar/object notes in the current list schema."""
+    if value is None or value == "":
+        return []
+    values = value if isinstance(value, list) else [value]
+    normalized = []
+    for item in values:
+        if isinstance(item, dict):
+            normalized.append({
+                "text": str(item.get("text") or item.get("note") or item.get("content") or ""),
+                "created_by": item.get("created_by") or item.get("author") or "Sistem",
+                "created_at": item.get("created_at"),
+            })
+        else:
+            normalized.append({"text": str(item), "created_by": "Eski kayıt", "created_at": None})
+    return [item for item in normalized if item["text"].strip()]
+
+
 # ── GET /crm/guest/{guest_id} ──
 @router.get("/crm/guest/{guest_id}")
 async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_user)):
@@ -109,6 +127,10 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
 
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
+
+    guest["notes"] = normalize_guest_notes(guest.get("notes"))
+    if not isinstance(guest.get("tags"), list):
+        guest["tags"] = [str(guest["tags"])] if guest.get("tags") else []
 
     # Get all bookings
     bookings = await db.bookings.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("check_in", -1).to_list(100)
@@ -211,7 +233,21 @@ async def add_guest_tag(
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Add tag to guest"""
-    result = await db.guests.update_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"$addToSet": {"tags": tag}})
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "tags": 1},
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    raw_tags = guest.get("tags")
+    tags = raw_tags if isinstance(raw_tags, list) else ([str(raw_tags)] if raw_tags else [])
+    if tag not in tags:
+        tags.append(tag)
+    result = await db.guests.update_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"tags": tags}},
+    )
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -230,7 +266,17 @@ async def add_guest_note(
     """Add note to guest"""
     note_obj = {"text": note, "created_by": current_user.name, "created_at": datetime.now(UTC).isoformat()}
 
-    result = await db.guests.update_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"$push": {"notes": note_obj}})
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "notes": 1},
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    result = await db.guests.update_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"notes": [*normalize_guest_notes(guest.get("notes")), note_obj]}},
+    )
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -249,7 +295,7 @@ async def delete_guest_note(
     guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id})
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    notes = guest.get("notes", [])
+    notes = normalize_guest_notes(guest.get("notes"))
     if note_index < 0 or note_index >= len(notes):
         raise HTTPException(status_code=400, detail="Invalid note index")
     notes.pop(note_index)
