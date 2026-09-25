@@ -32,6 +32,14 @@ test("builds a foreign guest contract with strict country and gender mapping", (
   assert.equal(req.payload.cinsiyet, 1);
 });
 
+test("uses the identity-number contract for a foreign identity card", () => {
+  const req = egm.buildCheckin({
+    nationality: "SY", id_type: "foreign_identity_card", id_number: "99999999999", room_number: "208",
+  });
+  assert.equal(req.operation, "KonaklayanTurkVatandasiEkle");
+  assert.equal(req.payload.kimlikNo, 99999999999);
+});
+
 test("fails closed for incomplete or ambiguous foreign identity data", () => {
   assert.throws(() => egm.buildCheckin({ nationality: "DE", passport_number: "P1", guest_name: "A B", birth_date: "1990-01-01", room_number: "1" }, [{ id: 1, kisaAdi: "DE" }]), /gender_required/);
   assert.throws(() => egm.buildCheckin({ nationality: "XX", passport_number: "P1", guest_name: "A B", gender: "male", birth_date: "1990-01-01", room_number: "1" }, []), /country_unsupported/);

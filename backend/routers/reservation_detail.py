@@ -4969,6 +4969,20 @@ async def add_reservation_guest(
         }
     )
 
+    # Oda zaten giriş yaptıysa sonradan eklenen kişi de ayrı bir yasal KBS
+    # kaydıdır. Ana rezervasyonun daha önce bildirilmiş olması bu misafiri
+    # kapsamaz; kişi bazlı kuyruk anahtarıyla otomatik bildirimi başlat.
+    if booking.get("status") == "checked_in":
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+
+        await auto_enqueue_kbs(
+            tid,
+            booking_id,
+            action="checkin",
+            actor=f"user:reservation_guest_added:{current_user.id}",
+            target_guest_id=guest_id,
+        )
+
     return {
         "status": "ok",
         "guest_id": guest_id,

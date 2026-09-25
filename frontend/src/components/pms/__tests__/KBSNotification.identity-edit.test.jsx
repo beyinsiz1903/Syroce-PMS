@@ -98,7 +98,7 @@ describe('KBSNotification pending guest identity editing', () => {
     await waitFor(() => {
       expect(axiosPatch).toHaveBeenCalledWith(
         '/pms/guests/guest-110/preferences',
-        { id_number: '12345678901', birth_date: '1990-05-12', nationality: 'TC' },
+        { id_type: 'tc_kimlik', id_number: '12345678901', birth_date: '1990-05-12', nationality: 'TC' },
       );
     });
 
@@ -134,6 +134,7 @@ describe('KBSNotification pending guest identity editing', () => {
       expect(axiosPost).toHaveBeenCalledWith('/kbs/queue', {
         booking_id: 'booking-110',
         action: 'checkin',
+        guest_id: 'guest-110',
       });
     });
   });
@@ -224,6 +225,7 @@ describe('KBSNotification pending guest identity editing', () => {
       expect(axiosPost).toHaveBeenCalledWith('/kbs/queue', {
         booking_id: 'booking-110',
         action: 'checkin',
+        guest_id: 'guest-110',
       });
     });
     expect(axiosPost).not.toHaveBeenCalledWith('/kbs/send', expect.anything());

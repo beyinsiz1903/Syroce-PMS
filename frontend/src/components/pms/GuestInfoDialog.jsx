@@ -115,6 +115,7 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
                     <SelectContent>
                       <SelectItem value="passport">Pasaport</SelectItem>
                       <SelectItem value="national_id">T.C. Kimlik Kartı</SelectItem>
+                      <SelectItem value="foreign_identity_card">Yabancı Kimlik Kartı (YKN)</SelectItem>
                       <SelectItem value="drivers_license">Sürücü Belgesi</SelectItem>
                     </SelectContent>
                   </Select>

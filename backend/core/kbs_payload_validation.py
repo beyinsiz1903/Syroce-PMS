@@ -23,6 +23,17 @@ def _is_turkish_nationality(value: object) -> bool:
     return normalized in {"", "TC", "TR", "TUR", "TURKIYE"}
 
 
+def _is_foreign_identity_card(value: object) -> bool:
+    normalized = _norm(value).lower().replace("-", "_").replace(" ", "_")
+    return normalized in {
+        "foreign_identity_card",
+        "foreign_id",
+        "yabanci_kimlik",
+        "yabanci_kimlik_karti",
+        "ykn",
+    }
+
+
 def validate_kbs_payload(snapshot: dict, action: str = "checkin") -> tuple[bool, list[str]]:
     """Return (ok, missing_fields). Missing list boşsa payload uygundur."""
     missing: list[str] = []
@@ -35,6 +46,7 @@ def validate_kbs_payload(snapshot: dict, action: str = "checkin") -> tuple[bool,
             missing.append(field)
 
     nationality = snapshot.get("nationality")
+    id_type = snapshot.get("id_type")
     id_number = _norm(snapshot.get("id_number"))
     passport_number = _norm(snapshot.get("passport_number"))
 
@@ -44,7 +56,16 @@ def validate_kbs_payload(snapshot: dict, action: str = "checkin") -> tuple[bool,
         elif not (id_number.isdigit() and len(id_number) == 11):
             missing.append("id_number_invalid")
     else:
-        if not passport_number:
+        # Türkiye'de verilen yabancı kimlik numarası (YKN) taşıyan kişiler
+        # pasaportla değil, KBS'deki "YKN olan Yabancı" akışıyla bildirilir.
+        # Belge türü açıkça YKN ise 11 haneli kimlik numarası zorunludur;
+        # diğer yabancı belgelerde pasaport kuralı korunur.
+        if _is_foreign_identity_card(id_type):
+            if not id_number:
+                missing.append("id_number")
+            elif not (id_number.isdigit() and len(id_number) == 11):
+                missing.append("id_number_invalid")
+        elif not passport_number:
             missing.append("passport_number")
         if action == "checkin":
             if not _norm(snapshot.get("guest_name")):

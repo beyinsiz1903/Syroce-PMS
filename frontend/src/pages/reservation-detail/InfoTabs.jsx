@@ -429,6 +429,9 @@ const ID_TYPES = [{
   code: 'tc_kimlik',
   label: 'TC Kimlik'
 }, {
+  code: 'foreign_identity_card',
+  label: 'Yabancı Kimlik Kartı (YKN)'
+}, {
   code: 'passport',
   label: 'Pasaport'
 }, {
@@ -498,6 +501,7 @@ export function GuestsTab({
   const mapIdType = dt => {
     if (!dt) return 'tc_kimlik';
     const s = String(dt).toLowerCase();
+    if (s.includes('foreign') || s.includes('yabancı') || s.includes('yabanci') || s === 'ykn') return 'foreign_identity_card';
     if (s.includes('passport') || s.includes('pasaport')) return 'passport';
     if (s.includes('driv') || s.includes('ehliyet')) return 'driving_license';
     if (s.includes('tc') || s.includes('kimlik') || s.includes('national')) return 'tc_kimlik';
@@ -648,7 +652,7 @@ export function GuestsTab({
                     {g.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{g.email}</span>}
                     {g.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{g.phone}</span>}
                     {g.nationality && <span className="flex items-center gap-1"><Globe className="w-3 h-3" />{g.nationality}</span>}
-                    {g.id_number && <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{g.id_type === 'passport' ? 'Pasaport' : 'Kimlik'}: {g.id_number}</span>}
+                    {g.id_number && <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{g.id_type === 'passport' ? 'Pasaport' : g.id_type === 'foreign_identity_card' ? 'YKN' : 'Kimlik'}: {g.id_number}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

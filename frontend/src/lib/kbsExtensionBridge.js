@@ -102,6 +102,7 @@ export function buildKbsBody(payload, action = "checkin") {
     guest_name: p.guest_name || "",
     phone: p.phone || "",
     nationality: p.nationality || "TC",
+    id_type: p.id_type || "",
     id_number: p.id_number || "",
     passport_number: p.passport_number || "",
     birth_date: p.birth_date || "",
