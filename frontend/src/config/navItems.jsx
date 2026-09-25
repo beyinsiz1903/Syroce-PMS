@@ -1230,6 +1230,15 @@ export const NAV_ITEMS = [
     navSection: "properties",
   },
   {
+    key: "admin_agencies",
+    label: "Acente Yönetimi",
+    path: "/admin/agencies",
+    requireSuperAdmin: true,
+    group: "admin",
+    navGroup: "admin",
+    navSection: "properties",
+  },
+  {
     key: "admin_vendors",
     label: "Tedarikci Yönetimi",
     path: "/admin/vendors",

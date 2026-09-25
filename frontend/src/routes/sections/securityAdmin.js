@@ -1,6 +1,6 @@
 import {
   GDPRCompliance, EncryptionManagementPage, CentralOfficeDashboard,
-  CentralPricingManager, CrossPropertyGuests, MLDashboard, AdminTenants,
+  CentralPricingManager, CrossPropertyGuests, MLDashboard, AdminTenants, AdminMarketplaceAgencies,
   AdminVendors, QuickIdSettings, RoomQrCodes, RoomRequests, ModuleReport,
   AdminLeads, GovernancePanel, UserRoleManager, TenantUsers, HousekeepingDashboard,
   POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
@@ -35,6 +35,7 @@ export function securityAdminRoutes({ p, pa, pm }) {
     // ── Admin ──────────────────────────────────────────
     { path: "/admin/otel-kullanicilari", ...p(TenantUsers), wrapLayout: true, layoutModule: "tenant_users" },
     { path: "/admin/tenants", ...pa(AdminTenants), wrapLayout: true, layoutModule: "admin-tenants" },
+    { path: "/admin/agencies", ...pa(AdminMarketplaceAgencies), wrapLayout: true, layoutModule: "admin-agencies" },
     { path: "/admin/vendors", ...pa(AdminVendors), wrapLayout: true, layoutModule: "admin_vendors" },
     { path: "/admin/quick-id", ...pa(QuickIdSettings), wrapLayout: true, layoutModule: "quick_id_settings" },
     { path: "/admin/voice-numbers", ...p(VoiceNumberMapping), wrapLayout: true, layoutModule: "voice-number-mapping" },
