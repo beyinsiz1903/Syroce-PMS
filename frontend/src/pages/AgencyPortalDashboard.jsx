@@ -162,6 +162,7 @@ const AgencyPortalDashboard = () => {
         if (portalMode === 'marketplace') {
           const { data } = await agencyApi.get('/marketplace/v1/extranet/profile');
           const availableHotels = data.hotels || [];
+          setAgencyUser(data.user || null);
           // Discovery starts from the whole contracted portfolio. A hotel is
           // selected only when the agent explicitly narrows the search or books.
           const allowedSelected = '';
