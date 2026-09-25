@@ -15,6 +15,29 @@ def test_marketplace_search_requires_an_age_for_every_child():
         )
 
 
+def test_marketplace_search_accepts_discovery_facets():
+    request = marketplace_b2b.MarketplaceSearchRequest(
+        check_in="2026-10-15",
+        check_out="2026-10-17",
+        adults=2,
+        children=0,
+        amenities=["pool", "Deniz Manzarası"],
+        meal_plans=["BB", "AI"],
+        min_star_rating=4,
+        max_price=20_000,
+    )
+
+    assert request.amenities == ["pool", "Deniz Manzarası"]
+    assert request.meal_plans == ["BB", "AI"]
+    assert request.min_star_rating == 4
+    assert marketplace_b2b._normalized_tokens(request.amenities) == {"pool", "sea_view"}
+
+
+def test_marketplace_filter_tokens_are_case_and_separator_safe():
+    assert marketplace_b2b._filter_token("Her Şey Dahil") == "ai"
+    assert marketplace_b2b._filter_token("sea-view") == "sea_view"
+
+
 def test_marketplace_reservation_rejects_invalid_child_age():
     with pytest.raises(ValidationError, match="0-17"):
         marketplace_b2b.MarketplaceReservationCreate(

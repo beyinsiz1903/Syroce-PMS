@@ -468,6 +468,7 @@ class MarketplaceListingCreate(BaseModel):
     description: str = ""
     photos: list[str] = []
     amenities: list[str] = []
+    meal_plans: list[str] = []
     star_rating: int | None = Field(default=None, ge=1, le=5)
     commission_pct: float | None = Field(default=None, ge=0, le=100)
     allowed_room_types: list[str] = []
@@ -482,6 +483,7 @@ class MarketplaceListingUpdate(BaseModel):
     description: str | None = None
     photos: list[str] | None = None
     amenities: list[str] | None = None
+    meal_plans: list[str] | None = None
     star_rating: int | None = Field(default=None, ge=1, le=5)
     commission_pct: float | None = Field(default=None, ge=0, le=100)
     allowed_room_types: list[str] | None = None
@@ -498,6 +500,9 @@ class MarketplaceSearchRequest(BaseModel):
     city: str | None = None
     country: str | None = None
     q: str | None = None
+    amenities: list[str] = Field(default_factory=list, max_length=30)
+    meal_plans: list[str] = Field(default_factory=list, max_length=10)
+    min_star_rating: int | None = Field(default=None, ge=1, le=5)
     max_price: float | None = None
     limit: int = Field(default=50, le=200)
 
@@ -508,6 +513,29 @@ class MarketplaceSearchRequest(BaseModel):
         if len(self.child_ages) != self.children:
             raise ValueError("Her çocuk için yaş bilgisi girilmelidir")
         return self
+
+
+def _filter_token(value: object) -> str:
+    """Normalize marketplace facets without relying on display language/casing."""
+    import re
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().lower()
+    token = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    aliases = {
+        "havuz": "pool", "jakuzi": "jacuzzi", "plaj": "beach",
+        "deniz_manzarasi": "sea_view", "deniz_manzaras": "sea_view",
+        "oda_kahvalti": "bb", "bed_breakfast": "bb", "breakfast_included": "bb",
+        "sadece_oda": "ro", "room_only": "ro",
+        "yarim_pansiyon": "hb", "half_board": "hb",
+        "tam_pansiyon": "fb", "full_board": "fb",
+        "her_sey_dahil": "ai", "all_inclusive": "ai",
+    }
+    return aliases.get(token, token)
+
+
+def _normalized_tokens(values: list[object] | None) -> set[str]:
+    return {token for value in (values or []) if (token := _filter_token(value))}
 
 
 class MarketplaceReservationCreate(BaseModel):
@@ -686,6 +714,7 @@ async def listing_opt_in(
         "description": data.description.strip(),
         "photos": data.photos or [],
         "amenities": data.amenities or [],
+        "meal_plans": data.meal_plans or [],
         "star_rating": data.star_rating,
         "commission_pct": data.commission_pct,
         "allowed_room_types": data.allowed_room_types or [],
@@ -864,6 +893,8 @@ async def agency_search(
             {"hotel_name": {"$regex": _s, "$options": "i"}},
             {"description": {"$regex": _s, "$options": "i"}},
         ]
+    if req.min_star_rating:
+        list_query["star_rating"] = {"$gte": req.min_star_rating}
 
     listings = await sysdb.marketplace_listings.find(list_query, {"_id": 0}).limit(req.limit).to_list(req.limit)
 
@@ -879,6 +910,25 @@ async def agency_search(
         with tenant_context(tenant_id):
             rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
 
+            requested_amenities = _normalized_tokens(req.amenities)
+            listing_amenities = _normalized_tokens(listing.get("amenities"))
+            requested_meals = _normalized_tokens(req.meal_plans)
+            known_meals = {"ro", "bb", "hb", "fb", "ai"}
+            listing_meals = _normalized_tokens(listing.get("meal_plans")) | (
+                listing_amenities & known_meals
+            )
+            room_amenities = set().union(*(
+                _normalized_tokens(room.get("amenities")) for room in rooms
+            )) if rooms else set()
+            room_meals = set()
+            for room in rooms:
+                room_meals |= _normalized_tokens([room.get("meal_plan"), room.get("board_type")])
+                room_meals |= _normalized_tokens(room.get("amenities")) & known_meals
+            if not requested_amenities.issubset(listing_amenities | room_amenities):
+                continue
+            if requested_meals and not requested_meals.intersection(listing_meals | room_meals):
+                continue
+
             room_types: dict[str, dict] = {}
             for r in rooms:
                 if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
@@ -888,6 +938,16 @@ async def agency_search(
                     continue
                 if r.get("capacity", 2) < capacity_needed:
                     continue
+                # Hotel-level features (pool, beach, etc.) apply to every room;
+                # room-level features (jacuzzi, sea view, etc.) must be present on
+                # the selected room type when not declared by the hotel listing.
+                required_room_amenities = requested_amenities - listing_amenities
+                if not required_room_amenities.issubset(_normalized_tokens(r.get("amenities"))):
+                    continue
+                current_room_meals = _normalized_tokens([r.get("meal_plan"), r.get("board_type")])
+                current_room_meals |= _normalized_tokens(r.get("amenities")) & known_meals
+                if requested_meals and not requested_meals.intersection(listing_meals | current_room_meals):
+                    continue
                 rt_data = room_types.setdefault(
                     rt,
                     {
@@ -896,6 +956,8 @@ async def agency_search(
                         "base_price": r.get("base_price", 0),
                         "total_rooms": 0,
                         "available_rooms": 0,
+                        "amenities": r.get("amenities", []),
+                        "meal_plan": r.get("meal_plan") or r.get("board_type") or "",
                         "_room_ids": [],
                     },
                 )
@@ -969,6 +1031,9 @@ async def agency_search(
                     "country": listing.get("country"),
                     "star_rating": listing.get("star_rating"),
                     "photos": listing.get("photos", [])[:3],
+                    "description": listing.get("description", ""),
+                    "amenities": listing.get("amenities", []),
+                    "meal_plans": listing.get("meal_plans", []),
                     "currency": listing.get("currency", "TRY"),
                     "available_room_types": available,
                 }
