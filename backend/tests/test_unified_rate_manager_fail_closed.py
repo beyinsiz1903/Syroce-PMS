@@ -19,6 +19,11 @@ async def test_detect_provider_exposes_agency_distribution_without_ota(monkeypat
         "_detect_active_provider",
         AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": None}),
     )
+    monkeypatch.setattr(
+        rate_router,
+        "_active_agency_docs_for_tenant",
+        AsyncMock(return_value=[{"id": "agency-1"}, {"id": "agency-2"}]),
+    )
 
     result = await rate_router.detect_provider(SimpleNamespace(tenant_id="tenant-test"))
 
@@ -36,6 +41,11 @@ async def test_detect_provider_stays_fail_closed_for_configuration_error(monkeyp
         rate_router,
         "_detect_active_provider",
         AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": "multiple_active_providers"}),
+    )
+    monkeypatch.setattr(
+        rate_router,
+        "_active_agency_docs_for_tenant",
+        AsyncMock(return_value=[{"id": "agency-1"}, {"id": "agency-2"}]),
     )
 
     result = await rate_router.detect_provider(SimpleNamespace(tenant_id="tenant-test"))

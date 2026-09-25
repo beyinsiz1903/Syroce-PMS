@@ -42,6 +42,7 @@ from core.occupancy_pricing import (
 )
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
+from core.tenant_db import get_system_db
 from domains.channel_manager.providers.exely.production_safety import (
     ari_write_block_reason as exely_ari_write_block_reason,
 )
@@ -59,6 +60,37 @@ router = APIRouter(
     prefix="/api/channel-manager/unified-rate-manager",
     tags=["Unified Rate Manager"],
 )
+
+
+async def _active_agency_docs_for_tenant(tenant_id: str) -> list[dict]:
+    """Return every agency that can currently sell this hotel.
+
+    Marketplace partnerships live in the system database, while legacy PMS
+    agencies live in the tenant database. The rate manager must use the same
+    contract source as marketplace search or a hotel can be sellable in the
+    agency portal while appearing disconnected here.
+    """
+    from routers.agency_contracts import list_active_agencies_for_tenant
+
+    contract_ids = await list_active_agencies_for_tenant(tenant_id)
+    marketplace_docs: list[dict] = []
+    if contract_ids:
+        marketplace_docs = await get_system_db().marketplace_agencies.find(
+            {"id": {"$in": contract_ids}, "status": "active"},
+            {"_id": 0, "id": 1, "name": 1, "contact_name": 1, "commission_rate": 1},
+        ).to_list(len(contract_ids))
+
+    legacy_docs = await db.agencies.find(
+        {"tenant_id": tenant_id, "status": "active"},
+        {"_id": 0, "id": 1, "name": 1, "contact_name": 1, "commission_rate": 1},
+    ).to_list(200)
+
+    merged: dict[str, dict] = {}
+    for agency in [*marketplace_docs, *legacy_docs]:
+        agency_id = agency.get("id")
+        if agency_id:
+            merged[agency_id] = agency
+    return list(merged.values())
 
 
 # ── Request / Response Models ────────────────────────────────────
@@ -251,8 +283,8 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
     provider = detection.get("provider")
     conn = detection.get("connection") or {}
     if not provider:
-        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
-        if agency_count > 0 and not detection.get("configuration_error"):
+        agencies = await _active_agency_docs_for_tenant(tenant_id)
+        if agencies and not detection.get("configuration_error"):
             room_count = len(await db.rooms.distinct("room_type", {"tenant_id": tenant_id, "is_active": {"$ne": False}}))
             return {
                 "provider": "agency",
@@ -329,8 +361,8 @@ async def get_unified_grid(
         }
 
     if not detection["provider"]:
-        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
-        if agency_count > 0 and not detection.get("configuration_error"):
+        agencies = await _active_agency_docs_for_tenant(tenant_id)
+        if agencies and not detection.get("configuration_error"):
             return await _build_agency_grid(tenant_id, start_date, end_date)
         return {
             "grid": [],
@@ -689,8 +721,8 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
     detection = await _detect_active_provider(tenant_id)
 
     if not detection["provider"]:
-        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
-        if agency_count > 0 and not detection.get("configuration_error"):
+        agencies = await _active_agency_docs_for_tenant(tenant_id)
+        if agencies and not detection.get("configuration_error"):
             rooms = await db.rooms.find(
                 {"tenant_id": tenant_id, "is_active": {"$ne": False}}, {"_id": 0, "room_type": 1}
             ).to_list(500)
@@ -749,8 +781,8 @@ async def unified_bulk_grid_update(
     # auto-detect it, while two active unconfigured providers fail closed.
     detection = await _detect_active_provider(tenant_id)
     if not detection["provider"]:
-        agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
-        if agency_count > 0 and request.agency_ids and not detection.get("configuration_error"):
+        active_agencies = await _active_agency_docs_for_tenant(tenant_id)
+        if active_agencies and request.agency_ids and not detection.get("configuration_error"):
             detection = {"provider": "agency", "connection": {}}
             targets = []
         else:
@@ -1439,10 +1471,9 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
         return 0
 
     # Verify agencies exist and are active
-    agencies = await db.agencies.find(
-        {"tenant_id": tenant_id, "id": {"$in": agency_ids}, "status": "active"},
-        {"_id": 0, "id": 1, "name": 1},
-    ).to_list(100)
+    active_agencies = await _active_agency_docs_for_tenant(tenant_id)
+    selected_ids = set(agency_ids)
+    agencies = [agency for agency in active_agencies if agency.get("id") in selected_ids]
 
     if not agencies:
         return 0
@@ -1568,10 +1599,7 @@ async def list_agencies_for_rates(current_user: User = Depends(get_current_user)
     """Fiyat iletilecek aktif acenteleri listele."""
     tenant_id = current_user.tenant_id
 
-    agencies = await db.agencies.find(
-        {"tenant_id": tenant_id, "status": "active"},
-        {"_id": 0, "id": 1, "name": 1, "contact_name": 1, "commission_rate": 1},
-    ).to_list(200)
+    agencies = await _active_agency_docs_for_tenant(tenant_id)
 
     # Get override counts per agency
     for agency in agencies:
