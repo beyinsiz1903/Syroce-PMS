@@ -1,6 +1,7 @@
 import {
   MarketplaceModule, SuppliesMarket, VendorPortal, LoyaltyModule,
   HotelInventory, InventoryTransferHistory, TemplateManager,
+  HotelNetwork,
 } from "./lazyPages";
 
 export function marketplaceLoyaltyRoutes({ p }) {
@@ -8,6 +9,7 @@ export function marketplaceLoyaltyRoutes({ p }) {
     // ── Marketplace ────────────────────────────────────
     { path: "/marketplace", ...p(MarketplaceModule), type: "feature", featureKey: "hidden_marketplace", moduleName: "Pazar Yeri", wrapLayout: true, layoutModule: "marketplace" },
     { path: "/app/marketplace", ...p(MarketplaceModule), type: "feature", featureKey: "hidden_marketplace", moduleName: "Pazar Yeri", wrapLayout: true, layoutModule: "marketplace" },
+    { path: "/app/hotel-network", ...p(HotelNetwork), wrapLayout: true, layoutModule: "pms" },
     { path: "/app/supplies-market", ...p(SuppliesMarket), wrapLayout: true, layoutModule: "supplies_market" },
     { path: "/vendor", type: "public", component: VendorPortal },
     { path: "/vendor/*", type: "public", component: VendorPortal },
