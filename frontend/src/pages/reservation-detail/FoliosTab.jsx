@@ -20,6 +20,22 @@ import {
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
 
+const normalizeCurrency = (value) => String(value || 'TL').toUpperCase() === 'TL' ? 'TRY' : String(value || 'TL').toUpperCase();
+
+export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurrency, rates) {
+  const numericAmount = Number(amount);
+  const base = normalizeCurrency(bookingCurrency);
+  const received = normalizeCurrency(receivedCurrency);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) return null;
+
+  const baseToTry = base === 'TRY' ? 1 : Number(rates?.[base]);
+  const receivedToTry = received === 'TRY' ? 1 : Number(rates?.[received]);
+  if (!Number.isFinite(baseToTry) || baseToTry <= 0 || !Number.isFinite(receivedToTry) || receivedToTry <= 0) return null;
+
+  const rate = baseToTry / receivedToTry;
+  return { rate, amount: numericAmount * rate };
+}
+
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
   const currency = booking?.currency || "TL";
   const { t } = useTranslation();
@@ -51,17 +67,40 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [foreignAmount, setForeignAmount] = useState('');
   const [exchangeRate, setExchangeRate] = useState('');
   const [tcmbRates, setTcmbRates] = useState({});
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [ratesError, setRatesError] = useState('');
+  const [manualExchangeRate, setManualExchangeRate] = useState(false);
 
   const fetchExchangeRates = async () => {
+    setRatesLoading(true);
+    setRatesError('');
     try {
       const res = await axios.get('/pms/reservations/exchange-rates');
       if (res.data?.rates) setTcmbRates(res.data.rates);
-    } catch (e) { console.error('Failed to fetch exchange rates', e); }
+      else setRatesError('Güncel kur bilgisi alınamadı. Kuru elle girebilirsiniz.');
+    } catch (e) {
+      console.error('Failed to fetch exchange rates', e);
+      setRatesError('Güncel kur bilgisi alınamadı. Kuru elle girebilirsiniz.');
+    } finally {
+      setRatesLoading(false);
+    }
   };
 
   useEffect(() => {
     if (useCurrencyConverter && Object.keys(tcmbRates).length === 0) fetchExchangeRates();
   }, [useCurrencyConverter, tcmbRates]);
+
+  useEffect(() => {
+    if (!useCurrencyConverter || manualExchangeRate) return;
+    const conversion = calculateReceivedCurrency(payForm.amount, currency, foreignCurrency, tcmbRates);
+    if (!conversion) {
+      setExchangeRate('');
+      setForeignAmount('');
+      return;
+    }
+    setExchangeRate(conversion.rate.toFixed(4));
+    setForeignAmount(conversion.amount.toFixed(2));
+  }, [useCurrencyConverter, manualExchangeRate, payForm.amount, currency, foreignCurrency, tcmbRates]);
 
   const folioList = useMemo(() => (Array.isArray(folios) ? folios : []), [folios]);
 
@@ -308,16 +347,17 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               amount,
               payment_type: classifyGuestPayment(amount, reservationTotalDue),
               ...(useCurrencyConverter && foreignAmount && exchangeRate ? {
-                notes: `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`
+                notes: `[Döviz Çevirici] ${Number(amount).toFixed(2)} ${currency} = ${Number(foreignAmount).toFixed(2)} ${foreignCurrency}. Kur: 1 ${currency} = ${exchangeRate} ${foreignCurrency}`
               } : {}),
             });
             toast.success('Ödeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', reference: '' });
             setUseCurrencyConverter(false);
             setForeignAmount('');
             setExchangeRate('');
+            setManualExchangeRate(false);
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label={`Tutar (${currency})`} type="number" value={payForm.amount} onChange={v => { setPayForm(p => ({ ...p, amount: v })); if (useCurrencyConverter && exchangeRate && !isNaN(parseFloat(v))) setForeignAmount((parseFloat(v) * parseFloat(exchangeRate)).toFixed(2)); else setForeignAmount(""); }} />
+            <FormField label={`Tutar (${currency})`} type="number" value={payForm.amount} onChange={v => { setPayForm(p => ({ ...p, amount: v })); if (useCurrencyConverter && manualExchangeRate && exchangeRate && !isNaN(parseFloat(v))) setForeignAmount((parseFloat(v) * parseFloat(exchangeRate)).toFixed(2)); }} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
           </div>
@@ -327,12 +367,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             <div className="flex items-center space-x-2">
               <Checkbox id="useConverter" checked={useCurrencyConverter} onCheckedChange={(checked) => {
                 setUseCurrencyConverter(checked);
-                if (checked && foreignCurrency && tcmbRates[foreignCurrency]) {
-                  const newRate = exchangeRate || tcmbRates[foreignCurrency].toFixed(4);
-                  if (!exchangeRate) setExchangeRate(newRate);
-                  const baseAmt = parseFloat(payForm.amount) || reservationTotalDue || 0;
-                  if (baseAmt > 0) setForeignAmount((baseAmt * parseFloat(newRate)).toFixed(2));
-                }
+                setManualExchangeRate(false);
               }} />
               <Label htmlFor="useConverter" className="text-sm font-medium text-slate-700 cursor-pointer">
                 Farklı Döviz ile Hesapla (Kur Çevirici)
@@ -345,32 +380,28 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                     <Label className="text-xs">Alınan Döviz Cinsi</Label>
                     <UiSelect value={foreignCurrency} onValueChange={(val) => {
                       setForeignCurrency(val);
-                      if (val === "TL") { setExchangeRate("1"); setForeignAmount(payForm.amount); return; }
-                      const rate = tcmbRates[val];
-                      if (rate) {
-                        const rateStr = rate.toFixed(4);
-                        setExchangeRate(rateStr);
-                        const baseAmt = parseFloat(payForm.amount);
-                        if (!isNaN(baseAmt)) setForeignAmount((baseAmt * parseFloat(rateStr)).toFixed(2));
-                      }
+                      setManualExchangeRate(false);
                     }}>
                       <SelectTrigger className="h-8 mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="TL">TL (Türk Lirası)</SelectItem>
-                        {Object.keys(tcmbRates).sort().map(cur => <SelectItem key={cur} value={cur}>{cur}</SelectItem>)}
+                        {Object.keys(tcmbRates).filter(cur => !['TL', 'TRY'].includes(cur)).sort().map(cur => <SelectItem key={cur} value={cur}>{cur}</SelectItem>)}
                       </SelectContent>
                     </UiSelect>
                   </div>
                   <div>
-                    <Label className="text-xs">Uygulanan Kur ({currency} Karşılığı)</Label>
+                    <Label className="text-xs">Uygulanan Kur (1 {currency} = kaç {foreignCurrency})</Label>
                     <Input type="number" step="0.0001" className="h-8 mt-1" value={exchangeRate} onChange={e => {
                       setExchangeRate(e.target.value);
+                      setManualExchangeRate(true);
                       const rate = parseFloat(e.target.value);
                       const baseAmt = parseFloat(payForm.amount);
                       if (!isNaN(rate) && !isNaN(baseAmt)) setForeignAmount((baseAmt * rate).toFixed(2));
                     }} />
                   </div>
                 </div>
+                {ratesLoading && <div className="flex items-center gap-2 text-xs text-slate-600" role="status"><Loader2 className="h-3 w-3 animate-spin" /> Güncel kurlar alınıyor…</div>}
+                {ratesError && <div className="text-xs text-amber-700" role="alert">{ratesError}</div>}
                 <div>
                   <Label className="text-xs">Misafirden Alınacak Tutar ({foreignCurrency})</Label>
                   <Input type="number" step="0.01" className="h-8 mt-1 font-semibold text-emerald-600" value={foreignAmount} onChange={e => {
@@ -380,6 +411,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                     if (!isNaN(fAmt) && !isNaN(rate) && rate > 0) setPayForm(p => ({...p, amount: (fAmt / rate).toFixed(2)}));
                   }} />
                 </div>
+                {exchangeRate && foreignAmount && (
+                  <div className="text-xs text-slate-600" data-testid="currency-conversion-summary">
+                    {Number(payForm.amount).toFixed(2)} {currency} = {Number(foreignAmount).toFixed(2)} {foreignCurrency} · 1 {currency} = {exchangeRate} {foreignCurrency}
+                  </div>
+                )}
               </div>
             )}
           </div>
