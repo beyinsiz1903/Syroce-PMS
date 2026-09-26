@@ -1224,7 +1224,7 @@ export const NAV_ITEMS = [
     path: "/app/hotel-network",
     tier: "basic",
     group: "core",
-    navGroup: "front_office",
+    navGroup: "sales",
   },
 
   // ──── SUPER ADMIN ONLY ─────────────────────────────
