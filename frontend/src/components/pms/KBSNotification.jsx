@@ -14,7 +14,7 @@ import { COUNTRIES } from '@/lib/countries';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Shield, Send, CheckCircle, AlertTriangle, Clock,
-  Download, Search, UserCog, Loader2, RefreshCw, Skull, ListPlus
+  Download, Search, UserCog, Loader2, RefreshCw, Skull, ListPlus, Trash2
 } from 'lucide-react';
 
 const escapeXml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -149,6 +149,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   // Faz 1 kuyruk altyapısı entegrasyonu
   const [queueJobs, setQueueJobs] = useState([]);
   const [queueLoading, setQueueLoading] = useState(false);
+  const [clearingQueue, setClearingQueue] = useState(false);
   const [enqueuingId, setEnqueuingId] = useState(null);
 
   // KBS tarayici eklentisi (otel IP'sinden gonderim) entegrasyonu
@@ -193,6 +194,25 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
       setQueueLoading(false);
     }
   }, []);
+
+  const clearQueue = async () => {
+    if (!window.confirm(
+      `${queueJobs.length} KBS kuyruk kaydı silinecek. Resmi gönderim geçmişi korunacak. Devam edilsin mi?`,
+    )) return;
+    setClearingQueue(true);
+    try {
+      const res = await axios.delete('/kbs/queue', {
+        params: { confirm: 'KBS_KUYRUGUNU_TEMIZLE' },
+      });
+      setQueueJobs([]);
+      toast.success(`${res.data?.deleted_count || 0} eski kuyruk kaydı temizlendi`);
+      await fetchQueue();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'KBS kuyruğu temizlenemedi'));
+    } finally {
+      setClearingQueue(false);
+    }
+  };
 
   useEffect(() => {
     fetchQueue();
@@ -787,10 +807,19 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
             <ListPlus className="w-4 h-4 text-gray-500" />
             {tk('queueStatusBar')}
           </div>
-          <Button variant="ghost" size="sm" onClick={fetchQueue} disabled={queueLoading}
-            className="h-7 px-2 text-xs">
-            <RefreshCw className={`w-3 h-3 mr-1 ${queueLoading ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex items-center gap-1">
+            {queueJobs.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearQueue} disabled={clearingQueue}
+                className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">
+                <Trash2 className="w-3 h-3 mr-1" />
+                {clearingQueue ? 'Temizleniyor…' : 'Kuyruğu sıfırla'}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={fetchQueue} disabled={queueLoading}
+              className="h-7 px-2 text-xs" aria-label="KBS kuyruğunu yenile">
+              <RefreshCw className={`w-3 h-3 ${queueLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <div className="text-center bg-white rounded border-yellow-200 border p-2">

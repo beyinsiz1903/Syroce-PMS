@@ -35,6 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from core.audit import log_audit_event
 from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.kbs_payload_builder import build_kbs_payload_snapshot, resolve_booking_room_number
@@ -1091,6 +1092,49 @@ async def kbs_queue_list(
         "jobs": jobs,
         "total": len(jobs),
         "stats": stats,
+    }
+
+
+@router.delete("/queue")
+async def kbs_queue_clear(
+    confirm: str = Query(..., description="KBS_KUYRUGUNU_TEMIZLE"),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_settings")),
+):
+    """Otelin işlem kuyruğunu sıfırlar; resmi gönderim geçmişini korur."""
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
+    if confirm != "KBS_KUYRUGUNU_TEMIZLE":
+        raise HTTPException(400, "KBS kuyruğunu temizlemek için onay metni geçersiz")
+
+    queue_filter = {"_kind": QUEUE_KIND, "tenant_id": tenant_id}
+    with tenant_context(tenant_id):
+        status_rows = await db.kbs_reports.aggregate(
+            [
+                {"$match": queue_filter},
+                {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+            ]
+        ).to_list(None)
+        result = await db.kbs_reports.delete_many(queue_filter)
+
+    removed_by_status = {str(row.get("_id") or "unknown"): row.get("count", 0) for row in status_rows}
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=str(getattr(current_user, "id", None) or getattr(current_user, "email", "unknown")),
+        action="kbs.queue.clear",
+        entity_type="kbs_queue",
+        entity_id=tenant_id,
+        details=f"KBS işlem kuyruğu sıfırlandı: {result.deleted_count} kayıt silindi; resmi bildirim geçmişi korundu.",
+        before_value={"count": result.deleted_count, "by_status": removed_by_status},
+        after_value={"count": 0},
+        db=db,
+        severity="warning",
+    )
+    return {
+        "deleted_count": result.deleted_count,
+        "deleted_by_status": removed_by_status,
+        "official_history_preserved": True,
     }
 
 
