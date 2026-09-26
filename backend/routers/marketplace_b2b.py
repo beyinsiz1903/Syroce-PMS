@@ -900,6 +900,24 @@ async def agency_get_hotel(
 
     with tenant_context(tenant_id):
         rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+        content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    if content:
+        listing = {
+            **listing,
+            "hotel_name": content.get("hotel_name") or listing.get("hotel_name"),
+            "description": content.get("description") or listing.get("description", ""),
+            "address": content.get("address") or listing.get("address", ""),
+            "phone": content.get("phone") or listing.get("phone", ""),
+            "email": content.get("email") or listing.get("email", ""),
+            "photos": content.get("images") or listing.get("photos", []),
+            "amenities": content.get("amenities") or listing.get("amenities", []),
+            "services": content.get("services") or listing.get("services", []),
+            "content_version": content.get("content_version", listing.get("content_version")),
+        }
+    editorial_room_types = {
+        item.get("room_type"): item for item in (content or {}).get("room_types", [])
+        if item.get("room_type")
+    }
     room_types = {}
     for r in rooms:
         if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
@@ -908,11 +926,15 @@ async def agency_get_hotel(
         if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
             continue
         if rt not in room_types:
+            editorial = editorial_room_types.get(rt, {})
             room_types[rt] = {
                 "room_type": rt,
+                "name": editorial.get("name") or rt,
+                "description": editorial.get("description", ""),
                 "capacity": r.get("capacity", 2),
                 "base_price": r.get("base_price", 0),
-                "amenities": r.get("amenities", []),
+                "images": editorial.get("images", []),
+                "amenities": editorial.get("amenities") or r.get("amenities", []),
                 "bed_type": r.get("bed_type", ""),
                 "total_rooms": 0,
             }
@@ -965,12 +987,32 @@ async def agency_search(
         list_query["star_rating"] = {"$gte": req.min_star_rating}
 
     listings = await sysdb.marketplace_listings.find(list_query, {"_id": 0}).limit(req.limit).to_list(req.limit)
+    tenant_ids = [item["tenant_id"] for item in listings]
+    content_docs = await sysdb.hotel_content.find(
+        {"tenant_id": {"$in": tenant_ids}}, {"_id": 0}
+    ).to_list(len(tenant_ids) or 1)
+    content_by_tenant = {item["tenant_id"]: item for item in content_docs}
 
     capacity_needed = max(1, req.adults + req.children)
     results: list[dict] = []
 
     for listing in listings:
         tenant_id = listing["tenant_id"]
+        content = content_by_tenant.get(tenant_id) or {}
+        listing = {
+            **listing,
+            "hotel_name": content.get("hotel_name") or listing.get("hotel_name"),
+            "description": content.get("description") or listing.get("description", ""),
+            "photos": content.get("images") or listing.get("photos", []),
+            "amenities": content.get("amenities") or listing.get("amenities", []),
+            "meal_plans": content.get("meal_plans") or listing.get("meal_plans", []),
+            "star_rating": content.get("star_rating") or listing.get("star_rating"),
+            "content_version": content.get("content_version", listing.get("content_version")),
+        }
+        editorial_room_types = {
+            item.get("room_type"): item for item in content.get("room_types", [])
+            if item.get("room_type")
+        }
         # Tarih engeli kontrolü
         if any(d in listing.get("blocked_dates", []) for d in _date_range(req.check_in, req.check_out)):
             continue
@@ -1020,6 +1062,9 @@ async def agency_search(
                     rt,
                     {
                         "room_type": rt,
+                        "name": editorial_room_types.get(rt, {}).get("name") or rt,
+                        "description": editorial_room_types.get(rt, {}).get("description", ""),
+                        "images": editorial_room_types.get(rt, {}).get("images", []),
                         "capacity": r.get("capacity", 2),
                         "base_price": r.get("base_price", 0),
                         "total_rooms": 0,

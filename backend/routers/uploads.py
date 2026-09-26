@@ -137,8 +137,20 @@ async def get_upload(path: str, optional_user: User | None = Depends(get_optiona
                 raise HTTPException(status_code=403, detail="Forbidden: Vendors cannot access tenant files")
 
             target_tenant_id = parts[0]
-            if target_tenant_id != optional_user.tenant_id and optional_user.role != "super_admin":
-                raise HTTPException(status_code=403, detail="Forbidden: Tenant mismatch")
+            role = getattr(optional_user.role, "value", optional_user.role)
+            if target_tenant_id != optional_user.tenant_id and role != "super_admin":
+                # Global acente kullanıcıları yalnızca aktif sözleşmeleri bulunan
+                # otellerin katalog görsellerini okuyabilir. Başka tenant dosyaları
+                # aynı URL şemasında olsa bile erişime açılmaz.
+                is_catalog_image = len(parts) >= 3 and parts[1] == "hotel-content"
+                agency_id = getattr(optional_user, "agency_id", None)
+                allowed = False
+                if is_catalog_image and agency_id:
+                    from routers.agency_contracts import has_active_contract
+
+                    allowed = await has_active_contract(agency_id, target_tenant_id)
+                if not allowed:
+                    raise HTTPException(status_code=403, detail="Forbidden: Tenant mismatch")
 
         target_file_path = UPLOAD_DIR / path
 
