@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import ReservationDetailModal from '@/pages/ReservationDetailModal';
+import ReservationDetailModal, { isEarlyCheckoutDate } from '@/pages/ReservationDetailModal';
 
 const { get, post, confirmDialog, axiosMock } = vi.hoisted(() => {
   const get = vi.fn();
@@ -51,6 +51,12 @@ const detail = {
 };
 
 describe('ReservationDetailModal operation URLs', () => {
+  it('detects a checkout scheduled after the active PMS business date', () => {
+    expect(isEarlyCheckoutDate('2026-09-27', '2026-09-26')).toBe(true);
+    expect(isEarlyCheckoutDate('2026-09-26', '2026-09-26')).toBe(false);
+    expect(isEarlyCheckoutDate('2026-09-25', '2026-09-26')).toBe(false);
+  });
+
   beforeEach(() => {
     get.mockReset();
     get.mockResolvedValue({ data: detail });
@@ -291,6 +297,35 @@ describe('ReservationDetailModal operation URLs', () => {
       bookingId: 'booking-test',
       operation: 'checked_out',
     }));
+  });
+
+  it('labels a future departure as early checkout and requires explicit confirmation', async () => {
+    confirmDialog.mockResolvedValueOnce(false);
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        business_date: '2026-09-26',
+        booking: {
+          ...detail.booking,
+          status: 'checked_in',
+          check_in: '2026-09-26',
+          check_out: '2026-09-27',
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    const checkoutButton = await screen.findByTestId('btn-checkout');
+    expect(checkoutButton).toHaveTextContent('Erken Çıkış Yap');
+    fireEvent.click(checkoutButton);
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Erken çıkışı onaylayın',
+      message: expect.stringContaining('Erken çıkış yapmak istediğinize emin misiniz?'),
+      confirmText: 'Evet, erken çıkış yap',
+    })));
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('uses the canonical full-detail booking id for check-out', async () => {
