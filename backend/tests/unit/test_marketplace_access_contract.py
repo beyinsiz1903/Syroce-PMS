@@ -254,6 +254,38 @@ async def test_marketplace_settings_update_targets_only_signed_in_agency(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_widget_token_is_scoped_to_configured_origin(monkeypatch):
+    agency_doc = {
+        "id": "agency-1",
+        "name": "Test Travel",
+        "status": "active",
+        "allowed_widget_origins": ["https://agency.example.com"],
+        "widget_token_version": 1,
+    }
+    agencies = _SettingsCollection([agency_doc])
+    monkeypatch.setattr(
+        marketplace_b2b,
+        "get_system_db",
+        lambda: SimpleNamespace(marketplace_agencies=agencies),
+    )
+    token = marketplace_b2b._marketplace_widget_token(agency_doc)
+
+    result = await marketplace_b2b.get_marketplace_widget_agency(
+        x_widget_token=token,
+        x_widget_origin="https://agency.example.com/",
+    )
+    assert result["agency_id"] == "agency-1"
+    assert result["source"] == "agency_website_widget"
+
+    with pytest.raises(HTTPException) as error:
+        await marketplace_b2b.get_marketplace_widget_agency(
+            x_widget_token=token,
+            x_widget_origin="https://attacker.example",
+        )
+    assert error.value.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_marketplace_price_prefers_shared_agency_calendar(monkeypatch):
     fake_db = SimpleNamespace(
         agency_rate_calendar=_Collection([
