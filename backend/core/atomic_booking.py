@@ -114,7 +114,7 @@ async def _retire_stale_booking_lock(
     are included in the delete filter so a concurrent replacement cannot be
     removed. Fresh rows are always kept to protect an in-flight create/move.
     """
-    if not existing or not _lock_is_old_enough(existing):
+    if not existing:
         return False
 
     lock_type = (existing.get("lock_type") or "booking").lower()
@@ -126,6 +126,8 @@ async def _retire_stale_booking_lock(
     if not owner_id or owner_id == requested_booking_id:
         return False
 
+    lock_is_old_enough = _lock_is_old_enough(existing)
+
     with tenant_context(tenant_id):
         owner = await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": owner_id},
@@ -133,10 +135,19 @@ async def _retire_stale_booking_lock(
         )
 
     stale_reason: str | None = None
-    if owner is None:
-        stale_reason = "booking_missing"
-    elif (owner.get("status") or "").lower() in TERMINAL_BOOKING_STATUSES:
+    owner_status = (owner.get("status") or "").lower() if owner else ""
+    if owner_status in TERMINAL_BOOKING_STATUSES:
+        # A terminal booking cannot legitimately own inventory anymore.  Do
+        # not apply the in-flight grace period here: checkout/cancellation has
+        # already committed, so keeping this lock even briefly makes a room
+        # look unavailable immediately after the front-desk action.
         stale_reason = "booking_terminal"
+    elif not lock_is_old_enough:
+        # Fresh non-terminal/missing owners may belong to an in-flight create
+        # or move.  Keep them fail-closed until the grace period expires.
+        return False
+    elif owner is None:
+        stale_reason = "booking_missing"
     elif owner.get("room_id") != room_id:
         stale_reason = "room_mismatch"
     else:

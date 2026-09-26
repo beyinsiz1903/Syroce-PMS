@@ -91,7 +91,57 @@ async def test_fresh_missing_owner_is_kept_for_inflight_create(monkeypatch):
     )
 
     assert recovered is False
-    fake.bookings.find_one.assert_not_awaited()
+    fake.bookings.find_one.assert_awaited_once()
+    fake.room_night_locks.delete_one.assert_not_awaited()
+
+
+@pytest.mark.parametrize("terminal_status", ["checked_out", "cancelled", "no_show"])
+async def test_fresh_terminal_owner_is_retired_immediately(monkeypatch, terminal_status):
+    owner = {
+        "id": OWNER,
+        "status": terminal_status,
+        "room_id": ROOM,
+        "check_in": "2026-08-29T14:00:00",
+        "check_out": "2026-08-30T12:00:00",
+    }
+    fake = _fake_db(owner=owner)
+    monkeypatch.setattr(atomic_booking, "db", fake)
+    fresh = _old_lock(created_at=datetime.now(UTC).isoformat())
+
+    recovered = await atomic_booking._retire_stale_booking_lock(
+        tenant_id=TENANT,
+        room_id=ROOM,
+        night=NIGHT,
+        existing=fresh,
+        requested_booking_id=REQUESTED,
+        correlation_id="corr-terminal",
+    )
+
+    assert recovered is True
+    fake.room_night_locks.delete_one.assert_awaited_once()
+
+
+async def test_fresh_active_owner_is_never_retired(monkeypatch):
+    owner = {
+        "id": OWNER,
+        "status": "confirmed",
+        "room_id": "room-104",
+        "check_in": "2026-08-29T14:00:00",
+        "check_out": "2026-08-30T12:00:00",
+    }
+    fake = _fake_db(owner=owner)
+    monkeypatch.setattr(atomic_booking, "db", fake)
+
+    recovered = await atomic_booking._retire_stale_booking_lock(
+        tenant_id=TENANT,
+        room_id=ROOM,
+        night=NIGHT,
+        existing=_old_lock(created_at=datetime.now(UTC).isoformat()),
+        requested_booking_id=REQUESTED,
+        correlation_id=None,
+    )
+
+    assert recovered is False
     fake.room_night_locks.delete_one.assert_not_awaited()
 
 
