@@ -54,7 +54,7 @@ COLLECTIONS = [
 ]
 
 
-def test_checkout_on_business_date_is_not_overdue_until_next_day():
+def test_checkout_on_business_date_blocks_that_days_close():
     from core.night_audit_hardened import _partition_due_bookings
 
     bookings = [
@@ -66,10 +66,10 @@ def test_checkout_on_business_date_is_not_overdue_until_next_day():
         bookings,
         "check_out",
         "2026-09-25",
-        include_business_date=False,
+        include_business_date=True,
     )
 
-    assert [booking["id"] for booking in overdue] == ["already-past"]
+    assert [booking["id"] for booking in overdue] == ["due-today", "already-past"]
     assert invalid == []
 
 

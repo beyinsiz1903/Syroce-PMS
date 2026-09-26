@@ -834,7 +834,10 @@ async def _validate_preconditions(
         checked_in_for_dates,
         "check_out",
         bd,
-        include_business_date=False,
+        # The checkout date is a departure boundary, not an occupied night.
+        # A guest whose checkout is the business date must already be checked
+        # out (or extended) before that date can be closed.
+        include_business_date=True,
     )
     if overdue_checkouts:
         blocking.append(f"{len(overdue_checkouts)} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Gece denetiminden once cikis yapin veya konaklamayi uzatin.")
@@ -1777,7 +1780,7 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
         checked_in_for_dates,
         "check_out",
         bd,
-        include_business_date=False,
+        include_business_date=True,
     )
     if overdue_bookings:
         blockers.append(
