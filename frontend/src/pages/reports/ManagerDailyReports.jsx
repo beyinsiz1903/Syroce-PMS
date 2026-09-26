@@ -38,6 +38,13 @@ const CashMovementsReport = ({ payments, reportDate }) => (
         </table> : <div className="py-12"><EmptyState icon={ArrowLeftRight} message="Seçili tarihte kasa hareketi yok" /></div>}
       </CardContent>
     </Card>
+    {(payments.currency_exchanges || []).length > 0 && <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Döviz Bozdurma İşlemleri ({payments.currency_exchanges.length})</CardTitle></CardHeader>
+      <CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm">
+        <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-right p-3">Bozdurulan</th><th className="text-right p-3">Kur</th><th className="text-right p-3">Kasaya Giren</th><th className="text-left p-3">İşleyen / Not</th></tr></thead>
+        <tbody>{payments.currency_exchanges.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.created_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right font-semibold">{Number(row.source_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {row.source_currency}</td><td className="p-3 text-right">{Number(row.rate || 0).toLocaleString('tr-TR', { minimumFractionDigits: 4 })}</td><td className="p-3 text-right font-semibold text-emerald-700">{formatCurrency(row.target_amount || 0)}</td><td className="p-3">{row.created_by || '-'}{row.note ? ` · ${row.note}` : ''}</td></tr>)}</tbody>
+      </table></CardContent>
+    </Card>}
   </div>
 );
 

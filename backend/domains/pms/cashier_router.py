@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -25,6 +26,11 @@ _ledger = FolioLedgerService()
 _SHIFT_INDEX_LOCK = asyncio.Lock()
 _SHIFT_INDEX_CREATED = False
 _SHIFT_INDEX_LAST_ATTEMPT = 0.0
+
+_FX_RECEIPT_RE = re.compile(
+    r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3})",
+    re.IGNORECASE,
+)
 _SHIFT_INDEX_RETRY_BACKOFF_SEC = 60.0
 
 
@@ -518,6 +524,184 @@ async def manual_transaction(
     if not txn:
         raise HTTPException(status_code=409, detail="İşlem kaydedilemedi: vardiya kapalı veya çakışma. Vardiyayı kontrol edip tekrar deneyin.")
     return {"ok": True, "transaction": txn}
+
+
+@router.post("/cashier/currency-exchange")
+async def currency_exchange(
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+    _perm=Depends(require_op("post_payment")),
+):
+    """Convert physically received foreign cash to TRY without rewriting the payment."""
+    tenant_id = current_user.tenant_id
+    booking_id = str(body.get("booking_id") or "").strip()
+    source_currency = str(body.get("source_currency") or "").strip().upper()
+    source_amount = round(_safe_float(body.get("source_amount")), 2)
+    rate = round(_safe_float(body.get("rate")), 6)
+    note = str(body.get("note") or "").strip()[:500] or None
+    if not booking_id:
+        raise HTTPException(status_code=400, detail="Rezervasyon zorunludur")
+    if source_currency not in {"USD", "EUR", "GBP", "CHF"}:
+        raise HTTPException(status_code=400, detail="Desteklenmeyen kaynak döviz")
+    if source_amount <= 0 or rate <= 0:
+        raise HTTPException(status_code=400, detail="Tutar ve kur 0'dan büyük olmalı")
+
+    booking = await db.bookings.find_one(
+        {"tenant_id": tenant_id, "id": booking_id},
+        {"_id": 0, "id": 1, "reservation_number": 1, "room_number": 1, "guest_name": 1},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    if idempotency_key:
+        existing = await db.currency_exchanges.find_one(
+            {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+            {"_id": 0},
+        )
+        if existing:
+            return {"ok": True, "exchange": existing, "idempotent": True}
+
+    payments = await db.payments.find(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "voided": {"$ne": True}},
+        {"_id": 0, "notes": 1},
+    ).to_list(1000)
+    received_total = 0.0
+    for payment in payments:
+        match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
+        if match and match.group(2).upper() == source_currency:
+            received_total += _safe_float(match.group(1).replace(",", "."))
+    exchanged_rows = await db.currency_exchanges.find(
+        {
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "source_currency": source_currency,
+            "status": "posted",
+        },
+        {"_id": 0, "source_amount": 1},
+    ).to_list(1000)
+    exchanged_total = sum(_safe_float(row.get("source_amount")) for row in exchanged_rows)
+    available = round(received_total - exchanged_total, 2)
+    if source_amount > available + 0.001:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bozdurulabilir {source_currency} bakiyesi {available:.2f}",
+        )
+
+    shift = await db.cashier_shifts.find_one({"tenant_id": tenant_id, "status": "open"})
+    if not shift:
+        raise HTTPException(status_code=409, detail="Aktif kasa vardiyası yok. Önce 'Vardiya Aç' işlemini yapın.")
+
+    target_amount = round(source_amount * rate, 2)
+    exchange_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    actor_email = getattr(current_user, "email", None) or getattr(current_user, "username", None) or "system"
+    common = {
+        "exchange_id": exchange_id,
+        "booking_id": booking_id,
+        "room_number": booking.get("room_number"),
+        "source_currency": source_currency,
+        "source_amount": source_amount,
+        "target_currency": "TRY",
+        "target_amount": target_amount,
+        "fx_rate": rate,
+    }
+    out_txn = {
+        "id": str(uuid.uuid4()),
+        "amount": target_amount,
+        "method": "cash",
+        "direction": "out",
+        "type": "currency_exchange_out",
+        "description": f"Döviz bozdurma: {source_amount:.2f} {source_currency} çıkış",
+        "ref_type": "currency_exchange",
+        "ref_id": exchange_id,
+        "created_at": now,
+        "timestamp": now,
+        "created_by": actor_email,
+        "created_by_name": getattr(current_user, "name", None) or actor_email,
+        "idempotency_key": f"{idempotency_key}:out" if idempotency_key else None,
+        "currency": source_currency,
+        "original_amount": source_amount,
+        **common,
+    }
+    in_txn = {
+        "id": str(uuid.uuid4()),
+        "amount": target_amount,
+        "method": "cash",
+        "direction": "in",
+        "type": "currency_exchange_in",
+        "description": f"Döviz bozdurma: {target_amount:.2f} TRY giriş",
+        "ref_type": "currency_exchange",
+        "ref_id": exchange_id,
+        "created_at": now,
+        "timestamp": now,
+        "created_by": actor_email,
+        "created_by_name": getattr(current_user, "name", None) or actor_email,
+        "idempotency_key": f"{idempotency_key}:in" if idempotency_key else None,
+        "currency": "TRY",
+        "original_amount": target_amount,
+        **common,
+    }
+    await stamp_open_business_date(db, tenant_id, out_txn)
+    in_txn["business_date"] = out_txn.get("business_date")
+    exchange = {
+        "id": exchange_id,
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+        "reservation_number": booking.get("reservation_number"),
+        "room_number": booking.get("room_number"),
+        "guest_name": booking.get("guest_name"),
+        "source_currency": source_currency,
+        "source_amount": source_amount,
+        "target_currency": "TRY",
+        "target_amount": target_amount,
+        "rate": rate,
+        "note": note,
+        "status": "posted",
+        "business_date": out_txn.get("business_date"),
+        "created_at": now,
+        "created_by": actor_email,
+        "idempotency_key": idempotency_key,
+    }
+
+    shift_filter = {"_id": shift["_id"], "tenant_id": tenant_id, "status": "open"}
+    if idempotency_key:
+        shift_filter["transactions.idempotency_key"] = {"$nin": [f"{idempotency_key}:out", f"{idempotency_key}:in"]}
+    result = await db.cashier_shifts.update_one(
+        shift_filter,
+        {
+            "$push": {"transactions": {"$each": [out_txn, in_txn]}},
+            "$inc": {"cash_out": target_amount, "cash_in": target_amount},
+        },
+    )
+    if result.matched_count != 1:
+        if idempotency_key:
+            existing = await db.currency_exchanges.find_one(
+                {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+                {"_id": 0},
+            )
+            if existing:
+                return {"ok": True, "exchange": existing, "idempotent": True}
+        raise HTTPException(status_code=409, detail="Kasa vardiyası değişti veya işlem daha önce kaydedildi")
+    try:
+        await db.currency_exchanges.insert_one({**exchange})
+    except Exception:
+        logger.exception("currency exchange audit insert failed exchange=%s", exchange_id)
+        raise HTTPException(status_code=500, detail="Kasa hareketi oluştu ancak döviz işlem kaydı yazılamadı; yöneticiyi bilgilendirin")
+    return {"ok": True, "exchange": exchange}
+
+
+@router.get("/cashier/currency-exchanges")
+async def list_currency_exchanges(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),
+):
+    rows = await db.currency_exchanges.find(
+        {"tenant_id": current_user.tenant_id, "booking_id": str(booking_id), "status": "posted"},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(1000)
+    return {"exchanges": rows}
 
 
 @router.post("/cashier/bank-deposit")

@@ -737,6 +737,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         if received["amount"] > 0:
             received_payments_by_booking.setdefault(booking_id, []).append(received)
 
+    currency_exchanges = await db.currency_exchanges.find(
+        {"tenant_id": tenant_id, "business_date": target_day, "status": "posted"},
+        {"_id": 0},
+    ).sort("created_at", 1).to_list(10000)
+
     period_charges = await db.folio_charges.find(
         {
             "tenant_id": tenant_id,
@@ -1332,6 +1337,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "total_pending": pending_invoices,
             "transaction_count": len(payment_rows),
             "rows": sorted(payment_rows, key=lambda row: str(row.get("processed_at") or "")),
+            "currency_exchanges": currency_exchanges,
         },
         # P1 fix: Polis bildirimi ve maliye listesinde 100 kayıt yetersiz —
         # tüm aylık misafir listesi (cap 5000) döndürülür; frontend tarafı
