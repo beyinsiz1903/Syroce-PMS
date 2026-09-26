@@ -96,8 +96,8 @@ def _svc_enc():
 ROLES_BY_TIER = {
     "mini": ["admin", "front_desk", "housekeeping"],
     "basic": ["admin", "front_desk", "housekeeping"],
-    "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "finance", "procurement"],
-    "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin", "finance", "procurement", "supervisor", "sales"],
+    "professional": ["admin", "supervisor", "front_desk", "housekeeping", "finance", "procurement", "staff"],
+    "enterprise": ["admin", "supervisor", "front_desk", "housekeeping", "finance", "procurement", "sales", "staff"],
 }
 
 PLAN_MONTHLY_PRICES = {"mini": 35.0, "basic": 79.0, "professional": 299.0, "enterprise": 799.0}

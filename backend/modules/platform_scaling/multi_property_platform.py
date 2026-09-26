@@ -7,9 +7,16 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from core.database import db
+from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
+
+# Every query in this module is first constrained by ``resolve_chain_properties``
+# and then carries an explicit tenant id from that verified set.  A request-
+# scoped database proxy is intentionally not used here because it correctly
+# rejects sibling-tenant reads; the central-office service is the audited,
+# chain-scoped exception.
+db = get_system_db()
 
 
 async def _properties_for_central_user(current_user: User) -> tuple[str, list[dict]]:
@@ -79,7 +86,7 @@ class CentralReservationService:
             portfolio_data.append(
                 {
                     "property_id": pid,
-                    "property_name": prop.get("hotel_name") or prop.get("name", pid),
+                    "property_name": prop.get("property_name") or prop.get("hotel_name") or prop.get("name", pid),
                     "total_rooms": total_rooms,
                     "occupied": today_booked,
                     "available": total_rooms - today_booked,
@@ -142,7 +149,7 @@ class CentralReservationService:
                 results.append(
                     {
                         "property_id": pid,
-                        "property_name": prop.get("hotel_name") or prop.get("name", pid),
+                        "property_name": prop.get("property_name") or prop.get("hotel_name") or prop.get("name", pid),
                         "available_rooms": len(available_rooms),
                         "room_types": list({r.get("room_type", "Standard") for r in available_rooms}),
                         "min_rate": min(r.get("base_price", 0) for r in available_rooms) if available_rooms else 0,
