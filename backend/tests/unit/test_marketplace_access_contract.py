@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from routers import marketplace_b2b
 from routers.marketplace_b2b import (
+    MarketplacePortalSettingsUpdate,
     MarketplaceReservationCreate,
     _last_occupied_date,
     _marketplace_financials,
@@ -50,6 +51,41 @@ class _LoginCollection:
 
     async def delete_many(self, query):
         self.deleted.append(query)
+
+
+class _SettingsCollection:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+        self.updated = []
+        self.inserted = []
+
+    @staticmethod
+    def _project(row, projection):
+        if not row or not projection:
+            return row
+        included = {key for key, value in projection.items() if value and key != "_id"}
+        if not included:
+            excluded = {key for key, value in projection.items() if not value}
+            return {key: value for key, value in row.items() if key not in excluded}
+        return {key: value for key, value in row.items() if key in included}
+
+    async def find_one(self, query, projection=None, *_args, **_kwargs):
+        row = next((row for row in self.rows if all(row.get(key) == value for key, value in query.items())), None)
+        return self._project(row, projection)
+
+    def find(self, query, projection=None, *_args, **_kwargs):
+        rows = [row for row in self.rows if row.get("agency_id") == query.get("agency_id")]
+        return _Cursor([self._project(row, projection) for row in rows])
+
+    async def update_one(self, query, update):
+        self.updated.append((query, update))
+        match = next((row for row in self.rows if all(row.get(key) == value for key, value in query.items())), None)
+        if match:
+            match.update(update.get("$set", {}))
+        return SimpleNamespace(matched_count=1 if match else 0)
+
+    async def insert_one(self, document):
+        self.inserted.append(document)
 
 
 def test_marketplace_listing_management_rejects_guest_and_staff_roles():
@@ -173,6 +209,48 @@ async def test_marketplace_extranet_profile_preserves_signed_in_user_identity(mo
     assert result["user"]["email"] == "marketplace+cengizhan-travel@syroce.com"
     assert result["agency"]["name"] == "Cengizhan Travel"
     assert result["hotels"][0]["tenant_id"] == "hotel-1"
+
+
+@pytest.mark.asyncio
+async def test_marketplace_settings_are_scoped_and_never_expose_secrets(monkeypatch):
+    agencies = _SettingsCollection([{"id": "agency-1", "name": "Test Travel", "status": "active", "contact_email": "a@example.com"}])
+    users = _SettingsCollection([
+        {"id": "u1", "agency_id": "agency-1", "email": "agent@example.com", "role": "marketplace_agent", "hashed_password": "secret"},
+        {"id": "u2", "agency_id": "agency-2", "email": "other@example.com", "role": "marketplace_agent"},
+    ])
+    keys = _SettingsCollection([{"id": "k1", "agency_id": "agency-1", "key_prefix": "syroce_mkt_abc...", "key_hash": "secret-hash", "is_active": True}])
+    fake_db = SimpleNamespace(marketplace_agencies=agencies, users=users, marketplace_api_keys=keys)
+    monkeypatch.setattr(marketplace_b2b, "get_system_db", lambda: fake_db)
+
+    result = await marketplace_b2b.marketplace_extranet_settings({"agency_id": "agency-1"})
+
+    assert [user["id"] for user in result["users"]] == ["u1"]
+    assert "hashed_password" not in result["users"][0]
+    assert "key_hash" not in result["api_keys"][0]
+
+
+@pytest.mark.asyncio
+async def test_marketplace_settings_update_targets_only_signed_in_agency(monkeypatch):
+    agencies = _SettingsCollection([{"id": "agency-1", "name": "Old", "status": "active"}])
+    audits = _SettingsCollection()
+    fake_db = SimpleNamespace(marketplace_agencies=agencies, marketplace_audit_logs=audits)
+    monkeypatch.setattr(marketplace_b2b, "get_system_db", lambda: fake_db)
+    payload = MarketplacePortalSettingsUpdate(
+        name="New Travel",
+        contact_email="INFO@EXAMPLE.COM",
+        allowed_widget_origins=["https://agency.example.com/"],
+    )
+
+    result = await marketplace_b2b.update_marketplace_extranet_settings(
+        payload, {"agency_id": "agency-1", "user": {"id": "u1"}}
+    )
+
+    assert result["ok"] is True
+    query, update = agencies.updated[0]
+    assert query == {"id": "agency-1", "status": "active"}
+    assert update["$set"]["contact_email"] == "info@example.com"
+    assert update["$set"]["allowed_widget_origins"] == ["https://agency.example.com"]
+    assert audits.inserted[0]["actor_user_id"] == "u1"
 
 
 @pytest.mark.asyncio

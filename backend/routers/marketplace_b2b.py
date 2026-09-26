@@ -210,6 +210,37 @@ async def marketplace_my_hotels(agency: dict = Depends(get_marketplace_agency)):
     return {"hotels": hotels}
 
 
+class MarketplaceNotificationSettings(BaseModel):
+    new_reservation: bool = True
+    reservation_change: bool = True
+    cancellation_request: bool = True
+    payment_reconciliation: bool = True
+
+
+class MarketplacePortalSettingsUpdate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=160)
+    contact_email: EmailStr
+    contact_phone: str = Field(default="", max_length=40)
+    address: str = Field(default="", max_length=500)
+    website: str = Field(default="", max_length=300)
+    notification_preferences: MarketplaceNotificationSettings = Field(default_factory=MarketplaceNotificationSettings)
+    allowed_widget_origins: list[str] = Field(default_factory=list, max_length=20)
+    widget_brand_color: str = Field(default="#047857", pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @model_validator(mode="after")
+    def normalize_widget_origins(self):
+        normalized = []
+        for value in self.allowed_widget_origins:
+            origin = str(value or "").strip().rstrip("/")
+            if not origin:
+                continue
+            if not origin.startswith(("https://", "http://localhost", "http://127.0.0.1")):
+                raise ValueError("Web sitesi adresi HTTPS ile başlamalıdır")
+            normalized.append(origin)
+        self.allowed_widget_origins = list(dict.fromkeys(normalized))
+        return self
+
+
 @router.get("/extranet/profile")
 async def marketplace_extranet_profile(agency: dict = Depends(get_marketplace_agency)):
     """Reload-safe identity for the multi-property agency portal."""
@@ -223,6 +254,81 @@ async def marketplace_extranet_profile(agency: dict = Depends(get_marketplace_ag
         "user": agency.get("user"),
         "hotels": hotel_result["hotels"],
     }
+
+
+@router.get("/extranet/settings")
+async def marketplace_extranet_settings(agency: dict = Depends(get_marketplace_agency)):
+    """Return agency-scoped account settings without exposing credentials."""
+    sysdb = get_system_db()
+    agency_doc = await sysdb.marketplace_agencies.find_one(
+        {"id": agency["agency_id"], "status": "active"}, {"_id": 0}
+    )
+    if not agency_doc:
+        raise HTTPException(404, "Acente hesabı bulunamadı")
+    users = await sysdb.users.find(
+        {"agency_id": agency["agency_id"], "is_active": {"$ne": False}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "roles": 1, "last_login": 1, "created_at": 1},
+    ).to_list(200)
+    keys = await sysdb.marketplace_api_keys.find(
+        {"agency_id": agency["agency_id"], "is_active": True},
+        {"_id": 0, "id": 1, "key_prefix": 1, "created_at": 1, "last_used_at": 1, "usage_count": 1},
+    ).to_list(50)
+    return {
+        "agency": {
+            "id": agency_doc["id"],
+            "name": agency_doc.get("name", ""),
+            "contact_email": agency_doc.get("contact_email", ""),
+            "contact_phone": agency_doc.get("contact_phone", ""),
+            "address": agency_doc.get("address", ""),
+            "website": agency_doc.get("website", ""),
+            "status": agency_doc.get("status", "active"),
+        },
+        "notification_preferences": agency_doc.get("notification_preferences") or MarketplaceNotificationSettings().model_dump(),
+        "widget": {
+            "allowed_origins": agency_doc.get("allowed_widget_origins") or [],
+            "brand_color": agency_doc.get("widget_brand_color") or "#047857",
+            "agency_id": agency_doc["id"],
+        },
+        "users": users,
+        "api_keys": keys,
+    }
+
+
+@router.patch("/extranet/settings")
+async def update_marketplace_extranet_settings(
+    data: MarketplacePortalSettingsUpdate,
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Update only the signed-in agency's editable portal settings."""
+    sysdb = get_system_db()
+    updates = {
+        "name": data.name.strip(),
+        "contact_email": str(data.contact_email).strip().lower(),
+        "contact_phone": data.contact_phone.strip(),
+        "address": data.address.strip(),
+        "website": data.website.strip(),
+        "notification_preferences": data.notification_preferences.model_dump(),
+        "allowed_widget_origins": data.allowed_widget_origins,
+        "widget_brand_color": data.widget_brand_color.lower(),
+        "updated_at": _now_iso(),
+        "updated_by": (agency.get("user") or {}).get("id"),
+    }
+    result = await sysdb.marketplace_agencies.update_one(
+        {"id": agency["agency_id"], "status": "active"}, {"$set": updates}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Acente hesabı bulunamadı")
+    await sysdb.marketplace_audit_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "agency_id": agency["agency_id"],
+            "actor_user_id": (agency.get("user") or {}).get("id"),
+            "action": "portal_settings_updated",
+            "changed_fields": sorted(updates.keys()),
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
+    return {"ok": True, "message": "Acente ayarları güncellendi"}
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────

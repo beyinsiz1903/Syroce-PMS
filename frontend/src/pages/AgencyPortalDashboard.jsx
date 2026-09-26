@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck, Printer, XCircle, WalletCards, SlidersHorizontal, ChevronDown, Sparkles, Hotel, ArrowRight, BadgeCheck } from 'lucide-react';
+import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck, Printer, XCircle, WalletCards, SlidersHorizontal, ChevronDown, Sparkles, Hotel, ArrowRight, BadgeCheck, Settings, Bell, Globe2, KeyRound, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -129,6 +129,10 @@ const AgencyPortalDashboard = () => {
   const [voucherEmailTarget, setVoucherEmailTarget] = useState(null);
   const [voucherEmail, setVoucherEmail] = useState('');
   const [voucherEmailLoading, setVoucherEmailLoading] = useState(false);
+  const [portalSettings, setPortalSettings] = useState(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [widgetOriginsText, setWidgetOriginsText] = useState('');
 
   // Login handler
   const handleLogin = async e => {
@@ -472,6 +476,53 @@ const AgencyPortalDashboard = () => {
       URL.revokeObjectURL(url);
     } catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat dosyası indirilemedi. Lütfen yeniden deneyin.'); }
   };
+  const loadPortalSettings = async () => {
+    if (portalMode !== 'marketplace') return;
+    setSettingsLoading(true);
+    try {
+      const { data } = await agencyApi.get('/marketplace/v1/extranet/settings');
+      setPortalSettings(data);
+      setWidgetOriginsText((data.widget?.allowed_origins || []).join('\n'));
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Hesap ayarları yüklenemedi. Lütfen yeniden deneyin.');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+  const updateAgencyField = (field, value) => setPortalSettings(current => ({
+    ...current,
+    agency: { ...current.agency, [field]: value },
+  }));
+  const updateNotification = (field, value) => setPortalSettings(current => ({
+    ...current,
+    notification_preferences: { ...current.notification_preferences, [field]: value },
+  }));
+  const savePortalSettings = async () => {
+    if (!portalSettings?.agency?.name?.trim() || !portalSettings?.agency?.contact_email?.trim()) {
+      return toast.error('Acente adı ve iletişim e-postası zorunludur.');
+    }
+    setSettingsSaving(true);
+    try {
+      await agencyApi.patch('/marketplace/v1/extranet/settings', {
+        name: portalSettings.agency.name,
+        contact_email: portalSettings.agency.contact_email,
+        contact_phone: portalSettings.agency.contact_phone || '',
+        address: portalSettings.agency.address || '',
+        website: portalSettings.agency.website || '',
+        notification_preferences: portalSettings.notification_preferences,
+        allowed_widget_origins: widgetOriginsText.split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
+        widget_brand_color: portalSettings.widget?.brand_color || '#047857',
+      });
+      setAgencyInfo(current => ({ ...current, name: portalSettings.agency.name, contact_email: portalSettings.agency.contact_email }));
+      toast.success('Hesap ve portal ayarları kaydedildi.');
+      await loadPortalSettings();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Ayarlar kaydedilemedi. Bilgileri kontrol edip yeniden deneyin.');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
   const statusLabels = {
     confirmed: 'Onaylandı',
     pending: 'Beklemede',
@@ -589,11 +640,12 @@ const AgencyPortalDashboard = () => {
           </div>
         </section>
         <Tabs defaultValue="search" className="w-full">
-          <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
+          <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
             <TabsTrigger value="search" data-testid="tab-search" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
             <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Rezervasyonlarım</TabsTrigger>
             <TabsTrigger value="content" onClick={() => loadContent()} data-testid="tab-content" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Tesis Bilgileri</TabsTrigger>
             {portalMode === 'marketplace' && <TabsTrigger value="finance" onClick={loadReconciliation} className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Mutabakat</TabsTrigger>}
+            {portalMode === 'marketplace' && <TabsTrigger value="settings" onClick={loadPortalSettings} data-testid="tab-settings" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white"><Settings size={14} className="mr-1.5" />Ayarlar</TabsTrigger>}
           </TabsList>
 
           {/* Search Tab */}
@@ -827,6 +879,55 @@ const AgencyPortalDashboard = () => {
                   </div>}
               </div>}
           </TabsContent>
+
+          {portalMode === 'marketplace' && <TabsContent value="settings" className="mt-4 space-y-4" data-testid="agency-settings-panel">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div><h2 className="font-semibold text-slate-900">Hesap ve portal ayarları</h2><p className="text-xs leading-5 text-slate-500">Acente bilgilerinizi, bildirimleri, kullanıcıları ve web sitesi bağlantısını yönetin.</p></div>
+              <Button onClick={savePortalSettings} disabled={settingsSaving || settingsLoading || !portalSettings} className="bg-emerald-700 hover:bg-emerald-800"><Save size={14} className="mr-1.5" />{settingsSaving ? 'Kaydediliyor…' : 'Değişiklikleri Kaydet'}</Button>
+            </div>
+            {settingsLoading ? <Card><CardContent className="py-12 text-center text-slate-500"><Loader2 className="mx-auto mb-2 animate-spin" />Ayarlar yükleniyor…</CardContent></Card> : portalSettings && <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Building2 size={17} className="text-emerald-700" />Acente bilgileri</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2"><Label htmlFor="agency-settings-name">Acente unvanı</Label><Input id="agency-settings-name" value={portalSettings.agency.name} onChange={event => updateAgencyField('name', event.target.value)} /></div>
+                  <div><Label htmlFor="agency-settings-email">İletişim e-postası</Label><Input id="agency-settings-email" type="email" value={portalSettings.agency.contact_email} onChange={event => updateAgencyField('contact_email', event.target.value)} /></div>
+                  <div><Label htmlFor="agency-settings-phone">Telefon</Label><Input id="agency-settings-phone" type="tel" value={portalSettings.agency.contact_phone || ''} onChange={event => updateAgencyField('contact_phone', event.target.value)} /></div>
+                  <div className="sm:col-span-2"><Label htmlFor="agency-settings-address">Adres</Label><Input id="agency-settings-address" value={portalSettings.agency.address || ''} onChange={event => updateAgencyField('address', event.target.value)} /></div>
+                  <div className="sm:col-span-2"><Label htmlFor="agency-settings-website">Web sitesi</Label><Input id="agency-settings-website" type="url" placeholder="https://www.acenteniz.com" value={portalSettings.agency.website || ''} onChange={event => updateAgencyField('website', event.target.value)} /></div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Bell size={17} className="text-amber-600" />Bildirim tercihleri</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {[
+                    ['new_reservation', 'Yeni rezervasyonlar', 'Oluşturulan rezervasyon ve onay bildirimleri'],
+                    ['reservation_change', 'Rezervasyon değişiklikleri', 'Tarih, oda ve durum değişiklikleri'],
+                    ['cancellation_request', 'İptal görüşmeleri', 'Otel ile karşılıklı iptal talebi ve yanıtları'],
+                    ['payment_reconciliation', 'Finans ve mutabakat', 'Tahsilat ve dönem mutabakat bildirimleri'],
+                  ].map(([key, label, description]) => <label key={key} className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-slate-200 p-3 hover:border-emerald-300"><span><span className="block text-sm font-medium text-slate-800">{label}</span><span className="block text-xs leading-5 text-slate-500">{description}</span></span><input type="checkbox" className="mt-1 h-4 w-4 accent-emerald-700" checked={Boolean(portalSettings.notification_preferences?.[key])} onChange={event => updateNotification(key, event.target.checked)} /></label>)}
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Users size={17} className="text-sky-700" />Kullanıcılar</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {(portalSettings.users || []).map(user => <div key={user.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-3"><div className="min-w-0"><div className="truncate text-sm font-medium text-slate-900">{user.name || 'İsimsiz kullanıcı'}</div><div className="truncate text-xs text-slate-500">{user.email}</div></div><Badge variant="outline" className="shrink-0">{user.role === 'marketplace_agent' ? 'Acente kullanıcısı' : user.role}</Badge></div>)}
+                  {(portalSettings.users || []).length === 0 && <p className="py-6 text-center text-sm text-slate-500">Aktif kullanıcı bulunamadı.</p>}
+                  <p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600"><ShieldCheck size={14} className="mr-1 inline text-emerald-700" />Kullanıcı ekleme, rol değiştirme ve erişim kapatma işlemleri denetim kaydıyla süperadmin üzerinden yürütülür.</p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Globe2 size={17} className="text-indigo-700" />Web sitesi ve API</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                  <div><Label htmlFor="agency-widget-origins">İzinli web sitesi adresleri</Label><textarea id="agency-widget-origins" className="mt-1 flex min-h-24 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" placeholder={'https://www.acenteniz.com\nhttps://rezervasyon.acenteniz.com'} value={widgetOriginsText} onChange={event => setWidgetOriginsText(event.target.value)} /><p className="mt-1 text-xs leading-5 text-slate-500">Her satıra bir HTTPS adresi yazın. Widget yalnız bu alan adlarında çalışır.</p></div>
+                  <div><Label htmlFor="agency-widget-color">Widget ana rengi</Label><div className="mt-1 flex items-center gap-2"><input id="agency-widget-color" type="color" className="h-10 w-14 rounded border border-slate-300 bg-white p-1" value={portalSettings.widget?.brand_color || '#047857'} onChange={event => setPortalSettings(current => ({ ...current, widget: { ...current.widget, brand_color: event.target.value } }))} /><code className="rounded bg-slate-100 px-2 py-1 text-xs">{portalSettings.widget?.brand_color || '#047857'}</code></div></div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex items-center gap-2 text-sm font-medium text-slate-800"><KeyRound size={15} />API erişimi</div>{(portalSettings.api_keys || []).map(key => <div key={key.id} className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs"><code className="text-slate-700">{key.key_prefix}</code><span className="text-slate-500">{key.usage_count || 0} kullanım</span></div>)}<p className="mt-2 text-xs leading-5 text-slate-500">Güvenlik nedeniyle anahtarların tamamı gösterilmez. Yenileme işlemi süperadmin tarafından yapılır.</p></div>
+                </CardContent>
+              </Card>
+            </div>}
+          </TabsContent>}
         </Tabs>
       </div>
 
