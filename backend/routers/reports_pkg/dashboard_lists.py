@@ -830,6 +830,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             )
         guest_ids = list(dict.fromkeys(guest_ids))
         occupants = [(guest_id, guests_by_id.get(guest_id)) for guest_id in guest_ids] or [(None, None)]
+        nightly_rate = _nightly_booking_rate(
+            booking,
+            target_day,
+            daily_rates_by_booking.get(str(booking.get("id"))),
+        )
         rows = []
         for index, (guest_id, guest) in enumerate(occupants):
             identity, passport = _guest_identity(guest, booking if index == 0 else {})
@@ -848,6 +853,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     "checked_in_at": booking.get("checked_in_at"),
                     "checked_out_at": booking.get("checked_out_at"),
                     "total_amount": booking.get("total_amount", 0) if index == 0 else 0,
+                    # A room charge belongs to the stay, not to every occupant.
+                    # Keep it on the primary row so multi-guest rooms do not look
+                    # like they generated the same revenue more than once.
+                    "nightly_rate": nightly_rate if index == 0 else None,
                     "status": booking.get("status"),
                     "nationality": (guest or {}).get("nationality") or (guest or {}).get("country") or booking.get("nationality"),
                     "id_number": identity if has_pii else _mask_pii(identity),
