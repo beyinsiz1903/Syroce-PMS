@@ -37,7 +37,7 @@ vi.mock('axios', () => ({
   },
 }));
 
-import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
+import { FoliosTab, calculateReceivedCurrency } from '@/pages/reservation-detail/FoliosTab';
 
 const booking = { id: 'bk-1', guest_name: 'Ada Lovelace', room_number: '101' };
 const summary = { total_amount: 100, total_charges: 100, total_payments: 0, balance: 100 };
@@ -88,6 +88,32 @@ beforeEach(() => {
   axiosPost.mockResolvedValue({ data: { transferred_charges: 1, transferred_amount: 60 } });
   toast.error.mockReset();
   toast.success.mockReset();
+});
+
+describe('kur çevirici', () => {
+  it('rezervasyon ve tahsilat para birimleri arasında çapraz kur hesaplar', () => {
+    const rates = { EUR: 50, USD: 40, TL: 1, TRY: 1 };
+
+    expect(calculateReceivedCurrency(100, 'EUR', 'TL', rates)).toEqual({ rate: 50, amount: 5000 });
+    expect(calculateReceivedCurrency(100, 'EUR', 'USD', rates)).toEqual({ rate: 1.25, amount: 125 });
+    expect(calculateReceivedCurrency(4000, 'TL', 'USD', rates)).toEqual({ rate: 0.025, amount: 100 });
+    expect(calculateReceivedCurrency(100, 'EUR', 'EUR', rates)).toEqual({ rate: 1, amount: 100 });
+  });
+
+  it('kurlar asenkron geldikten sonra EUR bakiyenin TL karşılığını otomatik doldurur', async () => {
+    axiosGet.mockResolvedValueOnce({ data: { rates: { EUR: 50, USD: 40, TL: 1, TRY: 1 } } });
+    render(<FoliosTab {...singleFolioProps({
+      booking: { ...booking, currency: 'EUR' },
+      summary: { ...summary, reservation_total_due: 145.45, balance: 145.45 },
+    })} />);
+
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+    fireEvent.click(within(panel).getByRole('checkbox', { name: /Farklı Döviz ile Hesapla/ }));
+
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/pms/reservations/exchange-rates'));
+    expect(await within(panel).findByTestId('currency-conversion-summary')).toHaveTextContent('145.45 EUR = 7272.50 TL');
+  });
 });
 
 afterEach(() => cleanup());
