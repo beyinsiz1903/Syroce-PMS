@@ -72,6 +72,18 @@ export const checkoutFromNightCount = (checkIn, nightCount) => {
   return start.toISOString().slice(0, 10);
 };
 
+const localDateValue = () => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
+
+export const isEarlyCheckoutDate = (checkOut, businessDate) => {
+  const plannedCheckout = dateInputValue(checkOut);
+  const activeBusinessDate = dateInputValue(businessDate) || localDateValue();
+  return Boolean(plannedCheckout && activeBusinessDate && plannedCheckout > activeBusinessDate);
+};
+
 const stayDates = (checkIn, checkOut) => {
   const dates = [];
   const cursor = new Date(`${checkIn}T00:00:00Z`);
@@ -217,6 +229,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   const bookingStatus = String(data?.booking?.status || '').toLowerCase();
   const readOnly = Boolean(data?.read_only);
+  const isEarlyCheckout = isEarlyCheckoutDate(data?.booking?.check_out, data?.business_date);
   const canCheckIn = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
   const canLateCheckout = !readOnly && bookingStatus === 'checked_in';
   const canChangeRoom = !readOnly && ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
@@ -841,7 +854,15 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       );
                       return;
                     }
-                    if (!await confirmDialog({ message: 'Çıkış yapılsın mı?', variant: 'danger' })) return;
+                    const checkoutConfirmed = await confirmDialog({
+                      title: isEarlyCheckout ? 'Erken çıkışı onaylayın' : 'Çıkışı onaylayın',
+                      message: isEarlyCheckout
+                        ? `Misafirin planlanan çıkış tarihi ${fmtDateTime(data?.booking?.check_out).split(' ')[0]}. Erken çıkış yapmak istediğinize emin misiniz?`
+                        : 'Misafirin çıkışını yapmak istediğinize emin misiniz?',
+                      confirmText: isEarlyCheckout ? 'Evet, erken çıkış yap' : 'Evet, çıkış yap',
+                      variant: 'danger',
+                    });
+                    if (!checkoutConfirmed) return;
                     try {
                       // Mutasyonlarda ekranda gösterilen kısa RES-... referansını
                       // veya liste state'indeki eski kimliği değil, full-detail
@@ -885,7 +906,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   ) : hasOpenBalance ? (
                     <><CreditCard className="w-4 h-4 mr-2" /> Önce folio bakiyesini tamamlayın</>
                   ) : (
-                    <><LogOut className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.cikis_yap')}</>
+                    <><LogOut className="w-4 h-4 mr-2" /> {isEarlyCheckout ? 'Erken Çıkış Yap' : t('cm.pages_ReservationDetailModal.cikis_yap')}</>
                   )}
                 </Button>
               </div>
