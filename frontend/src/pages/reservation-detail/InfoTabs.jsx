@@ -246,7 +246,7 @@ export function GeneralInfoTab({
             <SectionHeader icon={Wallet} title="Ödeme Bilgileri" />
             <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm grid grid-cols-1 sm:grid-cols-2 sm:gap-x-6">
               <InfoLine label="Ödeme Durumu" value={<span className={hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}>{hasOpenBalance ? 'Ödeme bekleniyor' : 'Ödeme tamamlandı'}</span>} />
-              <InfoLine label="Para Birimi" value="TL" />
+              <InfoLine label="Para Birimi" value={currency} />
               <InfoLine label="Toplam Tutar" value={`${fmtCurrency(summary.total_amount, currency)}`} />
               <InfoLine label="Ödenen" value={`${fmtCurrency(summary.total_payments, currency)}`} />
               <InfoLine label="Kalan Bakiye" value={<span className={`font-semibold ${hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtCurrency(balance, currency)}</span>} />

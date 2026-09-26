@@ -65,8 +65,8 @@ const GuestTable = ({
                 <td className="whitespace-nowrap py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="whitespace-nowrap py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="whitespace-nowrap py-2 px-3"><span className={`inline-flex whitespace-nowrap text-xs px-2 py-0.5 rounded-full font-medium ${status.className}`}>{status.label}</span></td>
-                {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700">{g.nightly_rate == null ? '-' : formatCurrency(g.nightly_rate)}</td>}
-                <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : formatCurrency(g.total_amount)}</td>
+                {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700">{g.nightly_rate == null ? '-' : formatCurrency(g.nightly_rate, g.currency)}</td>}
+                <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : formatCurrency(g.total_amount, g.currency)}</td>
               </tr>;
             }) : <tr><td colSpan={6 + (showId ? 1 : 0) + (showNightlyRate ? 1 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
           </tbody>

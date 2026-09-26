@@ -853,6 +853,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     "checked_in_at": booking.get("checked_in_at"),
                     "checked_out_at": booking.get("checked_out_at"),
                     "total_amount": booking.get("total_amount", 0) if index == 0 else 0,
+                    "currency": booking.get("currency") or "TRY",
                     # A room charge belongs to the stay, not to every occupant.
                     # Keep it on the primary row so multi-guest rooms do not look
                     # like they generated the same revenue more than once.

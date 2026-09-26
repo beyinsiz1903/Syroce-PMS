@@ -8,8 +8,8 @@ import { cachedTenantCurrency, formatCurrency as formatCurrencyValue } from '@/l
 // Recharts grafikleri için hex tonları (mavi/yeşil yerine sky/emerald):
 export const COLORS = ['#0284C7', '#059669', '#D97706', '#E11D48', '#4F46E5', '#0EA5E9', '#10B981', '#F59E0B', '#F43F5E', '#6366F1'];
 
-export const formatCurrency = (val) => {
-  return formatCurrencyValue(val, cachedTenantCurrency(), { decimals: 0, compactDecimals: false });
+export const formatCurrency = (val, currency) => {
+  return formatCurrencyValue(val, currency || cachedTenantCurrency(), { decimals: 0, compactDecimals: false });
 };
 
 export const formatNumber = (val) => {
