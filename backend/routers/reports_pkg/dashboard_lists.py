@@ -540,6 +540,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "check_in": 1,
                 "check_out": 1,
                 "total_amount": 1,
+                "currency": 1,
                 "status": 1,
                 "booking_source": 1,
                 "room_type": 1,
