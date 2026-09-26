@@ -297,16 +297,14 @@ export const MODULE_GROUPS = [
 ];
 
 export const ROLE_LABELS = {
-  super_admin: 'Super Admin',
   admin: 'Admin',
+  supervisor: 'Müdür',
   front_desk: 'Resepsiyon',
   housekeeping: 'Housekeeping',
-  manager: 'Müdür',
-  revenue: 'Revenue',
-  night_audit: 'Gece Denetimi',
-  gm: 'Genel Müdür',
   finance: 'Finans',
+  procurement: 'Satın Alma',
   sales: 'Satış',
+  staff: 'Personel',
 };
 
 export const tierRank = { mini: 0, basic: 1, professional: 2, enterprise: 3 };

@@ -6,11 +6,16 @@ Platform Scaling Router - Unified API for all enterprise scaling modules:
 - Competitive Set Analysis
 """
 
+import uuid
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 from core.cache import cached
-from core.security import get_current_user
+from core.security import get_current_user, hash_password
+from core.tenant_db import get_system_db
+from models.enums import UserRole
 from models.schemas import User
 from modules.platform_scaling.competitive_analysis import (
     ADRAdjustmentEngine,
@@ -31,8 +36,10 @@ from modules.platform_scaling.revenue_ml import (
     RateElasticityModel,
     RevenueMLDashboard,
 )
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from modules.pms_core.role_permission_service import require_op  # v73 Bug DI
+from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, encrypt_user_doc
 
 router = APIRouter(prefix="/api/platform", tags=["platform-scaling"])
 
@@ -89,6 +96,27 @@ class TransferReservationReq(BaseModel):
 class GlobalRateAdjustReq(BaseModel):
     adjustment_pct: float
     room_type: str | None = None
+
+
+class ChainTeamMemberReq(BaseModel):
+    property_id: str
+    name: str = Field(min_length=2, max_length=120)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    role: UserRole = UserRole.SUPERVISOR
+    phone: str | None = Field(default=None, max_length=40)
+
+
+CHAIN_TEAM_ROLES = {
+    UserRole.ADMIN,
+    UserRole.SUPERVISOR,
+    UserRole.FRONT_DESK,
+    UserRole.HOUSEKEEPING,
+    UserRole.FINANCE,
+    UserRole.PROCUREMENT,
+    UserRole.SALES,
+    UserRole.STAFF,
+}
 
 
 class BookingProbReq(BaseModel):
@@ -211,6 +239,80 @@ async def api_gateway_stats(current_user: User = Depends(get_current_user)):
 async def api_portfolio_overview(current_user: User = Depends(get_current_user)):
     """Get portfolio-wide overview."""
     return await crs.get_portfolio_overview(current_user)
+
+
+@router.get("/multi-property/team")
+async def api_chain_team(current_user: User = Depends(get_current_user)):
+    """List users across the authenticated headquarters' verified chain."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Zincir kullanıcılarını yalnızca yönetici görüntüleyebilir")
+
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    property_map = {
+        tenant_id_from_document(prop): prop.get("property_name") or prop.get("hotel_name") or prop.get("name")
+        for prop in properties
+        if tenant_id_from_document(prop)
+    }
+    sysdb = get_system_db()
+    users_raw = await sysdb.users.find(
+        {"tenant_id": {"$in": list(property_map)}},
+        {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0},
+    ).to_list(1000)
+    users = []
+    for raw in users_raw:
+        user = decrypt_user_doc(raw)
+        user["property_name"] = property_map.get(user.get("tenant_id"), user.get("tenant_id"))
+        users.append(user)
+    users.sort(key=lambda item: (item.get("property_name") or "", item.get("name") or ""))
+    return {
+        "properties": [
+            {"property_id": pid, "property_name": name or pid}
+            for pid, name in property_map.items()
+        ],
+        "users": users,
+        "allowed_roles": sorted(role.value for role in CHAIN_TEAM_ROLES),
+    }
+
+
+@router.post("/multi-property/team", status_code=201)
+async def api_create_chain_team_member(
+    req: ChainTeamMemberReq,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a user in one verified sibling property without widening its tenant scope."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Zincir kullanıcısı oluşturmak için yönetici yetkisi gerekli")
+    if req.role not in CHAIN_TEAM_ROLES:
+        raise HTTPException(status_code=400, detail="Bu rol tesis kullanıcısı için kullanılamaz")
+
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    allowed_ids = {tenant_id_from_document(prop) for prop in properties}
+    if req.property_id not in allowed_ids:
+        raise HTTPException(status_code=403, detail="Hedef tesis bu zincire bağlı değil")
+
+    sysdb = get_system_db()
+    if await sysdb.users.find_one(build_user_email_query(str(req.email))):
+        raise HTTPException(status_code=409, detail="Bu e-posta adresi zaten kayıtlı")
+
+    now = datetime.now(UTC).isoformat()
+    user_id = str(uuid.uuid4())
+    new_user = encrypt_user_doc(
+        {
+            "id": user_id,
+            "tenant_id": req.property_id,
+            "email": str(req.email).lower(),
+            "name": req.name.strip(),
+            "phone": (req.phone or "").strip(),
+            "role": req.role.value,
+            "is_active": True,
+            "hashed_password": hash_password(req.password),
+            "created_at": now,
+            "created_by": current_user.id,
+            "created_via": "chain_headquarters",
+        }
+    )
+    await sysdb.users.insert_one(new_user)
+    return {"success": True, "user_id": user_id, "property_id": req.property_id}
 
 
 @router.post("/multi-property/search-availability")
