@@ -22,6 +22,22 @@ export const normalizeRoomBlocksResponse = (data) => (
   Array.isArray(data) ? data : data?.blocks || []
 );
 
+// Apply both sides of a confirmed room swap in one immutable state update.
+// The API remains authoritative, but the board should not require a manual
+// browser refresh before showing the result.
+export const applyRoomSwap = (bookings = [], sourceBooking, targetBooking) => {
+  if (!sourceBooking?.id || !targetBooking?.id) return bookings;
+  return bookings.map((booking) => {
+    if (booking.id === sourceBooking.id) {
+      return { ...booking, room_id: targetBooking.room_id };
+    }
+    if (booking.id === targetBooking.id) {
+      return { ...booking, room_id: sourceBooking.room_id };
+    }
+    return booking;
+  });
+};
+
 // A resize handle is dropped on the final occupied night. Checkout remains
 // exclusive, so the persisted checkout date is the following calendar day.
 export const checkoutAfterCalendarNight = (value) => {
