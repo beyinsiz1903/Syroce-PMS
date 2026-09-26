@@ -10,6 +10,33 @@ import routers.finance.folio as finance_folio
 import routers.reservation_detail as reservation_detail
 
 
+def test_completed_four_night_folio_flags_stale_higher_booking_total():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 12500, "check_in": "2026-09-21", "check_out": "2026-09-25"},
+        [
+            {"charge_type": "room_charge", "business_date": f"2026-09-{day}", "total": 2500, "tax_inclusive": True}
+            for day in range(21, 25)
+        ],
+        [], [], [],
+    )
+    assert summary["room_plan_fully_posted"] is True
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_direction"] == "booking_above_posted"
+    assert summary["pricing_reconciliation_difference"] == 2500
+    assert summary["pricing_reconciliation_target_total"] == 10000
+
+
+def test_partial_folio_does_not_treat_unposted_nights_as_price_mismatch():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 10000, "check_in": "2026-09-21", "check_out": "2026-09-25"},
+        [{"charge_type": "room_charge", "business_date": "2026-09-21", "total": 2500, "tax_inclusive": True}],
+        [], [], [],
+    )
+    assert summary["room_plan_fully_posted"] is False
+    assert summary["pricing_reconciliation_required"] is False
+    assert summary["pricing_reconciliation_direction"] is None
+
+
 def test_summary_does_not_double_count_posted_room_charge():
     summary = reservation_detail._build_financial_summary(
         {"total_amount": 3500.0, "paid_amount": 3955.0},
