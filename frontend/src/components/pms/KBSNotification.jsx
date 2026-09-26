@@ -368,8 +368,25 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     if (!claimed) return { status: 'skipped', reference: '', error: '' };
 
     const body = buildKbsBody(claimed.payload, claimed.action || 'checkin');
-    const sent = await sendViaExtension(body, authority);
     const idem = newIdemKey();
+    let sent;
+    try {
+      sent = await sendViaExtension(body, authority);
+    } catch (error) {
+      const extensionError = error?.message || 'extension_send_failed';
+      try {
+        await axios.post(`/kbs/queue/${job.id}/fail`,
+          { worker_id: workerId, error: extensionError, retry: true },
+          { headers: { 'Idempotency-Key': idem } });
+      } catch {
+        // Sunucu fail kaydi da ulasilamazsa lease bitiminde is yeniden alinabilir.
+      }
+      return {
+        status: 'fail',
+        reference: '',
+        error: cleanKbsError(extensionError, 'KBS eklentisi bildirimi tamamlayamadi'),
+      };
+    }
 
     if (sent.test || sent.reference?.startsWith('TEST-')) {
       try {

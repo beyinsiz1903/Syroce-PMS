@@ -20,6 +20,22 @@ def test_foreign_identity_card_uses_ykn_without_passport():
     assert validate_kbs_payload(_foreign_payload()) == (True, [])
 
 
+def test_foreign_identity_card_does_not_require_birth_date_gender_or_name():
+    from core.kbs_payload_validation import validate_kbs_payload
+
+    assert validate_kbs_payload(
+        _foreign_payload(guest_name="", birth_date="", gender="")
+    ) == (True, [])
+
+
+def test_foreign_identity_card_requires_nationality():
+    from core.kbs_payload_validation import validate_kbs_payload
+
+    ok, missing = validate_kbs_payload(_foreign_payload(nationality=""))
+    assert ok is False
+    assert missing == ["nationality"]
+
+
 def test_foreign_identity_card_requires_valid_eleven_digit_ykn():
     from core.kbs_payload_validation import validate_kbs_payload
 

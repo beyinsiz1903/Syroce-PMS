@@ -287,6 +287,57 @@ describe('KBSNotification pending guest identity editing', () => {
     expect(screen.getByText(/JANDARMA-MusteriKimlikNoGiris-123/)).toBeVisible();
   });
 
+  it('releases the claimed queue job when the extension transport throws', async () => {
+    pingExtension.mockResolvedValue({
+      present: true,
+      state: 'absent',
+      states: { jandarma: 'configured' },
+      version: '1.3.0',
+      installId: 'install-1',
+    });
+    localStorage.setItem('kbs_ext_authority', 'jandarma');
+    const job = {
+      id: 'job-110', booking_id: 'booking-110', guest_id: 'guest-110',
+      action: 'checkin', payload: {},
+    };
+    axiosPost.mockImplementation((url) => {
+      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
+      if (url === '/kbs/queue/job-110/claim') return Promise.resolve({ data: { job } });
+      if (url === '/kbs/queue/job-110/fail') return Promise.resolve({ data: { job: { ...job, status: 'pending' } } });
+      return Promise.resolve({ data: {} });
+    });
+    sendViaExtension.mockRejectedValue(new Error('extension_transport_disconnected'));
+
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-110', guest_id: 'guest-110', status: 'checked_in',
+          guest_name: 'Test Guest', room_number: '110', nationality: 'TC',
+          id_number: '12345678901',
+        }]}
+      />,
+    );
+
+    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+
+    await waitFor(() => {
+      expect(axiosPost).toHaveBeenCalledWith(
+        '/kbs/queue/job-110/fail',
+        expect.objectContaining({
+          worker_id: 'ext:install-1',
+          error: 'extension_transport_disconnected',
+          retry: true,
+        }),
+        expect.objectContaining({ headers: expect.any(Object) }),
+      );
+    });
+    expect(axiosPost).not.toHaveBeenCalledWith(
+      '/kbs/queue/job-110/complete', expect.anything(), expect.anything(),
+    );
+    expect(toastError).toHaveBeenCalled();
+  });
+
   it('does not complete or report success for an extension test result', async () => {
     pingExtension.mockResolvedValue({
       present: true,

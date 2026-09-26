@@ -163,6 +163,7 @@ function payloadMissingFields(body) {
   const turkish = ["", "TC", "TR", "TUR", "TURKIYE", "TÜRKİYE", "TURKEY"].includes(nationality);
   const foreignIdentityCard = ["foreign_identity_card", "foreign_id", "yabanci_kimlik", "yabanci_kimlik_karti", "ykn"]
     .includes(String(body.id_type || "").trim().toLowerCase());
+  if (foreignIdentityCard && !nationality) missing.push("nationality");
   if (turkish || foreignIdentityCard) {
     if (!/^\d{11}$/.test(String(body.id_number || ""))) missing.push("id_number");
   } else if (!String(body.passport_number || "").trim()) {

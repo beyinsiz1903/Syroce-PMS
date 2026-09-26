@@ -49,6 +49,12 @@ def validate_kbs_payload(snapshot: dict, action: str = "checkin") -> tuple[bool,
     id_type = snapshot.get("id_type")
     id_number = _norm(snapshot.get("id_number"))
     passport_number = _norm(snapshot.get("passport_number"))
+    foreign_identity_card = _is_foreign_identity_card(id_type)
+
+    # YKN belgesi kişinin yabancı olduğunu gösterir; KBS formundaki uyruk
+    # ayrıca kaydedilmeden bildirim eksik kalır.
+    if foreign_identity_card and not _norm(nationality):
+        missing.append("nationality")
 
     if _is_turkish_nationality(nationality):
         if not id_number:
@@ -60,14 +66,17 @@ def validate_kbs_payload(snapshot: dict, action: str = "checkin") -> tuple[bool,
         # pasaportla değil, KBS'deki "YKN olan Yabancı" akışıyla bildirilir.
         # Belge türü açıkça YKN ise 11 haneli kimlik numarası zorunludur;
         # diğer yabancı belgelerde pasaport kuralı korunur.
-        if _is_foreign_identity_card(id_type):
+        if foreign_identity_card:
             if not id_number:
                 missing.append("id_number")
             elif not (id_number.isdigit() and len(id_number) == 11):
                 missing.append("id_number_invalid")
         elif not passport_number:
             missing.append("passport_number")
-        if action == "checkin":
+        # Jandarma'nin "YKN olan Yabanci" servisi kimlik numarasi, oda ve
+        # giris zamaniyla calisir. Dogum tarihi/cinsiyet/ad yalnız pasaportlu
+        # yabanci bildiriminde kurum sozlesmesinin zorunlu alanlaridir.
+        if action == "checkin" and not foreign_identity_card:
             if not _norm(snapshot.get("guest_name")):
                 missing.append("guest_name")
             if not _norm(snapshot.get("birth_date")):

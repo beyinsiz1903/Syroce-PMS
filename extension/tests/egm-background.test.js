@@ -111,6 +111,33 @@ test("checkout accepts the official minimum payload without entry-only fields", 
   assert.equal(calls.length, 2);
 });
 
+test("foreign identity card requires nationality but not birth date or gender", async () => {
+  const send = loadWorker(async () => {
+    throw new Error("test mode must not call the authority");
+  });
+  const baseBody = {
+    action: "checkin",
+    id_type: "foreign_identity_card",
+    id_number: "99123456789",
+    room_number: "206",
+    check_in: "2026-09-26",
+  };
+
+  const missingNationality = await send({
+    type: "KBS_SEND", authority: "jandarma", body: baseBody,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(missingNationality)), {
+    ok: false,
+    error: "payload_incomplete: nationality",
+  });
+
+  const complete = await send({
+    type: "KBS_SEND", authority: "jandarma", body: { ...baseBody, nationality: "CN" },
+  });
+  assert.equal(complete.ok, true);
+  assert.equal(complete.test, true);
+});
+
 test("Jandarma SOAP accepts live WSDL facility-code shape and returns auditable authority result", async () => {
   const calls = [];
   const send = loadWorker(async (url, init) => {
