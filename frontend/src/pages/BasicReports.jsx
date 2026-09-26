@@ -483,7 +483,7 @@ const BasicReports = ({
       case 'guests':
         return <div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Tüm Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'inhouse':
-        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} title={`Konaklayanlar (In-House) · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} title={`Konaklayanlar (In-House) · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} showNightlyRate searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'nationality':
         return <NationalitySection countryData={countryData} />;
       case 'front_office':
