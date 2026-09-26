@@ -14,6 +14,7 @@ const guests = [{
   status: 'checked_in',
   nightly_rate: 2500,
   total_amount: 10000,
+  currency: 'EUR',
   is_primary: true,
 }];
 
@@ -31,8 +32,8 @@ describe('GuestTable in-house pricing', () => {
 
     expect(screen.getByRole('columnheader', { name: 'Gece Ücreti' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Konaklama Toplamı' })).toBeInTheDocument();
-    expect(screen.getByText(/2\.500/)).toBeInTheDocument();
-    expect(screen.getByText(/10\.000/)).toBeInTheDocument();
+    expect(screen.getByText(/2\.500.*€/)).toBeInTheDocument();
+    expect(screen.getByText(/10\.000.*€/)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Konaklayanlar (In-House) tablosu' })).toHaveAttribute('tabindex', '0');
   });
 

@@ -85,4 +85,19 @@ describe('GeneralInfoTab', () => {
     expect(screen.getByText('Test Acente')).toBeInTheDocument();
     expect(screen.queryByText(/No-Show Risk Skoru/i)).not.toBeInTheDocument();
   });
+
+  it('shows the reservation currency instead of a hard-coded TL label', () => {
+    render(
+      <GeneralInfoTab
+        booking={{ id: 'booking-eur', currency: 'EUR' }}
+        guest={null}
+        room={null}
+        summary={{ balance: 145.45, total_amount: 145.45, total_payments: 0 }}
+        payments={[]}
+        deposits={[]}
+      />,
+    );
+
+    expect(screen.getByText('Para Birimi').parentElement).toHaveTextContent('EUR');
+  });
 });
