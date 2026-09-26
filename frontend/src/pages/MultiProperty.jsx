@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText } from 'lucide-react';
+import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText, UserPlus, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const MultiProperty = ({ embedded = false }) => {
@@ -12,6 +12,25 @@ const MultiProperty = ({ embedded = false }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [team, setTeam] = useState(null);
+  const [teamError, setTeamError] = useState('');
+  const [savingUser, setSavingUser] = useState(false);
+  const [userForm, setUserForm] = useState({ property_id: '', name: '', email: '', password: '', role: 'supervisor' });
+
+  const loadTeam = () => {
+    axios.get('/platform/multi-property/team')
+      .then(({ data: result }) => {
+        setTeam(result);
+        setUserForm(current => ({
+          ...current,
+          property_id: current.property_id || result.properties?.[0]?.property_id || '',
+        }));
+        setTeamError('');
+      })
+      .catch((requestError) => {
+        if (requestError?.response?.status !== 403) setTeamError('Zincir kullanıcıları yüklenemedi.');
+      });
+  };
 
   const loadData = () => {
     setLoading(true);
@@ -22,7 +41,22 @@ const MultiProperty = ({ embedded = false }) => {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); loadTeam(); }, []);
+
+  const createChainUser = async (event) => {
+    event.preventDefault();
+    setSavingUser(true);
+    setTeamError('');
+    try {
+      await axios.post('/platform/multi-property/team', userForm);
+      setUserForm(current => ({ ...current, name: '', email: '', password: '' }));
+      loadTeam();
+    } catch (requestError) {
+      setTeamError(requestError?.response?.data?.detail || 'Kullanıcı oluşturulamadı.');
+    } finally {
+      setSavingUser(false);
+    }
+  };
 
   return (
     <div className="p-6">
@@ -129,6 +163,52 @@ const MultiProperty = ({ embedded = false }) => {
           ))}
         </div>
       )}
+
+      {team && (
+        <Card className="mt-6">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> Zincir Kullanıcıları</h2>
+                <p className="text-sm text-gray-600 mt-1">Merkez yönetim, kullanıcıyı yalnızca bu zincire bağlı seçilen tesiste yetkilendirir.</p>
+              </div>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">{team.users?.length || 0} kullanıcı</span>
+            </div>
+
+            <form onSubmit={createChainUser} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 rounded-lg border bg-slate-50 p-4">
+              <select aria-label="Tesis" required value={userForm.property_id} onChange={event => setUserForm({ ...userForm, property_id: event.target.value })} className="h-10 rounded-md border bg-white px-3 text-sm xl:col-span-2">
+                {(team.properties || []).map(property => <option key={property.property_id} value={property.property_id}>{property.property_name}</option>)}
+              </select>
+              <input aria-label="Ad soyad" required minLength={2} placeholder="Ad soyad" value={userForm.name} onChange={event => setUserForm({ ...userForm, name: event.target.value })} className="h-10 rounded-md border bg-white px-3 text-sm" />
+              <input aria-label="E-posta" required type="email" placeholder="E-posta" value={userForm.email} onChange={event => setUserForm({ ...userForm, email: event.target.value })} className="h-10 rounded-md border bg-white px-3 text-sm" />
+              <input aria-label="Geçici şifre" required minLength={8} type="password" placeholder="Geçici şifre" value={userForm.password} onChange={event => setUserForm({ ...userForm, password: event.target.value })} className="h-10 rounded-md border bg-white px-3 text-sm" />
+              <div className="flex gap-2">
+                <select aria-label="Rol" value={userForm.role} onChange={event => setUserForm({ ...userForm, role: event.target.value })} className="h-10 min-w-0 flex-1 rounded-md border bg-white px-2 text-sm">
+                  <option value="admin">Yönetici</option>
+                  <option value="supervisor">Müdür</option>
+                  <option value="front_desk">Ön Büro</option>
+                  <option value="finance">Muhasebe</option>
+                  <option value="housekeeping">Kat Hizmetleri</option>
+                </select>
+                <Button type="submit" disabled={savingUser} aria-label="Kullanıcı ekle"><UserPlus className="w-4 h-4" /></Button>
+              </div>
+            </form>
+
+            {teamError && <p className="mt-3 text-sm text-red-600">{teamError}</p>}
+            <div className="mt-4 divide-y rounded-lg border">
+              {(team.users || []).map(user => (
+                <div key={user.id} className="grid grid-cols-1 gap-1 px-4 py-3 text-sm md:grid-cols-3">
+                  <span className="font-semibold">{user.name}</span>
+                  <span className="text-gray-600">{user.email}</span>
+                  <span className="text-gray-600 md:text-right">{user.property_name} · {user.role}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {teamError && !team && <p className="mt-4 text-sm text-red-600">{teamError}</p>}
 
       {loading && (
         <Card>
