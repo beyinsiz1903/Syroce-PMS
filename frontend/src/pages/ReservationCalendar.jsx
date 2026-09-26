@@ -1003,6 +1003,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           Number(rate.rate),
         ]),
       );
+      const lastPersistedRate = [...rateByDate.entries()]
+        .filter(([, rate]) => Number.isFinite(rate) && rate >= 0)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .at(-1)?.[1];
 
       const oldNights = Math.max(1, Math.round((oldCheckOutDate - oldCheckInDate) / 86400000));
       const impliedDailyRate = Number(booking.total_amount || 0) / oldNights;
@@ -1028,7 +1032,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           const dStr = toDateStringUTC(cur);
           const rate = isComplimentary
             ? 0
-            : (calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate);
+            : (() => {
+                const published = Number(calendarRates[`${roomType}|${dStr}`]);
+                if (Number.isFinite(published) && published > 0) return published;
+                // A reservation can carry stale base-rate metadata after daily
+                // prices were edited. Extend with the persisted stay plan,
+                // never with that stale value (the 2,500 -> 5,000 regression).
+                if (Number.isFinite(lastPersistedRate) && lastPersistedRate >= 0) return lastPersistedRate;
+                if (Number.isFinite(impliedDailyRate) && impliedDailyRate >= 0) return impliedDailyRate;
+                return Number(room.base_price || booking.base_rate || 0);
+              })();
           nextDailyRates.push({ date: dStr, rate: Number(rate) });
           cur.setUTCDate(cur.getUTCDate() + 1);
         }

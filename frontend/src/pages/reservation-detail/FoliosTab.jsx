@@ -44,6 +44,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState('');
   const [reconcilingRoomCharge, setReconcilingRoomCharge] = useState(false);
+  const [reconcilingStayTotal, setReconcilingStayTotal] = useState(false);
   // Currency Converter state
   const [useCurrencyConverter, setUseCurrencyConverter] = useState(false);
   const [foreignCurrency, setForeignCurrency] = useState('TL');
@@ -100,6 +101,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const pendingRoomAmount = Number(summary?.unposted_room_amount) || 0;
   const pricingReconciliationRequired = Boolean(summary?.pricing_reconciliation_required);
   const pricingReconciliationDifference = Number(summary?.pricing_reconciliation_difference) || 0;
+  const pricingReconciliationDirection = summary?.pricing_reconciliation_direction;
   const rawFolioBalance = Number(summary?.folio_balance ?? summary?.balance) || 0;
   const reservationTotalDue = Number(summary?.reservation_total_due ?? summary?.balance) || 0;
   const hasAllocatedPrepayment = pendingRoomAmount > 0.01 && reservationTotalDue <= 0.01 && rawFolioBalance < -0.01;
@@ -123,6 +125,22 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       toast.error(message);
     } finally {
       setReconcilingRoomCharge(false);
+    }
+  };
+
+  const reconcileStayTotal = async () => {
+    setActionError('');
+    setReconcilingStayTotal(true);
+    try {
+      const response = await axios.post(`/pms/reservations/${booking.id}/reconcile-posted-stay-total`);
+      toast.success(`Rezervasyon toplamı ${fmtCurrency(response.data?.new_total, currency)} olarak düzeltildi`);
+      await onRefresh?.();
+    } catch (e) {
+      const message = 'Fiyat mutabakatı tamamlanamadı: ' + (e.response?.data?.detail || e.message);
+      setActionError(message);
+      toast.error(message);
+    } finally {
+      setReconcilingStayTotal(false);
     }
   };
 
@@ -217,8 +235,16 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         </div>
       )}
       {pricingReconciliationRequired && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="folio-pricing-reconciliation-alert">
-          Oda tahakkukları, onaylı rezervasyon toplamından {fmtCurrency(pricingReconciliationDifference, currency)} fazla. Bu fark tahsil edilmez; ödeme almadan önce fiyat/tahakkuk mutabakatını tamamlayın.
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="folio-pricing-reconciliation-alert">
+          <span>{pricingReconciliationDirection === 'booking_above_posted'
+            ? `Rezervasyon toplamı, tamamlanmış oda tahakkuklarından ${fmtCurrency(pricingReconciliationDifference, currency)} fazla görünüyor. Bu tutar misafire yeniden yansıtılmaz.`
+            : `Oda tahakkukları, onaylı rezervasyon toplamından ${fmtCurrency(pricingReconciliationDifference, currency)} fazla. Bu fark tahsil edilmez; ödeme almadan önce mutabakatı tamamlayın.`}</span>
+          {!readOnly && summary?.room_plan_fully_posted && (
+            <Button size="sm" variant="outline" onClick={reconcileStayTotal} disabled={reconcilingStayTotal} className="h-8 border-amber-400 bg-white text-xs text-amber-800" data-testid="btn-reconcile-posted-stay-total">
+              {reconcilingStayTotal && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              Tahakkuklarla Eşitle
+            </Button>
+          )}
         </div>
       )}
       <div className="flex flex-wrap gap-2">

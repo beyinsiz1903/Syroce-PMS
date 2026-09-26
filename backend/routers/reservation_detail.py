@@ -422,9 +422,34 @@ def _build_financial_summary(
     # A posted accommodation amount above the confirmed reservation total is
     # a pricing reconciliation problem, not an amount the receptionist should
     # collect.  This includes system-generated accommodation-tax rows.
+    booking_total = float(booking.get("total_amount", 0) or 0)
+    expected_dates: set[str] = set()
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in and check_out and check_out > check_in:
+        expected_dates = {
+            (check_in + timedelta(days=offset)).isoformat()
+            for offset in range((check_out - check_in).days)
+        }
+    posted_room_dates = {
+        parsed.isoformat()
+        for charge in active_charges
+        if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
+        for parsed in [_reservation_calendar_date(charge.get("business_date") or charge.get("night_audit_date"))]
+        if parsed is not None
+    }
+    room_plan_fully_posted = bool(expected_dates) and posted_room_dates == expected_dates
+    raw_pricing_difference = float(reservation_price_component_total or 0) - booking_total
+    # A higher booking header is only a mismatch once every stay night is
+    # posted; before then it is simply the unposted remainder of an active stay.
     pricing_reconciliation_difference = round(
-        max(0, float(reservation_price_component_total or 0) - float(booking.get("total_amount", 0) or 0)),
+        abs(raw_pricing_difference) if room_plan_fully_posted else max(0, raw_pricing_difference),
         2,
+    )
+    pricing_reconciliation_direction = (
+        "posted_above_booking" if raw_pricing_difference > 0.01
+        else "booking_above_posted" if raw_pricing_difference < -0.01 and room_plan_fully_posted
+        else None
     )
 
     return {
@@ -446,6 +471,9 @@ def _build_financial_summary(
         "reservation_total_due": round(reservation_total_due, 2),
         "pricing_reconciliation_required": pricing_reconciliation_difference > 0.01,
         "pricing_reconciliation_difference": pricing_reconciliation_difference,
+        "pricing_reconciliation_direction": pricing_reconciliation_direction,
+        "room_plan_fully_posted": room_plan_fully_posted,
+        "pricing_reconciliation_target_total": round(float(reservation_price_component_total or 0), 2),
         "paid_amount": booking.get("paid_amount", 0),
     }
 
@@ -3422,6 +3450,84 @@ async def reconcile_complimentary_total(
         metadata={"old_total": old_total, "new_total": 0.0, "actor_name": current_user.name},
     )
     return {"success": True, "new_total": 0.0, "repaired": True}
+
+
+@router.post("/reservations/{booking_id}/reconcile-posted-stay-total")
+async def reconcile_posted_stay_total(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Align stale booking price metadata with a fully posted nightly folio.
+
+    The audited folio rows are the source of truth and are never rewritten.
+    This repair is deliberately unavailable for partial or ambiguous postings.
+    """
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli konaklama tarihleri yok")
+    stay_dates = [(check_in + timedelta(days=offset)).isoformat() for offset in range((check_out - check_in).days)]
+    folios = [row async for row in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1})]
+    financial_scope = _booking_or_folio_scope_query(tid, booking_id, [row.get("id") for row in folios])
+    room_charges = [
+        row async for row in db.folio_charges.find(
+            {
+                "$and": [
+                    financial_scope,
+                    {"voided": {"$ne": True}},
+                    {"$or": [{"charge_type": "room_charge"}, {"charge_category": "room"}]},
+                ],
+            },
+            {"_id": 0},
+        )
+    ]
+    rates_by_date: dict[str, float] = {}
+    for charge in room_charges:
+        charge_date = _reservation_calendar_date(charge.get("business_date") or charge.get("night_audit_date"))
+        if charge_date is None:
+            raise HTTPException(status_code=409, detail="Tarihsiz oda tahakkuku var; manuel finans mutabakatı gerekir")
+        date_key = charge_date.isoformat()
+        if date_key in rates_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için birden fazla oda tahakkuku var; manuel finans mutabakatı gerekir")
+        rates_by_date[date_key] = round(float(charge.get("total", charge.get("amount", 0)) or 0), 2)
+    if set(rates_by_date) != set(stay_dates) or any(value <= 0 for value in rates_by_date.values()):
+        raise HTTPException(status_code=409, detail="Her konaklama gecesi için tek ve pozitif bir tahakkuk bulunmadan otomatik mutabakat yapılamaz")
+
+    old_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    new_total = round(sum(rates_by_date.values()), 2)
+    now = datetime.now(UTC).isoformat()
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            result = await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid, "total_amount": booking.get("total_amount")},
+                {"$set": {"total_amount": new_total, "base_rate": rates_by_date[stay_dates[-1]], "rate_per_night": rates_by_date[stay_dates[-1]], "updated_at": now}},
+                session=session,
+            )
+            if result.modified_count != 1 and old_total != new_total:
+                raise HTTPException(status_code=409, detail="Rezervasyon değişti; yenileyip tekrar deneyin")
+            await db.daily_rates.delete_many({"booking_id": booking_id, "tenant_id": tid}, session=session)
+            await db.daily_rates.insert_many(
+                [
+                    {
+                        "id": str(uuid.uuid4()), "booking_id": booking_id, "tenant_id": tid,
+                        "date": date_key, "rate": rates_by_date[date_key],
+                        "daily_rate_key": f"{booking_id}:{date_key}", "updated_at": now,
+                        "updated_by": current_user.name,
+                    }
+                    for date_key in stay_dates
+                ],
+                session=session,
+            )
+    await _log_activity(tid, booking_id, "posted_stay_total_reconciled", current_user.name, {"old_total": old_total, "new_total": new_total, "daily_rates": rates_by_date})
+    await audit_log(actor_id=current_user.id, tenant_id=tid, property_id=tid, entity_type="reservation", entity_id=booking_id, action="posted_stay_total_reconciled", metadata={"old_total": old_total, "new_total": new_total, "actor_name": current_user.name})
+    return {"success": True, "old_total": old_total, "new_total": new_total, "daily_rates": rates_by_date}
 
 
 @router.put("/reservations/{booking_id}/daily-rates")
