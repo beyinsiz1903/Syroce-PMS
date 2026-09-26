@@ -77,10 +77,12 @@ async def test_chain_headquarters_cannot_create_user_outside_verified_chain(monk
 
 
 def test_admin_tier_roles_are_valid_login_roles():
+    from domains.admin.router.hotel import ROLES_BY_TIER as HOTEL_ROLES_BY_TIER
     from domains.admin.router.tenants import ROLES_BY_TIER
 
     canonical = {role.value for role in UserRole}
     assert all(set(roles) <= canonical for roles in ROLES_BY_TIER.values())
+    assert all(set(roles) <= canonical for roles in HOTEL_ROLES_BY_TIER.values())
 
 
 async def _async_value(value):
