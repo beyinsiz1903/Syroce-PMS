@@ -241,6 +241,62 @@ class MarketplacePortalSettingsUpdate(BaseModel):
         return self
 
 
+def _marketplace_widget_token(agency_doc: dict) -> str:
+    """Create a public, strictly widget-scoped identifier (never an API key)."""
+    from core.security import JWT_ALGORITHM, JWT_SECRET
+
+    return pyjwt.encode(
+        {
+            "type": "marketplace_widget",
+            "agency_id": agency_doc["id"],
+            "version": int(agency_doc.get("widget_token_version") or 1),
+        },
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+
+
+async def get_marketplace_widget_agency(
+    x_widget_token: str | None = Header(None, alias="X-Widget-Token"),
+    x_widget_origin: str | None = Header(None, alias="X-Widget-Origin"),
+) -> dict:
+    """Authenticate the public widget without granting extranet/API access."""
+    if not x_widget_token:
+        raise HTTPException(401, "Widget erişim anahtarı eksik")
+    try:
+        from core.security import JWT_ALGORITHM, JWT_SECRET
+
+        payload = pyjwt.decode(x_widget_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(401, "Widget erişim anahtarı geçersiz")
+    if payload.get("type") != "marketplace_widget" or not payload.get("agency_id"):
+        raise HTTPException(401, "Widget erişim kapsamı geçersiz")
+
+    sysdb = get_system_db()
+    agency_doc = await sysdb.marketplace_agencies.find_one(
+        {"id": payload["agency_id"], "status": "active"}, {"_id": 0}
+    )
+    if not agency_doc:
+        raise HTTPException(403, "Acente hesabı aktif değil")
+    if int(payload.get("version") or 0) != int(agency_doc.get("widget_token_version") or 1):
+        raise HTTPException(401, "Widget erişim anahtarı yenilenmiş")
+
+    origin = str(x_widget_origin or "").strip().rstrip("/")
+    allowed = {str(item).strip().rstrip("/") for item in agency_doc.get("allowed_widget_origins") or []}
+    if not origin or origin not in allowed:
+        raise HTTPException(403, "Bu web sitesi widget kullanımı için yetkilendirilmemiş")
+    return {
+        "agency_id": agency_doc["id"],
+        "agency_name": agency_doc.get("name", ""),
+        "default_commission_pct": agency_doc.get("default_commission_pct", 12.0),
+        "platform_fee_pct": agency_doc.get("platform_fee_pct"),
+        "contact_email": agency_doc.get("contact_email", ""),
+        "source": "agency_website_widget",
+        "widget_origin": origin,
+        "widget_brand_color": agency_doc.get("widget_brand_color") or "#047857",
+    }
+
+
 @router.get("/extranet/profile")
 async def marketplace_extranet_profile(agency: dict = Depends(get_marketplace_agency)):
     """Reload-safe identity for the multi-property agency portal."""
@@ -288,6 +344,7 @@ async def marketplace_extranet_settings(agency: dict = Depends(get_marketplace_a
             "allowed_origins": agency_doc.get("allowed_widget_origins") or [],
             "brand_color": agency_doc.get("widget_brand_color") or "#047857",
             "agency_id": agency_doc["id"],
+            "token": _marketplace_widget_token(agency_doc),
         },
         "users": users,
         "api_keys": keys,
@@ -1813,6 +1870,41 @@ async def agency_create_reservation_endpoint(
         if guard:
             await release_idempotency(sysdb, lock_id=guard, error=type(exc).__name__)
         raise
+
+
+# ─── Public agency website widget (search + create only) ────────────────
+
+
+@router.get("/widget/config")
+async def marketplace_widget_config(
+    agency: dict = Depends(get_marketplace_widget_agency),
+):
+    return {
+        "agency": {"name": agency["agency_name"]},
+        "brand_color": agency["widget_brand_color"],
+        "capabilities": ["hotel_search", "live_availability", "live_pricing", "reservation_create"],
+    }
+
+
+@router.post("/widget/search")
+async def marketplace_widget_search(
+    data: MarketplaceSearchRequest,
+    agency: dict = Depends(get_marketplace_widget_agency),
+):
+    """Public storefront search, scoped to the widget agency and its contracts."""
+    return await agency_search(data, agency)
+
+
+@router.post("/widget/reservations")
+async def marketplace_widget_create_reservation(
+    data: MarketplaceReservationCreate,
+    background_tasks: BackgroundTasks,
+    agency: dict = Depends(get_marketplace_widget_agency),
+):
+    """Create a booking from an agency website with server-side revalidation."""
+    if not data.idempotency_key:
+        raise HTTPException(400, "Widget rezervasyonunda işlem anahtarı zorunludur")
+    return await agency_create_reservation_endpoint(data, background_tasks, agency)
 
 
 @router.get("/reservations")
