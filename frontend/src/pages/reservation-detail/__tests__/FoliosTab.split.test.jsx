@@ -111,7 +111,7 @@ describe('kur çevirici', () => {
     const panel = screen.getByTestId('payment-form');
     fireEvent.click(within(panel).getByRole('checkbox', { name: /Farklı Döviz ile Hesapla/ }));
 
-    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/pms/reservations/exchange-rates'));
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/exchange-rates', { timeout: 10000 }));
     expect(await within(panel).findByTestId('currency-conversion-summary')).toHaveTextContent('145.45 EUR = 7272.50 TL');
   });
 });
