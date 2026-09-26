@@ -1163,12 +1163,13 @@ async def kbs_queue_claim(
         # degismis veya eski bir is oda numarasi olmadan olusmus olabilir.
         claimable = await db.kbs_reports.find_one(
             query,
-            {"_id": 0, "booking_id": 1, "action": 1},
+            {"_id": 0, "booking_id": 1, "guest_id": 1, "action": 1},
         )
         if claimable:
             _booking, _guest, fresh_snapshot = await _build_payload_snapshot(
                 tenant_id,
                 claimable["booking_id"],
+                claimable.get("guest_id"),
             )
             ok, missing = validate_kbs_payload(
                 fresh_snapshot,
