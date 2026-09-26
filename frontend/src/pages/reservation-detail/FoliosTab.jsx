@@ -21,6 +21,7 @@ import {
 } from '@/utils/paymentClassification';
 
 const normalizeCurrency = (value) => String(value || 'TL').toUpperCase() === 'TL' ? 'TRY' : String(value || 'TL').toUpperCase();
+const COMMON_PAYMENT_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF'];
 
 export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurrency, rates) {
   const numericAmount = Number(amount);
@@ -75,7 +76,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     setRatesLoading(true);
     setRatesError('');
     try {
-      const res = await axios.get('/pms/reservations/exchange-rates');
+      const res = await axios.get('/exchange-rates', { timeout: 10000 });
       if (res.data?.rates) setTcmbRates(res.data.rates);
       else setRatesError('Güncel kur bilgisi alınamadı. Kuru elle girebilirsiniz.');
     } catch (e) {
@@ -385,7 +386,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                       <SelectTrigger className="h-8 mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="TL">TL (Türk Lirası)</SelectItem>
-                        {Object.keys(tcmbRates).filter(cur => !['TL', 'TRY'].includes(cur)).sort().map(cur => <SelectItem key={cur} value={cur}>{cur}</SelectItem>)}
+                        {[...new Set([...COMMON_PAYMENT_CURRENCIES, ...Object.keys(tcmbRates)])]
+                          .filter(cur => !['TL', 'TRY'].includes(cur))
+                          .sort()
+                          .map(cur => <SelectItem key={cur} value={cur}>{cur}</SelectItem>)}
                       </SelectContent>
                     </UiSelect>
                   </div>

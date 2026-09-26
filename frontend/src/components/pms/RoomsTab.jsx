@@ -341,7 +341,7 @@ const RoomsTab = ({
 
   const fetchExchangeRates = async () => {
     try {
-      const res = await axios.get('/pms/reservations/exchange-rates');
+      const res = await axios.get('/exchange-rates', { timeout: 10000 });
       if (res.data?.rates) {
         setTcmbRates(res.data.rates);
       }
