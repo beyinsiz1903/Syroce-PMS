@@ -16,7 +16,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
   const [selectedType, setSelectedType] = useState('');
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [reason, setReason] = useState('');
-  const [pricingOption, setPricingOption] = useState('current');
+  const [pricingOption, setPricingOption] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(false);
@@ -37,19 +37,28 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 
   const currentRoomType = room?.room_type || '';
   const selectedTypeData = roomTypes.find(rt => rt.type === selectedType);
-  const isUpgrade = selectedTypeData && currentRoomType && selectedTypeData.base_price > (room?.base_price || 0);
-  const priceDiff = selectedTypeData ? (selectedTypeData.base_price - (room?.base_price || 0)) : 0;
+  const nights = Math.max(1, reservationNights(booking?.check_in, booking?.check_out));
+  const currentNightlyPrice = Number(booking?.total_amount || 0) / nights;
+  const selectedNightlyPrice = Number(selectedTypeData?.base_price || 0);
+  const isDifferentRoomType = Boolean(selectedType && currentRoomType && selectedType !== currentRoomType);
+  const isUpgrade = isDifferentRoomType && selectedNightlyPrice > currentNightlyPrice;
+  const priceDiffPerNight = Math.max(0, selectedNightlyPrice - currentNightlyPrice);
+  const suggestedTotalDifference = Math.round(priceDiffPerNight * nights * 100) / 100;
 
   const handleChange = async () => {
     if (!selectedRoomId || !reason) { toast.error('Oda ve sebep seçimi zorunlu'); return; }
+    if (isDifferentRoomType && !pricingOption) { toast.error('Yeni oda için fiyat uygulamasını seçin'); return; }
+    if (pricingOption === 'custom' && (!Number.isFinite(Number(customPrice)) || Number(customPrice) < 0)) {
+      toast.error('Geçerli bir toplam fiyat farkı girin'); return;
+    }
     setLoading(true);
     try {
-      const extraCharge = pricingOption === 'upgrade' ? Math.max(0, priceDiff) : pricingOption === 'custom' ? parseFloat(customPrice) || 0 : 0;
+      const extraCharge = pricingOption === 'upgrade' ? suggestedTotalDifference : pricingOption === 'custom' ? Number(customPrice) : 0;
       await axios.post(`/pms/reservations/${booking.id}/room-change`, {
         new_room_id: selectedRoomId, reason, transfer_folio: true, extra_charge: extraCharge
       });
       toast.success('Oda değiştirildi');
-      setSelectedRoomId(''); setSelectedType(''); setReason(''); onRefresh?.();
+      setSelectedRoomId(''); setSelectedType(''); setReason(''); setPricingOption(''); setCustomPrice(''); onRefresh?.();
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
@@ -76,7 +85,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.oda_tipi')}</Label>
-                <select value={selectedType} onChange={e => { setSelectedType(e.target.value); setSelectedRoomId(''); }} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-type-select">
+                <select value={selectedType} onChange={e => { setSelectedType(e.target.value); setSelectedRoomId(''); setPricingOption(''); setCustomPrice(''); }} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-type-select">
                   <option value="">{t('cm.pages_reservationdetail_OperationTabs.oda_tipi_seciniz')}</option>
                   {roomTypes.map(rt => (
                     <option key={rt.type} value={rt.type}>
@@ -99,9 +108,11 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
               </div>
             </div>
 
-            {isUpgrade && selectedType && (
+            {isDifferentRoomType && selectedType && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                <div className="text-xs font-semibold text-amber-800">{t('cm.pages_reservationdetail_OperationTabs.ust_kategori_oda_fiyat_farki')} {fmtCurrency(priceDiff, currency)}/gece</div>
+                <div className="text-xs font-semibold text-amber-800">
+                  {isUpgrade ? 'Üst kategori oda seçildi' : 'Farklı oda kategorisi seçildi'} — yeni fiyat nasıl uygulansın?
+                </div>
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="current" checked={pricingOption === 'current'} onChange={e => setPricingOption(e.target.value)} />
@@ -109,7 +120,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="upgrade" checked={pricingOption === 'upgrade'} onChange={e => setPricingOption(e.target.value)} />
-                    {t('cm.pages_reservationdetail_OperationTabs.guncel_fiyat_farki')}{fmtCurrency(priceDiff, currency)})
+                    Önerilen toplam farkı uygula ({fmtCurrency(suggestedTotalDifference, currency)})
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="custom" checked={pricingOption === 'custom'} onChange={e => setPricingOption(e.target.value)} />
@@ -117,14 +128,15 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                   </label>
                 </div>
                 {pricingOption === 'custom' && (
-                  <Input type="number" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder={t('cm.pages_reservationdetail_OperationTabs.ek_ucret_tl')} className="h-8 text-sm w-40" />
+                  <Input type="number" min="0" step="0.01" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder="Toplam fiyat farkı" className="h-8 text-sm w-40" />
                 )}
+                <p className="text-xs text-amber-700">Seçilen fark oda geliri olarak misafir folyosuna işlenir ve gelir raporlarında görünür.</p>
               </div>
             )}
 
             <div>
               <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.degisiklik_sebebi')}</Label>
-              <select value={reason} onChange={e => setReason(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
+              <select value={reason} onChange={e => setReason(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-reason-select">
                 <option value="">{t('cm.pages_reservationdetail_OperationTabs.sebep_seciniz')}</option>
                 <option value="Misafir isteği">{t('cm.pages_reservationdetail_OperationTabs.misafir_istegi')}</option>
                 <option value="Teknik arıza">{t('cm.pages_reservationdetail_OperationTabs.teknik_ariza')}</option>
@@ -136,7 +148,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
             </div>
           </>
         )}
-        <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="room-change-submit-btn">
+        <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason || (isDifferentRoomType && !pricingOption)} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="room-change-submit-btn">
           {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Repeat2 className="w-3 h-3 mr-1" />} {t('cm.pages_reservationdetail_OperationTabs.oda_degistir')}
         </Button>
       </div>
