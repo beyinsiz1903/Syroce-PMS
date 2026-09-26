@@ -283,7 +283,7 @@ const BasicReports = ({
   useEffect(() => {
     if (activeSection !== 'inhouse') return;
     let active = true;
-    fetchJsonWithRetry(BACKEND_URL + '/api/reservations/exchange-rates', { credentials: 'include' })
+    fetchJsonWithRetry(BACKEND_URL + '/exchange-rates', { credentials: 'include' })
       .then(result => {
         if (active && result?.rates) setExchangeRates({ TRY: 1, TL: 1, ...result.rates });
       })
