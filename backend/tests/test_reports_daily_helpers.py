@@ -16,6 +16,7 @@ from routers.reports_pkg.dashboard_lists import (
     _payment_is_effective,
     _payment_method,
     _period_performance,
+    _received_payment_amount,
 )
 from routers.reports_pkg.flash_email import _report_date
 
@@ -79,6 +80,15 @@ def test_payment_normalization_excludes_voided_and_failed_rows():
     assert _payment_is_effective({"status": "paid", "voided": False}) is True
     assert _payment_is_effective({"status": "failed"}) is False
     assert _payment_is_effective({"status": "paid", "voided": True}) is False
+
+
+def test_received_payment_uses_physical_currency_from_converter_note():
+    payment = {
+        "amount": 121.21,
+        "currency": "EUR",
+        "notes": "[Döviz Çevirici] 121.21 EUR = 138.10 USD. Kur: 1 EUR = 1.1393 USD",
+    }
+    assert _received_payment_amount(payment) == {"amount": 138.1, "currency": "USD"}
 
 
 def test_cashier_collection_excludes_non_cash_folio_settlements():

@@ -45,6 +45,22 @@ const MoneyCell = ({ amount, currency, exchangeRates }) => {
   </div>;
 };
 
+const ReceivedPaymentsCell = ({ payments = [] }) => {
+  if (!payments.length) return '-';
+  const totals = payments.reduce((result, payment) => {
+    const currency = String(payment.currency || 'TRY').toUpperCase();
+    result[currency] = (result[currency] || 0) + Number(payment.amount || 0);
+    return result;
+  }, {});
+  return <div className="space-y-0.5">
+    {Object.entries(totals).map(([currency, amount]) => (
+      <div key={currency} className="font-semibold text-emerald-700">
+        {new Intl.NumberFormat('tr-TR', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}
+      </div>
+    ))}
+  </div>;
+};
+
 const GuestTable = ({
   guests,
   title,
@@ -65,7 +81,7 @@ const GuestTable = ({
     <Card>
       <CardContent className="p-0">
         <div className="overflow-x-auto" role="region" aria-label={`${title} tablosu`} tabIndex={0}>
-          <table className={`w-full text-sm ${showNightlyRate ? 'min-w-[980px]' : 'min-w-[820px]'}`} data-testid="guest-table">
+          <table className={`w-full text-sm ${showNightlyRate ? 'min-w-[1080px]' : 'min-w-[820px]'}`} data-testid="guest-table">
           <thead><tr className="border-b bg-gray-50">
             <th className="min-w-[190px] text-left py-2.5 px-3 font-semibold text-gray-600">Misafir</th>
             <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Oda</th>
@@ -74,6 +90,7 @@ const GuestTable = ({
             <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Çıkış</th>
             <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Durum</th>
             {showNightlyRate && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">Gece Ücreti</th>}
+            {showNightlyRate && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">Tahsilat</th>}
             <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">{showNightlyRate ? 'Konaklama Toplamı' : 'Tutar'}</th>
           </tr></thead>
           <tbody>
@@ -90,9 +107,10 @@ const GuestTable = ({
                 <td className="whitespace-nowrap py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="whitespace-nowrap py-2 px-3"><span className={`inline-flex whitespace-nowrap text-xs px-2 py-0.5 rounded-full font-medium ${status.className}`}>{status.label}</span></td>
                 {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700"><MoneyCell amount={g.nightly_rate} currency={g.currency} exchangeRates={exchangeRates} /></td>}
+                {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right tabular-nums"><ReceivedPaymentsCell payments={g.received_payments} /></td>}
                 <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : <MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} />}</td>
               </tr>;
-            }) : <tr><td colSpan={6 + (showId ? 1 : 0) + (showNightlyRate ? 1 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
+            }) : <tr><td colSpan={6 + (showId ? 1 : 0) + (showNightlyRate ? 2 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
           </tbody>
         </table></div>
       </CardContent>

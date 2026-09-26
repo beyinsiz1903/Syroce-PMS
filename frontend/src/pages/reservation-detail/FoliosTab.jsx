@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { API, fmtTL, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
+import { API, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import PrintableFolio from '@/components/PrintableFolio';
 import {
@@ -45,6 +45,22 @@ export function parseReceivedCurrency(notes) {
   const amount = Number(match[1].replace(',', '.'));
   if (!Number.isFinite(amount)) return null;
   return { amount, currency: match[2].toUpperCase() };
+}
+
+export function summarizeReceivedPayments(payments, fallbackAmount, fallbackCurrency) {
+  const totals = (payments || [])
+    .filter(payment => !payment.voided)
+    .map(payment => parseReceivedCurrency(payment.notes))
+    .filter(Boolean)
+    .reduce((result, payment) => {
+      result[payment.currency] = (result[payment.currency] || 0) + payment.amount;
+      return result;
+    }, {});
+  const received = Object.entries(totals).map(([currency, amount]) => ({ currency, amount }));
+  if (received.length) return received;
+  return Number(fallbackAmount) > 0
+    ? [{ amount: Number(fallbackAmount), currency: normalizeCurrency(fallbackCurrency) }]
+    : [];
 }
 
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
@@ -238,6 +254,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       return true;
     }).sort((a, b) => new Date(b.created_at || b.processed_at || 0) - new Date(a.created_at || a.processed_at || 0));
   }, [charges, extra_charges, payments]);
+  const allocatedPrepaymentReceipts = useMemo(
+    () => summarizeReceivedPayments(payments, Math.abs(rawFolioBalance), currency),
+    [payments, rawFolioBalance, currency],
+  );
 
   const itemKind = (item) => {
     if (item._type === 'payment') {
@@ -281,7 +301,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
       {hasAllocatedPrepayment && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="allocated-prepayment-note">
-          {fmtTL(Math.abs(rawFolioBalance))} TL peşin tahsilat, {fmtCurrency(pendingRoomAmount, currency)} bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
+          Peşin tahsilat: {allocatedPrepaymentReceipts.map(receipt => fmtCurrency(receipt.amount, receipt.currency)).join(' + ')}.
+          {' '}{fmtCurrency(Math.abs(rawFolioBalance), currency)} rezervasyon bakiyesine mahsup edildi; {fmtCurrency(pendingRoomAmount, currency)} bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
         </div>
       )}
       {pricingReconciliationRequired && (

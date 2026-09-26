@@ -15,6 +15,7 @@ const guests = [{
   nightly_rate: 2500,
   total_amount: 10000,
   currency: 'EUR',
+  received_payments: [{ amount: 165.71, currency: 'USD' }],
   is_primary: true,
 }];
 
@@ -50,16 +51,18 @@ describe('GuestTable in-house pricing', () => {
     );
 
     expect(screen.getByRole('columnheader', { name: 'Gece Ücreti' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Tahsilat' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Konaklama Toplamı' })).toBeInTheDocument();
     expect(screen.getByText(/2\.500.*€/)).toBeInTheDocument();
     expect(screen.getByText(/10\.000.*€/)).toBeInTheDocument();
+    expect(screen.getByText(/\$165,71/)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Konaklayanlar (In-House) tablosu' })).toHaveAttribute('tabindex', '0');
   });
 
   it('does not repeat room revenue on an additional guest row', () => {
     render(
       <GuestTable
-        guests={[{ ...guests[0], id: 'booking-1:guest-2', is_primary: false, nightly_rate: null, total_amount: 0 }]}
+        guests={[{ ...guests[0], id: 'booking-1:guest-2', is_primary: false, nightly_rate: null, total_amount: 0, received_payments: [] }]}
         title="Konaklayanlar (In-House)"
         showNightlyRate
         searchGuest=""
@@ -68,6 +71,7 @@ describe('GuestTable in-house pricing', () => {
     );
 
     const cells = screen.getAllByRole('cell');
+    expect(cells.at(-3)).toHaveTextContent('-');
     expect(cells.at(-2)).toHaveTextContent('-');
     expect(cells.at(-1)).toHaveTextContent('-');
   });
