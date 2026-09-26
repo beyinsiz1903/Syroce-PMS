@@ -692,7 +692,7 @@ const AgencyPortalDashboard = () => {
                           <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 sm:gap-4">
                             <div className="text-right">
                               <div className="text-lg font-bold text-slate-800">{formatMoney(rt.stay_total, rt.currency || availability.currency)}</div>
-                              <div className="text-[11px] text-slate-500">{availability.night_count} gece toplam · {formatMoney(rt.base_price, rt.currency || availability.currency)}/gece</div>
+                              <div className="text-[11px] text-slate-500">{availability.night_count} gece · Gecelik {formatMoney(rt.base_price, rt.currency || availability.currency)}</div>
                               {rt.occupancy_pricing?.children_ages?.length > 0 && <div className="mt-1 text-[11px] text-violet-700" data-testid={`child-price-${rt.room_type}`}>
                                 Çocuk yaşları ({rt.occupancy_pricing.children_ages.join(', ')}) fiyata dahil
                                 {rt.occupancy_pricing.child_supplement_nightly > 0 ? ` · ${formatMoney(rt.occupancy_pricing.child_supplement_nightly, rt.currency || availability.currency)}/gece çocuk farkı` : ' · ücretsiz'}
@@ -880,7 +880,7 @@ const AgencyPortalDashboard = () => {
             <p id="quoted-occupancy-note" className="text-xs text-slate-500">Kişi ve çocuk yaşları arama fiyatına dahildir. Değiştirmek için aramaya dönün.</p>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-testid="booking-amount">
               <div className="flex items-center justify-between gap-3"><span className="text-sm text-emerald-900">Konaklama toplamı</span><strong className="text-emerald-900">{formatMoney(bookingForm.total_amount, availability?.currency || hotelInfo?.currency)}</strong></div>
-              <p className="mt-1 text-xs text-emerald-700">{availability?.night_count || 1} gece · Toplam tutar, otelin güncel acente fiyatı üzerinden güvenli biçimde hesaplanmıştır.</p>
+              <p className="mt-1 text-xs text-emerald-700">Seçilen {availability?.night_count || 1} gece için güncel acente fiyatı.</p>
             </div>
             <div>
               <Label>{t('cm.pages_AgencyPortalDashboard.ozel_istek')}</Label>

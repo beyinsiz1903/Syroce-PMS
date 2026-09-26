@@ -3719,7 +3719,13 @@ async def update_daily_rates(
                     for field in ("business_date", "night_audit_date", "charge_type", "audit_id"):
                         if old_charge.get(field) is not None:
                             new_charge[field] = old_charge[field]
-                    await db.folio_charges.insert_one(new_charge, session=session)
+                    try:
+                        await db.folio_charges.insert_one(new_charge, session=session)
+                    except DuplicateKeyError as exc:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"{rate_date} oda tahakkuku başka bir işlem tarafından güncellendi; ekranı yenileyip tekrar deneyin",
+                        ) from exc
                     affected_folio_ids.add(old_charge["folio_id"])
 
         # Recalculate folio balance for all affected folios (must be outside transaction to see committed charges)

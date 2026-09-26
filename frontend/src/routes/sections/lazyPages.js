@@ -117,6 +117,7 @@ export const ContactCenterDashboard = lazy(() => import("@/pages/ContactCenterDa
 
 // Admin
 export const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
+export const AdminMarketplaceAgencies = lazy(() => import("@/pages/AdminMarketplaceAgencies"));
 export const AdminVendors = lazy(() => import("@/pages/AdminVendors"));
 export const QuickIdSettings = lazy(() => import("@/pages/admin/QuickIdSettings"));
 export const VoiceNumberMapping = lazy(() => import("@/pages/admin/VoiceNumberMapping"));

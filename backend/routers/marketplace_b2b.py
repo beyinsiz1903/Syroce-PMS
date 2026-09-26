@@ -178,6 +178,7 @@ async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-A
         "agency_id": agency["id"],
         "agency_name": agency.get("name", ""),
         "default_commission_pct": agency.get("default_commission_pct", 12.0),
+        "platform_fee_pct": agency.get("platform_fee_pct"),
         "contact_email": agency.get("contact_email", ""),
         "source": source,
         "user": actor_user,
@@ -415,7 +416,7 @@ def _commission_for(agency: dict, listing: dict) -> float:
     return float(pct)
 
 
-def _syroce_b2b_fee(total: float, source: str) -> tuple[float, float]:
+def _syroce_b2b_fee(total: float, source: str, agency_fee_pct: float | None = None) -> tuple[float, float]:
     """Return the marketplace service fee used in the hotel net calculation.
 
     Direct API integrations are billed at 1%; reservations created in the
@@ -423,7 +424,9 @@ def _syroce_b2b_fee(total: float, source: str) -> tuple[float, float]:
     billed at 2%.  Keeping this calculation next to commission setup ensures
     the values exist before the PMS booking becomes durable.
     """
-    fee_pct = 2.0 if source == "extranet_ui" else 1.0
+    fee_pct = float(agency_fee_pct) if agency_fee_pct is not None else (2.0 if source == "extranet_ui" else 1.0)
+    if fee_pct < 0 or fee_pct > 100:
+        raise ValueError("Platform hizmet bedeli 0 ile 100 arasında olmalıdır")
     return fee_pct, round(float(total) * fee_pct / 100, 2)
 
 
@@ -467,6 +470,17 @@ class MarketplaceAgencyCreate(BaseModel):
     contact_phone: str = ""
     country: str = "TR"
     default_commission_pct: float = Field(default=12.0, ge=0, le=100)
+    platform_fee_pct: float | None = Field(default=None, ge=0, le=100)
+
+
+class MarketplaceAgencyUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    contact_email: str | None = Field(default=None, max_length=320)
+    contact_phone: str | None = Field(default=None, max_length=40)
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    default_commission_pct: float | None = Field(default=None, ge=0, le=100)
+    platform_fee_pct: float | None = Field(default=None, ge=0, le=100)
+    status: str | None = Field(default=None, pattern="^(active|disabled)$")
 
 
 class MarketplaceListingCreate(BaseModel):
@@ -619,6 +633,8 @@ async def admin_create_agency(
         "status": "active",
         "created_at": _now_iso(),
     }
+    if data.platform_fee_pct is not None:
+        agency_doc["platform_fee_pct"] = data.platform_fee_pct
     await sysdb.marketplace_agencies.insert_one(agency_doc)
 
     raw_key = f"syroce_mkt_{secrets.token_urlsafe(32)}"
@@ -646,7 +662,50 @@ async def admin_create_agency(
 async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
     sysdb = get_system_db()
     docs = await sysdb.marketplace_agencies.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    contract_rows = await sysdb.agency_contracts.aggregate([
+        {"$match": {"status": "approved"}},
+        {"$group": {"_id": "$agency_id", "connected_hotels": {"$addToSet": "$tenant_id"}}},
+    ]).to_list(500)
+    booking_rows = await sysdb.marketplace_bookings.aggregate([
+        {"$match": {"status": {"$ne": "cancelled"}}},
+        {"$group": {"_id": "$agency_id", "booking_count": {"$sum": 1}, "gross_volume": {"$sum": "$total_amount"}, "platform_revenue": {"$sum": "$syroce_b2b_fee_amount"}}},
+    ]).to_list(500)
+    contract_stats = {row["_id"]: len(row.get("connected_hotels") or []) for row in contract_rows}
+    booking_stats = {row["_id"]: row for row in booking_rows}
+    for agency in docs:
+        agency_id = agency.get("id")
+        stats = booking_stats.get(agency_id, {})
+        agency["connected_hotels"] = contract_stats.get(agency_id, 0)
+        agency["booking_count"] = int(stats.get("booking_count", 0) or 0)
+        agency["gross_volume"] = round(float(stats.get("gross_volume", 0) or 0), 2)
+        agency["platform_revenue"] = round(float(stats.get("platform_revenue", 0) or 0), 2)
     return {"agencies": docs, "total": len(docs)}
+
+
+@router.patch("/admin/agencies/{agency_id}")
+async def admin_update_agency(
+    agency_id: str,
+    data: MarketplaceAgencyUpdate,
+    _: bool = Depends(_require_system_admin),
+):
+    sysdb = get_system_db()
+    updates = data.model_dump(exclude_none=True)
+    if "name" in updates:
+        updates["name"] = updates["name"].strip()
+    if "contact_email" in updates:
+        updates["contact_email"] = updates["contact_email"].strip().lower()
+    if "contact_phone" in updates:
+        updates["contact_phone"] = updates["contact_phone"].strip()
+    if "country" in updates:
+        updates["country"] = updates["country"].upper()
+    if not updates:
+        raise HTTPException(400, "Güncellenecek alan bulunamadı")
+    updates["updated_at"] = _now_iso()
+    result = await sysdb.marketplace_agencies.update_one({"id": agency_id}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(404, "Acente bulunamadı")
+    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id}, {"_id": 0})
+    return {"ok": True, "agency": agency}
 
 
 @router.delete("/admin/agencies/{agency_id}")
@@ -1362,7 +1421,13 @@ async def agency_create_reservation(
                 )
         total = server_total
         commission_amount = round(total * commission_pct / 100, 2)
-        syroce_b2b_fee_pct, syroce_b2b_fee_amount = _syroce_b2b_fee(total, agency.get("source", "syroce_agency_app"))
+        syroce_b2b_fee_pct, syroce_b2b_fee_amount = _syroce_b2b_fee(
+            total,
+            agency.get("source", "syroce_agency_app"),
+            agency.get("platform_fee_pct"),
+        )
+        # The platform fee is the agency's liability to Syroce; it must not
+        # reduce the hotel's contracted payout a second time.
         net_to_hotel = round(total - commission_amount, 2)
         credit_limit = contract.get("credit_limit")
         if credit_limit is not None:
