@@ -52,12 +52,20 @@ async def resolve_chain_properties(
     if not chain_id:
         return own, [own]
 
-    # Older tenants stored the headquarters flag on the authenticated user
-    # record, while newer provisioning writes it on the tenant document.  Both
-    # values are server-authenticated context, so accepting either preserves
-    # the invariant without turning a request parameter into authority.
-    is_headquarters = bool(own.get("is_chain_headquarters") or getattr(current_user, "is_chain_headquarters", False))
-    if require_headquarters and not (is_headquarters or _is_super_admin(current_user)):
+    # A headquarters *property* flag must not grant every administrator in
+    # that property's tenant cross-property access.  Access belongs to an
+    # explicitly designated chain user.  For older provisioned headquarters,
+    # the tenant's primary contact is the backward-compatible chain owner.
+    # Both values come from persisted, server-side records (never request
+    # parameters).
+    user_email = str(getattr(current_user, "email", "") or "").strip().casefold()
+    primary_email = str(own.get("contact_email") or own.get("email") or "").strip().casefold()
+    is_chain_user = bool(
+        getattr(current_user, "is_chain_admin", False)
+        or getattr(current_user, "is_chain_headquarters", False)
+        or (own.get("is_chain_headquarters") and user_email and user_email == primary_email)
+    )
+    if require_headquarters and not (is_chain_user or _is_super_admin(current_user)):
         raise HTTPException(status_code=403, detail="Zincir görünümü yalnızca merkez tesis yetkililerine açıktır")
 
     query: dict = {"chain_id": chain_id}
