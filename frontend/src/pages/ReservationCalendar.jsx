@@ -38,6 +38,7 @@ import {
   buildCalendarRateLookup,
   validateStayResize,
   normalizeRoomBlocksResponse,
+  applyRoomSwap,
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
@@ -1145,18 +1146,32 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       toast.error('Oda takası için neden belirtin');
       return;
     }
+    const pendingSwap = swapData;
+    // Reflect both room assignments immediately. A failed request restores
+    // the original booking objects, so the optimistic UI cannot conceal an
+    // unsuccessful swap.
+    setBookings(current => applyRoomSwap(current, pendingSwap.source, pendingSwap.target));
     setSwapSubmitting(true);
+    let swapPersisted = false;
     try {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-room-swap-${Date.now()}`;
       await axios.post(`/pms/bookings/${swapData.source.id}/swap-room`, {
         target_booking_id: swapData.target.id,
         reason: swapReason.trim(),
       }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      swapPersisted = true;
       toast.success(`${swapData.sourceRoom?.room_number} ve ${swapData.targetRoom?.room_number} odalarındaki rezervasyonlar takas edildi.`);
       setSwapData(null);
       setSwapReason('Oda takası');
-      loadCalendarData();
+      await loadCalendarData();
     } catch (error) {
+      if (!swapPersisted) {
+        setBookings(current => current.map(item => {
+          if (item.id === pendingSwap.source.id) return pendingSwap.source;
+          if (item.id === pendingSwap.target.id) return pendingSwap.target;
+          return item;
+        }));
+      }
       const detail = error.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Oda takası yapılamadı'));
     } finally {
