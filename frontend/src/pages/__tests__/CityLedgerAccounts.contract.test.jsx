@@ -1,12 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCityLedgerCandidateAccount,
   getCityLedgerPaymentAllocations,
   validateCityLedgerPayment,
   validateCityLedgerPaymentAllocations,
 } from '@/pages/CityLedgerAccounts';
 
 describe('CityLedgerAccounts payment guards', () => {
+  it('prefills a city-ledger account from a pending company', () => {
+    expect(buildCityLedgerCandidateAccount({
+      source_company_id: 'company-1',
+      company_name: 'Örnek Acente',
+      account_name: 'Örnek Acente',
+      contact_person: 'Zeliha',
+      payment_terms: '45',
+    })).toMatchObject({
+      source_company_id: 'company-1',
+      company_name: 'Örnek Acente',
+      account_name: 'Örnek Acente',
+      contact_person: 'Zeliha',
+      payment_terms: 45,
+      billing_country: 'Türkiye',
+    });
+  });
+
   it('accepts a finite payment within the outstanding balance', () => {
     expect(validateCityLedgerPayment('4.25', 10)).toBeNull();
   });

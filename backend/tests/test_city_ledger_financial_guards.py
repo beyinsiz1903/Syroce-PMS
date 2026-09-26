@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException
@@ -39,6 +39,58 @@ def collections(monkeypatch):
         ),
     )
     return accounts, transactions, bookings
+
+
+class _Cursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def to_list(self, _limit):
+        return self.rows
+
+
+@pytest.mark.asyncio
+async def test_city_ledger_candidates_are_tenant_scoped_and_exclude_linked_companies(user, monkeypatch):
+    company_find = Mock(
+        return_value=_Cursor(
+            [
+                {"id": "company-new", "name": "Yeni Acente", "contact_email": "new@example.com", "payment_terms": "45"},
+                {"id": "company-linked", "name": "Bağlı Acente"},
+                {"id": "company-name-match", "name": "Mevcut Cari"},
+            ]
+        )
+    )
+    companies = SimpleNamespace(find=company_find)
+    accounts = SimpleNamespace(
+        find=lambda query, projection: _Cursor(
+            [
+                {"source_company_id": "company-linked", "account_name": "Bağlı Acente"},
+                {"account_name": "Mevcut Cari"},
+            ]
+        )
+    )
+    monkeypatch.setattr(cashiering, "db", SimpleNamespace(companies=companies, city_ledger_accounts=accounts))
+
+    result = await cashiering.get_city_ledger_candidates(credentials=None)
+
+    assert result == {
+        "candidates": [
+            {
+                "source_company_id": "company-new",
+                "account_name": "Yeni Acente",
+                "company_name": "Yeni Acente",
+                "contact_person": None,
+                "email": "new@example.com",
+                "phone": None,
+                "tax_number": None,
+                "billing_address": None,
+                "payment_terms": "45",
+                "status": None,
+            }
+        ],
+        "total_count": 1,
+    }
+    assert company_find.call_args.args[0] == {"tenant_id": "tenant-a"}
 
 
 @pytest.mark.asyncio
