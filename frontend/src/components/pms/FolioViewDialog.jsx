@@ -590,7 +590,7 @@ th{background:#f5f5f5}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Birim Fiyat (₺)</Label>
+                <Label>Birim Fiyat ({selectedFolio?.currency || 'TRY'})</Label>
                 <Input type="number" step="0.01" min="0" value={newFolioCharge.amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 amount: e.target.value
@@ -606,7 +606,7 @@ th{background:#f5f5f5}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>İndirim (₺)</Label>
+                <Label>İndirim ({selectedFolio?.currency || 'TRY'})</Label>
                 <Input type="number" step="0.01" min="0" value={newFolioCharge.discount_amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 discount_amount: e.target.value
@@ -642,7 +642,7 @@ th{background:#f5f5f5}
           </DialogHeader>
           <form onSubmit={handlePostPayment} className="space-y-4">
             <div>
-              <Label>Tutar (₺)</Label>
+              <Label>Tutar ({selectedFolio?.currency || 'TRY'})</Label>
               <Input type="number" step="0.01" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
               ...newFolioPayment,
               amount: parseFloat(e.target.value)

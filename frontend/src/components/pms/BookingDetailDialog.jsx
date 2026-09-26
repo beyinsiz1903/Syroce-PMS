@@ -206,7 +206,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
               {editing ? (
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs text-gray-600">{t('booking.totalAmount')} (₺)</Label>
+                    <Label className="text-xs text-gray-600">{t('booking.totalAmount')} ({booking.currency || 'TRY'})</Label>
                     <Input type="number" min="0" step="0.01" value={form?.total_amount ?? 0} onChange={e => updateField('total_amount', e.target.value)} className="h-9" />
                   </div>
                   <div className="space-y-1">

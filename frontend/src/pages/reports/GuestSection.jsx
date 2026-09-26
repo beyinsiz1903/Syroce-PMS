@@ -32,7 +32,7 @@ export const convertToTry = (amount, currency, exchangeRates = {}) => {
   return Number.isFinite(rate) && rate > 0 ? Math.round(numericAmount * rate * 100) / 100 : null;
 };
 
-const MoneyCell = ({ amount, currency, exchangeRates }) => {
+export const MoneyCell = ({ amount, currency, exchangeRates }) => {
   if (amount == null) return '-';
   const code = String(currency || 'TRY').toUpperCase();
   const tryAmount = convertToTry(amount, code, exchangeRates);

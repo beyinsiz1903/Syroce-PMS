@@ -314,6 +314,7 @@ async def get_official_guest_list(
             "adults": 1,
             "children": 1,
             "total_amount": 1,
+            "currency": 1,
             "billing_tax_number": 1,
             "billing_address": 1,
             "company_id": 1,
@@ -419,6 +420,7 @@ async def get_official_guest_list(
                     "reservation_adults": b.get("adults", 1),
                     "reservation_children": b.get("children", 0),
                     "total_amount": b.get("total_amount", 0.0) if occupant_index == 0 else 0.0,
+                    "currency": b.get("currency") or "TRY",
                     "billing_tax_number": b.get("billing_tax_number") if has_pii else _mask_pii(b.get("billing_tax_number")),
                     "billing_address": b.get("billing_address") if has_pii else _mask_pii(b.get("billing_address")),
                     "company_id": b.get("company_id") if has_pii else _mask_pii(b.get("company_id")),
@@ -1168,6 +1170,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     }
     payment_methods = {}
     total_paid = 0
+    payment_totals_by_currency: dict[str, float] = {}
+    payment_totals_by_method_currency: dict[str, dict[str, float]] = {}
     payment_rows = []
     for p in all_payments:
         if not _payment_is_collection(p):
@@ -1179,6 +1183,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         payment_methods[method] = payment_methods.get(method, 0) + amt
         total_paid += amt
         payment_booking = booking_by_id.get(str(p.get("booking_id"))) or {}
+        received = _received_payment_amount(p, p.get("currency") or payment_booking.get("currency") or "TRY")
+        received_currency = str(received.get("currency") or "TRY").upper()
+        received_amount = float(received.get("amount") or 0)
+        payment_totals_by_currency[received_currency] = payment_totals_by_currency.get(received_currency, 0) + received_amount
+        method_totals = payment_totals_by_method_currency.setdefault(method, {})
+        method_totals[received_currency] = method_totals.get(received_currency, 0) + received_amount
         payment_rows.append(
             {
                 "id": p.get("id"),
@@ -1187,6 +1197,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "room_number": str(p.get("room_number") or payment_booking.get("room_number") or room_map.get(str(payment_booking.get("room_id"))) or "?").strip() or "?",
                 "guest_name": _guest_display_name(guests_by_id.get(str(payment_booking.get("guest_id"))), payment_booking) if payment_booking else None,
                 "amount": round(amt, 2),
+                "currency": str(p.get("currency") or payment_booking.get("currency") or "TRY").upper(),
+                "received_amount": round(received_amount, 2),
+                "received_currency": received_currency,
                 "method": method,
                 "payment_type": p.get("payment_type"),
                 "status": p.get("status") or "paid",
@@ -1337,6 +1350,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "total_pending": pending_invoices,
             "transaction_count": len(payment_rows),
             "rows": sorted(payment_rows, key=lambda row: str(row.get("processed_at") or "")),
+            "totals_by_currency": {code: round(amount, 2) for code, amount in payment_totals_by_currency.items()},
+            "totals_by_method_currency": {
+                method: {code: round(amount, 2) for code, amount in totals.items()}
+                for method, totals in payment_totals_by_method_currency.items()
+            },
             "currency_exchanges": currency_exchanges,
         },
         # P1 fix: Polis bildirimi ve maliye listesinde 100 kayıt yetersiz —

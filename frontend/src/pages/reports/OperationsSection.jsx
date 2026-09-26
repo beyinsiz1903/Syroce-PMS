@@ -5,13 +5,15 @@ import { Badge } from '@/components/ui/badge';
 import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, DollarSign, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
+import { MoneyCell } from './GuestSection';
 const TASK_STATUS_LABELS = { completed: 'Tamamlandı', pending: 'Bekliyor', assigned: 'Atandı', open: 'Açık', new: 'Yeni', in_progress: 'Devam ediyor', inprogress: 'Devam ediyor', active: 'Devam ediyor', cleaning: 'Temizleniyor', ready: 'Hazır' };
 const TASK_TYPE_LABELS = { checkout_cleaning: 'Çıkış temizliği', stayover_cleaning: 'Konaklama temizliği', room_status: 'Oda kontrolü', deep_cleaning: 'Detaylı temizlik' };
 const PAYMENT_METHOD_LABELS = { cash: 'Nakit', credit_card: 'Kredi kartı', debit_card: 'Banka kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme' };
 export const NoShowSection = ({
   s,
   noShowGuests,
-  cancelledGuests
+  cancelledGuests,
+  exchangeRates
 }) => {
   const {
     t
@@ -27,7 +29,7 @@ export const NoShowSection = ({
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-rose-50"><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Giriş Tarihi</th><th className="text-right py-2 px-3 text-xs font-semibold text-rose-700">Tutar</th></tr></thead>
-            <tbody>{noShowGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-rose-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>)}</tbody>
+            <tbody>{noShowGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-rose-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium"><MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} /></td></tr>)}</tbody>
           </table></div>
         </CardContent>
       </Card>}
@@ -36,7 +38,7 @@ export const NoShowSection = ({
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-amber-50"><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Tarih</th><th className="text-right py-2 px-3 text-xs font-semibold text-amber-700">Tutar</th></tr></thead>
-            <tbody>{cancelledGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-amber-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>)}</tbody>
+            <tbody>{cancelledGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-amber-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium"><MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} /></td></tr>)}</tbody>
           </table></div>
         </CardContent>
       </Card>}
@@ -160,7 +162,7 @@ export const PaymentsSection = ({
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Tahsilat Hareketleri ({payments.rows?.length || 0})</CardTitle></CardHeader>
       <CardContent className="p-0 overflow-x-auto">
-        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{PAYMENT_METHOD_LABELS[row.method] || row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.amount)}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
+        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Alınan Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{PAYMENT_METHOD_LABELS[row.method] || row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.received_amount ?? row.amount, row.received_currency || row.currency)}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
       </CardContent>
     </Card>
   </div>;
