@@ -384,7 +384,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                       setManualExchangeRate(false);
                     }}>
                       <SelectTrigger className="h-8 mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="z-[80]">
                         <SelectItem value="TL">TL (Türk Lirası)</SelectItem>
                         {[...new Set([...COMMON_PAYMENT_CURRENCIES, ...Object.keys(tcmbRates)])]
                           .filter(cur => !['TL', 'TRY'].includes(cur))
