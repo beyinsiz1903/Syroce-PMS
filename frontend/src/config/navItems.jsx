@@ -1218,6 +1218,14 @@ export const NAV_ITEMS = [
     navGroup: null,
     hidden: true,
   },
+  {
+    key: "hotel_network",
+    label: "Otel Ağı",
+    path: "/app/hotel-network",
+    tier: "basic",
+    group: "core",
+    navGroup: "sales",
+  },
 
   // ──── SUPER ADMIN ONLY ─────────────────────────────
   {
