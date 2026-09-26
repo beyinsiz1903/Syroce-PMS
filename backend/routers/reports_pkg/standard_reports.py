@@ -135,10 +135,29 @@ async def get_revenue_report(
         },
         {"_id": 0},
     ).to_list(1000)
+    extra_charges = await db.extra_charges.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": {"$gte": start_date, "$lte": end_date}},
+                {"business_date": {"$exists": False}, "charge_date": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
+                {"business_date": {"$exists": False}, "date": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
+                {"business_date": {"$exists": False}, "created_at": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
+                {"business_date": None, "created_at": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
+            ],
+        },
+        {"_id": 0},
+    ).to_list(1000)
     revenue_by_type: dict[str, float] = {}
-    for charge in folio_charges:
-        charge_type = charge.get("charge_category") or charge.get("charge_type") or "other"
-        revenue_by_type[charge_type] = revenue_by_type.get(charge_type, 0.0) + float(charge.get("total") or charge.get("amount") or 0)
+    for charge in [*folio_charges, *extra_charges]:
+        charge_type = charge.get("charge_category") or charge.get("category") or charge.get("charge_type") or "other"
+        amount = charge.get("total")
+        if amount is None:
+            amount = charge.get("charge_amount")
+        if amount is None:
+            amount = charge.get("amount") or 0
+        revenue_by_type[charge_type] = revenue_by_type.get(charge_type, 0.0) + float(amount)
     revenue_by_type = {key: round(value, 2) for key, value in revenue_by_type.items()}
     total_revenue = round(sum(revenue_by_type.values()), 2)
     room_revenue = sum(value for key, value in revenue_by_type.items() if key in {"room", "accommodation", "room_charge"})
@@ -154,7 +173,7 @@ async def get_revenue_report(
         "rev_par": round(room_revenue / available_room_nights, 2) if available_room_nights else 0,
         "revenue_by_type": revenue_by_type,
         "bookings_count": arrivals,
-        "revenue_basis": "posted_folio_charges",
+        "revenue_basis": "posted_folio_and_reservation_charges",
     }
 
 

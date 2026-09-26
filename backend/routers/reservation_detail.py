@@ -785,6 +785,7 @@ class RoomChangeRequest(BaseModel):
     new_room_id: str
     reason: str
     transfer_folio: bool = True
+    extra_charge: float = Field(0.0, ge=0, le=1e9)
 
 
 class EarlyCheckinRequest(BaseModel):
@@ -2571,6 +2572,9 @@ async def room_change(
     if not new_room:
         raise HTTPException(status_code=404, detail="Yeni oda bulunamadı")
 
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    effective_extra_charge = 0.0 if full_comp else round(data.extra_charge, 2)
+
     # Update booking
     await db.bookings.update_one(
         {"id": booking_id, "tenant_id": tid},
@@ -2610,6 +2614,39 @@ async def room_change(
     }
     await db.room_move_history.insert_one({**move_record})
 
+    # An upgrade difference is accommodation revenue, not a generic extra.
+    # Post it to the guest folio so every financial report reads the same
+    # durable ledger row and checkout immediately sees the updated balance.
+    if data.extra_charge > 0:
+        folio = await _ensure_reservation_folio(tid, booking)
+        now = datetime.now(UTC).isoformat()
+        charge = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "folio_id": folio["id"],
+            "booking_id": booking_id,
+            "charge_category": "room",
+            "charge_type": "room_upgrade",
+            "description": f"Oda değişikliği fiyat farkı: {old_room.get('room_number') if old_room else '-'} → {new_room.get('room_number') or '-'}",
+            "quantity": 1,
+            "unit_price": effective_extra_charge,
+            "amount": effective_extra_charge,
+            "tax_rate": 0,
+            "tax_amount": 0,
+            "total": effective_extra_charge,
+            "is_complimentary": bool(full_comp),
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
+            "posted_at": now,
+            "posted_by": current_user.name,
+            "voided": False,
+        }
+        await stamp_open_business_date(db, tid, charge)
+        await db.folio_charges.insert_one({**charge})
+        await _refresh_cached_folio_balance(tid, folio["id"])
+        if _gb_cache:
+            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+
     await _log_activity(
         tid,
         booking_id,
@@ -2619,6 +2656,8 @@ async def room_change(
             "from_room": old_room.get("room_number") if old_room else None,
             "to_room": new_room.get("room_number"),
             "reason": data.reason,
+            "extra_charge": effective_extra_charge,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
         },
     )
 
@@ -2633,7 +2672,7 @@ async def room_change(
     )
 
     move_record.pop("_id", None)
-    return {"success": True, "move_record": move_record}
+    return {"success": True, "move_record": move_record, "extra_charge": effective_extra_charge}
 
 
 @router.post("/reservations/{booking_id}/early-checkin")
