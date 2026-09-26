@@ -37,7 +37,7 @@ vi.mock('axios', () => ({
   },
 }));
 
-import { FoliosTab, calculateReceivedCurrency } from '@/pages/reservation-detail/FoliosTab';
+import { FoliosTab, calculateReceivedCurrency, parseReceivedCurrency } from '@/pages/reservation-detail/FoliosTab';
 
 const booking = { id: 'bk-1', guest_name: 'Ada Lovelace', room_number: '101' };
 const summary = { total_amount: 100, total_charges: 100, total_payments: 0, balance: 100 };
@@ -98,6 +98,11 @@ describe('kur çevirici', () => {
     expect(calculateReceivedCurrency(100, 'EUR', 'USD', rates)).toEqual({ rate: 1.25, amount: 125 });
     expect(calculateReceivedCurrency(4000, 'TL', 'USD', rates)).toEqual({ rate: 0.025, amount: 100 });
     expect(calculateReceivedCurrency(100, 'EUR', 'EUR', rates)).toEqual({ rate: 1, amount: 100 });
+  });
+
+  it('döviz çevirici notundan alınan döviz tutarını ayrıştırır', () => {
+    expect(parseReceivedCurrency('[Döviz Çevirici] 145.45 EUR = 165.71 USD. Kur: 1 EUR = 1.1393 USD'))
+      .toEqual({ amount: 165.71, currency: 'USD' });
   });
 
   it('kurlar asenkron geldikten sonra EUR bakiyenin TL karşılığını otomatik doldurur', async () => {
@@ -341,6 +346,30 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
 });
 
 describe('FoliosTab — sade ödeme akışı', () => {
+  it('işlem geçmişinde muhasebe tutarı yanında alınan dövizi gösterir ve iptali işaretler', () => {
+    render(<FoliosTab {...singleFolioProps({
+      booking: { ...booking, currency: 'EUR' },
+      payments: [
+        {
+          id: 'fx-payment',
+          amount: 145.45,
+          method: 'cash',
+          notes: '[Döviz Çevirici] 145.45 EUR = 165.71 USD. Kur: 1 EUR = 1.1393 USD',
+        },
+        {
+          id: 'voided-payment',
+          amount: 8085.25,
+          method: 'cash',
+          notes: '[Döviz Çevirici] 8085.25 TL tahsil edildi. Kur: 1.0000',
+          voided: true,
+        },
+      ],
+    })} />);
+
+    expect(screen.getByTestId('received-currency-fx-payment')).toHaveTextContent('Alınan: 165,71 USD');
+    expect(screen.getByText('İPTAL')).toBeInTheDocument();
+  });
+
   it('konaklama, ekstralar ve ön ödemeyi ayrı ve anlaşılır gösterir', () => {
     render(
       <FoliosTab

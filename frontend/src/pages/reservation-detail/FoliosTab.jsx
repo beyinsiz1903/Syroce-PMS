@@ -37,6 +37,16 @@ export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurre
   return { rate, amount: numericAmount * rate };
 }
 
+export function parseReceivedCurrency(notes) {
+  const match = String(notes || '').match(
+    /\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3})/i,
+  );
+  if (!match) return null;
+  const amount = Number(match[1].replace(',', '.'));
+  if (!Number.isFinite(amount)) return null;
+  return { amount, currency: match[2].toUpperCase() };
+}
+
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
   const currency = booking?.currency || "TL";
   const { t } = useTranslation();
@@ -574,24 +584,35 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           </Button>
         </div>
         {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Henüz işlem bulunmuyor</div> : (
-          allItems.map((item, i) => (
-            <div key={item.id || i} className={`flex items-center gap-3 p-3 rounded-lg border ${item.voided ? 'opacity-50 bg-gray-50' : 'bg-white'}`}>
+          allItems.map((item, i) => {
+            const received = item._type === 'payment' ? parseReceivedCurrency(item.notes) : null;
+            return (
+            <div key={item.id || i} className={`flex items-center gap-3 p-3 rounded-lg border ${item.voided ? 'opacity-60 bg-gray-50' : 'bg-white'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${item._type === 'payment' ? 'bg-emerald-100' : 'bg-amber-100'}`}>
                 {item._type === 'payment' ? <CreditCard className="w-4 h-4 text-emerald-600" /> : <Receipt className="w-4 h-4 text-amber-600" />}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-gray-800">{item.description || item.charge_name || item.method || item.payment_type || '-'}</div>
+                <div className="text-sm font-medium text-gray-800">
+                  {item.description || item.charge_name || item.method || item.payment_type || '-'}
+                  {item.voided && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">İPTAL</span>}
+                </div>
                 <div className="text-xs text-gray-400">
                   <span className="font-medium text-slate-500">{itemKind(item)}</span>
                   <span className="mx-1">·</span>{fmtTs(item.created_at || item.processed_at)}
                   {item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}
                 </div>
+                {received && !item.voided && (
+                  <div className="mt-1 text-xs font-semibold text-emerald-700" data-testid={`received-currency-${item.id || i}`}>
+                    Alınan: {fmtCurrency(received.amount, received.currency)}
+                  </div>
+                )}
               </div>
               <div className={`text-sm font-bold ${item._type === 'payment' ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {item._type === 'payment' ? '-' : '+'}{fmtCurrency(item.total ?? item.charge_amount ?? item.amount, currency)}
               </div>
             </div>
-          ))
+          );
+          })
         )}
       </div>
     </div>

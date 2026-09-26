@@ -222,6 +222,7 @@ const BasicReports = ({
   const reportDateEditedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [exchangeRates, setExchangeRates] = useState({ TRY: 1, TL: 1 });
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get('section') || 'overview';
   const urlSection = REPORT_SECTION_IDS.has(requestedSection) ? requestedSection : 'overview';
@@ -279,6 +280,19 @@ const BasicReports = ({
       fetchData();
     }
   }, [needsDashboard, fetchData]);
+  useEffect(() => {
+    if (activeSection !== 'inhouse') return;
+    let active = true;
+    fetchJsonWithRetry(BACKEND_URL + '/api/reservations/exchange-rates', { credentials: 'include' })
+      .then(result => {
+        if (active && result?.rates) setExchangeRates({ TRY: 1, TL: 1, ...result.rates });
+      })
+      .catch(() => {
+        // The table falls back to the reservation currency rather than
+        // presenting an unconverted amount as Turkish lira.
+      });
+    return () => { active = false; };
+  }, [activeSection]);
   const fetchOfficialGuests = useCallback(async dateParam => {
     setOfficialLoading(true);
     setOfficialError(null);
@@ -483,7 +497,7 @@ const BasicReports = ({
       case 'guests':
         return <div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Tüm Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'inhouse':
-        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} title={`Konaklayanlar (In-House) · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} showNightlyRate searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} title={`Konaklayanlar (In-House) · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} showNightlyRate exchangeRates={exchangeRates} searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'nationality':
         return <NationalitySection countryData={countryData} />;
       case 'front_office':

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { GuestTable } from '../GuestSection';
+import { convertToTry, GuestTable } from '../GuestSection';
 
 afterEach(() => cleanup());
 
@@ -19,6 +19,25 @@ const guests = [{
 }];
 
 describe('GuestTable in-house pricing', () => {
+  it('converts foreign-currency prices to current TRY and preserves the source amount', () => {
+    render(
+      <GuestTable
+        guests={guests}
+        title="Konaklayanlar (In-House)"
+        showNightlyRate
+        exchangeRates={{ EUR: 50, TRY: 1 }}
+        searchGuest=""
+        setSearchGuest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/₺125\.000/)).toBeInTheDocument();
+    expect(screen.getByText(/2\.500.*€/)).toBeInTheDocument();
+    expect(screen.getByText(/₺500\.000/)).toBeInTheDocument();
+    expect(screen.getByText(/10\.000.*€/)).toBeInTheDocument();
+    expect(convertToTry(145.45, 'EUR', { EUR: 50 })).toBe(7272.5);
+  });
+
   it('shows the selected night and whole-stay amounts as separate, explicit columns', () => {
     render(
       <GuestTable

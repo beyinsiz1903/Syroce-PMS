@@ -22,11 +22,35 @@ const guestStatus = value => GUEST_STATUS[String(value || '').toLowerCase()] || 
   label: value ? String(value).replaceAll('_', ' ') : 'Bilinmiyor',
   className: 'bg-slate-100 text-slate-600'
 };
+
+export const convertToTry = (amount, currency, exchangeRates = {}) => {
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount)) return null;
+  const code = String(currency || 'TRY').toUpperCase();
+  if (code === 'TRY' || code === 'TL') return numericAmount;
+  const rate = Number(exchangeRates[code]);
+  return Number.isFinite(rate) && rate > 0 ? Math.round(numericAmount * rate * 100) / 100 : null;
+};
+
+const MoneyCell = ({ amount, currency, exchangeRates }) => {
+  if (amount == null) return '-';
+  const code = String(currency || 'TRY').toUpperCase();
+  const tryAmount = convertToTry(amount, code, exchangeRates);
+  if (tryAmount == null || code === 'TRY' || code === 'TL') {
+    return <span>{formatCurrency(amount, code)}</span>;
+  }
+  return <div className="leading-tight">
+    <div>{formatCurrency(tryAmount, 'TRY')}</div>
+    <div className="mt-0.5 text-[10px] font-normal text-gray-500">{formatCurrency(amount, code)}</div>
+  </div>;
+};
+
 const GuestTable = ({
   guests,
   title,
   showId = false,
   showNightlyRate = false,
+  exchangeRates = {},
   searchGuest,
   setSearchGuest
 }) => <div className="space-y-4">
@@ -65,8 +89,8 @@ const GuestTable = ({
                 <td className="whitespace-nowrap py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="whitespace-nowrap py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="whitespace-nowrap py-2 px-3"><span className={`inline-flex whitespace-nowrap text-xs px-2 py-0.5 rounded-full font-medium ${status.className}`}>{status.label}</span></td>
-                {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700">{g.nightly_rate == null ? '-' : formatCurrency(g.nightly_rate, g.currency)}</td>}
-                <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : formatCurrency(g.total_amount, g.currency)}</td>
+                {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700"><MoneyCell amount={g.nightly_rate} currency={g.currency} exchangeRates={exchangeRates} /></td>}
+                <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : <MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} />}</td>
               </tr>;
             }) : <tr><td colSpan={6 + (showId ? 1 : 0) + (showNightlyRate ? 1 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
           </tbody>
