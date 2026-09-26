@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 
@@ -74,6 +75,25 @@ FNB_CHARGE_CATEGORIES = {
     "restaurant",
     "room_service",
 }
+
+_FX_RECEIPT_RE = re.compile(
+    r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3})",
+    re.IGNORECASE,
+)
+
+
+def _received_payment_amount(payment: dict, fallback_currency: str = "TRY") -> dict:
+    """Return the currency physically received, not the booking ledger currency."""
+    match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
+    if match:
+        try:
+            return {"amount": float(match.group(1).replace(",", ".")), "currency": match.group(2).upper()}
+        except ValueError:
+            pass
+    return {
+        "amount": float(payment.get("amount") or 0),
+        "currency": str(payment.get("currency") or fallback_currency or "TRY").upper(),
+    }
 
 
 def _normalized_room_status(value) -> str:
@@ -693,6 +713,29 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         else []
     )
     daily_rates_by_booking = {str(row.get("booking_id")): row for row in daily_rate_rows}
+    booking_payment_rows = (
+        await db.payments.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": {"$in": booking_ids},
+                "voided": {"$ne": True},
+            },
+            {"_id": 0, "booking_id": 1, "amount": 1, "currency": 1, "notes": 1},
+        ).to_list(20000)
+        if booking_ids
+        else []
+    )
+    received_payments_by_booking: dict[str, list[dict]] = {}
+    booking_currency_by_id = {
+        str(booking.get("id")): str(booking.get("currency") or "TRY").upper()
+        for booking in all_bk
+        if booking.get("id")
+    }
+    for payment in booking_payment_rows:
+        booking_id = str(payment.get("booking_id") or "")
+        received = _received_payment_amount(payment, booking_currency_by_id.get(booking_id, "TRY"))
+        if received["amount"] > 0:
+            received_payments_by_booking.setdefault(booking_id, []).append(received)
 
     period_charges = await db.folio_charges.find(
         {
@@ -859,6 +902,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     # Keep it on the primary row so multi-guest rooms do not look
                     # like they generated the same revenue more than once.
                     "nightly_rate": nightly_rate if index == 0 else None,
+                    "received_payments": received_payments_by_booking.get(str(booking.get("id")), []) if index == 0 else [],
                     "status": booking.get("status"),
                     "nationality": (guest or {}).get("nationality") or (guest or {}).get("country") or booking.get("nationality"),
                     "id_number": identity if has_pii else _mask_pii(identity),
