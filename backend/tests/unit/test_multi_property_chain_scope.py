@@ -35,12 +35,20 @@ class _Tenants:
 
 @pytest.mark.asyncio
 async def test_chain_scope_uses_explicit_chain_id(monkeypatch):
-    own = {"id": "hotel-a", "property_name": "A", "chain_id": "chain-1", "is_chain_headquarters": True}
+    own = {
+        "id": "hotel-a",
+        "property_name": "A",
+        "chain_id": "chain-1",
+        "is_chain_headquarters": True,
+        "contact_email": "chain@example.com",
+    }
     members = [own, {"id": "hotel-b", "property_name": "B", "chain_id": "chain-1"}]
     database = SimpleNamespace(tenants=_Tenants(own, members))
     monkeypatch.setattr("modules.pms_core.chain_access.get_system_db", lambda: database)
 
-    resolved_own, resolved_members = await _chain_scope(SimpleNamespace(role="manager", tenant_id="hotel-a"))
+    resolved_own, resolved_members = await _chain_scope(
+        SimpleNamespace(role="manager", tenant_id="hotel-a", email="chain@example.com")
+    )
 
     assert resolved_own == own
     assert [member["id"] for member in resolved_members] == ["hotel-a", "hotel-b"]
@@ -69,6 +77,27 @@ async def test_chain_member_cannot_read_sibling_properties(monkeypatch):
 
     with pytest.raises(HTTPException) as exc:
         await resolve_chain_properties(SimpleNamespace(role="manager", tenant_id="hotel-b"), require_headquarters=True)
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_headquarters_property_admin_is_not_implicitly_chain_admin(monkeypatch):
+    own = {
+        "id": "hotel-a",
+        "property_name": "A",
+        "chain_id": "chain-1",
+        "is_chain_headquarters": True,
+        "contact_email": "chain@example.com",
+    }
+    database = SimpleNamespace(tenants=_Tenants(own, [own]))
+    monkeypatch.setattr("modules.pms_core.chain_access.get_system_db", lambda: database)
+
+    with pytest.raises(HTTPException) as exc:
+        await resolve_chain_properties(
+            SimpleNamespace(role="admin", tenant_id="hotel-a", email="property-manager@example.com"),
+            require_headquarters=True,
+        )
 
     assert exc.value.status_code == 403
 
