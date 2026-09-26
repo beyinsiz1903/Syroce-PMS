@@ -55,6 +55,7 @@ export const validateCityLedgerPaymentAllocations = (amountValue, openItems, all
 };
 
 const EMPTY_ACCOUNT = {
+  source_company_id: '',
   account_name: '',
   company_name: '',
   contact_person: '',
@@ -71,10 +72,21 @@ const EMPTY_ACCOUNT = {
   billing_country: 'Türkiye',
 };
 
+export const buildCityLedgerCandidateAccount = (candidate) => {
+  const parsedTerms = Number.parseInt(candidate.payment_terms, 10);
+  return {
+    ...EMPTY_ACCOUNT,
+    ...candidate,
+    payment_terms: Number.isFinite(parsedTerms) ? parsedTerms : 30,
+    billing_country: candidate.billing_country || 'Türkiye',
+  };
+};
+
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const currency = tenant?.currency || cachedTenantCurrency();
   const [accounts, setAccounts] = useState([]);
+  const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -119,9 +131,22 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       console.error('Failed to load city ledger accounts:', error);
       toast.error('Cari hesaplar yüklenemedi');
       setAccounts([]);
+    }
+    try {
+      const candidateResponse = await axios.get('/cashiering/city-ledger-candidates');
+      setCandidates(candidateResponse.data?.candidates || []);
+    } catch (error) {
+      console.error('Failed to load city ledger candidates:', error);
+      toast.error('Tanımlanacak şirketler yüklenemedi');
+      setCandidates([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const openCandidate = (candidate) => {
+    setNewAccountData(buildCityLedgerCandidateAccount(candidate));
+    setNewAccountDialogOpen(true);
   };
 
   const filteredAccounts = accounts.filter((account) => {
@@ -471,6 +496,40 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Tanımlanacaklar</CardTitle>
+            <CardDescription>
+              Şirketler ekranında kayıtlı olup henüz cari hesaba dönüştürülmemiş kurumsal ve acente kayıtları
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {candidates.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
+                Cari hesaba dönüştürülmeyi bekleyen şirket bulunmuyor.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {candidates.map((candidate) => (
+                  <div key={candidate.source_company_id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate">{candidate.company_name}</div>
+                      <div className="mt-1 text-sm text-gray-500">
+                        {[candidate.contact_person, candidate.email, candidate.phone].filter(Boolean).join(' · ') || 'İletişim bilgisi girilmemiş'}
+                      </div>
+                      {candidate.tax_number && <div className="mt-1 text-xs text-gray-400">VKN / TCKN: {candidate.tax_number}</div>}
+                    </div>
+                    <Button variant="outline" onClick={() => openCandidate(candidate)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Cari Hesap Oluştur
+                    </Button>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

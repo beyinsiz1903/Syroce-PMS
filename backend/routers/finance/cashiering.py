@@ -209,11 +209,12 @@ async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthor
     if payment_terms < 0 or payment_terms > 3650:
         raise HTTPException(status_code=400, detail="Payment terms must be between 0 and 3650 days")
 
+    duplicate_conditions = [{"account_name": {"$regex": f"^{re.escape(account_name)}$", "$options": "i"}}]
+    source_company_id = str(account_data.get("source_company_id") or "").strip()
+    if source_company_id:
+        duplicate_conditions.append({"source_company_id": source_company_id})
     duplicate = await db.city_ledger_accounts.find_one(
-        {
-            "tenant_id": current_user.tenant_id,
-            "account_name": {"$regex": f"^{re.escape(account_name)}$", "$options": "i"},
-        },
+        {"tenant_id": current_user.tenant_id, "$or": duplicate_conditions},
         {"_id": 1},
     )
     if duplicate:
@@ -223,10 +224,17 @@ async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthor
         tenant_id=current_user.tenant_id,
         account_name=account_name,
         company_name=company_name,
+        source_company_id=source_company_id or None,
         contact_person=account_data.get("contact_person"),
         email=account_data.get("email"),
         phone=account_data.get("phone"),
         address=account_data.get("address"),
+        tax_number=account_data.get("tax_number"),
+        tax_office=account_data.get("tax_office"),
+        billing_address=account_data.get("billing_address"),
+        billing_city=account_data.get("billing_city"),
+        billing_postal_code=account_data.get("billing_postal_code"),
+        billing_country=account_data.get("billing_country"),
         credit_limit=credit_limit,
         payment_terms=payment_terms,
     )
@@ -239,6 +247,60 @@ async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthor
         raise HTTPException(status_code=409, detail="City ledger account name already exists") from exc
 
     return {"success": True, "account_id": account.id, "account_name": account.account_name, "credit_limit": account.credit_limit}
+
+
+@router.get("/cashiering/city-ledger-candidates")
+async def get_city_ledger_candidates(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """List tenant companies that do not yet have a city-ledger account."""
+    current_user = await get_current_user(credentials)
+    _enforce(current_user, "view_city_ledger")
+
+    tenant_id = current_user.tenant_id
+    companies = await db.companies.find({"tenant_id": tenant_id}).to_list(1000)
+    accounts = await db.city_ledger_accounts.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "source_company_id": 1, "account_name": 1, "company_name": 1, "tax_number": 1},
+    ).to_list(1000)
+
+    linked_ids = {str(account.get("source_company_id")) for account in accounts if account.get("source_company_id")}
+    linked_names = {
+        str(value).strip().casefold()
+        for account in accounts
+        for value in (account.get("account_name"), account.get("company_name"))
+        if str(value or "").strip()
+    }
+    linked_tax_numbers = {
+        str(account.get("tax_number")).strip()
+        for account in accounts
+        if str(account.get("tax_number") or "").strip()
+    }
+
+    candidates = []
+    for company in companies:
+        company_id = str(company.get("id") or company.get("_id") or "")
+        company_name = str(company.get("name") or "").strip()
+        tax_number = str(company.get("tax_number") or "").strip()
+        if not company_id or not company_name:
+            continue
+        if company_id in linked_ids or company_name.casefold() in linked_names or (tax_number and tax_number in linked_tax_numbers):
+            continue
+        candidates.append(
+            {
+                "source_company_id": company_id,
+                "account_name": company_name,
+                "company_name": company_name,
+                "contact_person": company.get("contact_person"),
+                "email": company.get("contact_email"),
+                "phone": company.get("contact_phone"),
+                "tax_number": company.get("tax_number"),
+                "billing_address": company.get("billing_address"),
+                "payment_terms": company.get("payment_terms"),
+                "status": getattr(company.get("status"), "value", company.get("status")),
+            }
+        )
+
+    candidates.sort(key=lambda item: item["company_name"].casefold())
+    return {"candidates": candidates, "total_count": len(candidates)}
 
 
 @router.get("/cashiering/city-ledger")
