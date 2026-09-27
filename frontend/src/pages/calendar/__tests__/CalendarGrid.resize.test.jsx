@@ -31,6 +31,7 @@ const renderGrid = (overrides = {}) => {
     onDragLeave: vi.fn(),
     onDrop: vi.fn(),
     onDragEnd: vi.fn(),
+    onBookingClick: vi.fn(),
     onBookingDoubleClick: vi.fn(),
   };
   render(
@@ -144,15 +145,22 @@ describe('CalendarGrid stay resize handle', () => {
     expect(handlers.onDrop.mock.calls[0][2].toISOString()).toBe('2026-09-10T00:00:00.000Z');
   });
 
-  it('opens a reservation reliably on the first card click', () => {
+  it('opens the quick reservation panel on the first card click', () => {
     const handlers = renderGrid();
     const card = screen.getByTestId('booking-bar-booking-1');
 
     fireEvent.click(card);
 
-    expect(handlers.onBookingDoubleClick).toHaveBeenCalledTimes(1);
-    expect(handlers.onBookingDoubleClick).toHaveBeenCalledWith(booking);
+    expect(handlers.onBookingClick).toHaveBeenCalledTimes(1);
+    expect(handlers.onBookingClick).toHaveBeenCalledWith(booking);
+    expect(handlers.onBookingDoubleClick).not.toHaveBeenCalled();
     expect(handlers.onCellClick).not.toHaveBeenCalled();
+  });
+
+  it('opens the full reservation workspace on a double click', () => {
+    const handlers = renderGrid();
+    fireEvent.doubleClick(screen.getByTestId('booking-bar-booking-1'));
+    expect(handlers.onBookingDoubleClick).toHaveBeenCalledWith(booking);
   });
 
   it('provides the reservation start cell as the drag anchor for whole-stay moves', () => {
@@ -161,6 +169,7 @@ describe('CalendarGrid stay resize handle', () => {
     const dataTransfer = { effectAllowed: '', setData: vi.fn() };
 
     fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.click(card);
 
     expect(handlers.onDragStart).toHaveBeenCalledWith(
       expect.anything(),
@@ -168,6 +177,7 @@ describe('CalendarGrid stay resize handle', () => {
       expect.objectContaining({ toISOString: expect.any(Function) }),
     );
     expect(handlers.onDragStart.mock.calls[0][2].toISOString()).toBe('2026-09-10T00:00:00.000Z');
+    expect(handlers.onBookingClick).not.toHaveBeenCalled();
   });
 
   it('supports direct pointer resizing in addition to browser drag events', () => {
