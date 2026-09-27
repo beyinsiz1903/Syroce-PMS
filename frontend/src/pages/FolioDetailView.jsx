@@ -52,7 +52,7 @@ function TimelineItem({
             {event.category && <Badge variant="outline" className="text-xs text-gray-500 border-gray-300">{event.category}</Badge>}
           </div>
           <span className={`text-sm font-semibold ${event.voided ? "text-gray-400 line-through" : cfg.color}`}>
-            {cfg.sign}{formatCurrency(Math.abs(event.amount || 0), event.currency || currency)}
+            {cfg.sign}{formatCurrency(Math.abs(event.display_amount ?? event.amount ?? 0), event.display_currency || event.currency || currency)}
           </span>
         </div>
         <div className="flex items-center justify-between mt-1">
