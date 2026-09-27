@@ -3,6 +3,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { BarChart3 } from 'lucide-react';
 import { cachedTenantCurrency, formatCurrency as formatCurrencyValue } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 // Sprint A DS palette: sky / emerald / amber / rose / indigo / slate.
 // Recharts grafikleri için hex tonları (mavi/yeşil yerine sky/emerald):
@@ -40,10 +41,12 @@ const COLOR_TO_INTENT = {
   info: 'info', success: 'success', warning: 'warning', danger: 'danger', neutral: 'neutral', default: 'default',
 };
 
-export const KPICard = ({ title, value, prevValue, prevLabel, icon: Icon, color = 'default' }) => {
+export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevLabel, icon: Icon, color = 'default' }) => {
   const intent = COLOR_TO_INTENT[color] || 'default';
   const isCurrency = /gelir|adr|rev|ciro|ödeme|tutar|tahsilat|fiyat|bakiye/i.test(title);
-  const displayVal = typeof value === 'number' ? (isCurrency ? formatCurrency(value) : formatNumber(value)) : value;
+  const displayVal = currencyBreakdown
+    ? formatCurrencyBreakdown(currencyBreakdown, value, cachedTenantCurrency())
+    : typeof value === 'number' ? (isCurrency ? formatCurrency(value) : formatNumber(value)) : value;
   let sub = prevLabel;
   if (!sub && prevValue !== undefined && typeof value === 'number') {
     const change = calcChange(value, typeof prevValue === 'number' ? prevValue : 0);

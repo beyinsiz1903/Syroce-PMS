@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import {
   Wine, Plus, RefreshCw, Trash2, Pencil, Receipt,
   Boxes, PackageCheck, AlertTriangle, Minus,
@@ -28,6 +29,7 @@ const EMPTY_ITEM = { name: '', price: '', category: 'drink', active: true, inven
 
 const MinibarPage = () => {
   useTranslation();
+  const currency = cachedTenantCurrency();
   const [tab, setTab] = useState('consume');
 
   // Katalog
@@ -303,7 +305,7 @@ const MinibarPage = () => {
                         <div className="min-w-0">
                           <div className="font-medium truncate">{it.name}</div>
                           <div className="text-xs text-gray-500">
-                            {CATEGORY_LABELS[it.category] || it.category} · {fmt(it.price)} TL
+                            {CATEGORY_LABELS[it.category] || it.category} · {formatCurrency(it.price, it.currency || currency)}
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -327,7 +329,7 @@ const MinibarPage = () => {
                 <CardContent className="p-3 flex items-center justify-between gap-3">
                   <div className="text-sm">
                     <span className="font-semibold">{cartCount}</span> ürün ·{' '}
-                    <span className="font-semibold">{fmt(cartTotal)} TL</span>
+                    <span className="font-semibold">{formatCurrency(cartTotal, currency)}</span>
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => setCart({})}>Temizle</Button>
@@ -350,7 +352,7 @@ const MinibarPage = () => {
                       <CardContent className="p-3 flex items-center justify-between gap-3 text-sm">
                         <div className="min-w-0">
                           <div className="font-medium">
-                            Oda {c.room_number} · {fmt(c.total)} TL
+                            Oda {c.room_number} · {formatCurrency(c.total, c.currency || currency)}
                           </div>
                           <div className="text-xs text-gray-500 truncate">
                             {(c.lines || []).map((l) => `${l.item_name} x${l.quantity}`).join(', ')}
@@ -400,7 +402,7 @@ const MinibarPage = () => {
                           {!it.active && <span className="ml-2 text-xs text-gray-400">(pasif)</span>}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {CATEGORY_LABELS[it.category] || it.category} · {fmt(it.price)} TL
+                          {CATEGORY_LABELS[it.category] || it.category} · {formatCurrency(it.price, it.currency || currency)}
                           {it.inventory_product_id ? ' · stok bağlı' : ''}
                         </div>
                       </div>
@@ -436,7 +438,7 @@ const MinibarPage = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Fiyat (TL)</Label>
+                <Label className="text-xs">Fiyat ({currency})</Label>
                 <Input type="number" min="0" step="0.01" value={itemForm.price} onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })} />
               </div>
               <div>

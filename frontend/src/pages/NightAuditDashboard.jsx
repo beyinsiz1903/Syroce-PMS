@@ -22,6 +22,8 @@ import { toast } from "sonner";
 import { confirmDialog } from "@/lib/dialogs";
 import { emitBusinessDateChanged } from "@/lib/businessDateEvents";
 import { buildBusinessDateOriginCopy } from "@/lib/businessDateOriginCopy";
+import { cachedTenantCurrency, formatCurrency } from "@/lib/currency";
+import { formatCurrencyBreakdown } from "@/lib/reportCurrency";
 import {
   NIGHT_AUDIT_RUN_TIMEOUT_MS,
   confirmsNightAuditAdvance,
@@ -88,6 +90,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const businessDateOriginCopy = businessDateMeta?.is_initialized
     ? buildBusinessDateOriginCopy(businessDateMeta, user)
     : null;
+  const tenantCurrency = tenant?.currency || cachedTenantCurrency();
+  const money = (amount, currency = tenantCurrency) => formatCurrency(amount || 0, currency, { decimals: 2 });
+  const moneyBreakdown = (breakdown, amount = 0) => formatCurrencyBreakdown(breakdown, amount, tenantCurrency);
 
   const fetchBusinessDate = useCallback(async () => {
     try {
@@ -566,14 +571,14 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             icon={Banknote}
             intent="info"
             label="Son Oda Geliri"
-            value={lastRun ? `${Number(lastRun.total_room_revenue || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : "-"}
-            sub={lastRun ? `Vergi: ${Number(lastRun.total_tax_amount || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : undefined}
+            value={lastRun ? moneyBreakdown(lastRun.total_room_revenue_by_currency, lastRun.total_room_revenue) : "-"}
+            sub={lastRun ? `Vergi: ${moneyBreakdown(lastRun.total_tax_amount_by_currency, lastRun.total_tax_amount)}` : undefined}
           />
           <KpiCard
             icon={CreditCard}
             intent="success"
             label="Son Tahsilat"
-            value={lastRun ? `${Number(lastRun.total_payments_amount || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL` : "-"}
+            value={lastRun ? moneyBreakdown(lastRun.total_payments_by_currency, lastRun.total_payments_amount) : "-"}
             sub="Kasaya Giren Net Tutar"
           />
           <KpiCard
@@ -958,15 +963,15 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 <div className="rounded-lg border bg-indigo-50 p-3">
                   <div className="flex justify-between text-sm">
                     <span>Tahmini oda geliri</span>
-                    <strong>{Number(simulationResult.total_room_revenue || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</strong>
+                    <strong>{moneyBreakdown(simulationResult.total_room_revenue_by_currency, simulationResult.total_room_revenue)}</strong>
                   </div>
                   <div className="flex justify-between text-sm mt-1">
                     <span>Tahmini vergi</span>
-                    <strong>{Number(simulationResult.total_tax_amount || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</strong>
+                    <strong>{moneyBreakdown(simulationResult.total_tax_amount_by_currency, simulationResult.total_tax_amount)}</strong>
                   </div>
                   <div className="flex justify-between text-sm mt-2 pt-2 border-t border-indigo-200">
                     <span>Toplam tahmini folyo etkisi</span>
-                    <strong>{Number(simulationResult.projected_total || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL</strong>
+                    <strong>{moneyBreakdown(simulationResult.projected_total_by_currency, simulationResult.projected_total)}</strong>
                   </div>
                 </div>
                 {simulationResult.blockers?.length > 0 && (
@@ -1011,7 +1016,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                             </p>
                           </div>
                           <strong className="whitespace-nowrap text-gray-900">
-                            {Number(item.total || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} TL
+                            {money(item.total, item.currency)}
                           </strong>
                         </div>
                       ))}

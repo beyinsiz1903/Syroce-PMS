@@ -5,11 +5,14 @@ os.environ.setdefault("JWT_SECRET", "test-secret-key-that-is-long-enough-for-tes
 import pytest
 from fastapi import HTTPException
 
+from core.night_audit_hardened import _money_breakdown
 from routers.reports_pkg.dashboard_lists import (
     _booking_occupied_on,
+    _currency_breakdown,
     _date_part,
     _guest_identity,
     _guest_link_active_on,
+    _merge_currency_breakdowns,
     _nightly_booking_rate,
     _normalized_room_status,
     _payment_is_collection,
@@ -100,6 +103,34 @@ def test_received_payment_prefers_structured_currency_fields():
         "notes": "legacy free text that must not drive accounting",
     }
     assert _received_payment_amount(payment) == {"amount": 138.1, "currency": "USD"}
+
+
+def test_report_currency_breakdown_never_adds_unlike_currencies():
+    rows = [
+        {"total": 100, "currency": "eur"},
+        {"total": 50, "currency": "EUR"},
+        {"total": 80, "currency": "USD"},
+    ]
+    assert _currency_breakdown(rows, lambda row: row["total"], lambda row: row["currency"]) == {
+        "EUR": 150,
+        "USD": 80,
+    }
+
+
+def test_report_currency_breakdowns_merge_only_matching_currencies():
+    assert _merge_currency_breakdowns({"EUR": 100}, {"USD": 80}, {"EUR": 25}) == {
+        "EUR": 125,
+        "USD": 80,
+    }
+
+
+def test_night_audit_money_breakdown_keeps_postings_in_original_currency():
+    items = [
+        {"total": 121.21, "currency": "EUR"},
+        {"total": 138.10, "currency": "USD"},
+        {"total": 10, "currency": "eur"},
+    ]
+    assert _money_breakdown(items, "total") == {"EUR": 131.21, "USD": 138.1}
 
 
 def test_cashier_collection_excludes_non_cash_folio_settlements():

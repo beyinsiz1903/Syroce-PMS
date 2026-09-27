@@ -165,18 +165,20 @@ const RevenueSection = ({
     t
   } = useTranslation();
   const isDaily = reportPeriod === 'daily';
+  const hasMixedRoomTypeRevenue = roomTypeData.some((row) => Object.keys(row.revenueByCurrency || {}).length > 1);
+  const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
   return <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Seçili Gün Toplam Geliri" value={s.today_revenue} icon={DollarSign} color="green" />
-      <KPICard title={isDaily ? 'Seçili Gün Oda Geliri' : t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={isDaily ? s.today_room_revenue : pc.week_revenue} icon={Calendar} color="blue" />
-      <KPICard title={isDaily ? 'Önceki Gün Geliri' : t('cm.pages_reports_RevenueSection.aylik_gelir')} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} prevValue={isDaily ? undefined : pc.prev_month_revenue} icon={TrendingUp} color="purple" />
-      <KPICard title="Yeme & İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} icon={Utensils} color="amber" />
+      <KPICard title="Seçili Gün Toplam Geliri" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={DollarSign} color="green" />
+      <KPICard title={isDaily ? 'Seçili Gün Oda Geliri' : t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
+      <KPICard title={isDaily ? 'Önceki Gün Geliri' : t('cm.pages_reports_RevenueSection.aylik_gelir')} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} icon={TrendingUp} color="purple" />
+      <KPICard title="Yeme & İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
     </div>
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">{isDaily ? 'Seçili Gün Gelir Trendi' : t('cm.pages_reports_RevenueSection.30_gunluk_gelir_trendi')}</CardTitle></CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={320}>
+        {hasMixedRevenueTrend ? <div className="h-80 flex items-center justify-center px-6 text-center text-sm text-slate-500">Farklı para birimleri tek gelir eğrisinde toplanmaz. Üstteki kartlarda tutarlar para birimi bazında ayrı gösterilir.</div> : <ResponsiveContainer width="100%" height={320}>
           <ComposedChart data={data?.revenue_trend || []}>
             <defs><linearGradient id="rvFull" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#059669" stopOpacity={0.2} /><stop offset="95%" stopColor="#059669" stopOpacity={0} /></linearGradient></defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -193,14 +195,14 @@ const RevenueSection = ({
             <Area type="monotone" dataKey="revenue" name="Gelir" stroke="#059669" fill="url(#rvFull)" strokeWidth={2} />
             <Line type="monotone" dataKey="revenue" name="Trend" stroke="#D97706" strokeWidth={2} dot={false} strokeDasharray="5 5" />
           </ComposedChart>
-        </ResponsiveContainer>
+        </ResponsiveContainer>}
       </CardContent>
     </Card>
     <CategoryRevenueCard reportDate={reportDate || data?.date} reportPeriod={reportPeriod} />
     {roomTypeData.length > 0 && <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.oda_tipi_bazli_gelir')}</CardTitle></CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
+          {hasMixedRoomTypeRevenue ? <div className="h-[280px] flex items-center justify-center px-6 text-center text-sm text-slate-500">Farklı para birimleri tek grafikte toplanmaz. Oda tipi analizi tablosunda tutarlar para birimi bazında ayrı gösterilir.</div> : <ResponsiveContainer width="100%" height={280}>
             <BarChart data={roomTypeData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
@@ -210,7 +212,7 @@ const RevenueSection = ({
               <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
               <Bar dataKey="revenue" name="Gelir" radius={[4, 4, 0, 0]}>{roomTypeData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}</Bar>
             </BarChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>}
         </CardContent>
       </Card>}
   </div>;

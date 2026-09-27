@@ -105,6 +105,31 @@ def _received_payment_amount(payment: dict, fallback_currency: str = "TRY") -> d
     }
 
 
+def _currency_code(value, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return code if len(code) == 3 and code.isalpha() else str(fallback or "TRY").upper()
+
+
+def _add_currency_amount(target: dict[str, float], currency, amount) -> None:
+    code = _currency_code(currency)
+    target[code] = target.get(code, 0.0) + float(amount or 0)
+
+
+def _currency_breakdown(rows: list[dict], amount_getter, currency_getter) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for row in rows:
+        _add_currency_amount(totals, currency_getter(row), amount_getter(row))
+    return {code: round(amount, 2) for code, amount in sorted(totals.items()) if round(amount, 2) != 0}
+
+
+def _merge_currency_breakdowns(*breakdowns: dict[str, float]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for breakdown in breakdowns:
+        for currency, amount in (breakdown or {}).items():
+            _add_currency_amount(totals, currency, amount)
+    return {code: round(amount, 2) for code, amount in sorted(totals.items()) if round(amount, 2) != 0}
+
+
 def _normalized_room_status(value) -> str:
     """Map legacy/localized room states into the report's canonical buckets."""
     status = str(value or "available").strip().lower().replace("-", "_").replace(" ", "_")
@@ -543,6 +568,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "created_at": 1,
                 "total_amount": 1,
                 "grand_total": 1,
+                "currency": 1,
                 "status": 1,
                 "payment_status": 1,
             },
@@ -777,6 +803,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "charge_category": 1,
             "charge_type": 1,
             "booking_id": 1,
+            "currency": 1,
             "source_pos_order_id": 1,
         },
     ).to_list(50000)
@@ -817,6 +844,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "charge_category": 1,
             "charge_type": 1,
             "booking_id": 1,
+            "currency": 1,
         },
     ).to_list(20000)
     period_charges.extend(
@@ -841,6 +869,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "total": order.get("total_amount") or order.get("grand_total") or 0,
             "charge_category": "fnb",
             "source_pos_order_id": order.get("id"),
+            "currency": order.get("currency") or "TRY",
             "_source": "direct_pos",
         }
         for order in fnb_orders
@@ -850,6 +879,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
 
     def charge_amount(charge: dict) -> float:
         return float(charge.get("total") or charge.get("amount") or 0)
+
+    def charge_currency(charge: dict) -> str:
+        booking = booking_currency_by_id.get(str(charge.get("booking_id") or ""))
+        return _currency_code(charge.get("currency"), booking or "TRY")
 
     def charges_between(start: datetime, end_exclusive: datetime) -> list[dict]:
         start_key, end_key = start.date().isoformat(), end_exclusive.date().isoformat()
@@ -1008,13 +1041,35 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     occupied_today = today_metric.get("occupied_rooms", 0)
     charges_by_day: dict[str, float] = {}
     room_charges_by_day: dict[str, float] = {}
+    charges_by_day_currency: dict[str, dict[str, float]] = {}
+    room_charges_by_day_currency: dict[str, dict[str, float]] = {}
     for charge in period_charges:
         charge_day = _date_part(charge.get("business_date") or charge.get("date"))
         amount = charge_amount(charge)
         charges_by_day[charge_day] = charges_by_day.get(charge_day, 0.0) + amount
+        _add_currency_amount(charges_by_day_currency.setdefault(charge_day, {}), charge_currency(charge), amount)
         category = str(charge.get("charge_category") or charge.get("charge_type") or "").lower()
         if category in {"room", "accommodation", "room_charge"}:
             room_charges_by_day[charge_day] = room_charges_by_day.get(charge_day, 0.0) + amount
+            _add_currency_amount(room_charges_by_day_currency.setdefault(charge_day, {}), charge_currency(charge), amount)
+    accrued_room_by_day_currency: dict[str, dict[str, float]] = {}
+    for metric in metric_rows:
+        day = str(metric.get("date"))
+        for booking in all_bk:
+            if _booking_occupied_on(booking, day):
+                daily_rate = daily_rates_by_booking.get(str(booking.get("id"))) if day == target_day else None
+                _add_currency_amount(
+                    accrued_room_by_day_currency.setdefault(day, {}),
+                    booking.get("currency") or "TRY",
+                    _nightly_booking_rate(booking, day, daily_rate),
+                )
+
+    def effective_day_revenue_breakdown(day: str) -> dict[str, float]:
+        non_room: dict[str, float] = dict(charges_by_day_currency.get(day, {}))
+        for currency, amount in room_charges_by_day_currency.get(day, {}).items():
+            non_room[currency] = non_room.get(currency, 0.0) - amount
+        effective_room = room_charges_by_day_currency.get(day) or accrued_room_by_day_currency.get(day, {})
+        return _merge_currency_breakdowns(non_room, effective_room)
     today_room_revenue = round(room_charges_by_day.get(target_day, 0.0), 2)
     daily_period_charges = charges_between(today_start, next_day)
     fnb_revenue = round(sum(
@@ -1030,6 +1085,15 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES
     )
     today_revenue = round(daily_non_room_revenue + daily_performance["room_revenue"], 2)
+    today_revenue_by_currency = effective_day_revenue_breakdown(target_day)
+    today_room_revenue_by_currency = _merge_currency_breakdowns(
+        room_charges_by_day_currency.get(target_day) or accrued_room_by_day_currency.get(target_day, {})
+    )
+    fnb_revenue_by_currency = _currency_breakdown(
+        [charge for charge in daily_period_charges if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() in FNB_CHARGE_CATEGORIES],
+        charge_amount,
+        charge_currency,
+    )
     occupancy_pct = daily_performance["occupancy_percentage"]
     adr = daily_performance["adr"]
     available_rooms_today = int(today_metric.get("total_rooms", total_rooms) or 0)
@@ -1048,6 +1112,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "date": day,
                 "label": datetime.fromisoformat(day).strftime("%d %b"),
                 "revenue": round(posted_total - posted_room + effective_room, 2),
+                "revenue_by_currency": effective_day_revenue_breakdown(day),
             }
         )
 
@@ -1104,6 +1169,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
 
     source_distribution = {}
     source_revenue = {}
+    source_revenue_by_currency: dict[str, dict[str, float]] = {}
     source_booking_ids: dict[str, set[str]] = {}
     for bk in recent_bookings:
         src = bk.get("booking_source", "direct")
@@ -1117,6 +1183,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         src = booking_source_by_id.get(str(charge.get("booking_id")))
         if src:
             source_revenue[src] = source_revenue.get(src, 0) + charge_amount(charge)
+            _add_currency_amount(source_revenue_by_currency.setdefault(src, {}), charge_currency(charge), charge_amount(charge))
             source_booking_ids.setdefault(src, set()).add(str(charge.get("booking_id")))
     source_distribution = {src: len(ids) for src, ids in source_booking_ids.items()}
 
@@ -1137,6 +1204,46 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     )
     week_revenue = week_non_room_revenue + week_performance["room_revenue"]
     month_revenue = month_non_room_revenue + period_performance["room_revenue"]
+    week_days = {str(row.get("date")) for row in week_metrics}
+    month_days = {str(row.get("date")) for row in metric_rows}
+
+    def period_revenue_breakdown(charges: list[dict], days: set[str], revenue_source: str) -> dict[str, float]:
+        non_room = _currency_breakdown(
+            [charge for charge in charges if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES],
+            charge_amount,
+            charge_currency,
+        )
+        room = _merge_currency_breakdowns(*(
+            (room_charges_by_day_currency if revenue_source == "posted" else accrued_room_by_day_currency).get(day, {})
+            for day in days
+        ))
+        return _merge_currency_breakdowns(non_room, room)
+
+    week_revenue_by_currency = period_revenue_breakdown(week_charges, week_days, week_performance["revenue_source"])
+    month_revenue_by_currency = period_revenue_breakdown(month_charges, month_days, period_performance["revenue_source"])
+    daily_room_nights = int(daily_performance.get("occupied_room_nights") or 0)
+    daily_capacity = int(daily_performance.get("available_room_nights") or 0)
+    period_room_nights = int(period_performance.get("occupied_room_nights") or 0)
+    period_capacity = int(period_performance.get("available_room_nights") or 0)
+    daily_performance["room_revenue_by_currency"] = today_room_revenue_by_currency
+    daily_performance["adr_by_currency"] = {
+        code: round(amount / daily_room_nights, 2) for code, amount in today_room_revenue_by_currency.items()
+    } if daily_room_nights else {}
+    daily_performance["revpar_by_currency"] = {
+        code: round(amount / daily_capacity, 2) for code, amount in today_room_revenue_by_currency.items()
+    } if daily_capacity else {}
+    period_room_revenue_by_currency = period_revenue_breakdown(
+        [charge for charge in month_charges if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() in ROOM_CHARGE_CATEGORIES],
+        month_days,
+        period_performance["revenue_source"],
+    )
+    period_performance["room_revenue_by_currency"] = period_room_revenue_by_currency
+    period_performance["adr_by_currency"] = {
+        code: round(amount / period_room_nights, 2) for code, amount in period_room_revenue_by_currency.items()
+    } if period_room_nights else {}
+    period_performance["revpar_by_currency"] = {
+        code: round(amount / period_capacity, 2) for code, amount in period_room_revenue_by_currency.items()
+    } if period_capacity else {}
 
     # Milliyet dağılımı rezervasyon sayısını değil, rapor dönemindeki tüm
     # konaklayan kişileri (ek misafirler dahil) sayar.
@@ -1163,14 +1270,18 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         rt_room_ids = {str(r.get("id")) for r in rt_rooms if r.get("id")}
         rt_count = len(rt_rooms)
         rt_occ = len(rt_room_ids & occupied_room_ids)
-        room_type_occ[rt_name] = {"total": rt_count, "occupied": rt_occ, "occupancy": round((rt_occ / rt_count * 100), 1) if rt_count > 0 else 0, "revenue": 0}
+        room_type_occ[rt_name] = {"total": rt_count, "occupied": rt_occ, "occupancy": round((rt_occ / rt_count * 100), 1) if rt_count > 0 else 0, "revenue": 0, "revenue_by_currency": {}}
     booking_room_types = {str(booking.get("id")): booking.get("room_type", "Standard") for booking in all_bk if booking.get("id")}
     for charge in charges_between(trend_start, report_end):
         rt = booking_room_types.get(str(charge.get("booking_id")))
         if rt in room_type_occ:
             room_type_occ[rt]["revenue"] += charge_amount(charge)
+            _add_currency_amount(room_type_occ[rt]["revenue_by_currency"], charge_currency(charge), charge_amount(charge))
     for rt in room_type_occ:
         room_type_occ[rt]["revenue"] = round(room_type_occ[rt]["revenue"], 2)
+        room_type_occ[rt]["revenue_by_currency"] = {
+            code: round(amount, 2) for code, amount in sorted(room_type_occ[rt]["revenue_by_currency"].items())
+        }
 
     booking_by_id = {
         str(booking.get("id")): booking
@@ -1280,6 +1391,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES
     )
     prev_revenue = prev_non_room_revenue + prev_performance["room_revenue"]
+    prev_revenue_by_currency = _currency_breakdown(previous_charges, charge_amount, charge_currency)
     prev_adr = prev_performance["adr"]
     ly_charges = charges_between(last_year_start, last_year_end)
     ly_metrics = await load_stay_night_metrics(
@@ -1303,6 +1415,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         not in ROOM_CHARGE_CATEGORIES
     )
     ly_revenue = ly_non_room_revenue + ly_performance["room_revenue"]
+    ly_revenue_by_currency = _currency_breakdown(ly_charges, charge_amount, charge_currency)
 
     return {
         "date": today.strftime("%Y-%m-%d"),
@@ -1318,12 +1431,17 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "no_shows": no_shows,
             "cancellations": cancellations,
             "today_revenue": round(today_revenue, 2),
+            "today_revenue_by_currency": today_revenue_by_currency,
             "today_room_revenue": daily_performance["room_revenue"],
+            "today_room_revenue_by_currency": today_room_revenue_by_currency,
             "posted_room_revenue": today_room_revenue,
             "room_revenue_source": daily_performance["revenue_source"],
             "adr": adr,
+            "adr_by_currency": daily_performance["adr_by_currency"],
             "revpar": revpar,
+            "revpar_by_currency": daily_performance["revpar_by_currency"],
             "fnb_revenue": round(fnb_revenue, 2),
+            "fnb_revenue_by_currency": fnb_revenue_by_currency,
         },
         "period_metrics": period_performance,
         "period_activity": {
@@ -1334,15 +1452,19 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         },
         "period_comparison": {
             "week_revenue": round(week_revenue, 2),
+            "week_revenue_by_currency": week_revenue_by_currency,
             "week_bookings": len(week_bookings),
             "month_revenue": round(month_revenue, 2),
+            "month_revenue_by_currency": month_revenue_by_currency,
             "month_bookings": len(month_bookings),
             "prev_month_revenue": round(prev_revenue, 2),
+            "prev_month_revenue_by_currency": prev_revenue_by_currency,
             "prev_month_bookings": len(prev_bookings),
             "prev_month_adr": prev_adr,
             "prev_period_occupancy": prev_performance["occupancy_percentage"],
             "prev_period_revpar": prev_performance["revpar"],
             "last_year_revenue": round(ly_revenue, 2),
+            "last_year_revenue_by_currency": ly_revenue_by_currency,
             "last_year_bookings": len(ly_bookings),
         },
         "occupancy_trend": occupancy_trend,
@@ -1351,7 +1473,14 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         "room_status_snapshot": "current",
         "room_types": room_types,
         "room_type_occupancy": room_type_occ,
-        "booking_sources": {"distribution": source_distribution, "revenue": {k: round(v, 2) for k, v in source_revenue.items()}},
+        "booking_sources": {
+            "distribution": source_distribution,
+            "revenue": {k: round(v, 2) for k, v in source_revenue.items()},
+            "revenue_by_currency": {
+                source: {code: round(amount, 2) for code, amount in sorted(totals.items())}
+                for source, totals in source_revenue_by_currency.items()
+            },
+        },
         "country_distribution": country_dist,
         "payments": {
             "by_method": payment_methods,
