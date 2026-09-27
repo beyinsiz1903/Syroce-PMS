@@ -127,8 +127,9 @@ async def test_pending_ar_details_include_room_guest_and_reservation(monkeypatch
         "folio_id": "folio-a", "folio_number": "F-100", "booking_id": "booking-a",
         "reservation_number": "RES-42", "guest_name": "Ada Lovelace", "room_number": "101",
         "check_in": "2026-09-05", "check_out": "2026-09-06",
-        "created_at": "2026-09-01T00:00:00+00:00", "balance": 6500.0,
+        "created_at": "2026-09-01T00:00:00+00:00", "balance": 6500.0, "currency": "TRY",
     }]
+    assert result["total_outstanding_by_currency"] == {"TRY": 6500.0}
 
 
 @pytest.mark.asyncio
