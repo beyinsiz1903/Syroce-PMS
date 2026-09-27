@@ -85,6 +85,12 @@ class FolioHardeningService:
         if amount <= 0:
             return {"success": False, "error": "Payment amount must be positive"}
 
+        booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"_id": 0, "currency": 1},
+        )
+        ledger_currency = str(payment_data.get("currency") or (booking or {}).get("currency") or folio.get("currency") or "TRY").upper()
+
         payment_id = str(uuid.uuid4())
         now = datetime.now(UTC)
 
@@ -94,6 +100,10 @@ class FolioHardeningService:
             "folio_id": folio_id,
             "booking_id": booking_id,
             "amount": amount,
+            "currency": ledger_currency,
+            "received_currency": str(payment_data.get("received_currency") or ledger_currency).upper(),
+            "received_amount": float(payment_data.get("received_amount") if payment_data.get("received_amount") is not None else amount),
+            "exchange_rate": float(payment_data.get("exchange_rate") if payment_data.get("exchange_rate") is not None else 1),
             "method": payment_data.get("method", "cash"),
             "payment_type": payment_data.get("payment_type", "final"),
             "status": "paid",

@@ -84,6 +84,15 @@ _FX_RECEIPT_RE = re.compile(
 
 def _received_payment_amount(payment: dict, fallback_currency: str = "TRY") -> dict:
     """Return the currency physically received, not the booking ledger currency."""
+    structured_amount = payment.get("received_amount")
+    structured_currency = payment.get("received_currency")
+    if structured_amount is not None and structured_currency:
+        try:
+            amount = float(structured_amount)
+            if amount > 0:
+                return {"amount": amount, "currency": str(structured_currency).upper()}
+        except (TypeError, ValueError):
+            pass
     match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
     if match:
         try:

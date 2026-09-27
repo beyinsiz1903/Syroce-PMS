@@ -6,7 +6,7 @@ Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Au
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
@@ -130,6 +130,10 @@ class PaymentPostRequest(BaseModel):
     payment_type: str = "final"
     reference: str | None = None
     notes: str | None = None
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    received_currency: str | None = Field(None, min_length=3, max_length=3)
+    received_amount: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class RefundRequest(BaseModel):

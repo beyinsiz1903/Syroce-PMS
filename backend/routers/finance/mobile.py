@@ -53,6 +53,11 @@ _FX_RECEIPT_RE = re.compile(
 
 
 def _received_payment_amount(payment: dict) -> tuple[float, str]:
+    if payment.get("received_amount") is not None and payment.get("received_currency"):
+        try:
+            return float(payment["received_amount"]), str(payment["received_currency"]).upper()
+        except (TypeError, ValueError):
+            pass
     match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
     if match:
         try:
@@ -409,6 +414,12 @@ async def record_payment_mobile(
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
 
+    booking = await db.bookings.find_one(
+        {"id": folio.get("booking_id"), "tenant_id": current_user.tenant_id},
+        {"_id": 0, "currency": 1},
+    )
+    ledger_currency = str((booking or {}).get("currency") or folio.get("currency") or "TRY").upper()
+
     # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
     from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
 
@@ -439,6 +450,10 @@ async def record_payment_mobile(
         "folio_id": folio_id,
         "booking_id": folio.get("booking_id"),
         "amount": amount,
+        "currency": ledger_currency,
+        "received_amount": amount,
+        "received_currency": ledger_currency,
+        "exchange_rate": 1,
         "payment_method": payment_method,
         "payment_type": "final",
         "notes": notes,

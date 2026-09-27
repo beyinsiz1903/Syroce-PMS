@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from common.context import OperationContext
 from core.booking_atomicity import (
@@ -229,6 +229,10 @@ class FolioPaymentRequest(BaseModel):
     payment_type: PaymentType = PaymentType.INTERIM
     reference: str | None = None
     notes: str | None = None
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    received_currency: str | None = Field(None, min_length=3, max_length=3)
+    received_amount: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 _LEGACY_CHARGE_MAP = {
@@ -776,6 +780,10 @@ async def add_folio_payment(
             "folio_id": folio["id"],
             "booking_id": booking_id,
             "amount": amount,
+            "currency": str(payload.currency or booking.get("currency") or "TRY").upper(),
+            "received_currency": str(payload.received_currency or payload.currency or booking.get("currency") or "TRY").upper(),
+            "received_amount": float(payload.received_amount if payload.received_amount is not None else amount),
+            "exchange_rate": float(payload.exchange_rate if payload.exchange_rate is not None else 1),
             "method": method_value,
             "payment_type": type_value,
             "status": "paid",
