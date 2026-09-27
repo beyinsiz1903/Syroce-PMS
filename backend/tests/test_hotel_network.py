@@ -26,7 +26,8 @@ async def test_interhotel_ledger_creates_balanced_pair():
     request = {
         "id": "request-12345678", "source_tenant_id": "hotel-a",
         "target_tenant_id": "hotel-b", "source_booking_id": "source-booking",
-        "total_amount": 10_000, "commission_pct": 10, "collect_by": "source_hotel",
+        "total_amount": 10_000, "currency": "EUR", "commission_pct": 10,
+        "collect_by": "source_hotel",
     }
 
     rows = await _post_interhotel_ledger(sysdb, request, {"id": "target-booking"})
@@ -34,6 +35,7 @@ async def test_interhotel_ledger_creates_balanced_pair():
     assert len(rows) == 2
     assert {row["entry_type"] for row in rows} == {"payable", "receivable"}
     assert {row["amount"] for row in rows} == {9_000}
+    assert {row["currency"] for row in rows} == {"EUR"}
     assert len({row["transfer_reference"] for row in rows}) == 1
     assert rows[0]["tenant_id"] == rows[1]["counterparty_tenant_id"]
 

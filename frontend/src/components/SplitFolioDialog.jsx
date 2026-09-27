@@ -7,12 +7,10 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Split, CheckCircle, XCircle, AlertTriangle, Plus, Trash2, GripVertical } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 
-// Para birimi: uygulamanin geri kalani (FoliosTab/DocumentTabs/PricingTabs) gibi
-// tr-TR bicimli tutar + " TL" goster. Folyolar tek para birimi tasir (varsayilan
-// TRY, open_folio_service); per-kalem doviz/cevrim YOK. Onceki "$"+toFixed(2) ABD
-// bicimi bir gosterim hatasiydi (ana ekran "47.700 TL" iken bolme ekrani
-// minibar kalemini "$100.00" gosteriyordu).
+// Toast mesajlarında para simgesini ayrıca eklemek için yalnızca sayısal kısmı
+// tr-TR biçiminde üretir; gerçek folyo para birimi çağrı noktasında eklenir.
 const fmtTL = (v) => (Number(v) || 0).toLocaleString('tr-TR');
 
 const chargeIdOf = (c) => c.id || c.charge_id;
@@ -30,6 +28,8 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
   const [targetFolioType, setTargetFolioType] = useState('guest');
   const [reason, setReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const currency = folio.currency || cachedTenantCurrency();
+  const money = (value) => formatCurrency(value, currency);
 
   // by_item
   const [selectedCharges, setSelectedCharges] = useState([]);
@@ -126,7 +126,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           </div>
         </div>
         <span className="font-semibold text-sm whitespace-nowrap">
-          {fmtTL(c.total ?? c.amount ?? c.charge_amount ?? 0)} TL
+          {formatCurrency(c.total ?? c.amount ?? c.charge_amount ?? 0, c.currency || currency)}
         </span>
       </div>
     );
@@ -242,7 +242,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         toast.success(
           `Folio bölündü — ${res.data?.transferred_charges} kalem · ${fmtTL(
             res.data?.transferred_amount
-          )} TL aktarıldı`
+          )} ${currency} aktarıldı`
         );
       } else if (mode === 'even') {
         if (evenSplits < 2) {
@@ -265,7 +265,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         toast.success(
           `Folio ${evenSplits} eşit parçaya bölündü — ${res.data?.target_count} yeni folio · ${fmtTL(
             res.data?.transferred_amount
-          )} TL aktarıldı`
+          )} ${currency} aktarıldı`
         );
       } else if (mode === 'custom') {
         const cleaned = customSplits
@@ -277,7 +277,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         }
         if (customTotal >= divisibleBalance) {
           toast.error(
-            `Toplam (${fmtTL(customTotal)} TL) bakiyeden (${fmtTL(divisibleBalance)} TL) küçük olmalı`
+            `Toplam (${money(customTotal)}) bakiyeden (${money(divisibleBalance)}) küçük olmalı`
           );
           return;
         }
@@ -289,7 +289,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         toast.success(
           `${res.data?.target_count} hedefe ${fmtTL(
             res.data?.transferred_amount
-          )} TL aktarıldı`
+          )} ${currency} aktarıldı`
         );
       }
 
@@ -350,11 +350,11 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           </div>
           <div className="px-4 flex flex-col justify-center">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Folyo Bakiyesi</p>
-            <p className="font-bold text-emerald-600 text-lg tabular-nums">{fmtTL(folioBalance)} ₺</p>
+            <p className="font-bold text-emerald-600 text-lg tabular-nums">{money(folioBalance)}</p>
             {extraChargesTotal > 0 && (
               <p className="text-[10px] text-gray-500 mt-1 leading-tight">
-                + Ekstra {fmtTL(extraChargesTotal)} ₺ <br/>
-                = Bölünebilir <span className="font-semibold text-gray-700">{fmtTL(divisibleBalance)} ₺</span>
+                + Ekstra {money(extraChargesTotal)} <br/>
+                = Bölünebilir <span className="font-semibold text-gray-700">{money(divisibleBalance)}</span>
               </p>
             )}
           </div>
@@ -435,7 +435,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                         )}
                       </div>
                       <div className="text-xs text-gray-600 mt-2 px-1">
-                        Kalan: <strong>{fmtTL(stayTotal)} TL</strong>
+                        Kalan: <strong>{money(stayTotal)}</strong>
                       </div>
                     </div>
 
@@ -469,13 +469,13 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                         )}
                       </div>
                       <div className="text-xs text-blue-800 mt-2 px-1">
-                        Aktarılacak: <strong>{fmtTL(selectedTotal)} TL</strong>
+                        Aktarılacak: <strong>{money(selectedTotal)}</strong>
                       </div>
                     </div>
                   </div>
                   <p className="text-xs text-gray-600 mt-2">
                     {t('cm.components_SplitFolioDialog.secilen')} <strong>{selectedCharges.length}</strong> {t('cm.components_SplitFolioDialog.kalem_toplam')}{' '}
-                    <strong>{fmtTL(selectedTotal)} TL</strong>
+                    <strong>{money(selectedTotal)}</strong>
                   </p>
                 </div>
               </>
@@ -500,7 +500,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                 onChange={(e) => setEvenSplits(Math.max(2, Math.min(20, Number(e.target.value) || 2)))}
               />
               <p className="text-xs text-gray-600 mt-2">
-                {t('cm.components_SplitFolioDialog.her_parcaya')} <strong>{fmtTL(evenPerSplit)} TL</strong> {t('cm.components_SplitFolioDialog.yeni_folio_sayisi')}{' '}
+                {t('cm.components_SplitFolioDialog.her_parcaya')} <strong>{money(evenPerSplit)}</strong> {t('cm.components_SplitFolioDialog.yeni_folio_sayisi')}{' '}
                 <strong>{evenSplits - 1}</strong> {t('cm.components_SplitFolioDialog.orijinal_de_bir_parca_olarak_kalir')}
               </p>
             </div>
@@ -545,8 +545,8 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
               <Plus className="w-4 h-4 mr-1" /> {t('cm.components_SplitFolioDialog.hedef_ekle')}
             </Button>
             <p className="text-xs text-gray-600">
-              {t('cm.components_SplitFolioDialog.toplam_aktarilacak')} <strong>{fmtTL(customTotal)} TL</strong> {t('cm.components_SplitFolioDialog.bakiye')}{' '}
-              <strong>{fmtTL(divisibleBalance)} TL</strong>
+              {t('cm.components_SplitFolioDialog.toplam_aktarilacak')} <strong>{money(customTotal)}</strong> {t('cm.components_SplitFolioDialog.bakiye')}{' '}
+              <strong>{money(divisibleBalance)}</strong>
               {extraChargesTotal > 0 && (
                 <span className="text-gray-400 ml-1">(ekstra masraf dâhil)</span>
               )}
@@ -582,19 +582,19 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
             {mode === 'by_item' && (
               <div className="flex items-center justify-between pt-2">
                 <span className="font-semibold text-slate-700">{t('cm.components_SplitFolioDialog.aktarilacak_tutar')}</span>
-                <span className="font-black text-blue-600 text-lg tabular-nums">{fmtTL(selectedTotal)} ₺</span>
+                <span className="font-black text-blue-600 text-lg tabular-nums">{money(selectedTotal)}</span>
               </div>
             )}
             {mode === 'even' && (
               <div className="flex items-center justify-between pt-2">
                 <span className="font-semibold text-slate-700">{t('cm.components_SplitFolioDialog.aktarilacak_toplam')}</span>
-                <span className="font-black text-blue-600 text-lg tabular-nums">{fmtTL(evenPerSplit * (evenSplits - 1))} ₺</span>
+                <span className="font-black text-blue-600 text-lg tabular-nums">{money(evenPerSplit * (evenSplits - 1))}</span>
               </div>
             )}
             {mode === 'custom' && (
               <div className="flex items-center justify-between pt-2">
                 <span className="font-semibold text-slate-700">{t('cm.components_SplitFolioDialog.aktarilacak_toplam_03d73')}</span>
-                <span className="font-black text-blue-600 text-lg tabular-nums">{fmtTL(customTotal)} ₺</span>
+                <span className="font-black text-blue-600 text-lg tabular-nums">{money(customTotal)}</span>
               </div>
             )}
           </div>

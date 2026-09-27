@@ -24,6 +24,7 @@ import {
   Home
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/currency';
 
 const MobileGM = ({ user, tenant, embedded = false }) => {
   const { t } = useTranslation();
@@ -134,9 +135,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
     }
   };
 
-  const formatCurrency = (amount) => {
-    return `₺${parseFloat(amount || 0).toFixed(2)}`;
-  };
+  const formatCurrency = (amount, currency) => formatMoney(amount, currency || tenant?.currency || cachedTenantCurrency());
 
   const formatPercent = (value) => {
     return `${parseFloat(value || 0).toFixed(1)}%`;
@@ -550,19 +549,19 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   <div className="p-3 bg-green-50 rounded-lg">
                     <p className="text-xs text-green-600 mb-1">RevPAR</p>
                     <p className="text-2xl font-bold text-green-700">
-                      ₺{dailyFlash?.revpar?.toFixed(0) || 0}
+                      {formatCurrency(dailyFlash?.revpar || 0, dailyFlash?.currency)}
                     </p>
                   </div>
                   <div className="p-3 bg-indigo-50 rounded-lg">
                     <p className="text-xs text-indigo-600 mb-1">ADR</p>
                     <p className="text-2xl font-bold text-indigo-700">
-                      ₺{dailyFlash?.adr?.toFixed(0) || 0}
+                      {formatCurrency(dailyFlash?.adr || 0, dailyFlash?.currency)}
                     </p>
                   </div>
                   <div className="p-3 bg-amber-50 rounded-lg">
                     <p className="text-xs text-amber-600 mb-1">Günlük Gelir</p>
                     <p className="text-2xl font-bold text-amber-700">
-                      ₺{dailyFlash?.total_revenue?.toFixed(0) || 0}
+                      {formatCurrency(dailyFlash?.total_revenue || 0, dailyFlash?.currency)}
                     </p>
                   </div>
                 </div>
@@ -604,15 +603,15 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
               <CardContent className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bugünkü Tahsilat:</span>
-                  <span className="font-bold text-green-700">₺{financeSnapshot?.today_collections?.toFixed(0) || 0}</span>
+                  <span className="font-bold text-green-700">{formatCurrency(financeSnapshot?.today_collections || 0, financeSnapshot?.currency)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bekleyen Alacaklar:</span>
-                  <span className="font-bold text-amber-700">₺{financeSnapshot?.pending_receivables?.toFixed(0) || 0}</span>
+                  <span className="font-bold text-amber-700">{formatCurrency(financeSnapshot?.pending_receivables || 0, financeSnapshot?.currency)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Aylık Toplam Gelir:</span>
-                  <span className="font-bold text-blue-700">₺{financeSnapshot?.monthly_revenue?.toFixed(0) || 0}</span>
+                  <span className="font-bold text-blue-700">{formatCurrency(financeSnapshot?.monthly_revenue || 0, financeSnapshot?.currency)}</span>
                 </div>
               </CardContent>
             </Card>
@@ -639,7 +638,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Gelir:</span>
-                    <span className="font-bold">₺{pickupData.summary?.total_revenue?.toFixed(0) || 0}</span>
+                    <span className="font-bold">{formatCurrency(pickupData.summary?.total_revenue || 0, pickupData.summary?.currency)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Ort. Rezervasyon Zamanı:</span>
@@ -658,7 +657,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                       <span className="text-sm">{days} gün önce:</span>
                       <div className="text-right">
                         <p className="text-sm font-bold">{data.rooms} oda</p>
-                        <p className="text-xs text-gray-500">₺{data.revenue?.toFixed(0)}</p>
+                        <p className="text-xs text-gray-500">{formatCurrency(data.revenue || 0, data.currency || pickupData.summary?.currency)}</p>
                       </div>
                     </div>
                   ))}
@@ -744,11 +743,11 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                       </div>
                       <div>
                         <p className="text-gray-600">Gelir:</p>
-                        <p className="font-bold">₺{week.expected_revenue?.toFixed(0) || 0}</p>
+                        <p className="font-bold">{formatCurrency(week.expected_revenue || 0, week.currency)}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">ADR:</p>
-                        <p className="font-bold">₺{week.avg_rate?.toFixed(0) || 0}</p>
+                        <p className="font-bold">{formatCurrency(week.avg_rate || 0, week.currency)}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">Tarih:</p>
@@ -778,15 +777,15 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                       </div>
                       <div>
                         <p className="text-gray-600">Gelir:</p>
-                        <p className="font-bold">₺{month.expected_revenue?.toFixed(0) || 0}</p>
+                        <p className="font-bold">{formatCurrency(month.expected_revenue || 0, month.currency)}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">ADR:</p>
-                        <p className="font-bold">₺{month.avg_rate?.toFixed(0) || 0}</p>
+                        <p className="font-bold">{formatCurrency(month.avg_rate || 0, month.currency)}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">RevPAR:</p>
-                        <p className="font-bold">₺{month.revpar?.toFixed(0) || 0}</p>
+                        <p className="font-bold">{formatCurrency(month.revpar || 0, month.currency)}</p>
                       </div>
                     </div>
                   </div>
@@ -816,15 +815,15 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   </div>
                   <div>
                     <p className="text-gray-500">RevPAR:</p>
-                    <p className="font-bold">₺{dailyFlash?.revpar?.toFixed(0) || 0}</p>
+                    <p className="font-bold">{formatCurrency(dailyFlash?.revpar || 0, dailyFlash?.currency)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">ADR:</p>
-                    <p className="font-bold">₺{dailyFlash?.adr?.toFixed(0) || 0}</p>
+                    <p className="font-bold">{formatCurrency(dailyFlash?.adr || 0, dailyFlash?.currency)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Günlük Gelir:</p>
-                    <p className="font-bold">₺{dailyFlash?.total_revenue?.toFixed(0) || 0}</p>
+                    <p className="font-bold">{formatCurrency(dailyFlash?.total_revenue || 0, dailyFlash?.currency)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Gelen Misafir:</p>
