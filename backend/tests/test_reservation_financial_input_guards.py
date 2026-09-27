@@ -467,6 +467,47 @@ async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance
 
 
 @pytest.mark.asyncio
+async def test_extra_charge_converts_entered_currency_to_booking_currency(monkeypatch):
+    extra_charges = SimpleNamespace(insert_one=AsyncMock())
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a", "currency": "EUR"})
+        ),
+        extra_charges=extra_charges,
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "_gb_cache", None)
+    from routers import webhook_retry_service
+    monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", lambda *_args, **_kwargs: None)
+
+    result = await reservation_detail.add_extra_charge_detail(
+        "booking-a",
+        reservation_detail.ExtraChargeAdd(
+            description="Türk kahvesi",
+            amount=390,
+            quantity=1,
+            input_currency="TRY",
+            exchange_rate=0.02,
+        ),
+        current_user=SimpleNamespace(
+            id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
+        ),
+        _perm=None,
+    )
+
+    charge = result["charge"]
+    assert charge["total"] == 7.8
+    assert charge["currency"] == "EUR"
+    assert charge["entered_total"] == 390
+    assert charge["entered_currency"] == "TRY"
+    assert charge["exchange_rate"] == 0.02
+
+
+@pytest.mark.asyncio
 async def test_extra_charge_void_is_audited_soft_delete(monkeypatch):
     charge = {
         "id": "extra-a",

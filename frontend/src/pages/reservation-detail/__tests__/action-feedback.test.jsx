@@ -158,6 +158,37 @@ describe('reservation detail action feedback', () => {
     expect(toast.success).toHaveBeenCalledWith('Ek ücret iptal edildi');
   });
 
+  it('lets a EUR reservation receive a TL extra with current-rate conversion', async () => {
+    axiosGet.mockResolvedValue({ data: { rates: { TRY: 1, EUR: 50, USD: 40 } } });
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(
+      <ExtraChargesTab
+        extra_charges={[]}
+        charges={[]}
+        booking={{ id: 'booking-a', currency: 'EUR' }}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    const selects = screen.getAllByRole('combobox');
+    fireEvent.change(selects[1], { target: { value: 'TRY' } });
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/exchange-rates', { timeout: 10000 }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Türk kahvesi' } });
+    fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '390' } });
+    expect(await screen.findByText(/7,8 EUR olarak folyoya yansır/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '390 TL Ekle' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/add-extra-charge',
+      expect.objectContaining({
+        amount: 390,
+        input_currency: 'TRY',
+        exchange_rate: 0.02,
+      }),
+    ));
+  });
+
   it('shows negative extra-charge validation inside the form', async () => {
     render(
       <ExtraChargesTab

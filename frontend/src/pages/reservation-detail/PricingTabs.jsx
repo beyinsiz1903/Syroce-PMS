@@ -267,8 +267,12 @@ export function ExtraChargesTab({
     description: '',
     category: 'other',
     amount: '',
-    quantity: '1'
+    quantity: '1',
+    input_currency: currency === 'TRY' ? 'TRY' : currency,
   });
+  const [exchangeRates, setExchangeRates] = useState({});
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [ratesError, setRatesError] = useState('');
   const [splitForm, setSplitForm] = useState({
     target_booking_id: '',
     split_amount: '',
@@ -295,11 +299,50 @@ export function ExtraChargesTab({
     transfer: 'Transfer',
     other: 'Diğer'
   };
+  useEffect(() => {
+    setShowAdd(false);
+    setForm({
+      description: '',
+      category: 'other',
+      amount: '',
+      quantity: '1',
+      input_currency: currency === 'TRY' ? 'TRY' : currency,
+    });
+  }, [booking?.id, currency]);
+
+  const normalizedInputCurrency = form.input_currency === 'TL' ? 'TRY' : form.input_currency;
+  const bookingToTry = currency === 'TRY' ? 1 : Number(exchangeRates[currency]);
+  const inputToTry = normalizedInputCurrency === 'TRY' ? 1 : Number(exchangeRates[normalizedInputCurrency]);
+  const extraExchangeRate = normalizedInputCurrency === currency
+    ? 1
+    : inputToTry / bookingToTry;
+  const convertedTotal = Number(form.amount || 0) * Number(form.quantity || 0) * extraExchangeRate;
+
+  const fetchExchangeRates = async () => {
+    if (Object.keys(exchangeRates).length) return;
+    setRatesLoading(true);
+    setRatesError('');
+    try {
+      const response = await axios.get('/exchange-rates', { timeout: 10000 });
+      if (!response.data?.rates) throw new Error('Kur bilgisi bulunamadı');
+      setExchangeRates(response.data.rates);
+    } catch (_error) {
+      setRatesError('Güncel kur alınamadı. Farklı para birimiyle ek ücret girilemez.');
+    } finally {
+      setRatesLoading(false);
+    }
+  };
   const handleAdd = async () => {
     const amount = Number(form.amount);
     const quantity = Number(form.quantity);
     if (!form.description.trim() || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(quantity) || quantity <= 0) {
       const message = 'Açıklama, sıfır veya üzeri tutar ve sıfırdan büyük adet zorunlu';
+      setFormError(message);
+      toast.error(message);
+      return;
+    }
+    if (normalizedInputCurrency !== currency && (!Number.isFinite(extraExchangeRate) || extraExchangeRate <= 0)) {
+      const message = 'Güncel kur alınmadan farklı para birimiyle ek ücret kaydedilemez';
       setFormError(message);
       toast.error(message);
       return;
@@ -310,7 +353,9 @@ export function ExtraChargesTab({
       await axios.post(`/pms/reservations/${booking.id}/add-extra-charge`, {
         ...form,
         amount,
-        quantity
+        quantity,
+        input_currency: normalizedInputCurrency,
+        exchange_rate: extraExchangeRate,
       });
       toast.success(amount === 0 || isFullComp ? 'Komp / ikram kaydı eklendi' : 'Ekstra ücret eklendi');
       setShowAdd(false);
@@ -318,7 +363,8 @@ export function ExtraChargesTab({
         description: '',
         category: 'other',
         amount: '',
-        quantity: '1'
+        quantity: '1',
+        input_currency: currency === 'TRY' ? 'TRY' : currency,
       });
       onRefresh?.();
     } catch (e) {
@@ -391,7 +437,7 @@ export function ExtraChargesTab({
       <EarlyLateChargeModal open={!!elDirection} onClose={() => setElDirection(null)} bookingId={booking?.id} direction={elDirection || 'early_checkin'} defaultHour={elDirection === 'late_checkout' ? 14 : 10} onApplied={onRefresh} />
       {showAdd && <div className="border rounded-lg p-4 bg-amber-50/50 space-y-3">
           <div className="flex items-center justify-between rounded-md border border-amber-200 bg-white px-3 py-2 text-sm">
-            <span className="font-medium text-slate-700">Ek ücret para birimi</span>
+            <span className="font-medium text-slate-700">Rezervasyon para birimi</span>
             <span className="rounded-full bg-amber-100 px-3 py-1 font-bold text-amber-800">{currency === 'TRY' ? 'TL' : currency}</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -402,8 +448,12 @@ export function ExtraChargesTab({
             <SelectField label="Kategori" value={form.category} onChange={v => setForm(p => ({
           ...p,
           category: v
-        }))} options={Object.entries(cats)} />
-            <FormField label={`Tutar (${currency === 'TRY' ? 'TL' : currency})`} type="number" value={form.amount} onChange={v => setForm(p => ({
+            }))} options={Object.entries(cats)} />
+            <SelectField label="Girdiğiniz para birimi" value={form.input_currency} onChange={v => {
+              setForm(p => ({ ...p, input_currency: v }));
+              if ((v === 'TL' ? 'TRY' : v) !== currency) void fetchExchangeRates();
+            }} options={[[currency, currency === 'TRY' ? 'TL (Türk Lirası)' : currency], ...['TRY', 'EUR', 'USD', 'GBP', 'CHF'].filter(code => code !== currency).map(code => [code, code === 'TRY' ? 'TL (Türk Lirası)' : code])]} />
+            <FormField label={`Tutar (${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency})`} type="number" value={form.amount} onChange={v => setForm(p => ({
           ...p,
           amount: v
         }))} />
@@ -412,10 +462,14 @@ export function ExtraChargesTab({
           quantity: v
         }))} />
           </div>
+          {normalizedInputCurrency !== currency && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            {ratesLoading ? 'Güncel kur alınıyor…' : Number.isFinite(convertedTotal) && convertedTotal > 0 ? `${form.amount || 0} ${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency} × ${form.quantity || 1} = ${fmtCurrency(convertedTotal, currency)} olarak folyoya yansır.` : 'Tutar girildiğinde rezervasyon para birimi karşılığı gösterilir.'}
+          </div>}
+          {ratesError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{ratesError}</div>}
           <p className="text-xs text-amber-800">{isFullComp ? `Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 ${currency === 'TRY' ? 'TL' : currency} yansır.` : `0 ${currency === 'TRY' ? 'TL' : currency} girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.`}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : `${form.amount || '0'} ${currency === 'TRY' ? 'TL' : currency} Ekle`}</Button>
+            <Button size="sm" onClick={handleAdd} disabled={loading || ratesLoading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : `${form.amount || '0'} ${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency} Ekle`}</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_PricingTabs.iptal')}</Button>
           </div>
         </div>}
@@ -425,7 +479,7 @@ export function ExtraChargesTab({
                 <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center"><Receipt className="w-4 h-4 text-amber-600" /></div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
-                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtCurrency(c.complimentary_original_amount, currency)}</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
+                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtCurrency(c.complimentary_original_amount, currency)}</span>} {c.entered_currency && c.entered_currency !== (c.currency || currency) && <span className="ml-1 text-blue-600">Girilen: {fmtCurrency(c.entered_total ?? c.entered_amount, c.entered_currency)} · Kur: {Number(c.exchange_rate || 0).toFixed(4)}</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
                 <div className="text-sm font-bold text-amber-700">{fmtCurrency(c.total ?? c.charge_amount ?? c.amount, c.currency || currency)}</div>
                 {!readOnly && c.id && (extra_charges || []).some(extra => extra.id === c.id) && <Button
