@@ -193,6 +193,7 @@ class MultiRoomBookingCreate(BaseModel):
     guest: GuestCreate | None = None
     arrival_date: str
     departure_date: str
+    currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     rooms: list[dict]
     company_id: str | None = None
     channel: ChannelType = ChannelType.DIRECT
@@ -1082,6 +1083,7 @@ async def create_multi_room_booking(
                 "children_ages": children_ages,
                 "guests_count": adults + children,
                 "total_amount": total_amount,
+                "currency": payload.currency.upper(),
                 "base_rate": base_rate,
                 "rate_per_night": pricing_quote["nightly_total"] if pricing_quote else None,
                 "apply_occupancy_pricing": bool(pricing_quote),

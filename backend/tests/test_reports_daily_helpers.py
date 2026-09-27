@@ -69,6 +69,17 @@ def test_actual_checkout_prevents_false_historical_occupancy():
     assert _booking_occupied_on(booking, "2026-09-22") is False
 
 
+def test_wall_clock_checkin_does_not_hide_older_pms_business_date():
+    booking = {
+        "status": "checked_in",
+        "check_in": "2026-09-05",
+        "check_out": "2026-09-06",
+        "checked_in_at": "2026-09-27T10:00:00Z",
+    }
+
+    assert _booking_occupied_on(booking, "2026-09-05") is True
+
+
 def test_guest_identity_supports_canonical_and_legacy_fields():
     assert _guest_identity({"id_number": "11111111111"}, {}) == ("11111111111", None)
     assert _guest_identity({"id_type": "passport", "id_number": "P1234"}, {}) == ("P1234", "P1234")
