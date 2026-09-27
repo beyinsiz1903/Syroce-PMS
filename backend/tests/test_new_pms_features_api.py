@@ -279,6 +279,7 @@ class TestDepositTracking:
         assert data.get("success") == True
         assert "deposit" in data
         assert data["deposit"]["amount"] == 500.0
+        assert data["deposit"]["currency"]
         print(f"✓ Deposit recorded: {data['deposit']['id']} - 500 TL")
         return data["deposit"]["id"]
     
