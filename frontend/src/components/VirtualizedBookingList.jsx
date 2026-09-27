@@ -11,6 +11,9 @@ import { Calendar, User, Eye, Radio, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
 import { statusLabel } from '@/pages/reservation-detail/helpers';
+import { bookingSourceLabel } from '@/utils/bookingSource';
+
+export { bookingSourceLabel } from '@/utils/bookingSource';
 
 export const formatBookingAmount = (amount, currency = 'TRY') => new Intl.NumberFormat('tr-TR', {
   style: 'currency',
@@ -18,26 +21,6 @@ export const formatBookingAmount = (amount, currency = 'TRY') => new Intl.Number
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 }).format(Number(amount) || 0);
-
-export const bookingSourceLabel = (booking = {}) => {
-  const source = booking.source && typeof booking.source === 'object' ? booking.source : {};
-  const primitiveSource = typeof booking.source === 'string' ? booking.source : '';
-  const raw = booking.channel || booking.booking_source || booking.source_system
-    || booking.provider || source.provider || source.channel || source.name || primitiveSource;
-  const normalized = String(raw || '').trim().toLocaleLowerCase('tr-TR');
-  if ((normalized === 'agency' || normalized === 'acente' || booking.agency_id) && booking.agency_name) {
-    return `Acente · ${booking.agency_name}`;
-  }
-  const labels = {
-    direct: 'Doğrudan', walkin: 'Walk-in', 'walk-in': 'Walk-in', phone: 'Telefon',
-    online: 'Online', etstur: 'Etstur', ets: 'Etstur', hotelrunner: 'HotelRunner',
-    exely: 'Exely', expedia: 'Expedia', agoda: 'Agoda', booking: 'Booking.com',
-    'booking.com': 'Booking.com', jolly: 'Jolly', tatilbudur: 'Tatilbudur',
-    seturapi: 'Setur', setur: 'Setur', etsapi: 'Etstur', tatilbudurapi: 'Tatilbudur',
-    agency: 'Acente', acente: 'Acente',
-  };
-  return labels[normalized] || (String(raw || '').trim() || 'Belirtilmemiş');
-};
 
 export const assignmentReasonLabel = (booking = {}) => {
   if (booking.room_id) return '';

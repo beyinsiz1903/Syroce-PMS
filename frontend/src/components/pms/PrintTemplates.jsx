@@ -1,3 +1,5 @@
+import { bookingSourceLabel } from '@/utils/bookingSource';
+
 /**
  * Print templates for guest registration card, folio statement, and proforma invoice.
  *
@@ -103,7 +105,7 @@ export function printRegistrationCard(booking, guest, room, hotelArg) {
       <div class="field"><div class="label">Yetiskin / Adults</div><div class="value">${booking?.adults || 1}</div></div>
       <div class="field"><div class="label">Cocuk / Children</div><div class="value">${booking?.children || 0}</div></div>
       <div class="field"><div class="label">Pansiyon / Board</div><div class="value">${escapeHtml(booking?.board_type || 'Oda+Kahvalti')}</div></div>
-      <div class="field"><div class="label">Kanal / Channel</div><div class="value">${escapeHtml(booking?.channel || booking?.source_channel || 'Direkt')}</div></div>
+      <div class="field"><div class="label">Kanal / Channel</div><div class="value">${escapeHtml(bookingSourceLabel(booking))}</div></div>
     </div>
   </div>
   <div class="section">

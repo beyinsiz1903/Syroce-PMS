@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
@@ -180,7 +181,7 @@ const ReservationReportsTab = () => {
                     </thead>
                     <tbody>
                       {channels.map((item) => <tr key={item.channel} className="border-b last:border-0">
-                        <td className="py-2 font-medium">{item.channel}</td><td className="py-2 text-right">{item.bookings}</td><td className="py-2 text-right">{item.nights}</td><td className="py-2 text-right">{moneyBreakdown(item.revenue_by_currency, item.revenue, item.currency)}</td><td className="py-2 text-right text-rose-700">{item.cancelled}</td>
+                        <td className="py-2 font-medium">{bookingSourceLabel({ channel: item.channel })}</td><td className="py-2 text-right">{item.bookings}</td><td className="py-2 text-right">{item.nights}</td><td className="py-2 text-right">{moneyBreakdown(item.revenue_by_currency, item.revenue, item.currency)}</td><td className="py-2 text-right text-rose-700">{item.cancelled}</td>
                       </tr>)}
                     </tbody>
                   </table>
@@ -220,7 +221,7 @@ const ReservationReportsTab = () => {
                   </thead>
                   <tbody>
                     {rows.map((row) => <tr key={row.booking_id || `${row.guest_name}-${row.check_in}`} className="border-t">
-                      <td className="p-3 font-medium">{row.guest_name}</td><td className="p-3">{row.room_number}</td><td className="p-3 whitespace-nowrap">{row.check_in} — {row.check_out}</td><td className="p-3">{row.status_label}</td><td className="p-3">{row.channel}</td><td className="p-3 text-right">{row.nights}</td><td className="p-3 text-right">{money(row.total_amount, row.currency)}</td><td className="p-3 text-right">{row.lead_time_days == null ? '—' : `${row.lead_time_days} gün`}</td>
+                      <td className="p-3 font-medium">{row.guest_name}</td><td className="p-3">{row.room_number}</td><td className="p-3 whitespace-nowrap">{row.check_in} — {row.check_out}</td><td className="p-3">{row.status_label}</td><td className="p-3">{bookingSourceLabel({ channel: row.channel })}</td><td className="p-3 text-right">{row.nights}</td><td className="p-3 text-right">{money(row.total_amount, row.currency)}</td><td className="p-3 text-right">{row.lead_time_days == null ? '—' : `${row.lead_time_days} gün`}</td>
                     </tr>)}
                   </tbody>
                 </table>

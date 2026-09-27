@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import CallButton from '@/components/contact-center/CallButton';
 import { confirmDialog } from '@/lib/dialogs';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 export const reservationQuickPanelSummary = (booking, folio) => {
   const checkIn = new Date(booking?.check_in);
@@ -69,7 +70,7 @@ const ReservationSidebar = ({
   const guestName = booking.guest_name || booking.guest?.name || 'Misafir';
   const initials = guestName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
   const roomNumber = room?.room_number || booking.room_number || 'Atanmadı';
-  const source = booking.source_channel || booking.channel || booking.source || 'Doğrudan';
+  const source = bookingSourceLabel(booking);
   const guestEmail = visibleContact(booking.guest_email);
   const guestPhone = visibleContact(booking.guest_phone);
 

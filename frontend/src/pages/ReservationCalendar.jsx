@@ -13,6 +13,7 @@ import { resetUnassignedListScroll } from './calendar/unassignedPanel';
 import { lazyWithPreload } from '@/routes/lazyWithPreload';
 import { useCalendarRealtime } from './calendar/useCalendarRealtime';
 import { findOccupancyRule } from '@/utils/occupancyPricing';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 import {
   CalendarHeader,
@@ -145,7 +146,7 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
             <span className="font-medium text-gray-700">{formattedAmount}</span>
           )}
           {guestCount > 0 && <span>{guestCount} misafir</span>}
-          {booking.channel && <span className="capitalize">{booking.channel}</span>}
+          {(booking.channel || booking.source_channel || booking.ota_channel) && <span>{bookingSourceLabel(booking)}</span>}
         </div>
         {externalId && (
           <p className="mt-1 text-[10px] text-gray-400 truncate" title={externalId}>Rezervasyon: {externalId}</p>

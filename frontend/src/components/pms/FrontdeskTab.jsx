@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 import { confirmDialog } from '@/lib/dialogs';
 const FrontdeskTab = ({
@@ -121,36 +122,7 @@ const FrontdeskTab = ({
     formatCurrency(value, cachedTenantCurrency(), { decimals: 2 })
   ), []);
 
-  const formatBookingChannel = useCallback((booking) => {
-    if (booking?.agency_name && (booking?.agency_id || booking?.source_channel === 'agency' || booking?.channel === 'agency')) {
-      return `Acente · ${booking.agency_name}`;
-    }
-    const rawChannel = booking?.ota_channel
-      || booking?.source_channel
-      || booking?.channel
-      || booking?.agency_name
-      || '';
-    const normalized = String(rawChannel).trim().toLowerCase().replace(/[\s.-]+/g, '_');
-    const labels = {
-      direct: 'Doğrudan',
-      walk_in: 'Walk-in',
-      walkin: 'Walk-in',
-      online: 'Online',
-      website: 'Web Sitesi',
-      phone: 'Telefon',
-      booking: 'Booking.com',
-      booking_com: 'Booking.com',
-      bookingdotcom: 'Booking.com',
-      expedia: 'Expedia',
-      hotels_com: 'Hotels.com',
-      agoda: 'Agoda',
-      airbnb: 'Airbnb',
-      hotelrunner: 'HotelRunner',
-      exely: 'Exely',
-      agency: 'Acente',
-    };
-    return labels[normalized] || String(rawChannel).trim() || 'Belirtilmemiş';
-  }, []);
+  const formatBookingChannel = bookingSourceLabel;
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
