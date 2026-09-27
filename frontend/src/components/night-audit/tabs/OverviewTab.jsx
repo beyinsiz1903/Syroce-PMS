@@ -5,11 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 export default function OverviewTab(props) {
   const { canRunAudit = false, canManageSchedule = false } = props;
   const { SeverityBadge, StatusBadge, exceptions, expandedRun, handleAbortRun, handleQuickToggleSchedule, handleResumeRun, history, historyTotal, lastRun, loading, runActionId, schedule, scheduleStatus, setShowScheduleDialog, t, toggleExpand } = props;
-  const money = value => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
+  const runMoney = (run, field) => formatCurrencyBreakdown(run?.[`${field}_by_currency`], run?.[field], run?.currency || 'TRY');
   return (
     <TabsContent value="overview" className="space-y-4 mt-4">
       {/* Automatic Scheduling Card */}
@@ -162,15 +163,15 @@ export default function OverviewTab(props) {
               </div>
               <div>
                 <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.oda_geliri')}</span>
-                <p className="font-semibold">{money(lastRun.total_room_revenue)}</p>
+                <p className="font-semibold">{runMoney(lastRun, 'total_room_revenue')}</p>
               </div>
               <div>
                 <span className="text-gray-500 text-xs">Tahsilat</span>
-                <p className="font-semibold text-emerald-600">{money(lastRun.total_payments_amount)}</p>
+                <p className="font-semibold text-emerald-600">{runMoney(lastRun, 'total_payments_amount')}</p>
               </div>
               <div>
                 <span className="text-gray-500 text-xs">Vergi</span>
-                <p className="font-semibold">{money(lastRun.total_tax_amount)}</p>
+                <p className="font-semibold">{runMoney(lastRun, 'total_tax_amount')}</p>
               </div>
               <div>
                 <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.sure')}</span>
@@ -253,7 +254,7 @@ export default function OverviewTab(props) {
                         <div className="hidden md:flex items-center gap-4 text-xs text-gray-500">
                           <span>{run.rooms_processed} oda</span>
                           <span>{run.charges_posted} masraf</span>
-                          <span>{run.total_room_revenue?.toFixed(0)} TL</span>
+                          <span>{runMoney(run, 'total_room_revenue')}</span>
                           {run.exceptions_count > 0 && (
                             <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px]">
                               {run.exceptions_count} istisna
@@ -268,15 +269,15 @@ export default function OverviewTab(props) {
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                           <div>
                             <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.oda_geliri_e569c')}</span>
-                            <p className="font-semibold">{run.total_room_revenue?.toFixed(2)} TL</p>
+                            <p className="font-semibold">{runMoney(run, 'total_room_revenue')}</p>
                           </div>
                           <div>
                             <span className="text-gray-500 text-xs">Tahsilat</span>
-                            <p className="font-semibold text-emerald-600">{run.total_payments_amount?.toFixed(2) || "0.00"} TL</p>
+                            <p className="font-semibold text-emerald-600">{runMoney(run, 'total_payments_amount')}</p>
                           </div>
                           <div>
                             <span className="text-gray-500 text-xs">Vergi</span>
-                            <p className="font-semibold">{run.total_tax_amount?.toFixed(2)} TL</p>
+                            <p className="font-semibold">{runMoney(run, 'total_tax_amount')}</p>
                           </div>
                           <div>
                             <span className="text-gray-500 text-xs">No-Show</span>

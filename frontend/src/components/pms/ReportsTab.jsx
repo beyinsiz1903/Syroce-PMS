@@ -9,14 +9,12 @@ import { RefreshCw, TrendingUp, Hotel, DollarSign, BarChart3, LogIn, LogOut, Hom
 import { ResponsiveContainer, BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import ReservationReportsTab from './ReservationReportsTab';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
-const fmtCurrency = n => {
-  if (n == null) return '₺0';
-  return `₺${Number(n).toLocaleString('tr-TR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  })}`;
-};
+const fmtCurrency = (n, currency = cachedTenantCurrency()) => formatCurrency(n, currency, {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0
+});
 const ReportsTab = () => {
   const {
     t

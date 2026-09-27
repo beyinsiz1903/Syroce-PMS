@@ -6,10 +6,13 @@ import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 export default function ReportTab(props) {
   const { t } = useTranslation();
   const { StatusBadge, categoryLabels, fetchFinancialReport, finLoading, financialReport, paymentMethodLabels, reportDates, setReportDates } = props;
+  const breakdown = (values, fallback) => formatCurrencyBreakdown(values, fallback);
   return (
     <TabsContent value="report" className="space-y-4 mt-4">
       <Card data-testid="financial-report-card">
@@ -68,23 +71,23 @@ export default function ReportTab(props) {
               {/* Summary */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 <div className="p-3 bg-emerald-50 rounded-lg">
-                  <p className="text-lg font-bold text-emerald-700">{financialReport.summary?.total_revenue?.toFixed(2)} TL</p>
+                  <p className="text-lg font-bold text-emerald-700">{breakdown(financialReport.summary?.total_revenue_by_currency, financialReport.summary?.total_revenue)}</p>
                   <p className="text-[11px] text-emerald-600">{t('cm.components_nightaudit_tabs_ReportTab.toplam_gelir')}</p>
                 </div>
                 <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-lg font-bold text-blue-700">{financialReport.summary?.total_tax?.toFixed(2)} TL</p>
+                  <p className="text-lg font-bold text-blue-700">{breakdown(financialReport.summary?.total_tax_by_currency, financialReport.summary?.total_tax)}</p>
                   <p className="text-[11px] text-blue-600">{t('cm.components_nightaudit_tabs_ReportTab.toplam_vergi')}</p>
                 </div>
                 <div className="p-3 bg-indigo-50 rounded-lg">
-                  <p className="text-lg font-bold text-indigo-700">{financialReport.summary?.total_with_tax?.toFixed(2)} TL</p>
+                  <p className="text-lg font-bold text-indigo-700">{breakdown(Object.fromEntries(Object.entries(financialReport.summary?.total_revenue_by_currency || {}).map(([currency, amount]) => [currency, amount + (financialReport.summary?.total_tax_by_currency?.[currency] || 0)])), financialReport.summary?.total_with_tax)}</p>
                   <p className="text-[11px] text-indigo-600">{t('cm.components_nightaudit_tabs_ReportTab.vergili_toplam')}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-lg font-bold text-gray-700">{financialReport.summary?.total_payments?.toFixed(2)} TL</p>
+                  <p className="text-lg font-bold text-gray-700">{breakdown(financialReport.summary?.total_payments_by_currency, financialReport.summary?.total_payments)}</p>
                   <p className="text-[11px] text-gray-600">{t('cm.components_nightaudit_tabs_ReportTab.toplam_odeme')}</p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-lg">
-                  <p className="text-lg font-bold text-amber-700">{financialReport.summary?.net_position?.toFixed(2)} TL</p>
+                  <p className="text-lg font-bold text-amber-700">{breakdown(financialReport.summary?.net_position_by_currency, financialReport.summary?.net_position)}</p>
                   <p className="text-[11px] text-amber-600">Net Pozisyon</p>
                 </div>
                 <div className="p-3 bg-indigo-50 rounded-lg">
@@ -106,7 +109,7 @@ export default function ReportTab(props) {
                           <div key={cat} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                             <span className="text-sm font-medium text-gray-700">{categoryLabels[cat] || cat}</span>
                             <div className="text-right">
-                              <span className="text-sm font-semibold">{data.amount.toFixed(2)} TL</span>
+                              <span className="text-sm font-semibold">{breakdown(data.amount_by_currency, data.amount)}</span>
                               <span className="text-[11px] text-gray-400 ml-2">({data.count})</span>
                             </div>
                           </div>
@@ -128,7 +131,7 @@ export default function ReportTab(props) {
                             <div key={method} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                               <span className="text-sm font-medium text-gray-700">{paymentMethodLabels[method] || method}</span>
                               <div className="text-right">
-                                <span className="text-sm font-semibold">{data.amount.toFixed(2)} TL</span>
+                                <span className="text-sm font-semibold">{breakdown(data.amount_by_currency, data.amount)}</span>
                                 <span className="text-[11px] text-gray-400 ml-2">({data.count})</span>
                               </div>
                             </div>
@@ -164,13 +167,13 @@ export default function ReportTab(props) {
                           {financialReport.revenue_by_date.map((day) => (
                             <tr key={day.date} className="border-b border-gray-50 hover:bg-gray-50">
                               <td className="py-2 pr-4 font-medium">{day.date}</td>
-                              <td className="py-2 pr-4 text-right font-semibold text-emerald-600">{day.total.toFixed(2)} TL</td>
-                              <td className="py-2 pr-4 text-right text-gray-500">{day.tax.toFixed(2)} TL</td>
+                              <td className="py-2 pr-4 text-right font-semibold text-emerald-600">{breakdown(day.total_by_currency, day.total)}</td>
+                              <td className="py-2 pr-4 text-right text-gray-500">{breakdown(day.tax_by_currency, day.tax)}</td>
                               <td className="py-2 text-right">
                                 <div className="flex flex-wrap justify-end gap-1">
                                   {Object.entries(day.categories || {}).map(([cat, d]) => (
                                     <Badge key={cat} className="bg-gray-100 text-gray-600 border-gray-200 border text-[10px]">
-                                      {categoryLabels[cat] || cat}: {d.amount.toFixed(0)}
+                                      {categoryLabels[cat] || cat}: {breakdown(d.amount_by_currency, d.amount)}
                                     </Badge>
                                   ))}
                                 </div>
@@ -211,8 +214,8 @@ export default function ReportTab(props) {
                             <tr key={run.audit_id} className="border-b border-gray-50 hover:bg-gray-50">
                               <td className="py-2 pr-4 font-medium">{run.business_date}</td>
                               <td className="py-2 pr-4"><StatusBadge status={run.status} /></td>
-                              <td className="py-2 pr-4 text-right font-semibold">{run.total_room_revenue?.toFixed(2)} TL</td>
-                              <td className="py-2 pr-4 text-right text-gray-500">{run.total_tax_amount?.toFixed(2)} TL</td>
+                              <td className="py-2 pr-4 text-right font-semibold">{formatCurrency(run.total_room_revenue, run.currency || 'TRY')}</td>
+                              <td className="py-2 pr-4 text-right text-gray-500">{formatCurrency(run.total_tax_amount, run.currency || 'TRY')}</td>
                               <td className="py-2 pr-4 text-right">{run.rooms_processed}</td>
                               <td className="py-2 text-right text-gray-400">{run.duration_ms ? `${run.duration_ms}ms` : "-"}</td>
                             </tr>

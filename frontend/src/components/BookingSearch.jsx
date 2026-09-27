@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Search, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const BookingSearch = ({ onSelectBooking }) => {
   const { t } = useTranslation();
@@ -106,7 +107,7 @@ const BookingSearch = ({ onSelectBooking }) => {
               </div>
               <div className="flex items-center justify-between mt-2">
                 <span className="text-xs text-gray-500">{t('cm.components_BookingSearch.oda')} {booking.room_number || 'Atanmadı'}</span>
-                <span className="text-sm font-bold text-green-600">₺{booking.total_amount}</span>
+                <span className="text-sm font-bold text-green-600">{formatCurrency(booking.total_amount, booking.currency || cachedTenantCurrency())}</span>
               </div>
             </div>
           ))}

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { FileText, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const EFaturaModule = () => {
   const { t } = useTranslation();
@@ -72,7 +73,7 @@ const EFaturaModule = () => {
       if (response.data.replayed) {
         toast.info('Bu iş günü için POS kapanışı daha önce tamamlanmış');
       } else {
-        toast.success(`Günlük kapanış tamamlandı: ${response.data.total_sales} TL`);
+        toast.success(`Günlük kapanış tamamlandı: ${formatCurrency(response.data.total_sales, response.data.currency || cachedTenantCurrency())}`);
       }
       await loadData();
     } catch (error) {
@@ -194,7 +195,7 @@ const EFaturaModule = () => {
                     <td className="p-2 font-semibold">{invoice.invoice_number}</td>
                     <td className="p-2">{invoice.customer_name}</td>
                     <td className="p-2">{new Date(invoice.created_at).toLocaleDateString()}</td>
-                    <td className="p-2 text-right font-semibold">{invoice.total_amount} TL</td>
+                    <td className="p-2 text-right font-semibold">{formatCurrency(invoice.total_amount, invoice.currency || cachedTenantCurrency())}</td>
                     <td className="p-2">{getStatusBadge(invoice.efatura_status)}</td>
                     <td className="p-2">
                       <div className="flex gap-2">
@@ -230,8 +231,8 @@ const EFaturaModule = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-green-600">{closure.total_sales} TL</div>
-                  <div className="text-xs text-gray-600">Cash: {closure.cash_sales} TL | Card: {closure.card_sales} TL</div>
+                  <div className="text-2xl font-bold text-green-600">{formatCurrency(closure.total_sales, closure.currency || cachedTenantCurrency())}</div>
+                  <div className="text-xs text-gray-600">Nakit: {formatCurrency(closure.cash_sales, closure.currency || cachedTenantCurrency())} | Kart: {formatCurrency(closure.card_sales, closure.currency || cachedTenantCurrency())}</div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => handleDownloadPOSClosureReport(closure)}>
                   <Download className="w-4 h-4 mr-1" />
