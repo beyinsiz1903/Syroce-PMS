@@ -243,6 +243,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
+  const quickPanelBookingRef = useRef(null);
+  const quickPanelFolioCacheRef = useRef(new Map());
   const [bookingConflict, setBookingConflict] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showNewBookingDialog, setShowNewBookingDialog] = useState(false);
@@ -767,6 +769,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   }, []);
 
   const handleBookingDoubleClick = async (booking) => {
+    quickPanelBookingRef.current = null;
+    setShowSidebar(false);
     const previousBookingId = detailModalBookingId;
     if (previousBookingId && previousBookingId !== booking.id) {
       // Release the previous reservation immediately. The DOM monitor remains
@@ -776,6 +780,31 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
     setDetailModalBookingId(booking.id);
     setShowDetailModal(true);
+  };
+
+  const handleBookingClick = (booking) => {
+    quickPanelBookingRef.current = booking.id;
+    setSelectedBooking(booking);
+    setShowSidebar(true);
+
+    const cached = quickPanelFolioCacheRef.current.get(booking.id);
+    setSelectedBookingFolio(cached && cached !== 'loading' ? cached : null);
+    if (cached) return;
+
+    // Only the lightweight folio summary is fetched. Repeated card clicks use
+    // the local cache so normal calendar browsing does not trigger rate limits.
+    quickPanelFolioCacheRef.current.set(booking.id, 'loading');
+    axios.get(`/folio/booking/${booking.id}`)
+      .then((response) => {
+        const folios = Array.isArray(response.data) ? response.data : [];
+        const primaryFolio = folios[0] || null;
+        if (primaryFolio) quickPanelFolioCacheRef.current.set(booking.id, primaryFolio);
+        if (quickPanelBookingRef.current === booking.id) setSelectedBookingFolio(primaryFolio);
+      })
+      .catch(() => {
+        quickPanelFolioCacheRef.current.delete(booking.id);
+        if (quickPanelBookingRef.current === booking.id) setSelectedBookingFolio(null);
+      });
   };
 
   const closeReservationDetail = () => {
@@ -1646,6 +1675,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onDragEnd={handleDragEnd}
+          onBookingClick={handleBookingClick}
           onBookingDoubleClick={handleBookingDoubleClick}
           onOpenRoomBlock={(room) => {
             setRoomToBlock(room);
@@ -1863,22 +1893,21 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
       {/* Reservation Details Sidebar */}
       {showSidebar && (
-        <>
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setShowSidebar(false)}></div>
+        <Suspense fallback={null}>
           <ReservationSidebar
             booking={selectedBooking}
             folio={selectedBookingFolio}
             room={rooms.find(r => r.id === selectedBooking?.room_id)}
-            onClose={() => setShowSidebar(false)}
+            onClose={() => { quickPanelBookingRef.current = null; setShowSidebar(false); }}
             getSegmentColor={getSegmentColor}
             getStatusLabel={getStatusLabel}
             getRateTypeInfo={getRateTypeInfo}
             onViewFolio={handleViewFolio}
-            onEditReservation={handleEditReservation}
+            onOpenWorkspace={handleBookingDoubleClick}
             onSendConfirmation={handleSendConfirmation}
             onDataRefresh={loadCalendarData}
           />
-        </>
+        </Suspense>
       )}
 
       {/* Inline Folio Panel */}

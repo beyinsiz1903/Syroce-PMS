@@ -119,6 +119,7 @@ const CalendarGrid = ({
   onDragLeave,
   onDrop,
   onDragEnd,
+  onBookingClick,
   onBookingDoubleClick,
   onOpenRoomBlock,
   showOccupancyBand = false,
@@ -129,6 +130,17 @@ const CalendarGrid = ({
   const [contextMenu, setContextMenu] = useState(null);
   const [, setPointerResize] = useState(null);
   const pointerResizeRef = useRef(null);
+  const suppressCardClickUntilRef = useRef(0);
+
+  const startBookingDrag = (event, booking, date) => {
+    suppressCardClickUntilRef.current = Date.now() + 350;
+    onDragStart(event, booking, date);
+  };
+
+  const openBookingQuickPanel = (booking) => {
+    if (Date.now() < suppressCardClickUntilRef.current) return;
+    onBookingClick?.(booking);
+  };
 
   const pointerDate = (event) => {
     const target = document.elementFromPoint?.(event.clientX, event.clientY);
@@ -524,13 +536,14 @@ const CalendarGrid = ({
                                 tabIndex={0}
                                 role="button"
                                 aria-label={`${fullGuestName}, ${urgency.label}, atanmamış — odaya sürükleyin`}
-                                onDragStart={(e) => onDragStart(e, booking, dateRange[startIdx])}
+                                onDragStart={(e) => startBookingDrag(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onBookingDoubleClick(booking);
+                                  openBookingQuickPanel(booking);
                                 }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
+                                onDoubleClick={(e) => { e.stopPropagation(); onBookingDoubleClick(booking); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBookingQuickPanel(booking); } }}
                                 className="absolute transform-gpu rounded-lg text-[10px] shadow-sm hover:shadow-lg hover:-translate-y-px transition-[transform,box-shadow,opacity] duration-150 cursor-move z-20 border outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
@@ -736,7 +749,7 @@ const CalendarGrid = ({
                                 tabIndex={0}
                                 role="button"
                                 aria-label={presentation.ariaLabel}
-                                onDragStart={(e) => onDragStart(e, booking, dateRange[startIdx])}
+                                onDragStart={(e) => startBookingDrag(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
                                 // Reservation cards sit above the date cells.  Without their
                                 // own drop handlers, dropping directly on an occupied card never
@@ -760,10 +773,11 @@ const CalendarGrid = ({
                                 }}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onBookingDoubleClick(booking);
+                                  openBookingQuickPanel(booking);
                                 }}
+                                onDoubleClick={(e) => { e.stopPropagation(); onBookingDoubleClick(booking); }}
                                 onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBookingQuickPanel(booking); } }}
                                 className={`absolute transform-gpu overflow-hidden rounded-lg text-[10px] cursor-move z-20 group outline-none border transition-[transform,box-shadow,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging || isResizing
                                     ? 'opacity-40 scale-[0.985] shadow-sm z-30'

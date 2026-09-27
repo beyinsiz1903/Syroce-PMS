@@ -1158,6 +1158,7 @@ code {
 /* Reservation workspace status surfaces — preserve semantic hue and alpha. */
 .dark .bg-emerald-50\/70 { background-color: rgb(2 44 34 / 0.7); }
 .dark .bg-rose-50\/70 { background-color: rgb(76 5 25 / 0.7); }
+.dark .bg-amber-50\/70 { background-color: rgb(69 26 3 / 0.7); }
 .dark .data-\[state\=active\]\:bg-blue-50\/50[data-state=active] { background-color: rgb(23 37 84 / 0.5); }
 
 /* Advanced folio summary gradients — preserve hue and alpha in dark mode. */
