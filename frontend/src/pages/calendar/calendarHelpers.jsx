@@ -427,11 +427,11 @@ export const getBookingStatus = (booking, date) => {
 // Status label
 export const getStatusLabel = (status) => {
   const labels = {
-    confirmed: 'Confirmed',
-    checked_in: 'In-House',
+    confirmed: 'Onaylandı',
+    checked_in: 'Otelde',
     checked_out: 'Çıkış Yapıldı',
-    cancelled: 'Cancelled',
-    guaranteed: 'Guaranteed'
+    cancelled: 'İptal Edildi',
+    guaranteed: 'Garantili'
   };
   return labels[status] || status;
 };
