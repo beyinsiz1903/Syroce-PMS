@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getBookingStatusColor } from '../calendarHelpers';
+import { applyBookingOperation, getBookingStatusColor } from '../calendarHelpers';
 
 describe('reservation calendar lifecycle colors', () => {
   it('shows every pre-arrival lifecycle in blue regardless of date or channel', () => {
@@ -23,5 +23,39 @@ describe('reservation calendar lifecycle colors', () => {
       bg: '#dc2626',
       border: '#b91c1c',
     });
+  });
+});
+
+describe('applyBookingOperation', () => {
+  const bookings = [
+    { id: 'booking-a', status: 'confirmed' },
+    { id: 'booking-b', status: 'confirmed' },
+  ];
+
+  it('updates check-in color state immediately without changing other bookings', () => {
+    const result = applyBookingOperation(
+      bookings,
+      { bookingId: 'booking-a', operation: 'checked_in' },
+      '2026-09-27T15:00:00.000Z',
+    );
+
+    expect(result[0]).toMatchObject({
+      id: 'booking-a', status: 'checked_in', checked_in_at: '2026-09-27T15:00:00.000Z',
+    });
+    expect(result[1]).toBe(bookings[1]);
+    expect(getBookingStatusColor(result[0]).bg).toBe('#16a34a');
+  });
+
+  it('updates check-out color state immediately', () => {
+    const result = applyBookingOperation(
+      [{ id: 'booking-a', status: 'checked_in' }],
+      { bookingId: 'booking-a', operation: 'checked_out' },
+      '2026-09-27T16:00:00.000Z',
+    );
+
+    expect(result[0]).toMatchObject({
+      status: 'checked_out', checked_out_at: '2026-09-27T16:00:00.000Z',
+    });
+    expect(getBookingStatusColor(result[0]).bg).toBe('#dc2626');
   });
 });

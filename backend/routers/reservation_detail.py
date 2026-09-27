@@ -847,6 +847,9 @@ class ExtraChargeAdd(BaseModel):
     # without creating revenue or changing the folio balance.
     amount: float = Field(..., ge=0, le=1e9)
     quantity: float = Field(1.0, gt=0, le=1e6)
+    input_currency: str | None = Field(None, min_length=3, max_length=3)
+    # Booking-currency units produced by one input-currency unit.
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class ExtraChargeVoid(BaseModel):
@@ -3044,7 +3047,17 @@ async def add_extra_charge_detail(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    requested_total = round(data.amount * data.quantity, 2)
+    booking_currency = str(booking.get("currency") or "TRY").upper()
+    if booking_currency == "TL":
+        booking_currency = "TRY"
+    input_currency = str(data.input_currency or booking_currency).upper()
+    if input_currency == "TL":
+        input_currency = "TRY"
+    exchange_rate = 1.0 if input_currency == booking_currency else data.exchange_rate
+    if exchange_rate is None:
+        raise HTTPException(status_code=422, detail="Farklı para birimi için geçerli kur zorunludur")
+    input_total = round(data.amount * data.quantity, 2)
+    requested_total = round(input_total * exchange_rate, 2)
     full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
     total = 0.0 if full_comp else requested_total
     is_complimentary = full_comp or total == 0
@@ -3057,10 +3070,14 @@ async def add_extra_charge_detail(
         "category": data.category,
         "charge_category": data.category,
         "charge_amount": total,
-        "amount": 0.0 if full_comp else data.amount,
+        "amount": 0.0 if full_comp else round(data.amount * exchange_rate, 2),
         "quantity": data.quantity,
         "total": total,
-        "currency": str(booking.get("currency") or "TRY").upper(),
+        "currency": booking_currency,
+        "entered_amount": data.amount,
+        "entered_total": input_total,
+        "entered_currency": input_currency,
+        "exchange_rate": exchange_rate,
         "is_complimentary": is_complimentary,
         "complimentary_scope": "full" if full_comp else ("item" if is_complimentary else None),
         "complimentary_original_amount": requested_total if full_comp else None,

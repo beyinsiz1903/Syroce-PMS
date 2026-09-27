@@ -110,6 +110,17 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [staySaving, setStaySaving] = useState(false);
   const loadGenerationRef = useRef(0);
   const tabsListRef = useRef(null);
+  const openedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    openedAtRef.current = Date.now();
+    // A rapid second click intended for the calendar card can land on the
+    // newly mounted modal and leave its entire text visibly selected.
+    const clearSelection = () => window.getSelection?.()?.removeAllRanges?.();
+    clearSelection();
+    const frame = window.requestAnimationFrame(clearSelection);
+    return () => window.cancelAnimationFrame(frame);
+  }, [bookingId]);
 
   const handleClose = useCallback(() => {
     // Normal close is deterministic; the 15-second DOM monitor is reserved
@@ -482,7 +493,17 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const guestName = guest?.name || booking?.guest_name || 'Misafir';
 
   return (
-    <div className="fixed inset-0 z-[60]" data-testid="reservation-detail-modal">
+    <div
+      className="fixed inset-0 z-[60]"
+      data-testid="reservation-detail-modal"
+      onMouseDownCapture={(event) => {
+        const interactive = event.target.closest?.('input, textarea, select, button, a, [role="button"]');
+        if (!interactive && Date.now() - openedAtRef.current < 450) {
+          event.preventDefault();
+          window.getSelection?.()?.removeAllRanges?.();
+        }
+      }}
+    >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header — sade, marka rengiyle */}
