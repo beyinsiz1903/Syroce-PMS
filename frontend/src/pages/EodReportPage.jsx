@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Loader2, FileText, Send, Download, Calendar, X as XIcon, AlertTriangle, CheckCircle2, TrendingUp, DollarSign, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 const today = () => new Date().toISOString().slice(0, 10);
 function KpiCard({
   label,
@@ -179,7 +181,7 @@ function FolioTable({
               <td className="px-3 py-2 text-slate-600">{fmtDate(f.check_in)}</td>
               <td className="px-3 py-2 text-slate-600">{fmtDate(f.check_out)}</td>
               <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                {(f.balance ?? 0).toLocaleString(i18n.language)} ₺
+                {formatCurrency(f.balance ?? 0, f.currency || 'TRY', { locale: i18n.language })}
               </td>
               <td className="px-3 py-2 text-xs text-slate-400 font-mono">
                 #{(f.id || '').slice(0, 8)}
@@ -348,7 +350,7 @@ export default function EodReportPage({
             {/* Finansal blok — büyük */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <KpiCard label="Doluluk" value={`${data.occupancy_rate}%`} sub={`${data.occupied} / ${data.rooms_total} oda dolu`} accent="sky" icon={TrendingUp} />
-              <KpiCard label={t('cm.pages_EodReportPage.toplam_gelir')} value={`${(data.revenue_total || 0).toLocaleString(i18n.language)} ₺`} sub={`Ödeme ${(data.payments_total || 0).toLocaleString(i18n.language)} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString(i18n.language)} ₺`} accent="emerald" icon={DollarSign} />
+              <KpiCard label={t('cm.pages_EodReportPage.toplam_gelir')} value={formatCurrencyBreakdown(data.revenue_by_currency, data.revenue_total, data.currency, i18n.language)} sub={`Ödeme ${formatCurrencyBreakdown(data.payments_by_currency, data.payments_total, data.currency, i18n.language)} · Ekstra ${formatCurrencyBreakdown(data.extras_by_currency, data.extras_total, data.currency, i18n.language)}`} accent="emerald" icon={DollarSign} />
             </div>
 
             {/* Operasyonel blok — yatay küçük */}

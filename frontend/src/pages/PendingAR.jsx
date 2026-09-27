@@ -19,6 +19,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const PendingAR = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -165,7 +167,13 @@ const PendingAR = ({ user, tenant, onLogout }) => {
     })
     .sort((a, b) => b.days_outstanding - a.days_outstanding);
 
-  const totalOutstanding = arData.reduce((sum, item) => sum + item.total_outstanding, 0);
+  const totalOutstandingByCurrency = arData.reduce((totals, item) => {
+    const breakdown = item.total_outstanding_by_currency || { TRY: item.total_outstanding || 0 };
+    Object.entries(breakdown).forEach(([currency, amount]) => {
+      totals[currency] = (totals[currency] || 0) + Number(amount || 0);
+    });
+    return totals;
+  }, {});
   const totalCompanies = arData.length;
   const criticalCount = arData.filter(item => item.days_outstanding > 60).length;
 
@@ -296,7 +304,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                     <div>
                       <div className="text-sm opacity-90">Total Outstanding</div>
                       <div className="text-3xl font-bold mt-1">
-                        ${totalOutstanding.toFixed(2)}
+                        {formatCurrencyBreakdown(totalOutstandingByCurrency)}
                       </div>
                     </div>
                     <DollarSign className="w-12 h-12 opacity-75" />
@@ -435,7 +443,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                                 <div>
                                   <div className="text-gray-600">Outstanding Balance</div>
                                   <div className="text-xl font-bold text-red-600">
-                                    ${item.total_outstanding.toFixed(2)}
+                                    {formatCurrencyBreakdown(item.total_outstanding_by_currency, item.total_outstanding)}
                                   </div>
                                 </div>
                                 <div>
@@ -634,7 +642,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             ) : (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">Toplam açık bakiye</div><div className="text-2xl font-bold text-red-600">{companyDetails.total_outstanding.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</div></CardContent></Card>
+                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">Toplam açık bakiye</div><div className="text-2xl font-bold text-red-600">{formatCurrencyBreakdown(companyDetails.total_outstanding_by_currency, companyDetails.total_outstanding)}</div></CardContent></Card>
                   <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">Açık folyo</div><div className="text-2xl font-bold">{companyDetails.folios.length}</div></CardContent></Card>
                   <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">İletişim</div><div className="font-semibold">{companyDetails.company.contact_person || '—'}</div><div className="text-sm text-gray-600">{companyDetails.company.contact_email || 'E-posta tanımlı değil'}</div></CardContent></Card>
                 </div>
@@ -651,7 +659,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                           <td className="p-3 font-semibold">{folio.room_number}</td>
                           <td className="p-3">{folio.guest_name}</td>
                           <td className="p-3 whitespace-nowrap">{folio.check_in || '—'} → {folio.check_out || '—'}</td>
-                          <td className="p-3 text-right font-semibold text-red-600">{folio.balance.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</td>
+                          <td className="p-3 text-right font-semibold text-red-600">{formatCurrency(folio.balance, folio.currency || 'TRY')}</td>
                         </tr>
                       ))}
                     </tbody>
