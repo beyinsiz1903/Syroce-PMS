@@ -96,6 +96,19 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Ön ödeme');
   });
 
+  it('keeps the redesigned workspace shortcuts connected to the existing operation tabs', async () => {
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('reservation-workspace-overview')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-stay-edit')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-extras')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-room-change')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-notes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('workspace-folios'));
+    expect(await screen.findByTestId('folios-tab')).toBeInTheDocument();
+  });
+
   it('sends no-show to the single /api-prefixed axios base path', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 

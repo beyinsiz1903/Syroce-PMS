@@ -4,7 +4,7 @@ import {
   toDateStringUTC, checkoutAfterCalendarNight, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
-  getBookingStatusColor, getSourceColor,
+  getSourceColor,
   getUnassignedBookingsForType, computeUnassignedLanes,
   getUnassignedUrgency,
   isRoomBlockedForSaleOnDate, getRoomTypeCapacityForDate, cellOccupancyStatus, getCellOccupancyTint,
@@ -56,6 +56,13 @@ export const getReservationCardPresentation = (booking) => {
     stayRange,
     ariaLabel: `${guestName}, ${statusLabel}, ${source.label}${paxCount ? `, ${paxCount} kişi` : ''}, ${stayRange}`,
   };
+};
+
+export const getReservationCardSurface = (booking) => {
+  const status = String(booking?.status || '').toLowerCase();
+  if (status === 'checked_in') return { background: '#ecfdf5', border: '#10b981', text: '#064e3b', muted: '#047857' };
+  if (status === 'checked_out') return { background: '#fff1f2', border: '#f43f5e', text: '#881337', muted: '#be123c' };
+  return { background: '#eff6ff', border: '#3b82f6', text: '#172554', muted: '#1d4ed8' };
 };
 
 export const clearCalendarTextSelection = () => {
@@ -506,7 +513,7 @@ const CalendarGrid = ({
                             const endIdx = visibleEndIdx >= 0 ? visibleEndIdx : dateRange.length;
                             const span = Math.max(endIdx - startIdx, 1);
                             const urgency = getUnassignedUrgency(booking);
-                            const statusColor = getBookingStatusColor(booking);
+                            const cardSurface = getReservationCardSurface(booking);
                             const presentation = bookingPresentationById.get(booking.id) || getReservationCardPresentation(booking);
                             const fullGuestName = presentation.guestName;
                             const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : 20);
@@ -524,26 +531,27 @@ const CalendarGrid = ({
                                   onBookingDoubleClick(booking);
                                 }}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className="absolute transform-gpu rounded-lg text-[10px] text-white shadow-sm hover:shadow-lg hover:-translate-y-px transition-[transform,box-shadow,opacity] duration-150 cursor-move z-20 border border-white/25 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                                className="absolute transform-gpu rounded-lg text-[10px] shadow-sm hover:shadow-lg hover:-translate-y-px transition-[transform,box-shadow,opacity] duration-150 cursor-move z-20 border outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_H + 3}px`,
                                   width: `${span * CELL_W - 4}px`,
                                   height: `${LANE_H - 6}px`,
-                                  backgroundColor: statusColor.bg,
-                                  borderColor: statusColor.border,
+                                  backgroundColor: cardSurface.background,
+                                  borderColor: `${cardSurface.border}66`,
+                                  borderLeft: `4px solid ${cardSurface.border}`,
                                 }}
                                 data-testid={`unassigned-booking-${booking.id}`}
                                 title={`${fullGuestName} — ${urgency.label} — Odaya sürükleyin`}
                               >
                                 <div className="flex h-full overflow-hidden">
                                   <div className="px-2 py-1 flex-1 min-w-0 flex items-center gap-1.5">
-                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/90 shadow-sm" aria-hidden="true" />
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full shadow-sm" style={{ backgroundColor: cardSurface.border }} aria-hidden="true" />
                                     <div className="min-w-0 flex-1">
-                                      <div className="font-extrabold text-[10px] text-white truncate leading-tight">
+                                      <div className="font-extrabold text-[10px] truncate leading-tight" style={{ color: cardSurface.text }}>
                                         {displayGuestName}
                                       </div>
-                                      {span > 1 && <div className="truncate text-[8px] font-medium text-white/80">Oda bekliyor · {presentation.sourceLabel}</div>}
+                                      {span > 1 && <div className="truncate text-[8px] font-medium" style={{ color: cardSurface.muted }}>Oda bekliyor · {presentation.sourceLabel}</div>}
                                     </div>
                                     <span className="sr-only">{urgency.label}</span>
                                   </div>
@@ -707,7 +715,7 @@ const CalendarGrid = ({
                             const span = calculateBookingSpan(booking, currentDate, daysToShow);
                             if (span <= 0) return null;
                             const lane = lanes[booking.id] || 0;
-                            const statusColor = getBookingStatusColor(booking, refTodayStr);
+                            const cardSurface = getReservationCardSurface(booking);
                             const conflictInfo = getConflictInfo(room.id, booking);
                             const arrivalInView = startIdx >= 0 && checkInStr === toDateStringUTC(dateRange[startIdx]);
                             const presentation = bookingPresentationById.get(booking.id) || getReservationCardPresentation(booking);
@@ -756,7 +764,7 @@ const CalendarGrid = ({
                                 }}
                                 onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className={`absolute transform-gpu overflow-hidden rounded-lg text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 transition-[transform,box-shadow,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                                className={`absolute transform-gpu overflow-hidden rounded-lg text-[10px] cursor-move z-20 group outline-none border transition-[transform,box-shadow,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging || isResizing
                                     ? 'opacity-40 scale-[0.985] shadow-sm z-30'
                                     : 'shadow-[0_2px_6px_rgba(15,23,42,0.2)] hover:z-30 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)]'
@@ -766,23 +774,24 @@ const CalendarGrid = ({
                                   top: `${lane * LANE_BAR_H + 2}px`,
                                   width: `${previewSpan * CELL_W - 4}px`,
                                   height: `${BOOKING_H}px`,
-                                  backgroundColor: statusColor.bg,
-                                  borderLeft: `4px solid ${statusColor.border}`,
+                                  backgroundColor: cardSurface.background,
+                                  borderColor: `${cardSurface.border}55`,
+                                  borderLeft: `4px solid ${cardSurface.border}`,
                                 }}
                                 data-booking-id={booking.id}
                                 data-testid={isDragging ? 'reservation-card-dragging' : `booking-bar-${booking.id}`}
                                 title={conflictTitle}
                               >
-                                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/40" aria-hidden="true" />
+                                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/80" aria-hidden="true" />
                                 <div className="px-2 py-1.5 pr-6 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
-                                  <div className="font-extrabold text-[12px] text-white leading-[13px] drop-shadow-sm whitespace-normal break-words max-h-[26px] overflow-hidden">
+                                  <div className="font-extrabold text-[12px] leading-[13px] whitespace-normal break-words max-h-[26px] overflow-hidden" style={{ color: cardSurface.text }}>
                                     {displayGuestName}
                                   </div>
-                                  <div className="text-[9px] text-white/90 truncate flex items-center gap-1 leading-tight mt-1">
-                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/90 shadow-sm" aria-hidden="true" />
+                                  <div className="text-[9px] truncate flex items-center gap-1 leading-tight mt-1" style={{ color: cardSurface.muted }}>
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full shadow-sm" style={{ backgroundColor: cardSurface.border }} aria-hidden="true" />
                                     <span className="font-semibold truncate">{presentation.sourceLabel}</span>
                                     {presentation.paxCount ? <span className="shrink-0 opacity-80">· {presentation.paxCount} kişi</span> : null}
-                                    {span > 1 && <span className="ml-auto truncate rounded-full bg-black/10 px-1.5 py-0.5 text-[8px] font-semibold">{presentation.statusLabel}</span>}
+                                    {span > 1 && <span className="ml-auto truncate rounded-full bg-white/70 px-1.5 py-0.5 text-[8px] font-semibold shadow-sm ring-1 ring-black/5">{presentation.statusLabel}</span>}
                                   </div>
                                   <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
                                     {showDeluxePanel && isGroupBooking(booking.id) && (
@@ -791,7 +800,7 @@ const CalendarGrid = ({
                                       </div>
                                     )}
                                     {arrivalInView && (
-                                      <div className="h-2 w-2 rounded-full border border-white/80 bg-white shadow-sm" title="Giriş günü" aria-label="Giriş günü" />
+                                      <div className="h-2 w-2 rounded-full border border-white bg-blue-500 shadow-sm" title="Giriş günü" aria-label="Giriş günü" />
                                     )}
                                   </div>
                                 </div>
@@ -823,7 +832,7 @@ const CalendarGrid = ({
                                     }}
                                     onClick={(e) => e.stopPropagation()}
                                     onDoubleClick={(e) => e.stopPropagation()}
-                                    className="absolute right-0 top-0 z-40 h-full w-4 cursor-ew-resize touch-none rounded-r-lg border-l border-white/20 bg-transparent opacity-60 transition-colors hover:bg-black/15 hover:opacity-100 focus-visible:bg-black/15 focus-visible:opacity-100 after:absolute after:right-1.5 after:top-1/2 after:h-5 after:w-0.5 after:-translate-y-1/2 after:rounded-full after:bg-white/80"
+                                    className="absolute right-0 top-0 z-40 h-full w-4 cursor-ew-resize touch-none rounded-r-lg border-l border-slate-300/50 bg-transparent opacity-40 transition-colors hover:bg-slate-900/10 hover:opacity-100 focus-visible:bg-slate-900/10 focus-visible:opacity-100 after:absolute after:right-1.5 after:top-1/2 after:h-5 after:w-0.5 after:-translate-y-1/2 after:rounded-full after:bg-slate-500/70"
                                   />
                                 )}
                               </div>
