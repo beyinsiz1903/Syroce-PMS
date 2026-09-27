@@ -182,10 +182,13 @@ def _booking_occupied_on(booking: dict, target_date: str) -> bool:
     if not check_in or not check_out or not (check_in <= target_date < check_out):
         return False
 
-    actual_in = _date_part(booking.get("checked_in_at"))
+    # ``checked_in_at`` is a wall-clock audit timestamp. It must not be used as
+    # the hotel calendar date: a property can legitimately operate on an older
+    # PMS business date (for example after an interrupted night audit). In that
+    # case comparing its real timestamp with ``target_date`` hides a guest who
+    # is visibly checked in. The scheduled stay plus checked-in status is the
+    # canonical occupancy interval; an actual checkout can still shorten it.
     actual_out = _date_part(booking.get("checked_out_at"))
-    if actual_in and target_date < actual_in:
-        return False
     if actual_out and target_date >= actual_out:
         return False
     return True

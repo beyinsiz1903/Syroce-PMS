@@ -92,6 +92,44 @@ describe('PMS manually discovered operation regressions', () => {
     expect(booking.check_out).toBe('2026-08-14');
   });
 
+  it('shows the reservation currency instead of silently forcing tenant currency', () => {
+    const booking = {
+      guest_id: '', check_in: '', check_out: '', adults: 1, children: 0,
+      children_ages: [], guests_count: 1, channel: 'direct', company_id: '',
+      currency: 'USD', rate_type: '', market_segment: '', cancellation_policy: '',
+      billing_address: '', billing_tax_number: '', billing_contact_person: '',
+      override_reason: '',
+    };
+
+    render(
+      <BookingDialog
+        open
+        onClose={() => {}}
+        guests={[]}
+        rooms={[]}
+        companies={[]}
+        ratePlans={[]}
+        packages={[]}
+        newBooking={booking}
+        setNewBooking={() => {}}
+        multiRoomBooking={[]}
+        handleCreateBooking={() => {}}
+        handleCompanySelect={() => {}}
+        handleContractedRateSelect={() => {}}
+        handleChildrenChange={() => {}}
+        handleChildAgeChange={() => {}}
+        addRoomToMultiBooking={() => {}}
+        removeRoomFromMultiBooking={() => {}}
+        updateMultiRoomField={() => {}}
+        updateMultiRoomChildrenAges={() => {}}
+        updateMultiRoomChildAge={() => {}}
+        setOpenDialog={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('booking-dialog-currency')).toHaveTextContent('USD');
+  });
+
   it('renders one age input per child without dereferencing placeholder values', () => {
     const booking = {
       guest_id: '', check_in: '', check_out: '', adults: 1, children: 2,

@@ -238,6 +238,9 @@ const BookingDialog = ({
                     // Set rate plan and suggest base rate from selected plan
                     const selected = ratePlans.find(rp => rp.code === v || rp.id === v);
                     updateMultiRoomField(index, 'rate_plan', v);
+                    if (selected?.currency) {
+                      setNewBooking(prev => ({ ...prev, currency: String(selected.currency).toUpperCase() }));
+                    }
                     if (selected && selected.base_price) {
                       updateMultiRoomField(index, 'base_rate', selected.base_price);
                       if (!room.total_amount || room.total_amount === 0) {
@@ -286,7 +289,7 @@ const BookingDialog = ({
       </div>
 
       {/* Check-in and Check-out */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <Label>Check-in *</Label>
           <Input type="date" value={newBooking.check_in} onChange={e => setNewBooking(prev => ({
@@ -300,6 +303,15 @@ const BookingDialog = ({
               ...prev,
               check_out: e.target.value
             }))} required />
+        </div>
+        <div>
+          <Label>Para Birimi *</Label>
+          <Select value={newBooking.currency || cachedTenantCurrency()} onValueChange={currency => setNewBooking(prev => ({ ...prev, currency }))}>
+            <SelectTrigger data-testid="booking-dialog-currency"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {['TRY', 'EUR', 'USD', 'GBP'].map(code => <SelectItem key={code} value={code}>{code}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

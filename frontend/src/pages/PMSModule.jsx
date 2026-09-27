@@ -48,6 +48,7 @@ import GroupRevenueByCompany from '@/components/GroupRevenueByCompany';
 import PickupPaceReport from '@/components/PickupPaceReport';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
+import { cachedTenantCurrency } from '@/lib/currency';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import CompanyDialog from '@/components/pms/CompanyDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
@@ -349,7 +350,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     total_amount: 0, base_rate: 0, channel: 'direct', company_id: '',
     contracted_rate: '', rate_type: '', market_segment: '',
     cancellation_policy: '', billing_address: '', billing_tax_number: '',
-    billing_contact_person: '', override_reason: ''
+    billing_contact_person: '', override_reason: '', currency: cachedTenantCurrency()
   });
 
   const [multiRoomBooking, setMultiRoomBooking] = useState([
@@ -826,7 +827,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       }));
       const payload = {
         arrival_date: newBooking.check_in, departure_date: newBooking.check_out,
-        rooms: roomsPayload, company_id: newBooking.company_id || null, channel: newBooking.channel || 'direct'
+        rooms: roomsPayload, company_id: newBooking.company_id || null, channel: newBooking.channel || 'direct',
+        currency: newBooking.currency || cachedTenantCurrency()
       };
       if (newBooking.guest_id) {
         payload.guest_id = newBooking.guest_id;
@@ -835,7 +837,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       }
       await axios.post('/pms/bookings/multi-room', payload);
       toast.success('Rezervasyon oluşturuldu'); setOpenDialog(null); loadData(); setSelectedCompany(null);
-      setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '' });
+      setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '', currency: cachedTenantCurrency() });
       setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
     } catch (error) {
       const conflict = parseBookingConflict(error);

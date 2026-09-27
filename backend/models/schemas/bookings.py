@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from models.enums import (
     BookingStatus,
@@ -34,6 +34,7 @@ class BookingCreate(BaseModel):
     children_ages: list[int] = []
     guests_count: int = Field(..., ge=1, le=100)  # Total: adults + children
     total_amount: float = Field(..., ge=0, le=1e12)
+    currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     base_rate: float | None = None  # For override tracking
     apply_occupancy_pricing: bool = False
     pricing_rule_version: str | None = None
@@ -65,6 +66,11 @@ class BookingCreate(BaseModel):
     is_complimentary: bool = False
     complimentary_scope: Literal["accommodation_only", "full"] | None = None
     complimentary_reason: str | None = Field(None, max_length=500)
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.upper()
 
     @model_validator(mode="after")
     def validate_complimentary_details(self):
@@ -115,6 +121,7 @@ class Booking(BookingBase):
     children_ages: list[int] = []
     guests_count: int | None = None
     total_amount: float
+    currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     base_rate: float | None = None
     apply_occupancy_pricing: bool = False
     pricing_rule_version: str | None = None
@@ -126,6 +133,11 @@ class Booking(BookingBase):
     channel: ChannelType = ChannelType.DIRECT
     rate_plan: str | None = "Standard"
     special_requests: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.upper()
     # Corporate/contracted booking fields
     company_id: str | None = None
     contracted_rate: ContractedRateType | None = None
