@@ -33,6 +33,7 @@ import {
   getCalendarRoomNightRate,
   getCalendarStayTotal,
   getUnassignedUrgency,
+  applyBookingOperation,
   sortByUrgency,
   roomOccupancyStatus,
   buildCalendarRateLookup,
@@ -775,6 +776,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setDetailModalBookingId(null);
     void reservationEditLockManager?.releaseCurrent(closingBookingId);
     loadCalendarData();
+  };
+
+  const handleReservationOperationComplete = ({ bookingId, operation }) => {
+    const operationResult = { bookingId, operation };
+    // The mutation already succeeded. Reflect it immediately so the operator
+    // never waits for a full calendar round-trip to see the lifecycle color.
+    setBookings((current) => applyBookingOperation(current, operationResult));
+    setAllUnassignedBookings((current) => applyBookingOperation(current, operationResult)
+      .filter((booking) => !['checked_out', 'no_show', 'cancelled'].includes(booking.status)));
+    // Reconcile in the background with the server as the source of truth.
+    void loadCalendarData();
   };
 
   const handleCreateBooking = async (e) => {
@@ -1879,6 +1891,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             bookingId={detailModalBookingId}
             onClose={closeReservationDetail}
             allBookings={bookings}
+            onOperationComplete={handleReservationOperationComplete}
           />
         </Suspense>
       )}

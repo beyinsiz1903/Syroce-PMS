@@ -460,6 +460,21 @@ export const getBookingStatusColor = (booking) => {
   return { bg: '#2563eb', border: '#1d4ed8' };
 };
 
+export const applyBookingOperation = (bookings, { bookingId, operation }, timestamp = new Date().toISOString()) => (
+  bookings.map((booking) => {
+    if (booking.id !== bookingId) return booking;
+    if (operation === 'checked_in') {
+      return { ...booking, status: 'checked_in', checked_in_at: booking.checked_in_at || timestamp };
+    }
+    if (operation === 'checked_out') {
+      return { ...booking, status: 'checked_out', checked_out_at: booking.checked_out_at || timestamp };
+    }
+    if (operation === 'no_show') return { ...booking, status: 'no_show' };
+    if (operation === 'cancelled') return { ...booking, status: 'cancelled' };
+    return booking;
+  })
+);
+
 // Source-based booking card color mapping (legacy, kept for compatibility)
 export const getSourceColor = (booking) => {
   const channel = (booking.ota_channel || booking.source_channel || booking.channel || booking.source || '').toLowerCase();
