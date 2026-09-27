@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { ArrowLeft, DollarSign, Tag, Package, TrendingUp, RefreshCw, Percent } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const RateManagementMobile = ({ user }) => {
   const { t } = useTranslation();
@@ -78,14 +79,14 @@ const RateManagementMobile = ({ user }) => {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="bg-amber-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">İndirim</div>
-                  <div className="font-bold">{campaign.discount_type === 'percentage' ? `%${campaign.discount_value}` : `₺${campaign.discount_value}`}</div>
+                  <div className="font-bold">{campaign.discount_type === 'percentage' ? `%${campaign.discount_value}` : formatCurrency(campaign.discount_value, campaign.currency || cachedTenantCurrency())}</div>
                 </div>
                 <div className="bg-green-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">Rezervasyon</div>
                   <div className="font-bold">{campaign.bookings_count}</div>
                 </div>
               </div>
-              <div className="text-sm text-green-600 font-semibold mt-2">Gelir: ₺{campaign.revenue_generated.toLocaleString()}</div>
+              <div className="text-sm text-green-600 font-semibold mt-2">Gelir: {formatCurrency(campaign.revenue_generated, campaign.currency || cachedTenantCurrency())}</div>
             </CardContent>
           </Card>
         ))}
@@ -101,7 +102,7 @@ const RateManagementMobile = ({ user }) => {
                 <Tag className="h-5 w-5 text-amber-600" />
               </div>
               <div className="flex justify-between items-center text-sm mt-3">
-                <span className="font-semibold">{code.discount_type === 'percentage' ? `%${code.discount_value}` : `₺${code.discount_value}`}</span>
+                <span className="font-semibold">{code.discount_type === 'percentage' ? `%${code.discount_value}` : formatCurrency(code.discount_value, code.currency || cachedTenantCurrency())}</span>
                 <span className="text-gray-500">{code.usage_count}/{code.usage_limit} kullanım</span>
               </div>
             </CardContent>
@@ -116,7 +117,7 @@ const RateManagementMobile = ({ user }) => {
                   <div className="font-bold text-lg">{pkg.name}</div>
                   <div className="text-sm text-gray-600">{pkg.description}</div>
                 </div>
-                <div className="text-2xl font-bold text-amber-600">₺{pkg.base_rate}</div>
+                <div className="text-2xl font-bold text-amber-600">{formatCurrency(pkg.base_rate, pkg.currency || cachedTenantCurrency())}</div>
               </div>
               <div className="flex flex-wrap gap-2 mt-3">
                 {pkg.inclusions.map((inc, idx) => <Badge key={idx} variant="outline" className="text-xs">{inc}</Badge>)}
@@ -133,11 +134,11 @@ const RateManagementMobile = ({ user }) => {
               <div className="flex justify-between items-center mb-2">
                 <div>
                   <div className="text-sm text-gray-500">Normal Fiyat</div>
-                  <div className="text-lg line-through text-gray-400">₺{rate.regular_rate}</div>
+                  <div className="text-lg line-through text-gray-400">{formatCurrency(rate.regular_rate, rate.currency || cachedTenantCurrency())}</div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-500">Promosyon</div>
-                  <div className="text-2xl font-bold text-green-600">₺{rate.promo_rate}</div>
+                  <div className="text-2xl font-bold text-green-600">{formatCurrency(rate.promo_rate, rate.currency || cachedTenantCurrency())}</div>
                 </div>
               </div>
               <Badge className="bg-green-500 text-white">%{rate.discount_pct} İNDİRİM</Badge>

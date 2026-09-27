@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PropertySwitcher from '@/components/PropertySwitcher';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import {
   ArrowLeft,
   TrendingUp,
@@ -407,7 +408,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                         <div>
                           <div className="text-gray-300 mb-1">{t("finance.revenue")}</div>
                           <div className="text-2xl font-bold text-emerald-400">
-                            ₺{(dailySummary.summary.revenue / 1000).toFixed(0)}K
+                            {formatCurrency(dailySummary.summary.revenue, dailySummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                           </div>
                         </div>
                       </div>
@@ -429,7 +430,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                           <div className="flex justify-between">
                             <span className="text-gray-300">Ort. Rezervasyon Geliri:</span>
                             <span className="text-blue-400">
-                              ₺{dailySummary.highlights.avg_revenue_per_booking.toFixed(0)}
+                              {formatCurrency(dailySummary.highlights.avg_revenue_per_booking, dailySummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -498,7 +499,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                             <div className="flex justify-between">
                               <span className="text-[11px]">Otel</span>
                               <span className="font-semibold">
-                                ₺{compSetSummary.hotel.adr.toFixed(0)}
+                                {formatCurrency(compSetSummary.hotel.adr, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-gray-300">
@@ -506,7 +507,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                               <span>
                                 {compSetSummary.data_available === false
                                   ? '—'
-                                  : `₺${compSetSummary.comp_set.adr.toFixed(0)}`}
+                                  : formatCurrency(compSetSummary.comp_set.adr, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-1">
@@ -534,7 +535,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                             <div className="flex justify-between">
                               <span className="text-[11px]">Otel</span>
                               <span className="font-semibold">
-                                ₺{compSetSummary.hotel.revpar.toFixed(0)}
+                                {formatCurrency(compSetSummary.hotel.revpar, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-gray-300">
@@ -542,7 +543,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                               <span>
                                 {compSetSummary.data_available === false
                                   ? '—'
-                                  : `₺${compSetSummary.comp_set.revpar.toFixed(0)}`}
+                                  : formatCurrency(compSetSummary.comp_set.revpar, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-1">
@@ -662,13 +663,13 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                         <div>
                           <div className="text-gray-300 mb-1">Toplam Gelir (Bütçe)</div>
                           <div className="text-lg font-bold">
-                            ₺{(budgetOverview.totals.rev_target / 1000).toFixed(0)}K
+                            {formatCurrency(budgetOverview.totals.rev_target, budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                           </div>
                         </div>
                         <div>
                           <div className="text-gray-300 mb-1">Toplam Gelir (Gerçekleşen)</div>
                           <div className="text-lg font-bold text-emerald-400">
-                            ₺{(budgetOverview.totals.rev_actual / 1000).toFixed(0)}K
+                            {formatCurrency(budgetOverview.totals.rev_actual, budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                           </div>
                         </div>
                         <div>
@@ -692,7 +693,7 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                             </span>
                             <span className="text-gray-400"> / </span>
                             <span className="text-blue-300">
-                              ₺{budgetOverview.totals.adr_actual.toFixed(0)}
+                              {formatCurrency(budgetOverview.totals.adr_actual, budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -728,24 +729,24 @@ const ExecutiveDashboard = ({ user, embedded = false }) => {
                                   {m.occ_actual.toFixed(1)}%
                                 </td>
                                 <td className="px-3 py-1.5 text-right text-gray-300">
-                                  ₺{m.adr_target.toFixed(0)}
+                                  {formatCurrency(m.adr_target, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                                 <td
                                   className={`px-3 py-1.5 text-right ${
                                     m.adr_actual >= m.adr_target ? 'text-emerald-300' : 'text-red-300'
                                   }`}
                                 >
-                                  ₺{m.adr_actual.toFixed(0)}
+                                  {formatCurrency(m.adr_actual, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                                 <td className="px-3 py-1.5 text-right text-gray-300">
-                                  ₺{(m.rev_target / 1000).toFixed(0)}K
+                                  {formatCurrency(m.rev_target, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                                 <td
                                   className={`px-3 py-1.5 text-right ${
                                     m.rev_actual >= m.rev_target ? 'text-emerald-300' : 'text-red-300'
                                   }`}
                                 >
-                                  ₺{(m.rev_actual / 1000).toFixed(0)}K
+                                  {formatCurrency(m.rev_actual, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                               </tr>
                             ))}

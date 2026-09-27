@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Building2, DollarSign, Percent, BarChart3 } from 'lucide-react';
-import { RISK_COLORS, fmt } from './helpers';
+import { RISK_COLORS } from './helpers';
 import { LoadingState, EmptyState, MetricCard } from './shared';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const MarketOverviewTab = ({
   user,
   tenant,
@@ -34,10 +35,11 @@ const MarketOverviewTab = ({
   }, [fetch]);
   if (loading) return <LoadingState text={t('displacement.loadingMarket', 'Loading market data...')} />;
   if (!data) return <EmptyState text={t('displacement.noData', 'No data available')} />;
+  const currency = data.currency || tenant?.currency || cachedTenantCurrency();
   return <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <MetricCard icon={Building2} label={t('displacement.totalRooms', 'Total Rooms')} value={data.total_rooms} />
-        <MetricCard icon={DollarSign} label={t('displacement.historicalAdr', 'Historical ADR')} value={fmt(data.historical_adr)} prefix="₺" />
+        <MetricCard icon={DollarSign} label={t('displacement.historicalAdr', 'Historical ADR')} value={formatCurrency(data.historical_adr, currency)} />
         <MetricCard icon={Percent} label={t('displacement.cancelRate', 'Cancel Rate')} value={`${data.cancellation_rate_pct}%`} />
         <MetricCard icon={BarChart3} label={t('displacement.channels', 'Channels')} value={data.channel_mix?.length || 0} />
       </div>
@@ -89,7 +91,7 @@ const MarketOverviewTab = ({
                     <p className="font-medium text-sm truncate capitalize">{ch.channel}</p>
                     <p className="text-xs text-gray-500">{ch.bookings} {t('displacement.bookings', 'bookings')} · {ch.share_pct}%</p>
                   </div>
-                  <p className="text-sm font-semibold">₺{fmt(ch.avg_rate)}</p>
+                  <p className="text-sm font-semibold">{formatCurrency(ch.avg_rate, ch.currency || currency)}</p>
                 </div>)}
             </div>
           </CardContent>

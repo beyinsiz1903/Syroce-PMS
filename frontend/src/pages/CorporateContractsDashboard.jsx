@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Building2, TrendingUp, Percent, AlertTriangle, RefreshCw } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -32,6 +33,7 @@ const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
 
   const summary = data?.summary || {};
   const contracts = data?.contracts || [];
+  const currency = data?.currency || tenant?.currency || cachedTenantCurrency();
 
   return (
     <>
@@ -160,7 +162,7 @@ const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
                             </div>
                           </td>
                           <td className="py-2 pr-3 text-right">
-                            ₺{c.revenue != null ? c.revenue.toFixed ? c.revenue.toFixed(0) : c.revenue : "-"}
+                            {c.revenue != null ? formatCurrency(c.revenue, c.currency || currency, { decimals: 0 }) : "-"}
                           </td>
                           <td className="py-2 pr-3 text-right">
                             <Badge className={isUnderUtil ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}>

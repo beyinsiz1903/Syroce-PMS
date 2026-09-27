@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 const plusDays = (n) => {
   const d = new Date();
@@ -49,6 +50,7 @@ export default function BlockManagementPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const currency = cachedTenantCurrency();
   const [blocks, setBlocks] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [pickup, setPickup] = useState(null);
@@ -555,7 +557,7 @@ export default function BlockManagementPage() {
                 onChange={(e) => setCreateForm({ ...createForm, room_type: e.target.value })} />
             </div>
             <div>
-              <Label>Oda Başına Grup Tarifesi (TL)</Label>
+              <Label>Oda Başına Grup Tarifesi ({currency})</Label>
               <Input type="number" min={0} step="0.01" value={createForm.group_rate}
                 onChange={(e) => setCreateForm({ ...createForm, group_rate: e.target.value })} />
             </div>

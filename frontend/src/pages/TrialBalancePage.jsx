@@ -14,6 +14,7 @@ import {
   CheckCircle2, AlertCircle, Building, ArrowDownToLine, ArrowUpFromLine,
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 /**
  * Opera #8 — Trial Balance / Daily Operations Resume.
@@ -48,7 +49,7 @@ const CATEGORY_LABELS = {
   other: "Diğer",
 };
 
-const fmt = (n) => new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
+const money = (n, currency) => formatCurrency(n, currency || cachedTenantCurrency());
 
 function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }) {
   const { t } = useTranslation();
@@ -140,7 +141,7 @@ export default function TrialBalancePage() {
                     : "Gelir ↔ Ödeme dengesizliği"}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Fark: ₺{fmt(data.balance_check.revenue_minus_payments)}
+                  Fark: {money(data.balance_check.revenue_minus_payments, data.currency)}
                   {" · "}{t('cm.pages_TrialBalancePage.ar_cari_a_yansiyacak_tutar')}
                 </div>
               </div>
@@ -164,20 +165,20 @@ export default function TrialBalancePage() {
             <MetricCard
               icon={TrendingUp}
               label="ADR"
-              value={`₺${fmt(data.revenue.adr)}`}
-              sub={`RevPAR ₺${fmt(data.revenue.revpar)}`}
+              value={money(data.revenue.adr, data.revenue.currency || data.currency)}
+              sub={`RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency)}`}
             />
             <MetricCard
               icon={Wallet}
               label={t('cm.pages_TrialBalancePage.toplam_gelir')}
-              value={`₺${fmt(data.revenue.total)}`}
-              sub={`Oda ₺${fmt(data.revenue.rooms)} · F&B ₺${fmt(data.revenue.fnb)}`}
+              value={money(data.revenue.total, data.revenue.currency || data.currency)}
+              sub={`Oda ${money(data.revenue.rooms, data.revenue.currency || data.currency)} · F&B ${money(data.revenue.fnb, data.revenue.currency || data.currency)}`}
               color="text-emerald-600"
             />
             <MetricCard
               icon={ArrowDownToLine}
               label={t('cm.pages_TrialBalancePage.toplam_tahsilat')}
-              value={`₺${fmt(data.payments.total)}`}
+              value={money(data.payments.total, data.payments.currency || data.currency)}
               sub={`${Object.keys(data.payments.by_method).length} ödeme yöntemi`}
               color="text-blue-600"
             />
@@ -230,7 +231,7 @@ export default function TrialBalancePage() {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-medium">{t('cm.pages_TrialBalancePage.oda_geliri')}</TableCell>
-                      <TableCell className="text-right font-medium">₺{fmt(data.revenue.rooms)}</TableCell>
+                      <TableCell className="text-right font-medium">{money(data.revenue.rooms, data.revenue.currency || data.currency)}</TableCell>
                     </TableRow>
                     {Object.keys(data.revenue.by_category).length === 0 ? (
                       <TableRow>
@@ -242,14 +243,14 @@ export default function TrialBalancePage() {
                       Object.entries(data.revenue.by_category).map(([k, v]) => (
                         <TableRow key={k}>
                           <TableCell>{CATEGORY_LABELS[k] || k}</TableCell>
-                          <TableCell className="text-right">₺{fmt(v)}</TableCell>
+                          <TableCell className="text-right">{money(v, data.revenue.currency || data.currency)}</TableCell>
                         </TableRow>
                       ))
                     )}
                     <TableRow className="border-t-2">
                       <TableCell className="font-semibold">{t('cm.pages_TrialBalancePage.toplam')}</TableCell>
                       <TableCell className="text-right font-semibold text-emerald-700">
-                        ₺{fmt(data.revenue.total)}
+                        {money(data.revenue.total, data.revenue.currency || data.currency)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -284,7 +285,7 @@ export default function TrialBalancePage() {
                         <TableRow key={k}>
                           <TableCell>{PAYMENT_LABELS[k] || k}</TableCell>
                           <TableCell className="text-right">{v.count}</TableCell>
-                          <TableCell className="text-right">₺{fmt(v.total)}</TableCell>
+                          <TableCell className="text-right">{money(v.total, v.currency || data.payments.currency || data.currency)}</TableCell>
                         </TableRow>
                       ))
                     )}
@@ -292,7 +293,7 @@ export default function TrialBalancePage() {
                       <TableCell className="font-semibold">{t('cm.pages_TrialBalancePage.toplam_29757')}</TableCell>
                       <TableCell />
                       <TableCell className="text-right font-semibold text-blue-700">
-                        ₺{fmt(data.payments.total)}
+                        {money(data.payments.total, data.payments.currency || data.currency)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -312,14 +313,14 @@ export default function TrialBalancePage() {
                 <MetricCard
                   icon={Wallet}
                   label="AR Bakiyesi"
-                  value={`₺${fmt(data.ledger.ar_balance)}`}
+                  value={money(data.ledger.ar_balance, data.ledger.currency || data.currency)}
                   sub="Tahsil edilmemiş cari"
                   color={data.ledger.ar_balance > 0 ? "text-amber-600" : ""}
                 />
                 <MetricCard
                   icon={ArrowDownToLine}
                   label="Depozito Bakiyesi"
-                  value={`₺${fmt(data.ledger.deposit_balance)}`}
+                  value={money(data.ledger.deposit_balance, data.ledger.currency || data.currency)}
                   sub="Henüz uygulanmamış depozit"
                 />
                 <MetricCard

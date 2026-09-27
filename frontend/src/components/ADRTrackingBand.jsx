@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const ADRTrackingBand = () => {
   const { t } = useTranslation();
@@ -39,19 +40,19 @@ const ADRTrackingBand = () => {
           <div className="text-center">
             <div className="text-xs text-gray-600 mb-1">{t('cm.components_ADRTrackingBand.gecen_yil')}</div>
             <div className="text-2xl font-bold text-gray-700">
-              ₺{adrData.last_year_adr}
+              {formatCurrency(adrData.last_year_adr, adrData.currency || cachedTenantCurrency())}
             </div>
           </div>
           <div className="text-center">
             <div className="text-xs text-gray-600 mb-1">Forecast</div>
             <div className="text-2xl font-bold text-blue-600">
-              ₺{adrData.forecast_adr}
+              {formatCurrency(adrData.forecast_adr, adrData.currency || cachedTenantCurrency())}
             </div>
           </div>
           <div className="text-center">
             <div className="text-xs text-gray-600 mb-1">{t('cm.components_ADRTrackingBand.gerceklesen')}</div>
             <div className="text-2xl font-bold text-green-600">
-              ₺{adrData.actual_adr}
+              {formatCurrency(adrData.actual_adr, adrData.currency || cachedTenantCurrency())}
             </div>
           </div>
         </div>
