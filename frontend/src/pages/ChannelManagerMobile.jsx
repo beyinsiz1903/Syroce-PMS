@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { ArrowLeft, Globe, CheckCircle, AlertTriangle, BarChart3, RefreshCw, Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const ChannelManagerMobile = ({ user }) => {
   const { t } = useTranslation();
@@ -16,6 +17,7 @@ const ChannelManagerMobile = ({ user }) => {
   const [parity, setParity] = useState([]);
   const [performance, setPerformance] = useState([]);
   const [activeView, setActiveView] = useState('status');
+  const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency(), { maximumFractionDigits: 0 });
 
   useEffect(() => {
     loadData();
@@ -106,10 +108,10 @@ const ChannelManagerMobile = ({ user }) => {
                 </Badge>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-gray-600">PMS:</span> <span className="font-bold">₺{p.our_pms_rate}</span></div>
-                <div><span className="text-gray-600">Booking:</span> ₺{p.booking_com}</div>
-                <div><span className="text-gray-600">Expedia:</span> ₺{p.expedia}</div>
-                <div><span className="text-gray-600">Agoda:</span> <span className={p.violating_channel === 'Agoda' ? 'font-bold text-red-600' : ''}>₺{p.agoda}</span></div>
+                <div><span className="text-gray-600">PMS:</span> <span className="font-bold">{money(p.our_pms_rate, p.currency)}</span></div>
+                <div><span className="text-gray-600">Booking:</span> {money(p.booking_com, p.currency)}</div>
+                <div><span className="text-gray-600">Expedia:</span> {money(p.expedia, p.currency)}</div>
+                <div><span className="text-gray-600">Agoda:</span> <span className={p.violating_channel === 'Agoda' ? 'font-bold text-red-600' : ''}>{money(p.agoda, p.currency)}</span></div>
               </div>
             </CardContent>
           </Card>
@@ -132,11 +134,11 @@ const ChannelManagerMobile = ({ user }) => {
                 </div>
                 <div className="bg-green-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">{t("finance.revenue")}</div>
-                  <div className="font-bold text-green-600">₺{(perf.revenue / 1000).toFixed(0)}K</div>
+                  <div className="font-bold text-green-600">{money(perf.revenue, perf.currency)}</div>
                 </div>
                 <div className="bg-indigo-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">Ort. Fiyat</div>
-                  <div className="font-bold text-indigo-600">₺{perf.avg_rate}</div>
+                  <div className="font-bold text-indigo-600">{money(perf.avg_rate, perf.currency)}</div>
                 </div>
                 <div className="bg-amber-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">İptal Oranı</div>

@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { TrendingUp, TrendingDown, Brain, Users, Activity, Shield, AlertTriangle, Target, Zap, BarChart3, Clock, Star, ArrowUpRight, ArrowDownRight, Loader2, RefreshCw, ChevronRight } from 'lucide-react';
 import { guestLabel, roomLabel } from '@/utils/displayIdentifiers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const API = "";
 function useAuth() {
   const headers = {
@@ -178,7 +179,7 @@ function RevenueTab() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard testId="forecast-avg-occ" title="Ort. Doluluk (14g)" value={`${forecastList.length > 0 ? Math.round(forecastList.reduce((s, f) => s + (f.predicted_occupancy_pct || 0), 0) / forecastList.length) : 0}%`} icon={BarChart3} color="blue" />
-        <StatCard testId="at-risk-count" title="Riskli Rez." value={cancellation.at_risk_count || 0} subtitle={`${(cancellation.at_risk_revenue || 0).toLocaleString()} TL risk`} icon={AlertTriangle} color="red" />
+        <StatCard testId="at-risk-count" title="Riskli Rez." value={cancellation.at_risk_count || 0} subtitle={`${formatCurrency(cancellation.at_risk_revenue, cancellation.currency || cachedTenantCurrency())} risk`} icon={AlertTriangle} color="red" />
         <StatCard testId="pending-recs" title="Bekleyen Oneri" value={autopricing.pending_count || 0} icon={Target} color="amber" />
         <StatCard testId="applied-recs" title="Uygulanan" value={autopricing.stats?.applied || 0} icon={TrendingUp} color="green" />
       </div>
@@ -198,9 +199,9 @@ function RevenueTab() {
                       {rec.auto_eligible && <Badge variant="outline" className="text-xs">Auto Uygun</Badge>}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>Mevcut: {rec.current_rate?.toLocaleString()} TL</span>
+                      <span>Mevcut: {formatCurrency(rec.current_rate, rec.currency || cachedTenantCurrency())}</span>
                       <ChevronRight className="h-3 w-3" />
-                      <span className="font-medium text-foreground">Önerilen: {rec.suggested_rate?.toLocaleString()} TL</span>
+                      <span className="font-medium text-foreground">Önerilen: {formatCurrency(rec.suggested_rate, rec.currency || cachedTenantCurrency())}</span>
                       <span className={rec.direction === 'increase' ? 'text-emerald-600' : 'text-red-500'}>
                         ({rec.direction === 'increase' ? '+' : ''}{rec.change_pct}%)
                       </span>
@@ -266,8 +267,8 @@ function RevenueTab() {
                 <tbody>
                   {recs.slice(0, 10).map((r, i) => <tr key={r.id || i} className="border-b last:border-0">
                       <td className="py-2 font-medium">{r.room_type}</td>
-                      <td className="py-2">{r.current_rate?.toLocaleString()} TL</td>
-                      <td className="py-2">{r.suggested_rate?.toLocaleString()} TL</td>
+                      <td className="py-2">{formatCurrency(r.current_rate, r.currency || cachedTenantCurrency())}</td>
+                      <td className="py-2">{formatCurrency(r.suggested_rate, r.currency || cachedTenantCurrency())}</td>
                       <td className="py-2">{r.change_pct}%</td>
                       <td className="py-2">{Math.round((r.confidence || 0) * 100)}%</td>
                       <td className="py-2">
@@ -583,7 +584,7 @@ function GuestTab() {
                       <div className="text-sm font-medium">{guestLabel(u)}</div>
                       <div className="text-xs text-muted-foreground">{u.top_recommendation}</div>
                     </div>
-                    <span className="text-sm font-bold text-emerald-700">{u.potential?.toLocaleString()} TL</span>
+                    <span className="text-sm font-bold text-emerald-700">{formatCurrency(u.potential, u.currency || cachedTenantCurrency())}</span>
                   </div>)}
               </div>}
           </CardContent>
@@ -610,7 +611,7 @@ function GuestTab() {
                   {topGuests.map((g, i) => <tr key={g.id || i} className="border-b last:border-0">
                       <td className="py-2 font-medium">{guestLabel(g)}</td>
                       <td className="py-2">{g.value_score}</td>
-                      <td className="py-2">{g.total_revenue?.toLocaleString()} TL</td>
+                      <td className="py-2">{formatCurrency(g.total_revenue, g.currency || cachedTenantCurrency())}</td>
                       <td className="py-2">
                         <Badge variant="outline" className="text-xs capitalize">{g.tier}</Badge>
                       </td>

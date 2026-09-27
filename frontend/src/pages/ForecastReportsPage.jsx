@@ -18,6 +18,7 @@ import {
   CartesianGrid, Legend,
 } from "recharts";
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 /**
  * Opera #5 — Forecast / Pace / Pickup raporları.
@@ -351,7 +352,7 @@ export default function ForecastReportsPage() {
                       <CardContent className="pt-4">
                         <div className="text-xs text-muted-foreground">{t('cm.pages_ForecastReportsPage.toplam_gelir')}</div>
                         <div className="text-2xl font-semibold">
-                          {(pickup.total_revenue_picked || 0).toLocaleString("tr-TR")} ₺
+                          {formatCurrency(pickup.total_revenue_picked, pickup.currency || cachedTenantCurrency())}
                         </div>
                       </CardContent>
                     </Card>
@@ -384,7 +385,7 @@ export default function ForecastReportsPage() {
                             <TableRow key={d.check_in}>
                               <TableCell>{d.check_in}</TableCell>
                               <TableCell className="text-right">{d.rooms}</TableCell>
-                              <TableCell className="text-right">{Number(d.revenue || 0).toLocaleString("tr-TR")} ₺</TableCell>
+                              <TableCell className="text-right">{formatCurrency(d.revenue, d.currency || pickup.currency || cachedTenantCurrency())}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
