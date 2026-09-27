@@ -232,6 +232,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     d.setDate(d.getDate() - 3);
     return d;
   });
+  const calendarDateTouchedRef = useRef(false);
   const [daysToShow, setDaysToShow] = useState(14);
   const [calendarMeta, setCalendarMeta] = useState({});
   const [hotelBusinessDate, setHotelBusinessDate] = useState(null);
@@ -432,7 +433,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     axios.get('/night-audit/business-date')
       .then(res => {
         const bd = res.data?.business_date;
-        if (bd) setHotelBusinessDate(bd);
+        if (bd) {
+          setHotelBusinessDate(bd);
+          if (!calendarDateTouchedRef.current) {
+            const operationalDate = new Date(`${bd}T00:00:00`);
+            operationalDate.setDate(operationalDate.getDate() - 3);
+            setCurrentDate(operationalDate);
+          }
+        }
       })
       .catch(() => {
         // Fallback: use today if business date endpoint fails
@@ -1467,16 +1475,27 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // Ok tuşları gün-gün ilerler (kullanıcı kontrolü). Daha büyük adım için
   // "Tarihe Git" picker'ı kullanılabilir.
   const navigatePrevious = () => {
+    calendarDateTouchedRef.current = true;
     const nd = new Date(currentDate);
     nd.setDate(nd.getDate() - 1);
     setCurrentDate(nd);
   };
   const navigateNext = () => {
+    calendarDateTouchedRef.current = true;
     const nd = new Date(currentDate);
     nd.setDate(nd.getDate() + 1);
     setCurrentDate(nd);
   };
-  const goToDate = (date) => { setCurrentDate(date); };
+  const goToDate = (date) => {
+    calendarDateTouchedRef.current = true;
+    setCurrentDate(date);
+  };
+  const goToOperationalToday = () => {
+    calendarDateTouchedRef.current = true;
+    const target = hotelBusinessDate ? new Date(`${hotelBusinessDate}T00:00:00`) : new Date();
+    target.setDate(target.getDate() - 3);
+    setCurrentDate(target);
+  };
 
   // ─── Loading State ─────────────────────────────────────────
   if (loading) {
@@ -1523,6 +1542,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onNavigatePrevious={navigatePrevious}
           onNavigateNext={navigateNext}
           onGoToDate={goToDate}
+          onGoToToday={goToOperationalToday}
           onSyncReservations={handleSyncReservations}
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
           onShowNewBookingDialog={() => {
