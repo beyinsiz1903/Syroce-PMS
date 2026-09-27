@@ -131,6 +131,7 @@ const CalendarGrid = ({
   const [, setPointerResize] = useState(null);
   const pointerResizeRef = useRef(null);
   const suppressCardClickUntilRef = useRef(0);
+  const bookingClickTimerRef = useRef(null);
 
   const startBookingDrag = (event, booking, date) => {
     suppressCardClickUntilRef.current = Date.now() + 350;
@@ -139,7 +140,15 @@ const CalendarGrid = ({
 
   const openBookingQuickPanel = (booking) => {
     if (Date.now() < suppressCardClickUntilRef.current) return;
-    onBookingClick?.(booking);
+    window.clearTimeout(bookingClickTimerRef.current);
+    bookingClickTimerRef.current = window.setTimeout(() => onBookingClick?.(booking), 220);
+  };
+
+  const openBookingWorkspace = (event, booking) => {
+    event.stopPropagation();
+    window.clearTimeout(bookingClickTimerRef.current);
+    bookingClickTimerRef.current = null;
+    onBookingDoubleClick(booking);
   };
 
   const pointerDate = (event) => {
@@ -154,6 +163,8 @@ const CalendarGrid = ({
     window.addEventListener('scroll', close, true);
     return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
   }, []);
+
+  useEffect(() => () => window.clearTimeout(bookingClickTimerRef.current), []);
 
   const openContextMenu = (event, payload) => {
     event.preventDefault();
@@ -542,7 +553,7 @@ const CalendarGrid = ({
                                   e.stopPropagation();
                                   openBookingQuickPanel(booking);
                                 }}
-                                onDoubleClick={(e) => { e.stopPropagation(); onBookingDoubleClick(booking); }}
+                                onDoubleClick={(e) => openBookingWorkspace(e, booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBookingQuickPanel(booking); } }}
                                 className="absolute transform-gpu rounded-lg text-[10px] shadow-sm hover:shadow-lg hover:-translate-y-px transition-[transform,box-shadow,opacity] duration-150 cursor-move z-20 border outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                                 style={{
@@ -775,7 +786,7 @@ const CalendarGrid = ({
                                   e.stopPropagation();
                                   openBookingQuickPanel(booking);
                                 }}
-                                onDoubleClick={(e) => { e.stopPropagation(); onBookingDoubleClick(booking); }}
+                                onDoubleClick={(e) => openBookingWorkspace(e, booking)}
                                 onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBookingQuickPanel(booking); } }}
                                 className={`absolute transform-gpu overflow-hidden rounded-lg text-[10px] cursor-move z-20 group outline-none border transition-[transform,box-shadow,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${

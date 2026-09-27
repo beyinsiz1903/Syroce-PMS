@@ -146,21 +146,40 @@ describe('CalendarGrid stay resize handle', () => {
   });
 
   it('opens the quick reservation panel on the first card click', () => {
-    const handlers = renderGrid();
-    const card = screen.getByTestId('booking-bar-booking-1');
+    vi.useFakeTimers();
+    try {
+      const handlers = renderGrid();
+      const card = screen.getByTestId('booking-bar-booking-1');
 
-    fireEvent.click(card);
+      fireEvent.click(card);
+      expect(handlers.onBookingClick).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(220);
 
-    expect(handlers.onBookingClick).toHaveBeenCalledTimes(1);
-    expect(handlers.onBookingClick).toHaveBeenCalledWith(booking);
-    expect(handlers.onBookingDoubleClick).not.toHaveBeenCalled();
-    expect(handlers.onCellClick).not.toHaveBeenCalled();
+      expect(handlers.onBookingClick).toHaveBeenCalledTimes(1);
+      expect(handlers.onBookingClick).toHaveBeenCalledWith(booking);
+      expect(handlers.onBookingDoubleClick).not.toHaveBeenCalled();
+      expect(handlers.onCellClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('opens the full reservation workspace on a double click', () => {
-    const handlers = renderGrid();
-    fireEvent.doubleClick(screen.getByTestId('booking-bar-booking-1'));
-    expect(handlers.onBookingDoubleClick).toHaveBeenCalledWith(booking);
+  it('opens the full workspace on double click without opening the side panel first', () => {
+    vi.useFakeTimers();
+    try {
+      const handlers = renderGrid();
+      const card = screen.getByTestId('booking-bar-booking-1');
+      fireEvent.click(card);
+      fireEvent.click(card);
+      fireEvent.doubleClick(card);
+      vi.advanceTimersByTime(250);
+
+      expect(handlers.onBookingDoubleClick).toHaveBeenCalledTimes(1);
+      expect(handlers.onBookingDoubleClick).toHaveBeenCalledWith(booking);
+      expect(handlers.onBookingClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('provides the reservation start cell as the drag anchor for whole-stay moves', () => {

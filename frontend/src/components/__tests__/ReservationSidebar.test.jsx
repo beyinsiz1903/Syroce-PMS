@@ -55,4 +55,21 @@ describe('ReservationSidebar quick panel', () => {
     fireEvent.click(screen.getByTestId('open-reservation-workspace'));
     expect(onOpenWorkspace).toHaveBeenCalledWith(booking);
   });
+
+  it('never exposes masked contact payloads while detail data is loading', () => {
+    render(
+      <ReservationSidebar
+        booking={{ ...booking, guest_email: 'SYR1:encrypted-email', guest_phone: 'SYR1:encrypted-phone' }}
+        folio={null}
+        room={{ room_number: '201', room_type: 'Deluxe' }}
+        onClose={() => {}}
+        getStatusLabel={() => 'Onaylandı'}
+      />,
+    );
+
+    expect(screen.queryByText(/SYR1:/)).not.toBeInTheDocument();
+    expect(screen.getByText('E-posta bilgisi yok')).toBeInTheDocument();
+    expect(screen.getByText('Telefon bilgisi yok')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ara/ })).not.toBeInTheDocument();
+  });
 });

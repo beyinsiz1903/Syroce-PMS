@@ -48,6 +48,7 @@ import RoomBlockDialog from '@/components/pms/RoomBlockDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
 import { bookingDragGrip, bookingDropCheckIn } from './calendar/bookingDragPlacement';
+import { mergeQuickPanelDetail, primaryQuickPanelFolio } from './calendar/quickPanel';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import {
   applyCalendarViewPreference,
@@ -244,7 +245,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
   const quickPanelBookingRef = useRef(null);
-  const quickPanelFolioCacheRef = useRef(new Map());
+  const quickPanelDetailCacheRef = useRef(new Map());
   const [bookingConflict, setBookingConflict] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showNewBookingDialog, setShowNewBookingDialog] = useState(false);
@@ -787,22 +788,33 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setSelectedBooking(booking);
     setShowSidebar(true);
 
-    const cached = quickPanelFolioCacheRef.current.get(booking.id);
-    setSelectedBookingFolio(cached && cached !== 'loading' ? cached : null);
-    if (cached) return;
+    const cached = quickPanelDetailCacheRef.current.get(booking.id);
+    if (cached && cached !== 'loading') {
+      setSelectedBooking(cached.booking);
+      setSelectedBookingFolio(cached.folio);
+      return;
+    }
+    setSelectedBookingFolio(null);
+    if (cached === 'loading') return;
 
-    // Only the lightweight folio summary is fetched. Repeated card clicks use
-    // the local cache so normal calendar browsing does not trigger rate limits.
-    quickPanelFolioCacheRef.current.set(booking.id, 'loading');
-    axios.get(`/folio/booking/${booking.id}`)
+    // The calendar payload intentionally stays compact and can contain masked
+    // contact fields. Fetch the canonical detail once, then reuse it for later
+    // panel opens. This also supplies the folio summary without a second call.
+    quickPanelDetailCacheRef.current.set(booking.id, 'loading');
+    axios.get(`/pms/reservations/${booking.id}/full-detail`)
       .then((response) => {
-        const folios = Array.isArray(response.data) ? response.data : [];
-        const primaryFolio = folios[0] || null;
-        if (primaryFolio) quickPanelFolioCacheRef.current.set(booking.id, primaryFolio);
-        if (quickPanelBookingRef.current === booking.id) setSelectedBookingFolio(primaryFolio);
+        const payload = {
+          booking: mergeQuickPanelDetail(booking, response.data),
+          folio: primaryQuickPanelFolio(response.data),
+        };
+        quickPanelDetailCacheRef.current.set(booking.id, payload);
+        if (quickPanelBookingRef.current === booking.id) {
+          setSelectedBooking(payload.booking);
+          setSelectedBookingFolio(payload.folio);
+        }
       })
       .catch(() => {
-        quickPanelFolioCacheRef.current.delete(booking.id);
+        quickPanelDetailCacheRef.current.delete(booking.id);
         if (quickPanelBookingRef.current === booking.id) setSelectedBookingFolio(null);
       });
   };
@@ -1905,7 +1917,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             onViewFolio={handleViewFolio}
             onOpenWorkspace={handleBookingDoubleClick}
             onSendConfirmation={handleSendConfirmation}
-            onDataRefresh={loadCalendarData}
+            onDataRefresh={() => {
+              if (selectedBooking?.id) quickPanelDetailCacheRef.current.delete(selectedBooking.id);
+              loadCalendarData();
+            }}
           />
         </Suspense>
       )}

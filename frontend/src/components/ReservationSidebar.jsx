@@ -53,6 +53,11 @@ const statusTone = (status) => {
   return 'bg-blue-50 text-blue-700 border-blue-200';
 };
 
+const visibleContact = (value) => {
+  const normalized = String(value || '').trim();
+  return normalized && !normalized.startsWith('SYR1:') ? normalized : '';
+};
+
 const ReservationSidebar = ({
   booking, folio, room, onClose, getStatusLabel, onViewFolio,
   onOpenWorkspace, onSendConfirmation, onDataRefresh,
@@ -65,6 +70,8 @@ const ReservationSidebar = ({
   const initials = guestName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
   const roomNumber = room?.room_number || booking.room_number || 'Atanmadı';
   const source = booking.source_channel || booking.channel || booking.source || 'Doğrudan';
+  const guestEmail = visibleContact(booking.guest_email);
+  const guestPhone = visibleContact(booking.guest_phone);
 
   return (
     <aside
@@ -108,8 +115,8 @@ const ReservationSidebar = ({
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900"><UserRound className="h-4 w-4 text-blue-600" /> Misafir ve iletişim</h3>
           <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2 text-slate-600"><Mail className="h-4 w-4 text-slate-400" /><span className="truncate">{booking.guest_email || 'E-posta yok'}</span></div>
-            <div className="flex items-center justify-between gap-2 text-slate-600"><span className="flex min-w-0 items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-slate-400" /><span className="truncate">{booking.guest_phone || 'Telefon yok'}</span></span>{booking.guest_phone && <CallButton number={booking.guest_phone} />}</div>
+            <div className="flex items-center gap-2 text-slate-600"><Mail className="h-4 w-4 text-slate-400" /><span className="truncate">{guestEmail || 'E-posta bilgisi yok'}</span></div>
+            <div className="flex items-center justify-between gap-2 text-slate-600"><span className="flex min-w-0 items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-slate-400" /><span className="truncate">{guestPhone || 'Telefon bilgisi yok'}</span></span>{guestPhone && <CallButton number={guestPhone} />}</div>
             {booking.company_name && <div className="flex items-center gap-2 text-slate-600"><Building2 className="h-4 w-4 text-slate-400" />{booking.company_name}</div>}
           </div>
         </section>
