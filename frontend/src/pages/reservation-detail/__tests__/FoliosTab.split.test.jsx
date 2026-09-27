@@ -37,7 +37,7 @@ vi.mock('axios', () => ({
   },
 }));
 
-import { FoliosTab, calculateReceivedCurrency, parseReceivedCurrency } from '@/pages/reservation-detail/FoliosTab';
+import { FoliosTab, calculateReceivedCurrency, parseReceivedCurrency, summarizeReceivedPayments } from '@/pages/reservation-detail/FoliosTab';
 
 const booking = { id: 'bk-1', guest_name: 'Ada Lovelace', room_number: '101' };
 const summary = { total_amount: 100, total_charges: 100, total_payments: 0, balance: 100 };
@@ -103,6 +103,12 @@ describe('kur çevirici', () => {
   it('döviz çevirici notundan alınan döviz tutarını ayrıştırır', () => {
     expect(parseReceivedCurrency('[Döviz Çevirici] 145.45 EUR = 165.71 USD. Kur: 1 EUR = 1.1393 USD'))
       .toEqual({ amount: 165.71, currency: 'USD' });
+  });
+
+  it('peşin tahsilat özetinde gerçekten alınan dövizi kullanır', () => {
+    expect(summarizeReceivedPayments([
+      { amount: 121.21, notes: '[Döviz Çevirici] 121.21 EUR = 138.10 USD. Kur: 1 EUR = 1.1393 USD' },
+    ], 121.21, 'EUR')).toEqual([{ amount: 138.1, currency: 'USD' }]);
   });
 
   it('kurlar asenkron geldikten sonra EUR bakiyenin TL karşılığını otomatik doldurur', async () => {

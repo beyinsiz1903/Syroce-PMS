@@ -20,6 +20,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const chargeSubmittingRef = useRef(false);
   const paymentSubmittingRef = useRef(false);
+  const folioCurrency = folio?.currency || folio?.currency_code || 'TRY';
 
   const handleAddCharge = async (e) => {
     e.preventDefault();
@@ -89,8 +90,8 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                       <div className="text-xs text-gray-500 capitalize">{charge.charge_type}</div>
                     </div>
                     <div className="text-right">
-                      <div>{formatCurrency(charge.total, 'TRY', { decimals: 2 })}</div>
-                      <div className="text-xs text-gray-500">{charge.quantity} × {formatCurrency(charge.amount, 'TRY', { decimals: 2 })}</div>
+                      <div>{formatCurrency(charge.total, charge.currency || folioCurrency, { decimals: 2 })}</div>
+                      <div className="text-xs text-gray-500">{charge.quantity} × {formatCurrency(charge.amount, charge.currency || folioCurrency, { decimals: 2 })}</div>
                     </div>
                   </div>
                 ))}
@@ -142,7 +143,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                       <div className="font-medium capitalize">{payment.method}</div>
                       {payment.reference && <div className="text-xs text-gray-500">Ref: {payment.reference}</div>}
                     </div>
-                    <div className="text-green-600 font-medium">{formatCurrency(payment.amount, 'TRY', { decimals: 2 })}</div>
+                    <div className="text-green-600 font-medium">{formatCurrency(payment.amount, payment.currency || folioCurrency, { decimals: 2 })}</div>
                   </div>
                 ))}
               </div>
@@ -184,15 +185,15 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
             <div className="border-t pt-4">
               <div className="flex justify-between text-lg font-bold">
                 <span>{t('pms.totalCharges', 'Total Charges')}:</span>
-                <span>{formatCurrency(folio.total_charges, 'TRY', { decimals: 2 })}</span>
+                <span>{formatCurrency(folio.total_charges, folioCurrency, { decimals: 2 })}</span>
               </div>
               <div className="flex justify-between text-lg font-bold text-green-600">
                 <span>{t('pms.totalPayments', 'Total Payments')}:</span>
-                <span>{formatCurrency(folio.total_paid, 'TRY', { decimals: 2 })}</span>
+                <span>{formatCurrency(folio.total_paid, folioCurrency, { decimals: 2 })}</span>
               </div>
               <div className={`flex justify-between text-2xl font-bold ${folio.balance > 0 ? 'text-red-600' : 'text-gray-600'}`}>
                 <span>{t('pms.balance', 'Balance')}:</span>
-                <span>{formatCurrency(folio.balance, 'TRY', { decimals: 2 })}</span>
+                <span>{formatCurrency(folio.balance, folioCurrency, { decimals: 2 })}</span>
               </div>
             </div>
           </div>

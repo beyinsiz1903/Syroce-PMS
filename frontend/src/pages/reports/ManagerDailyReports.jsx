@@ -4,15 +4,19 @@ import { ArrowLeftRight, BarChart3, BedDouble, DollarSign } from 'lucide-react';
 import { EmptyState, KPICard, SectionHeader, formatCurrency } from './ReportHelpers';
 
 const formatDateTime = value => value ? new Date(value).toLocaleString('tr-TR') : '-';
+const CurrencyBreakdown = ({ totals = {} }) => {
+  const entries = Object.entries(totals);
+  return entries.length ? <>{entries.map(([code, amount]) => <div key={code}>{formatCurrency(amount, code)}</div>)}</> : <>-</>;
+};
 
-const FrontCashierReport = ({ summary, reportDate }) => (
+const FrontCashierReport = ({ summary, payments, reportDate }) => (
   <div className="space-y-5" data-testid="section-front-cashier">
     <SectionHeader title="Ön Kasa Raporu" description={`${reportDate} tarihli folyo ve tahsilat özeti`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Folyo İşlem Tutarı" value={summary.charge_total || 0} icon={DollarSign} color="amber" />
-      <KPICard title="Toplam Tahsilat" value={summary.collection_total || 0} icon={DollarSign} color="green" />
-      <KPICard title="Nakit Tahsilat" value={summary.cash_total || 0} icon={DollarSign} color="blue" />
-      <KPICard title="Kart / Havale Tahsilatı" value={summary.non_cash_total || 0} icon={DollarSign} color="purple" />
+      <KPICard title="Toplam Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_currency} />} icon={DollarSign} color="green" />
+      <KPICard title="Nakit Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_method_currency?.cash} />} icon={DollarSign} color="blue" />
+      <KPICard title="Kart / Havale Tahsilatı" value={<CurrencyBreakdown totals={Object.entries(payments.totals_by_method_currency || {}).filter(([method]) => method !== 'cash').reduce((result, [, totals]) => { Object.entries(totals).forEach(([code, amount]) => { result[code] = (result[code] || 0) + amount; }); return result; }, {})} />} icon={DollarSign} color="purple" />
     </div>
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
       <div><p className="text-gray-500">Folyo hareketi</p><p className="font-bold text-lg">{summary.charge_count || 0}</p></div>
@@ -33,11 +37,18 @@ const CashMovementsReport = ({ payments, reportDate }) => (
       <CardContent className="p-0 overflow-x-auto">
         {(payments.rows || []).length ? <table className="w-full text-sm">
           <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans / Not</th><th className="text-right p-3">Tutar</th></tr></thead>
-          <tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.processed_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.amount)}</td></tr>)}</tbody>
-          <tfoot><tr className="bg-emerald-50"><td colSpan={6} className="p-3 font-semibold">Toplam geçerli tahsilat</td><td className="p-3 text-right font-bold">{formatCurrency(payments.total_paid || 0)}</td></tr></tfoot>
+          <tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.processed_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.received_amount ?? row.amount, row.received_currency || row.currency)}</td></tr>)}</tbody>
+          <tfoot><tr className="bg-emerald-50"><td colSpan={6} className="p-3 font-semibold">Para birimine göre geçerli tahsilat</td><td className="p-3 text-right font-bold">{Object.entries(payments.totals_by_currency || {}).map(([code, amount]) => <div key={code}>{formatCurrency(amount, code)}</div>)}</td></tr></tfoot>
         </table> : <div className="py-12"><EmptyState icon={ArrowLeftRight} message="Seçili tarihte kasa hareketi yok" /></div>}
       </CardContent>
     </Card>
+    {(payments.currency_exchanges || []).length > 0 && <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Döviz Bozdurma İşlemleri ({payments.currency_exchanges.length})</CardTitle></CardHeader>
+      <CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm">
+        <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-right p-3">Bozdurulan</th><th className="text-right p-3">Kur</th><th className="text-right p-3">Kasaya Giren</th><th className="text-left p-3">İşleyen / Not</th></tr></thead>
+        <tbody>{payments.currency_exchanges.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.created_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right font-semibold">{Number(row.source_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {row.source_currency}</td><td className="p-3 text-right">{Number(row.rate || 0).toLocaleString('tr-TR', { minimumFractionDigits: 4 })}</td><td className="p-3 text-right font-semibold text-emerald-700">{formatCurrency(row.target_amount || 0)}</td><td className="p-3">{row.created_by || '-'}{row.note ? ` · ${row.note}` : ''}</td></tr>)}</tbody>
+      </table></CardContent>
+    </Card>}
   </div>
 );
 
@@ -75,7 +86,7 @@ const DailyAnalysisReport = ({ analysis }) => (
 );
 
 export default function ManagerDailyReports({ section, data, reportDate }) {
-  if (section === 'front_cashier') return <FrontCashierReport summary={data?.front_cashier || {}} reportDate={reportDate} />;
+  if (section === 'front_cashier') return <FrontCashierReport summary={data?.front_cashier || {}} payments={data?.payments || {}} reportDate={reportDate} />;
   if (section === 'cash_movements') return <CashMovementsReport payments={data?.payments || {}} reportDate={reportDate} />;
   if (section === 'rate_control') return <RateControlReport rows={data?.room_rate_control || []} reportDate={reportDate} />;
   return <DailyAnalysisReport analysis={data?.daily_analysis || { date: reportDate }} />;

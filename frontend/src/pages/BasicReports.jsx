@@ -16,7 +16,7 @@ import AdrRevparSection from './reports/AdrRevparSection';
 import PeriodSection from './reports/PeriodSection';
 import OccupancySection from './reports/OccupancySection';
 import RoomTypesSection from './reports/RoomTypesSection';
-import { GuestTable } from './reports/GuestSection';
+import { GuestTable, convertToTry } from './reports/GuestSection';
 import NationalitySection from './reports/NationalitySection';
 import FrontOfficeSection from './reports/FrontOfficeSection';
 import { NoShowSection, RoomStatusSection, HousekeepingSection, PaymentsSection, DepartmentsSection, FnBSection } from './reports/OperationsSection';
@@ -283,7 +283,7 @@ const BasicReports = ({
   useEffect(() => {
     if (activeSection !== 'inhouse') return;
     let active = true;
-    fetchJsonWithRetry(BACKEND_URL + '/api/reservations/exchange-rates', { credentials: 'include' })
+    fetchJsonWithRetry(BACKEND_URL + '/exchange-rates', { credentials: 'include' })
       .then(result => {
         if (active && result?.rates) setExchangeRates({ TRY: 1, TL: 1, ...result.rates });
       })
@@ -309,10 +309,10 @@ const BasicReports = ({
   }, [officialDate]);
   const handleOfficialExportCsv = () => {
     if (!officialRows.length) return;
-    const headers = ['booking_id', 'guest_name', 'national_id', 'passport_number', 'country', 'city', 'date_of_birth', 'room_number', 'check_in', 'check_out', 'adults', 'children', 'total_amount', 'billing_tax_number', 'billing_address', 'company_id', 'market_segment'];
+    const headers = ['booking_id', 'guest_name', 'national_id', 'passport_number', 'country', 'city', 'date_of_birth', 'room_number', 'check_in', 'check_out', 'adults', 'children', 'total_amount', 'currency', 'billing_tax_number', 'billing_address', 'company_id', 'market_segment'];
     const lines = [headers.map(csvCell).join(',')];
     officialRows.forEach(r => {
-      lines.push([r.booking_id, r.guest_name, r.national_id, r.passport_number, r.country, r.city, r.date_of_birth, r.room_number, r.check_in, r.check_out, r.adults, r.children, r.total_amount, r.billing_tax_number, r.billing_address, r.company_id, r.market_segment].map(csvCell).join(','));
+      lines.push([r.booking_id, r.guest_name, r.national_id, r.passport_number, r.country, r.city, r.date_of_birth, r.room_number, r.check_in, r.check_out, r.adults, r.children, r.total_amount, r.currency, r.billing_tax_number, r.billing_address, r.company_id, r.market_segment].map(csvCell).join(','));
     });
     const blob = new Blob([lines.join('\n')], {
       type: 'text/csv;charset=utf-8;'
@@ -422,7 +422,7 @@ const BasicReports = ({
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
   });
   const officialTotalGuests = officialRows.reduce((a, r) => a + (r.adults || 0) + (r.children || 0), 0);
-  const officialTotalRevenue = officialRows.reduce((a, r) => a + (r.total_amount || 0), 0);
+  const officialTotalRevenue = officialRows.reduce((sum, row) => sum + (convertToTry(row.total_amount, row.currency, exchangeRates) || 0), 0);
   const filteredOfficialRows = officialRows.filter(r => {
     if (!officialSearch) return true;
     const term = officialSearch.toLowerCase();
@@ -501,9 +501,9 @@ const BasicReports = ({
       case 'nationality':
         return <NationalitySection countryData={countryData} />;
       case 'front_office':
-        return <FrontOfficeSection s={s} todayArrivals={todayArrivals} todayDepartures={todayDepartures} reportDate={selectedDate} />;
+        return <FrontOfficeSection s={s} todayArrivals={todayArrivals} todayDepartures={todayDepartures} reportDate={selectedDate} exchangeRates={exchangeRates} />;
       case 'noshow':
-        return <NoShowSection s={{ ...s, ...periodActivity }} noShowGuests={noShowGuests} cancelledGuests={cancelledGuests} />;
+        return <NoShowSection s={{ ...s, ...periodActivity }} noShowGuests={noShowGuests} cancelledGuests={cancelledGuests} exchangeRates={exchangeRates} />;
       case 'room_status':
         return <RoomStatusSection roomStatus={roomStatus} roomStatusData={roomStatusData} />;
       case 'housekeeping':

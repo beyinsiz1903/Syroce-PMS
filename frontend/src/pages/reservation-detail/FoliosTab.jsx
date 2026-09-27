@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { API, fmtTL, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
+import { API, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import PrintableFolio from '@/components/PrintableFolio';
 import {
@@ -45,6 +45,22 @@ export function parseReceivedCurrency(notes) {
   const amount = Number(match[1].replace(',', '.'));
   if (!Number.isFinite(amount)) return null;
   return { amount, currency: match[2].toUpperCase() };
+}
+
+export function summarizeReceivedPayments(payments, fallbackAmount, fallbackCurrency) {
+  const totals = (payments || [])
+    .filter(payment => !payment.voided)
+    .map(payment => parseReceivedCurrency(payment.notes))
+    .filter(Boolean)
+    .reduce((result, payment) => {
+      result[payment.currency] = (result[payment.currency] || 0) + payment.amount;
+      return result;
+    }, {});
+  const received = Object.entries(totals).map(([currency, amount]) => ({ currency, amount }));
+  if (received.length) return received;
+  return Number(fallbackAmount) > 0
+    ? [{ amount: Number(fallbackAmount), currency: normalizeCurrency(fallbackCurrency) }]
+    : [];
 }
 
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
@@ -81,13 +97,16 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [ratesLoading, setRatesLoading] = useState(false);
   const [ratesError, setRatesError] = useState('');
   const [manualExchangeRate, setManualExchangeRate] = useState(false);
+  const [showCashExchange, setShowCashExchange] = useState(false);
+  const [cashExchangeForm, setCashExchangeForm] = useState({ source_currency: '', source_amount: '', rate: '', note: '' });
+  const [postedExchanges, setPostedExchanges] = useState([]);
 
   const fetchExchangeRates = async () => {
     setRatesLoading(true);
     setRatesError('');
     try {
       const res = await axios.get('/exchange-rates', { timeout: 10000 });
-      if (res.data?.rates) setTcmbRates(res.data.rates);
+      if (res.data?.rates) { setTcmbRates(res.data.rates); return res.data.rates; }
       else setRatesError('Güncel kur bilgisi alınamadı. Kuru elle girebilirsiniz.');
     } catch (e) {
       console.error('Failed to fetch exchange rates', e);
@@ -238,6 +257,50 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       return true;
     }).sort((a, b) => new Date(b.created_at || b.processed_at || 0) - new Date(a.created_at || a.processed_at || 0));
   }, [charges, extra_charges, payments]);
+  const allocatedPrepaymentReceipts = useMemo(
+    () => summarizeReceivedPayments(payments, Math.abs(rawFolioBalance), currency),
+    [payments, rawFolioBalance, currency],
+  );
+  const exchangeableReceipts = useMemo(() => {
+    const exchanged = postedExchanges.reduce((totals, row) => {
+      const code = normalizeCurrency(row.source_currency);
+      totals[code] = (totals[code] || 0) + Number(row.source_amount || 0);
+      return totals;
+    }, {});
+    return summarizeReceivedPayments(payments, 0, currency)
+      .filter(receipt => normalizeCurrency(receipt.currency) !== 'TRY')
+      .map(receipt => ({
+        currency: normalizeCurrency(receipt.currency),
+        amount: Math.max(0, Number(receipt.amount) - (exchanged[normalizeCurrency(receipt.currency)] || 0)),
+      }))
+      .filter(receipt => receipt.amount > 0.005);
+  }, [payments, currency, postedExchanges]);
+
+  const openCashExchange = async () => {
+    setLoading(true);
+    setActionError('');
+    try {
+      const response = await axios.get('/cashier/currency-exchanges', { params: { booking_id: booking.id } });
+      const currentRates = Object.keys(tcmbRates).length ? tcmbRates : (await fetchExchangeRates()) || {};
+      const rows = response.data?.exchanges || [];
+      setPostedExchanges(rows);
+      const used = rows.reduce((totals, row) => {
+        const code = normalizeCurrency(row.source_currency);
+        totals[code] = (totals[code] || 0) + Number(row.source_amount || 0);
+        return totals;
+      }, {});
+      const first = summarizeReceivedPayments(payments, 0, currency)
+        .find(receipt => normalizeCurrency(receipt.currency) !== 'TRY' && Number(receipt.amount) - (used[normalizeCurrency(receipt.currency)] || 0) > 0.005);
+      if (!first) return toast.info('Bozdurulabilir yabancı para tahsilatı bulunmuyor');
+      const code = normalizeCurrency(first.currency);
+      setCashExchangeForm({ source_currency: code, source_amount: (Number(first.amount) - (used[code] || 0)).toFixed(2), rate: String(currentRates[code] || ''), note: '' });
+      setShowCashExchange(true);
+    } catch (e) {
+      toast.error('Döviz kayıtları alınamadı: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const itemKind = (item) => {
     if (item._type === 'payment') {
@@ -281,7 +344,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
       {hasAllocatedPrepayment && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="allocated-prepayment-note">
-          {fmtTL(Math.abs(rawFolioBalance))} TL peşin tahsilat, {fmtCurrency(pendingRoomAmount, currency)} bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
+          Peşin tahsilat: {allocatedPrepaymentReceipts.map(receipt => fmtCurrency(receipt.amount, receipt.currency)).join(' + ')}.
+          {' '}{fmtCurrency(Math.abs(rawFolioBalance), currency)} rezervasyon bakiyesine mahsup edildi; {fmtCurrency(pendingRoomAmount, currency)} bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
         </div>
       )}
       {pricingReconciliationRequired && (
@@ -305,6 +369,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
           <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
           <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol"><Split className="w-3 h-3 mr-1" /> Folyo Böl</Button>
+          {summarizeReceivedPayments(payments, 0, currency).some(receipt => normalizeCurrency(receipt.currency) !== 'TRY') && (
+            <Button size="sm" variant="outline" onClick={openCashExchange} className="h-8 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50" data-testid="btn-currency-exchange"><ArrowRightLeft className="w-3 h-3 mr-1" /> Döviz Bozdur</Button>
+          )}
         </>}
         {folioList.length > 1 && (
           <UiSelect value={printFolioId} onValueChange={setPrintFolioId}>
@@ -326,6 +393,32 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           </Button>
         )}
       </div>
+
+      {showCashExchange && (
+        <FormPanel color="emerald" title="Döviz Bozdur" testid="currency-exchange-form" onClose={() => setShowCashExchange(false)} loading={loading}
+          onSubmit={() => exec(async () => {
+            const amount = Number(cashExchangeForm.source_amount);
+            const rate = Number(cashExchangeForm.rate);
+            if (!(amount > 0) || !(rate > 0)) throw new Error('Tutar ve kur 0’dan büyük olmalıdır');
+            await axios.post('/cashier/currency-exchange', { booking_id: booking.id, ...cashExchangeForm, source_amount: amount, rate }, {
+              headers: { 'X-Idempotency-Key': globalThis.crypto?.randomUUID?.() || `${booking.id}-${Date.now()}` },
+            });
+            toast.success(`${amount.toFixed(2)} ${cashExchangeForm.source_currency}, ${(amount * rate).toFixed(2)} TL olarak kasaya işlendi`);
+            setShowCashExchange(false);
+          })}>
+          <div className="grid grid-cols-2 gap-3">
+            <SelectField label="Bozdurulan Döviz" value={cashExchangeForm.source_currency} onChange={value => {
+              const receipt = exchangeableReceipts.find(item => item.currency === value);
+              setCashExchangeForm(form => ({ ...form, source_currency: value, source_amount: receipt ? receipt.amount.toFixed(2) : '', rate: String(tcmbRates[value] || '') }));
+            }} options={exchangeableReceipts.map(item => [item.currency, `${item.currency} · kullanılabilir ${item.amount.toFixed(2)}`])} />
+            <FormField label={`Bozdurulan Tutar (${cashExchangeForm.source_currency})`} type="number" value={cashExchangeForm.source_amount} onChange={value => setCashExchangeForm(form => ({ ...form, source_amount: value }))} />
+            <FormField label={`Kur (1 ${cashExchangeForm.source_currency} = kaç TL)`} type="number" value={cashExchangeForm.rate} onChange={value => setCashExchangeForm(form => ({ ...form, rate: value }))} />
+            <FormField label="Kasaya Girecek Tutar (TL)" value={(Number(cashExchangeForm.source_amount || 0) * Number(cashExchangeForm.rate || 0)).toFixed(2)} onChange={() => {}} disabled />
+          </div>
+          <FormField label="Açıklama" value={cashExchangeForm.note} onChange={value => setCashExchangeForm(form => ({ ...form, note: value }))} placeholder="Döviz bürosu / fiş numarası (opsiyonel)" />
+          <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800">Orijinal tahsilat değişmez. Kasa raporuna döviz çıkışı ve aynı işlemde TL girişi kaydedilir.</div>
+        </FormPanel>
+      )}
 
       {showSplit && (
         <div className="border rounded-lg p-4 bg-sky-50/40 space-y-3" data-testid="split-folio-panel">

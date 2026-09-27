@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar, Loader2, Search, Download, Printer, Shield } from 'lucide-react';
 import { formatCurrency, SectionHeader } from './ReportHelpers';
-import { GuestTable } from './GuestSection';
+import { GuestTable, MoneyCell } from './GuestSection';
 import { reservationLabel } from '@/utils/displayIdentifiers';
 
 export const OfficialSection = ({
@@ -54,7 +54,7 @@ export const OfficialSection = ({
         </div>
         <div className="p-3 bg-amber-50 rounded-lg border border-amber-100 text-center">
           <p className="text-xs text-amber-600 font-medium">Toplam Tutar</p>
-          <p className="text-xl font-bold text-amber-800">{formatCurrency(officialTotalRevenue)}</p>
+          <p className="text-xl font-bold text-amber-800">{formatCurrency(officialTotalRevenue, 'TRY')}</p>
         </div>
         <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 text-center">
           <p className="text-xs text-indigo-600 font-medium">Seçili Tarih</p>
@@ -106,7 +106,7 @@ export const OfficialSection = ({
                   <td className="px-3 py-2 font-medium">{r.room_number || '-'}</td>
                   <td className="px-3 py-2 text-[11px] text-gray-700"><div>{r.check_in ? new Date(r.check_in).toLocaleDateString('tr-TR') : '-'}</div><div>{r.check_out ? new Date(r.check_out).toLocaleDateString('tr-TR') : '-'}</div></td>
                   <td className="px-3 py-2 text-center">{(r.adults || 0)} + {(r.children || 0)}</td>
-                  <td className="px-3 py-2 text-right font-medium">{formatCurrency(r.total_amount)}</td>
+                  <td className="px-3 py-2 text-right font-medium"><MoneyCell amount={r.total_amount} currency={r.currency} /></td>
                 </tr>
               )) : (
                 <tr><td colSpan={7} className="py-10 text-center text-gray-400 text-xs">

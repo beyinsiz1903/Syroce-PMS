@@ -1,13 +1,15 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, ArrowUpRight, ArrowDownRight, ArrowLeftRight, CheckCircle2 } from 'lucide-react';
-import { formatCurrency, KPICard, EmptyState } from './ReportHelpers';
+import { KPICard, EmptyState } from './ReportHelpers';
+import { MoneyCell } from './GuestSection';
 import { SectionHeader } from './ReportHelpers';
 const FrontOfficeSection = ({
   s,
   todayArrivals,
   todayDepartures,
-  reportDate
+  reportDate,
+  exchangeRates
 }) => <div className="space-y-6" data-testid="section-front-office">
     <SectionHeader title="Giriş / Çıkış Raporu" description={`${reportDate} tarihli giriş, çıkış ve konaklama hareketleri`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -21,7 +23,7 @@ const FrontOfficeSection = ({
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-sky-50"><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Çıkış</th><th className="text-right py-2 px-3 text-xs font-semibold text-sky-700">Tutar</th></tr></thead>
-            <tbody>{todayArrivals.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-sky-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>)}</tbody>
+            <tbody>{todayArrivals.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-sky-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium"><MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} /></td></tr>)}</tbody>
           </table></div>
         </CardContent>
       </Card>}
@@ -30,7 +32,7 @@ const FrontOfficeSection = ({
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-amber-50"><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Durum</th><th className="text-right py-2 px-3 text-xs font-semibold text-amber-700">Tutar</th></tr></thead>
-            <tbody>{todayDepartures.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-amber-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${g.status === 'checked_out' ? 'bg-gray-100 text-gray-600' : 'bg-amber-100 text-amber-700'}`}>{g.status === 'checked_out' ? 'Çıkış Yaptı' : 'Bekliyor'}</span></td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>)}</tbody>
+            <tbody>{todayDepartures.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-amber-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${g.status === 'checked_out' ? 'bg-gray-100 text-gray-600' : 'bg-amber-100 text-amber-700'}`}>{g.status === 'checked_out' ? 'Çıkış Yaptı' : 'Bekliyor'}</span></td><td className="py-2 px-3 text-right font-medium"><MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} /></td></tr>)}</tbody>
           </table></div>
         </CardContent>
       </Card>}

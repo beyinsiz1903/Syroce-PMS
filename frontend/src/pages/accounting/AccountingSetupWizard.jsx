@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 const currentYear = new Date().getFullYear();
 const emptyProfile = {
   legal_name: '', taxpayer_id: '', tax_office: '', address: '', city: '', country: 'Türkiye',
-  currency: 'TRY', fiscal_year: currentYear, migration_date: `${currentYear}-01-01`,
+  currency: cachedTenantCurrency(), fiscal_year: currentYear, migration_date: `${currentYear}-01-01`,
   opening_balance_required: false, branch_code: '', cost_center_code: '', accountant_name: '', accountant_email: '',
 };
 

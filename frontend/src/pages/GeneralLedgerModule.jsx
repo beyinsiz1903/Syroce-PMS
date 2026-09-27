@@ -7,7 +7,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useCurrency } from '@/context/CurrencyContext';
+import { formatCurrency } from '@/lib/currency';
 import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
@@ -345,10 +345,10 @@ export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
 const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-balance', 'statements', 'periods', 'workspace', 'integrations', 'setup'];
 
 const GeneralLedgerModule = () => {
-  const { amount: fmtMoney } = useCurrency();
   const businessDate = useBusinessDate();
   const businessDateDefaults = useRef(localIsoDate());
   const [ledgerCurrency, setLedgerCurrency] = useState('TRY');
+  const fmtMoney = (value) => formatCurrency(value, ledgerCurrency, { decimals: 2, compactDecimals: false });
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
