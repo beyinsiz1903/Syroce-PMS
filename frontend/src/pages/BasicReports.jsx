@@ -386,7 +386,8 @@ const BasicReports = ({
     total: val.total,
     occupied: val.occupied,
     occupancy: val.occupancy,
-    revenue: val.revenue
+    revenue: Object.keys(val.revenue_by_currency || {}).length <= 1 ? val.revenue : 0,
+    revenueByCurrency: val.revenue_by_currency || {}
   }));
   const countryData = Object.entries(countryDist).sort((a, b) => b[1] - a[1]).map(([key, value]) => ({
     name: key,
@@ -399,7 +400,8 @@ const BasicReports = ({
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
     name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal Yöneticisi (OTA)' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
-    revenue: bookingSources.revenue?.[key] || 0
+    revenue: Object.keys(bookingSources.revenue_by_currency?.[key] || {}).length <= 1 ? (bookingSources.revenue?.[key] || 0) : 0,
+    revenueByCurrency: bookingSources.revenue_by_currency?.[key] || {}
   })).sort((a, b) => b.count - a.count || b.revenue - a.revenue || a.name.localeCompare(b.name, 'tr'));
   const selectedDate = data?.date || reportDate;
   const todayArrivals = dailyLists.arrivals || [];

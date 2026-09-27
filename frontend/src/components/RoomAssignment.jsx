@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Home, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const RoomAssignment = ({ booking }) => {
   const { t } = useTranslation();
@@ -91,7 +92,7 @@ const RoomAssignment = ({ booking }) => {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold text-green-600">₺{room.base_rate}</div>
+                        <div className="font-bold text-green-600">{formatCurrency(room.base_rate, room.currency || booking?.currency || cachedTenantCurrency())}</div>
                         <div className="text-xs text-gray-500">/ gece</div>
                       </div>
                     </div>

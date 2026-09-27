@@ -6,8 +6,10 @@ import { Activity, Bell, Building2, TrendingUp, Brain, AlertTriangle, Globe, Zap
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const API = "";
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#6366f1', '#ec4899'];
+const money = (amount, code) => formatCurrency(amount || 0, code || cachedTenantCurrency());
 export default function PlatformScalingDashboard({
   user,
   tenant,
@@ -252,7 +254,7 @@ function OverviewPanel({
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
-              <StatBox label="Riskli Rez. Geliri" value={`${(mlData?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString()} TL`} color="text-red-600" />
+              <StatBox label="Riskli Rez. Geliri" value={money(mlData?.cancellation_risk?.total_at_risk_revenue, mlData?.cancellation_risk?.currency)} color="text-red-600" />
               <StatBox label="Fiyat Opt. Firsati" value={mlData?.price_optimization?.price_points?.length || 0} color="text-teal-600" />
               <StatBox label="Düşük Talep Gunu" value={`${mlData?.summary?.low_demand_days_next_14 || 0}/14`} color="text-amber-600" />
               <StatBox label="Riskli Rez. Sayısı" value={mlData?.cancellation_risk?.at_risk_count || 0} color="text-amber-600" />
@@ -485,7 +487,7 @@ function MultiPropertyPanel({
         <KPICard label="Portfolio Doluluk" value={`${portfolio.portfolio_occupancy_pct || 0}%`} icon={Building2} color="bg-teal-50 text-teal-700" />
         <KPICard label="Toplam Oda" value={portfolio.total_rooms || 0} icon={Layers} color="bg-blue-50 text-blue-700" />
         <KPICard label="Müsait Oda" value={portfolio.total_available || 0} icon={Eye} color="bg-green-50 text-green-700" />
-        <KPICard label="Portfolio Gelir" value={`${(revenue.total_portfolio_revenue || 0).toLocaleString()} TL`} icon={DollarSign} color="bg-indigo-50 text-indigo-700" />
+        <KPICard label="Portfolio Gelir" value={money(revenue.total_portfolio_revenue, revenue.currency)} icon={DollarSign} color="bg-indigo-50 text-indigo-700" />
       </div>
 
       {/* Property Comparison */}
@@ -517,9 +519,9 @@ function MultiPropertyPanel({
                       <td className="py-3 text-right"><OccupancyBadge pct={p.occupancy_pct} /></td>
                       <td className="py-3 text-right text-green-600">{p.arrivals_today}</td>
                       <td className="py-3 text-right text-amber-600">{p.departures_today}</td>
-                      <td className="py-3 text-right">{(rev.total_revenue || 0).toLocaleString()} TL</td>
-                      <td className="py-3 text-right">{rev.adr || 0} TL</td>
-                      <td className="py-3 text-right">{rev.revpar || 0} TL</td>
+                      <td className="py-3 text-right">{money(rev.total_revenue, rev.currency)}</td>
+                      <td className="py-3 text-right">{money(rev.adr, rev.currency)}</td>
+                      <td className="py-3 text-right">{money(rev.revpar, rev.currency)}</td>
                     </tr>;
               })}
               </tbody>
@@ -679,8 +681,8 @@ function CompetitivePanel({
               <tbody>
                 {parity.map((p, i) => <tr key={p.id || i} className="border-b last:border-0">
                     <td className="py-2 font-medium">{p.room_type}</td>
-                    <td className="py-2 text-right">{p.our_rate} TL</td>
-                    <td className="py-2 text-right">{p.market_average} TL</td>
+                    <td className="py-2 text-right">{money(p.our_rate, p.currency)}</td>
+                    <td className="py-2 text-right">{money(p.market_average, p.currency)}</td>
                     <td className="py-2 text-right">{p.position_index}</td>
                     <td className="py-2 text-right">
                       <PositionBadge position={p.market_position} />
@@ -699,7 +701,7 @@ function CompetitivePanel({
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-green-600" /> ADR Ayarlama Onerileri
             {totalImpact !== 0 && <Badge variant={totalImpact > 0 ? 'default' : 'destructive'} className="ml-2">
-                {totalImpact > 0 ? '+' : ''}{totalImpact.toLocaleString()} TL/ay
+                {totalImpact > 0 ? '+' : ''}{money(totalImpact, data?.currency)}/ay
               </Badge>}
           </CardTitle>
         </CardHeader>
@@ -713,12 +715,12 @@ function CompetitivePanel({
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <div className="text-xs text-slate-500">Mevcut</div>
-                    <div className="text-sm">{s.current_rate} TL</div>
+                    <div className="text-sm">{money(s.current_rate, s.currency)}</div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                   <div className="text-right">
                     <div className="text-xs text-slate-500">Önerilen</div>
-                    <div className="text-sm font-bold text-teal-700">{s.suggested_rate} TL</div>
+                    <div className="text-sm font-bold text-teal-700">{money(s.suggested_rate, s.currency)}</div>
                   </div>
                   <ActionBadge action={s.action} />
                 </div>

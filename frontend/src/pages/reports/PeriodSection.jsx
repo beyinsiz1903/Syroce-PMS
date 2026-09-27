@@ -6,11 +6,13 @@ import {
 } from 'recharts';
 import { formatCurrency, calcChange, CustomTooltip, SectionHeader } from './ReportHelpers';
 import { useTranslation } from 'react-i18next';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const PeriodSection = ({ data, pc }) => {
   const { t } = useTranslation();
   const revChange = calcChange(pc.month_revenue, pc.prev_month_revenue);
   const bookChange = calcChange(pc.month_bookings, pc.prev_month_bookings);
+  const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
   const changeClasses = change => change.direction === 'up'
     ? 'border-emerald-200 bg-emerald-50/30 text-emerald-700'
     : change.direction === 'down'
@@ -25,29 +27,29 @@ const PeriodSection = ({ data, pc }) => {
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="border-l-4 border-l-sky-500"><CardContent className="p-4">
           <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.son_7_gun_gelir')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.week_revenue)}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.week_revenue_by_currency, pc.week_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.week_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-emerald-500"><CardContent className="p-4">
           <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.son_30_gun_gelir')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.month_revenue)}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.month_revenue_by_currency, pc.month_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.month_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-indigo-500"><CardContent className="p-4">
           <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.onceki_30_gun_gelir')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.prev_month_revenue)}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.prev_month_revenue_by_currency, pc.prev_month_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.prev_month_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-amber-500"><CardContent className="p-4">
           <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.gecen_yil_ayni_donem')}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.last_year_revenue)}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.last_year_revenue_by_currency, pc.last_year_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.last_year_bookings} rezervasyon</p>
         </CardContent></Card>
       </div>
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_PeriodSection.gelir_rezervasyon_trendi')}</CardTitle></CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={320}>
+          {hasMixedRevenueTrend ? <div className="h-80 flex items-center justify-center px-6 text-center text-sm text-slate-500">Farklı para birimleri tek dönem grafiğinde toplanmaz.</div> : <ResponsiveContainer width="100%" height={320}>
             <ComposedChart data={data?.revenue_trend || []}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
@@ -56,7 +58,7 @@ const PeriodSection = ({ data, pc }) => {
               <Bar yAxisId="left" dataKey="revenue" name="Gelir" fill="#0284C7" opacity={0.6} radius={[2, 2, 0, 0]} />
               <Line yAxisId="left" type="monotone" dataKey="revenue" name="Trend" stroke="#D97706" strokeWidth={2} dot={{ r: 2 }} />
             </ComposedChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>}
         </CardContent>
       </Card>
       <div className="grid md:grid-cols-2 gap-4">

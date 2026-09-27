@@ -76,6 +76,16 @@ def _next_date(d: str) -> str:
     return (dt_date.fromisoformat(d) + timedelta(days=1)).isoformat()
 
 
+def _money_breakdown(items: list[dict], field: str) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for item in items:
+        currency = str(item.get("currency") or DEFAULT_CURRENCY).strip().upper()
+        if len(currency) != 3 or not currency.isalpha():
+            currency = DEFAULT_CURRENCY
+        totals[currency] = totals.get(currency, 0.0) + float(item.get(field) or 0)
+    return {code: round(amount, 2) for code, amount in sorted(totals.items()) if round(amount, 2) != 0}
+
+
 def _normalize_booking_date(value: Any) -> dt_date | None:
     """Normalize date-only and ISO timestamp booking fields without string ordering."""
     if isinstance(value, datetime):
@@ -543,6 +553,9 @@ async def _execute_pipeline(
         projected_room_revenue = round(sum(float(item.get("amount") or 0) for item in room_items), 2)
         projected_tax = round(sum(float(item.get("tax_amount") or 0) for item in room_items), 2)
         projected_total = round(sum(float(item.get("total") or 0) for item in pending_items), 2)
+        projected_room_revenue_by_currency = _money_breakdown(room_items, "amount")
+        projected_tax_by_currency = _money_breakdown(room_items, "tax_amount")
+        projected_total_by_currency = _money_breakdown(pending_items, "total")
         room_ids = list({item.get("room_id") for item in items if item.get("room_id")})
         room_docs = await db.rooms.find(
             {"tenant_id": tenant_id, "id": {"$in": room_ids}},
@@ -561,6 +574,9 @@ async def _execute_pipeline(
                     "processed_count": 0,
                     "failed_count": 0,
                     "skipped_count": skipped,
+                    "total_room_revenue_by_currency": projected_room_revenue_by_currency,
+                    "total_tax_amount_by_currency": projected_tax_by_currency,
+                    "projected_total_by_currency": projected_total_by_currency,
                     "completed_at": _now_iso(),
                     "updated_at": _now_iso(),
                 }
@@ -576,8 +592,11 @@ async def _execute_pipeline(
             "charges_posted": len(room_items),
             "no_shows_processed": len(no_show_items),
             "total_room_revenue": projected_room_revenue,
+            "total_room_revenue_by_currency": projected_room_revenue_by_currency,
             "total_tax_amount": projected_tax,
+            "total_tax_amount_by_currency": projected_tax_by_currency,
             "projected_total": projected_total,
+            "projected_total_by_currency": projected_total_by_currency,
             "would_post": pending,
             "would_skip": skipped,
             "candidate_details": [
@@ -692,6 +711,11 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
         return {"success": False, "error": str(e), "code": "DATE_ROLL_ERROR", "run_id": run_id}
 
     # ── Complete ──
+    posted_items = await db.night_audit_run_items.find(
+        {"run_id": run_id, "status": IS_POSTED},
+        {"_id": 0, "posting_type": 1, "amount": 1, "tax_amount": 1, "total": 1, "currency": 1},
+    ).to_list(20_000)
+    posted_room_items = [item for item in posted_items if item.get("posting_type") == "room_charge"]
     await db.night_audit_runs.update_one(
         {"id": run_id},
         {
@@ -700,6 +724,9 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
                 "stage": ST_COMPLETED,
                 "completed_at": _now_iso(),
                 "updated_at": _now_iso(),
+                "total_room_revenue_by_currency": _money_breakdown(posted_room_items, "amount"),
+                "total_tax_amount_by_currency": _money_breakdown(posted_room_items, "tax_amount"),
+                "projected_total_by_currency": _money_breakdown(posted_items, "total"),
             }
         },
     )

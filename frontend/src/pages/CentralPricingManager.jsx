@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import MaybeLayout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const BACKEND = "";
 const headers = {};
 export default function CentralPricingManager({
@@ -18,6 +19,7 @@ export default function CentralPricingManager({
   const {
     t
   } = useTranslation();
+  const currency = tenant?.currency || cachedTenantCurrency();
   const [activeTab, setActiveTab] = useState('rates');
   const [rates, setRates] = useState(null);
   const [templates, setTemplates] = useState([]);
@@ -82,7 +84,7 @@ export default function CentralPricingManager({
         name: templateForm.name,
         description: templateForm.description,
         rates: { [templateForm.room_type]: Number(templateForm.rate) },
-        currency: 'TRY'
+        currency
       }, { headers });
       setTemplateForm({ name: '', description: '', room_type: 'Standard', rate: '' });
       setMessage('Fiyat şablonu kaydedildi.');
@@ -122,7 +124,7 @@ export default function CentralPricingManager({
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {prop.room_rates?.map((rt, j) => <div key={j} className="p-3 border rounded">
                         <p className="font-medium">{rt.room_type}</p>
-                        <p className="text-2xl font-bold">{rt.base_rate?.toLocaleString('tr-TR')} TRY</p>
+                        <p className="text-2xl font-bold">{formatCurrency(rt.base_rate, rt.currency || currency)}</p>
                         <p className="text-sm text-gray-500">{rt.count} oda</p>
                       </div>)}
                     {(!prop.room_rates || prop.room_rates.length === 0) && <p className="text-gray-400 col-span-4">Fiyat bilgisi bulunamadı</p>}
@@ -147,7 +149,7 @@ export default function CentralPricingManager({
                   })} />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Yeni Fiyat (TRY)</label>
+                    <label className="text-sm font-medium">Yeni Fiyat ({currency})</label>
                     <Input type="number" value={bulkForm.new_rate} onChange={e => setBulkForm({
                     ...bulkForm,
                     new_rate: e.target.value
@@ -189,7 +191,7 @@ export default function CentralPricingManager({
                   <Input value={templateForm.name} onChange={e => setTemplateForm({ ...templateForm, name: e.target.value })} placeholder="Şablon adı" />
                   <Input value={templateForm.description} onChange={e => setTemplateForm({ ...templateForm, description: e.target.value })} placeholder="Açıklama" />
                   <Input value={templateForm.room_type} onChange={e => setTemplateForm({ ...templateForm, room_type: e.target.value })} placeholder="Oda tipi" />
-                  <Input type="number" min="0" value={templateForm.rate} onChange={e => setTemplateForm({ ...templateForm, rate: e.target.value })} placeholder="Fiyat (TRY)" />
+                  <Input type="number" min="0" value={templateForm.rate} onChange={e => setTemplateForm({ ...templateForm, rate: e.target.value })} placeholder={`Fiyat (${currency})`} />
                   <div className="md:col-span-2 flex justify-end"><Button onClick={handleTemplateCreate}>Şablon Oluştur</Button></div>
                 </div>
                 {templates.length === 0 ? <p className="text-center py-8 text-gray-400">Henüz şablon oluşturulmamış</p> : <div className="space-y-3">
@@ -197,7 +199,7 @@ export default function CentralPricingManager({
                         <p className="font-medium">{t.name}</p>
                         <p className="text-sm text-gray-500">{t.description}</p>
                         <div className="flex gap-2 mt-2">
-                          {t.rates && Object.entries(t.rates).map(([k, v]) => <Badge key={k}>{k}: {v} TRY</Badge>)}
+                          {t.rates && Object.entries(t.rates).map(([k, v]) => <Badge key={k}>{k}: {formatCurrency(v, t.currency || currency)}</Badge>)}
                         </div>
                       </div>)}
                   </div>}

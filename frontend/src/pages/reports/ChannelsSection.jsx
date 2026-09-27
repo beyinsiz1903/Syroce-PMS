@@ -3,11 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Activity, BarChart3 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, SectionHeader, EmptyState, CustomTooltip } from './ReportHelpers';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+const averageBreakdown = (breakdown, divisor) => Object.fromEntries(
+  Object.entries(breakdown || {}).map(([currency, amount]) => [currency, divisor > 0 ? Number(amount) / divisor : 0]),
+);
 export const ChannelsSection = ({
   sourceData
 }) => {
   const [filter, setFilter] = React.useState('all');
   const filteredData = filter === 'all' ? sourceData : sourceData.filter(d => d.name === filter);
+  const hasMixedRevenue = filteredData.some((row) => Object.keys(row.revenueByCurrency || {}).length > 1);
 
   return (
     <div className="space-y-6" data-testid="section-channels">
@@ -31,7 +36,7 @@ export const ChannelsSection = ({
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Kaynak Dağılımı</CardTitle></CardHeader>
           <CardContent>
-            {filteredData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
+            {hasMixedRevenue ? <div className="h-[300px] flex items-center justify-center px-6 text-center text-sm text-slate-500">Farklı para birimleri tek eksende toplanmaz. Kesin tutarlar aşağıdaki tabloda para birimi bazında gösterilir.</div> : filteredData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie 
                     data={filteredData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} 
@@ -79,8 +84,8 @@ export const ChannelsSection = ({
                     backgroundColor: COLORS[i % COLORS.length]
                   }} /><span className="font-medium">{src.name}</span></td>
                   <td className="py-2.5 px-3 text-center">{src.count}</td>
-                  <td className="py-2.5 px-3 text-right font-medium">{formatCurrency(src.revenue)}</td>
-                  <td className="py-2.5 px-3 text-right text-gray-500">{src.count > 0 ? formatCurrency(src.revenue / src.count) : '-'}</td>
+                  <td className="py-2.5 px-3 text-right font-medium">{formatCurrencyBreakdown(src.revenueByCurrency, src.revenue)}</td>
+                  <td className="py-2.5 px-3 text-right text-gray-500">{src.count > 0 ? formatCurrencyBreakdown(averageBreakdown(src.revenueByCurrency, src.count), src.revenue / src.count) : '-'}</td>
                 </tr>)}</tbody>
             </table></div>
           </CardContent>
@@ -101,7 +106,7 @@ export const SourcesSection = ({
               <CardContent className="p-4">
                 <p className="text-xs text-gray-500 font-medium">{src.name}</p>
                 <p className="text-xl font-bold text-gray-900 mt-1">{src.count} rez.</p>
-                <p className="text-sm text-gray-600 mt-0.5">{formatCurrency(src.revenue)}</p>
+                <p className="text-sm text-gray-600 mt-0.5">{formatCurrencyBreakdown(src.revenueByCurrency, src.revenue)}</p>
               </CardContent>
             </Card>)}
         </div>

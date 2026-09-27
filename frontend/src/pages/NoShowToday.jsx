@@ -19,6 +19,8 @@ import {
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const localISODate = (d) => {
   const y = d.getFullYear();
@@ -27,8 +29,13 @@ const localISODate = (d) => {
   return `${y}-${m}-${day}`;
 };
 
-const fmtTRY = (v) =>
-  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(v || 0));
+const fmtMoney = (value, currency) => formatCurrency(value || 0, currency || cachedTenantCurrency());
+
+const moneyBreakdown = (rows, amountGetter) => rows.reduce((totals, row) => {
+  const currency = String(row?.currency || cachedTenantCurrency()).toUpperCase();
+  totals[currency] = (totals[currency] || 0) + Number(amountGetter(row) || 0);
+  return totals;
+}, {});
 
 export const safeText = (value, fallback = '') => {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -76,6 +83,7 @@ export const normalizeArrival = (booking) => {
     total_amount: safeNumber(raw.total_amount),
     first_night_amount: safeNumber(raw.first_night_amount),
     deposit_amount: safeNumber(raw.deposit_amount),
+    currency: safeText(raw.currency, cachedTenantCurrency()).toUpperCase(),
   };
 };
 
@@ -191,7 +199,7 @@ const NoShowToday = () => {
     return arr;
   }, [items, search, statusFilter, otaOnly, tick]);
 
-  const pendingValue = items.reduce((s, b) => s + Number(b.total_amount || 0), 0);
+  const pendingValueByCurrency = moneyBreakdown(items, (booking) => booking.total_amount);
   const guaranteedCount = items.filter((b) => (b.status || '').toLowerCase() === 'guaranteed').length;
   const overdueCount = items.filter((b) => {
     const m = minutesPastETA(date, b.estimated_arrival_time);
@@ -231,9 +239,11 @@ const NoShowToday = () => {
   const bulkNoShow = async () => {
     if (selected.size === 0) return;
     const list = visible.filter((b) => selected.has(b.id));
-    const totalPen = list.reduce((s, b) => s + estimatedPenalty(b), 0);
+    const totalPenByCurrency = moneyBreakdown(list, estimatedPenalty);
+    const hasPenalty = Object.values(totalPenByCurrency).some((amount) => Number(amount) !== 0);
+    const totalPenText = formatCurrencyBreakdown(totalPenByCurrency, 0, cachedTenantCurrency());
     const ok = await confirmDialog({
-      message: `${list.length} rezervasyon no-show işaretlensin mi?` + (totalPen > 0 ? `\nGarantili rezervasyonların tahmini risk tutarı: ${fmtTRY(totalPen)}.` : ''),
+      message: `${list.length} rezervasyon no-show işaretlensin mi?` + (hasPenalty ? `\nGarantili rezervasyonların tahmini risk tutarı: ${totalPenText}.` : ''),
       variant: 'danger',
     });
     if (!ok) return;
@@ -294,7 +304,7 @@ const NoShowToday = () => {
         <KpiCard icon={Calendar} label={t('cm.pages_NoShowToday.bekleyen_varis')} value={items.length} intent="info" />
         <KpiCard icon={AlertTriangle} label="Garantili Bekleyen" value={guaranteedCount} intent="warning" highlight={guaranteedCount > 0} />
         <KpiCard icon={Clock} label={t('cm.pages_NoShowToday.eta_60dk_gecen')} value={overdueCount} intent="danger" highlight={overdueCount > 0} />
-        <KpiCard icon={UserX} label="Bekleyen Rez. Tutarı" value={fmtTRY(pendingValue)} intent="neutral" />
+        <KpiCard icon={UserX} label="Bekleyen Rez. Tutarı" value={formatCurrencyBreakdown(pendingValueByCurrency, 0, cachedTenantCurrency())} intent="neutral" />
       </div>
 
       {/* Filtre çubuğu */}
@@ -433,12 +443,12 @@ const NoShowToday = () => {
                           </div>
                           <div>
                             <p className="text-slate-500 text-xs">{t('cm.pages_NoShowToday.tutar')}</p>
-                            <p className="font-semibold">{fmtTRY(b.total_amount)}</p>
+                            <p className="font-semibold">{fmtMoney(b.total_amount, b.currency)}</p>
                           </div>
                           <div>
                             <p className="text-slate-500 text-xs">Ceza (tahmini)</p>
                             <p className={`font-semibold ${penalty > 0 ? 'text-rose-700' : 'text-slate-400'}`}>
-                              {penalty > 0 ? fmtTRY(penalty) : '—'}
+                              {penalty > 0 ? fmtMoney(penalty, b.currency) : '—'}
                             </p>
                           </div>
                         </div>
@@ -487,12 +497,12 @@ const NoShowToday = () => {
                 <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.oda_e4b47')}</span><strong>{confirmTarget.room_number || '—'}</strong></div>
                 <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.statu_ee6e2')}</span><strong>{STATUS_TR[(confirmTarget.status || '').toLowerCase()] || confirmTarget.status}</strong></div>
                 <div className="flex justify-between"><span className="text-slate-500">ETA</span><strong>{confirmTarget.estimated_arrival_time || '14:00'}</strong></div>
-                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.toplam_tutar')}</span><strong>{fmtTRY(confirmTarget.total_amount)}</strong></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.toplam_tutar')}</span><strong>{fmtMoney(confirmTarget.total_amount, confirmTarget.currency)}</strong></div>
               </div>
               {estimatedPenalty(confirmTarget) > 0 ? (
                 <div className="bg-rose-50 border border-rose-200 p-3 rounded-md text-sm">
                   <strong className="text-rose-700">Tahmini risk tutarı:</strong>{' '}
-                  {fmtTRY(estimatedPenalty(confirmTarget))}
+                  {fmtMoney(estimatedPenalty(confirmTarget), confirmTarget.currency)}
                   <p className="text-xs text-slate-600 mt-1">
                     Bu bir bilgilendirme tahminidir. Otomatik ücret oluşturulmaz; gerekiyorsa folyo ekranından otel politikasına göre ayrıca işleyin.
                   </p>
@@ -530,10 +540,10 @@ const NoShowToday = () => {
                 <div><span className="text-slate-500">{t('cm.pages_NoShowToday.giris')}</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_NoShowToday.cikis')}</span> <strong>{(detail.check_out || '').slice(0, 10)}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_NoShowToday.konuk_e5c88')}</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
-                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.tutar_64d2c')}</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.tutar_64d2c')}</span> <strong>{fmtMoney(detail.total_amount, detail.currency)}</strong></div>
                 {detail.source && <div><span className="text-slate-500">Kanal:</span> <strong>{detail.source}</strong></div>}
                 {detail.deposit_amount > 0 && (
-                  <div><span className="text-slate-500">Depozit:</span> <strong>{fmtTRY(detail.deposit_amount)}</strong></div>
+                  <div><span className="text-slate-500">Depozit:</span> <strong>{fmtMoney(detail.deposit_amount, detail.currency)}</strong></div>
                 )}
                 {(detail.guest_phone || detail.phone) && (
                   <div className="col-span-2 flex items-center gap-2">

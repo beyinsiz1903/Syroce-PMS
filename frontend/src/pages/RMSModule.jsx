@@ -29,6 +29,7 @@ import {
   Ban, Zap, ArrowUpRight, ArrowDownRight, Minus,
   RefreshCw, Loader2, AlertTriangle, Info, FlaskConical, BarChart3
 } from 'lucide-react';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -92,6 +93,7 @@ function ChartEmpty({ label }) {
 }
 
 const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
+  const currency = tenant?.currency || cachedTenantCurrency();
   const { t } = useTranslation();
   const [kpis, setKpis] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -283,7 +285,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   const rtData = {
     labels: roomTypePerf.map(r => r.room_type),
     datasets: [{
-      label: 'Gelir (TRY)',
+      label: `Gelir (${currency})`,
       data: roomTypePerf.map(r => r.revenue),
       backgroundColor: 'rgba(14,165,233,0.7)', // sky-500
       borderRadius: 4,
@@ -413,7 +415,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           label={t('rmsModule.kpi_adr')}
           value={
             <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-adr">
-              {adrVal}{hasBookings && <span className="text-sm font-normal"> TRY</span>}
+              {hasBookings ? formatCurrency(adrVal, currency) : adrVal}
             </span>
           }
           sub={hasBookings ? <DeltaBadge current={k.adr} previous={k.adr_prev} /> : null}
@@ -424,7 +426,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           label={t('rmsModule.kpi_revpar')}
           value={
             <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-revpar">
-              {revparVal}{hasBookings && <span className="text-sm font-normal"> TRY</span>}
+              {hasBookings ? formatCurrency(revparVal, currency) : revparVal}
             </span>
           }
           sub={hasBookings ? <DeltaBadge current={k.revpar} previous={k.revpar_prev} /> : null}
@@ -599,8 +601,8 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                       <tr key={r.id} className="border-b last:border-0 hover:bg-slate-50/50">
                         <td className="py-2">{r.date}</td>
                         <td className="py-2">{r.room_type}</td>
-                        <td className="py-2">{fmt(r.current_rate)} TRY</td>
-                        <td className="py-2 font-semibold">{fmt(r.suggested_rate)} TRY</td>
+                        <td className="py-2">{formatCurrency(r.current_rate, r.currency || currency)}</td>
+                        <td className="py-2 font-semibold">{formatCurrency(r.suggested_rate, r.currency || currency)}</td>
                         <td className="py-2">
                           <span className={`inline-flex items-center gap-0.5 font-medium ${up ? 'text-emerald-600' : down ? 'text-red-500' : 'text-slate-400'}`}>
                             {up ? <ArrowUpRight className="w-3 h-3" /> : down ? <ArrowDownRight className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
@@ -658,7 +660,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                       {ch.label}
                     </td>
                     <td className="py-2">{ch.bookings}</td>
-                    <td className="py-2 font-medium">{fmt(ch.revenue)} TRY</td>
+                    <td className="py-2 font-medium">{formatCurrency(ch.revenue, ch.currency || currency)}</td>
                     <td className="py-2">{ch.nights}</td>
                     <td className="py-2">
                       <div className="flex items-center gap-2">
