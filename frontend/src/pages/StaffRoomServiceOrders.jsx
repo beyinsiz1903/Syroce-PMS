@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast }          from 'sonner';
 import { confirmDialog }  from '@/lib/dialogs';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 import {
   ArrowLeft, RefreshCw, Clock, BedDouble, Coffee,
   CheckCircle2, ChefHat, Truck, XCircle, Wifi, WifiOff,
@@ -107,7 +108,7 @@ function OrderCard({ order, now, t, onAdvance, onCancel, isUpdating }) {
                 <span className="font-bold text-gray-900">{item.quantity || 1}×</span> {item.name}
               </span>
               <span className="text-gray-500 tabular-nums">
-                {Number((item.price || 0) * (item.quantity || 1)).toFixed(2)} ₺
+                {formatCurrency((item.price || 0) * (item.quantity || 1), item.currency || cachedTenantCurrency())}
               </span>
             </div>
           ))}
@@ -118,7 +119,7 @@ function OrderCard({ order, now, t, onAdvance, onCancel, isUpdating }) {
           )}
           <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-200 font-semibold text-sm">
             <span className="text-gray-700">{t('staffRoomService.total', 'Toplam')}</span>
-            <span className="text-gray-900 tabular-nums">{total.toFixed(2)} ₺</span>
+            <span className="text-gray-900 tabular-nums">{formatCurrency(total, order.currency || cachedTenantCurrency())}</span>
           </div>
         </div>
 

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Landmark, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import axios from 'axios';
+import { formatCurrency } from '@/lib/currency';
+
+const money = (row) => formatCurrency(row?.amount || 0, row?.currency || 'TRY');
 
 export default function BankReconciliationModule() {
   const [transactions, setTransactions] = useState([]);
@@ -87,18 +90,18 @@ export default function BankReconciliationModule() {
           <div className="flex flex-col md:flex-row md:items-center gap-4 text-sm">
             <div>
               <strong className="text-gray-700">Seçili Banka İşlemi:</strong><br />
-              {selectedTxn ? `${selectedTxn.amount.toLocaleString('tr-TR')} ₺ (${selectedTxn.sender_name})` : <span className="text-gray-500">Bekleniyor...</span>}
+              {selectedTxn ? `${money(selectedTxn)} (${selectedTxn.sender_name})` : <span className="text-gray-500">Bekleniyor...</span>}
             </div>
             <div className="hidden md:block text-2xl text-blue-300">↔</div>
             <div>
               <strong className="text-gray-700">Seçili Fatura/Cari:</strong><br />
-              {selectedInvoice ? `${selectedInvoice.number} - ${selectedInvoice.amount.toLocaleString('tr-TR')} ₺` : <span className="text-gray-500">Bekleniyor...</span>}
+              {selectedInvoice ? `${selectedInvoice.number} - ${money(selectedInvoice)}` : <span className="text-gray-500">Bekleniyor...</span>}
             </div>
           </div>
           
           <button 
             onClick={() => setConfirmDialog(true)}
-            disabled={!selectedTxn || !selectedInvoice}
+            disabled={!selectedTxn || !selectedInvoice || selectedTxn.currency !== selectedInvoice.currency}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 whitespace-nowrap"
           >
             <CheckCircle className="w-4 h-4" />
@@ -135,7 +138,7 @@ export default function BankReconciliationModule() {
                     >
                       <div className="flex justify-between items-start mb-1">
                         <span className="font-bold text-gray-900">{txn.sender_name}</span>
-                        <span className="font-bold text-green-600">+{txn.amount.toLocaleString('tr-TR')} ₺</span>
+                        <span className="font-bold text-green-600">+{money(txn)}</span>
                       </div>
                       <div className="text-sm text-gray-600 mb-2">{txn.description}</div>
                       <div className="flex justify-between items-center text-xs">
@@ -181,7 +184,7 @@ export default function BankReconciliationModule() {
                   >
                     <div className="flex justify-between items-start mb-1">
                       <span className="font-bold text-gray-900">{inv.client_name}</span>
-                      <span className="font-bold text-red-600">{inv.amount.toLocaleString('tr-TR')} ₺</span>
+                      <span className="font-bold text-red-600">{money(inv)}</span>
                     </div>
                     <div className="flex justify-between items-center text-xs mt-2">
                       <span className="text-gray-600">Belge No: {inv.number}</span>
@@ -212,9 +215,14 @@ export default function BankReconciliationModule() {
                 Aşağıdaki eşleştirmeyi onaylıyor musunuz? Onayladıktan sonra sistem otomatik olarak tahsilat yevmiye fişini (102 / 120) kesecektir.
               </p>
               <div className="bg-gray-50 p-3 rounded-md mb-4 text-sm">
-                <div className="mb-1"><strong>Gelen Para:</strong> {selectedTxn?.amount?.toLocaleString('tr-TR')} ₺ ({selectedTxn?.sender_name})</div>
-                <div><strong>Fatura Borcu:</strong> {selectedInvoice?.amount?.toLocaleString('tr-TR')} ₺ ({selectedInvoice?.number})</div>
+                <div className="mb-1"><strong>Gelen Para:</strong> {money(selectedTxn)} ({selectedTxn?.sender_name})</div>
+                <div><strong>Fatura Borcu:</strong> {money(selectedInvoice)} ({selectedInvoice?.number})</div>
               </div>
+              {selectedTxn?.currency !== selectedInvoice?.currency && (
+                <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded text-sm mb-3">
+                  Para birimleri farklı. Kur bilgisi olmadan bu kayıtlar eşleştirilemez.
+                </div>
+              )}
               {selectedTxn?.amount !== selectedInvoice?.amount && (
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded text-sm flex gap-2">
                   <AlertCircle className="w-5 h-5 shrink-0" />

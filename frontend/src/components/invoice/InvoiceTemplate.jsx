@@ -32,6 +32,7 @@ const InvoiceTemplate = ({ invoice, tenant }) => {
   const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
   const taxTotal = items.reduce((acc, item) => acc + (item.quantity * item.unitPrice * (item.taxRate / 100)), 0);
   const grandTotal = subtotal + taxTotal;
+  const invoiceCurrency = String(invoice.currency || 'TRY').toUpperCase();
 
   return (
     <div className="bg-white text-black p-8 sm:p-12 w-full max-w-[800px] mx-auto min-h-[1123px] shadow-sm relative text-sm" id="invoice-printable-area">
@@ -143,7 +144,7 @@ const InvoiceTemplate = ({ invoice, tenant }) => {
 
       {/* Footer / Notes */}
       <div className="mt-16 pt-8 border-t border-gray-100 text-xs text-gray-500 space-y-2">
-        <p><strong>Not:</strong> Yalnız {grandTotal.toFixed(2)} TL'dir. (Yazı ile simülasyon)</p>
+        <p><strong>Not:</strong> Yalnız {formatAmount(grandTotal, invoiceCurrency)}'dir. (Yazı ile simülasyon)</p>
         <p>Banka Hesap Bilgilerimiz:</p>
         <p>TR12 0000 0000 0000 0000 0000 00 - X Bankası A.Ş.</p>
         <p className="mt-4 text-center text-gray-400">Bu belge e-Fatura kapsamında elektronik olarak düzenlenmiştir.</p>
