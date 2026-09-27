@@ -82,6 +82,11 @@ def _ts_sort_key(value) -> str:
     return str(value)
 
 
+def _normalize_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return "TRY" if code in {"TL", "TRL"} else code
+
+
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
@@ -136,7 +141,7 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
     booking_map = {}
     if booking_ids:
         bookings = await db.bookings.find(
-            {"id": {"$in": booking_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1, "check_in": 1, "check_out": 1}
+            {"id": {"$in": booking_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1, "check_in": 1, "check_out": 1, "currency": 1}
         ).to_list(len(booking_ids))
         booking_map = {b["id"]: b for b in bookings}
 
@@ -147,6 +152,7 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
             folio["room_number"] = booking.get("room_number", "")
             folio["check_in"] = booking.get("check_in", "")
             folio["check_out"] = booking.get("check_out", "")
+            folio["currency"] = folio.get("currency") or booking.get("currency") or "TRY"
 
     return {
         "folios": folios,
@@ -224,11 +230,20 @@ async def get_pending_ar(
                 "status": "open",
                 "balance": {"$gt": 0},
             },
-            {"_id": 0, "id": 1, "booking_id": 1, "folio_number": 1, "company_id": 1, "balance": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "booking_id": 1, "folio_number": 1, "company_id": 1, "balance": 1, "currency": 1, "created_at": 1},
         ).to_list(10000)
 
         if not all_folios:
             return []
+
+        booking_ids = list({f.get("booking_id") for f in all_folios if f.get("booking_id") and not f.get("currency")})
+        booking_currency = {}
+        if booking_ids:
+            bookings = await db.bookings.find(
+                {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
+                {"_id": 0, "id": 1, "currency": 1},
+            ).to_list(len(booking_ids))
+            booking_currency = {b["id"]: _normalize_currency(b.get("currency")) for b in bookings}
 
         # Group folios by company
         folios_by_company: dict[str, list] = {}
@@ -243,12 +258,17 @@ async def get_pending_ar(
             if not company:
                 continue
 
-            total_outstanding = sum(f.get("balance", 0) for f in folios)
+            total_outstanding_by_currency: dict[str, float] = {}
+            for folio in folios:
+                currency = _normalize_currency(folio.get("currency") or booking_currency.get(folio.get("booking_id")))
+                total_outstanding_by_currency[currency] = total_outstanding_by_currency.get(currency, 0) + float(folio.get("balance") or 0)
+            total_outstanding = sum(total_outstanding_by_currency.values())
             if total_outstanding <= 0:
                 continue
 
             # Aging calculation
             aging = {"0-7": 0, "8-14": 0, "15-30": 0, "30+": 0}
+            aging_by_currency: dict[str, dict[str, float]] = {key: {} for key in aging}
             oldest_iso = None
             oldest_days = 0
             for folio in folios:
@@ -259,14 +279,17 @@ async def get_pending_ar(
                     folio_dt = now
                 days = (now - folio_dt).days
                 balance = folio.get("balance", 0)
+                currency = _normalize_currency(folio.get("currency") or booking_currency.get(folio.get("booking_id")))
                 if days <= 7:
-                    aging["0-7"] += balance
+                    bucket = "0-7"
                 elif days <= 14:
-                    aging["8-14"] += balance
+                    bucket = "8-14"
                 elif days <= 30:
-                    aging["15-30"] += balance
+                    bucket = "15-30"
                 else:
-                    aging["30+"] += balance
+                    bucket = "30+"
+                aging[bucket] += balance
+                aging_by_currency[bucket][currency] = aging_by_currency[bucket].get(currency, 0) + balance
                 if oldest_iso is None or created_at < oldest_iso:
                     oldest_iso = created_at
                     oldest_days = days
@@ -281,10 +304,15 @@ async def get_pending_ar(
                     "contact_phone": company.get("contact_phone", ""),
                     "payment_terms": company.get("payment_terms", "Net 30"),
                     "total_outstanding": round(total_outstanding, 2),
+                    "total_outstanding_by_currency": {code: round(amount, 2) for code, amount in sorted(total_outstanding_by_currency.items())},
                     "open_folios_count": len(folios),
                     "oldest_invoice_date": oldest_iso,
                     "days_outstanding": oldest_days,
                     "aging": aging,
+                    "aging_by_currency": {
+                        bucket: {code: round(amount, 2) for code, amount in sorted(values.items())}
+                        for bucket, values in aging_by_currency.items()
+                    },
                 }
             )
 
@@ -328,7 +356,7 @@ async def get_pending_ar_details(
     if booking_ids:
         bookings = await db.bookings.find(
             {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
-            {"_id": 0, "id": 1, "reservation_number": 1, "confirmation_number": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1},
+            {"_id": 0, "id": 1, "reservation_number": 1, "confirmation_number": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "currency": 1},
         ).to_list(len(booking_ids))
     booking_map = {booking["id"]: booking for booking in bookings}
     rows = []
@@ -346,8 +374,12 @@ async def get_pending_ar_details(
                 "check_out": booking.get("check_out"),
                 "created_at": folio.get("created_at"),
                 "balance": round(float(folio.get("balance") or 0), 2),
+                "currency": _normalize_currency(folio.get("currency") or booking.get("currency")),
             }
         )
+    totals_by_currency: dict[str, float] = {}
+    for row in rows:
+        totals_by_currency[row["currency"]] = totals_by_currency.get(row["currency"], 0) + row["balance"]
     return {
         "company": {
             "id": company_id,
@@ -358,6 +390,7 @@ async def get_pending_ar_details(
         },
         "folios": rows,
         "total_outstanding": round(sum(row["balance"] for row in rows), 2),
+        "total_outstanding_by_currency": {code: round(amount, 2) for code, amount in sorted(totals_by_currency.items())},
     }
 
 
@@ -380,13 +413,13 @@ async def send_pending_ar_reminder(
         f"<td>{html.escape(str(row['folio_number']))}</td>"
         f"<td>{html.escape(str(row['room_number']))}</td>"
         f"<td>{html.escape(str(row['guest_name']))}</td>"
-        f"<td style='text-align:right'>{row['balance']:,.2f} TL</td>"
+        f"<td style='text-align:right'>{row['balance']:,.2f} {html.escape(row['currency'])}</td>"
         "</tr>"
         for row in details["folios"]
     )
     body = (
         f"<p>Sayın {html.escape(company.get('contact_person') or company.get('name') or 'Yetkili')},</p>"
-        f"<p>{html.escape(hotel_name)} nezdindeki toplam <strong>{details['total_outstanding']:,.2f} TL</strong> "
+        f"<p>{html.escape(hotel_name)} nezdindeki toplam <strong>{' · '.join(f'{amount:,.2f} {html.escape(code)}' for code, amount in details['total_outstanding_by_currency'].items())}</strong> "
         "tutarındaki açık bakiyenize ilişkin döküm aşağıdadır.</p>"
         "<table style='border-collapse:collapse;width:100%'><thead><tr>"
         "<th>Folyo</th><th>Oda</th><th>Misafir</th><th style='text-align:right'>Bakiye</th>"
@@ -409,6 +442,7 @@ async def send_pending_ar_reminder(
         "company_id": company_id,
         "recipient": recipient,
         "amount": details["total_outstanding"],
+        "amount_by_currency": details["total_outstanding_by_currency"],
         "folio_ids": [row["folio_id"] for row in details["folios"]],
         "sent_by": current_user.id,
         "sent_at": datetime.now(UTC).isoformat(),
@@ -422,7 +456,7 @@ async def send_pending_ar_reminder(
         action="pending_ar_reminder_sent",
         entity_type="company",
         entity_id=company_id,
-        changes={"recipient": recipient, "amount": details["total_outstanding"]},
+        changes={"recipient": recipient, "amount": details["total_outstanding"], "amount_by_currency": details["total_outstanding_by_currency"]},
     )
     return {"sent": True, "recipient": recipient, "sent_at": reminder["sent_at"]}
 
