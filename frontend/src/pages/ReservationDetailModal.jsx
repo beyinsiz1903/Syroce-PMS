@@ -13,9 +13,10 @@ import {
   History, MessageSquare, Star, AlertTriangle,
   LogIn, LogOut, Repeat2, Shield, Mail, Loader2, CreditCard,
   ChevronDown, DoorOpen, Globe, Clock, Layers, Eye, BedDouble,
+  ArrowLeftRight, Pencil, Plus, CheckCircle2,
 } from 'lucide-react';
 
-import { API, fmtTL, fmtCurrency, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
+import { API, fmtTL, fmtCurrency, fmtDate, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
@@ -491,6 +492,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const refLabel = bookingRef(booking);
   const channelLabel = translateValue(booking?.source_channel || booking?.channel) || 'Doğrudan';
   const guestName = guest?.name || booking?.guest_name || 'Misafir';
+  const stayNights = Math.max(1, reservationNights(booking?.check_in, booking?.check_out));
+  const headerDateRange = `${fmtDate(booking?.check_in)} — ${fmtDate(booking?.check_out)}`;
+  const guestCount = Number(booking?.guests_count || 0) || Number(booking?.adults || 0) + Number(booking?.children || 0) || 1;
 
   return (
     <div
@@ -504,14 +508,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         }
       }}
     >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Header — sade, marka rengiyle */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-white">
-          <div className="flex items-center gap-3 min-w-0">
+      <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" />
+      <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl border border-white/70 shadow-[0_24px_80px_rgba(15,23,42,0.28)] flex flex-col overflow-hidden">
+        {/* Sabit çalışma alanı başlığı: kimlik, operasyon ve konaklama özeti tek bakışta. */}
+        <div className="flex min-h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-2.5 lg:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex items-baseline gap-2 min-w-0">
-              <h2 className="text-slate-800 font-semibold text-base whitespace-nowrap">{t('cm.pages_ReservationDetailModal.rezervasyon')}</h2>
-              <span className="text-amber-700 font-mono text-sm tracking-wide truncate">{refLabel}</span>
+              <h2 className="whitespace-nowrap text-[15px] font-bold text-slate-950">{t('cm.pages_ReservationDetailModal.rezervasyon')}</h2>
+              <span className="truncate font-mono text-sm font-semibold tracking-wide text-blue-700">{refLabel}</span>
             </div>
             <Badge className={`text-[11px] h-5 px-2 ${STATUS_PILL[booking?.status] || STATUS_PILL.pending}`}>
               {statusLabel(booking?.status)}
@@ -533,10 +537,19 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 Salt okunur
               </Badge>
             )}
+            <div className="hidden min-w-0 items-center gap-3 border-l border-slate-200 pl-3 xl:flex" data-testid="reservation-header-summary">
+              <span className="max-w-44 truncate text-sm font-semibold text-slate-800" title={guestName}>{guestName}</span>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-slate-600">
+                <BedDouble className="h-3.5 w-3.5 text-blue-600" /> Oda {room?.room_number || '—'}
+              </span>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-slate-600">
+                <Calendar className="h-3.5 w-3.5 text-blue-600" /> {headerDateRange}
+              </span>
+            </div>
           </div>
           <button
             onClick={handleClose}
-            className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full p-2 transition-colors"
+            className="shrink-0 rounded-xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             data-testid="close-reservation-detail"
             aria-label={t('cm.pages_ReservationDetailModal.kapat')}
           ><X className="w-5 h-5" /></button>
@@ -544,13 +557,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
         <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
           {/* Sol panel — sticky footer'lı */}
-          <aside className="flex max-h-[42%] w-full flex-shrink-0 flex-col border-b bg-slate-50 md:max-h-none md:w-72 md:border-b-0 md:border-r">
+          <aside className="flex max-h-[42%] w-full flex-shrink-0 flex-col border-b bg-white md:max-h-none md:w-72 md:border-b-0 md:border-r md:border-slate-200">
             <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4">
               {/* Misafir başlığı */}
-              <div className="flex flex-col items-center text-center gap-2">
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-left">
                 <Avatar name={guestName} size="xl" />
                 <div className="min-w-0 w-full">
-                  <div className="font-semibold text-slate-800 text-sm truncate" title={guestName}>{guestName}</div>
+                  <div className="truncate text-sm font-bold text-slate-900" title={guestName}>{guestName}</div>
+                  <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{channelLabel} · {guestCount} misafir</div>
                   {guest?.vip_status && (
                     <Badge className="mt-1 bg-amber-100 text-amber-700 border-amber-200 text-[10px] h-4 px-1.5">
                       <Star className="w-2.5 h-2.5 mr-0.5" /> VIP
@@ -943,15 +957,15 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           </aside>
 
           {/* Ana içerik */}
-          <div className="flex-1 overflow-y-auto bg-white">
+          <div className="flex-1 overflow-y-auto bg-slate-50/40">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-              <TabsList ref={tabsListRef} className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-10">
+              <TabsList ref={tabsListRef} className="border-b border-slate-200 rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-20">
                 {primaryTabs.map(tab => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
                     data-reservation-tab={tab.id}
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-600 data-[state=active]:text-amber-700 data-[state=active]:bg-amber-50/40 data-[state=active]:shadow-none px-4 py-2.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-700 data-[state=active]:bg-blue-50/50 data-[state=active]:shadow-none px-4 py-3 text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors whitespace-nowrap"
                   >
                     <tab.icon className="w-3.5 h-3.5 mr-1.5" />{tab.label}
                   </TabsTrigger>
@@ -962,7 +976,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <button
                       type="button"
                       className={`rounded-none border-b-2 px-4 py-2.5 text-xs font-medium hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap inline-flex items-center ${
-                        activeMore ? 'border-amber-600 text-amber-700 bg-amber-50/40' : 'border-transparent text-slate-500'
+                        activeMore ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-slate-500'
                       }`}
                     >
                       {activeMore ? (<><activeMore.icon className="w-3.5 h-3.5 mr-1.5" />{activeMore.label}</>) : (<>Daha Fazla</>)}
@@ -982,7 +996,30 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TabsList>
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              {activeTab === 'general' && (
+                <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6" data-testid="reservation-workspace-overview">
+                  <div className="mb-3 grid gap-2 lg:grid-cols-2">
+                    <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><CheckCircle2 className="h-4 w-4" /></span>
+                      <div className="min-w-0"><p className="text-xs font-bold text-emerald-900">{booking?.status === 'checked_out' ? 'Konaklama tamamlandı' : booking?.status === 'checked_in' ? 'Konaklama devam ediyor' : 'Giriş bekleniyor'}</p><p className="truncate text-[11px] text-emerald-700">{stayNights} gece · {guestCount} misafir · Oda {room?.room_number || 'atanmadı'}</p></div>
+                    </div>
+                    <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${hasOpenBalance ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${hasOpenBalance ? 'bg-rose-600' : 'bg-emerald-600'}`}>{hasOpenBalance ? <CreditCard className="h-4 w-4" /> : <Shield className="h-4 w-4" />}</span>
+                      <div className="min-w-0"><p className={`text-xs font-bold ${hasOpenBalance ? 'text-rose-900' : 'text-emerald-900'}`}>{hasOpenBalance ? `Kalan tahsilat ${fmtCurrency(balance, currency)}` : 'Ödeme tamamlandı'}</p><p className={`truncate text-[11px] ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-700'}`}>{hasOpenBalance ? 'Çıkıştan önce folyo bakiyesini kapatın' : 'Rezervasyonun tahsilat bakiyesi kapalı'}</p></div>
+                    </div>
+                  </div>
+                  {!readOnly && (
+                    <div className="flex flex-wrap gap-2" aria-label="Hızlı işlemler">
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: odayı değiştir" onClick={() => setActiveTab('room_change')} data-testid="workspace-room-change"><ArrowLeftRight className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Odayı Değiştir</Button>
+                      {canEditStayDates && <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: tarihleri düzenle" onClick={openStayEditor} data-testid="workspace-stay-edit"><Pencil className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Tarihleri Düzenle</Button>}
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: ödeme ve folyo" onClick={() => setActiveTab('folios')} data-testid="workspace-folios"><CreditCard className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Ödeme / Folyo</Button>
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: ek ücret" onClick={() => setActiveTab('extras')} data-testid="workspace-extras"><Plus className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Ek Ücret Ekle</Button>
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: notlar" onClick={() => setActiveTab('notes')} data-testid="workspace-notes"><MessageSquare className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Not Ekle</Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
                 <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} onStayEdit={openStayEditor} canEditStay={canEditStayDates} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>

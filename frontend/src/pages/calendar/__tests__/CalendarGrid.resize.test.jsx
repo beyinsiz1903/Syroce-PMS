@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import CalendarGrid, { getReservationCardPresentation } from '../CalendarGrid';
+import CalendarGrid, { getReservationCardPresentation, getReservationCardSurface } from '../CalendarGrid';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key) => key }),
@@ -70,6 +70,21 @@ describe('CalendarGrid stay resize handle', () => {
       guestName: 'Test Misafir',
       paxCount: 3,
       statusLabel: 'Otelde',
+    });
+  });
+
+  it('uses distinct but readable surfaces for each reservation lifecycle state', () => {
+    expect(getReservationCardSurface({ status: 'confirmed' })).toMatchObject({
+      background: '#eff6ff',
+      border: '#3b82f6',
+    });
+    expect(getReservationCardSurface({ status: 'checked_in' })).toMatchObject({
+      background: '#ecfdf5',
+      border: '#10b981',
+    });
+    expect(getReservationCardSurface({ status: 'checked_out' })).toMatchObject({
+      background: '#fff1f2',
+      border: '#f43f5e',
     });
   });
 
