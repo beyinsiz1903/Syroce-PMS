@@ -6,11 +6,18 @@ import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 export default function FinancialTab(props) {
   const { t } = useTranslation();
   const { StatCard, categoryLabels, financialSummary, paymentMethodLabels, reportingDate } = props;
-  const money = (value) => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
+  const money = (value, currency = 'TRY') => formatCurrency(value, currency);
+  const breakdown = (values, fallback) => formatCurrencyBreakdown(values, fallback);
+  const balanceBreakdown = (key) => formatCurrencyBreakdown(
+    Object.fromEntries(Object.entries(financialSummary.open_folios?.balance_by_currency || {}).map(([currency, values]) => [currency, values?.[key] || 0])),
+    financialSummary.open_folios?.balance?.[key],
+  );
   return (
     <TabsContent value="financial" className="space-y-4 mt-4">
       {financialSummary ? (
@@ -23,28 +30,28 @@ export default function FinancialTab(props) {
             <StatCard
               icon={TrendingUp}
               label={t('cm.components_nightaudit_tabs_FinancialTab.toplam_gelir')}
-              value={money(financialSummary.revenue?.total)}
+              value={breakdown(financialSummary.revenue?.total_by_currency, financialSummary.revenue?.total)}
               subValue={`${financialSummary.revenue?.charges_count || 0} masraf`}
               color="text-emerald-600"
             />
             <StatCard
               icon={Receipt}
               label={t('cm.components_nightaudit_tabs_FinancialTab.vergi_toplami')}
-              value={money(financialSummary.tax?.total)}
-              subValue={`KDV: ${money(financialSummary.tax?.breakdown?.vat)}`}
+              value={breakdown(financialSummary.tax?.total_by_currency, financialSummary.tax?.total)}
+              subValue="Vergiler para birimine göre ayrılmıştır"
               color="text-blue-600"
             />
             <StatCard
               icon={CreditCard}
               label={t('cm.components_nightaudit_tabs_FinancialTab.toplam_odeme')}
-              value={money(financialSummary.payments?.total)}
+              value={breakdown(financialSummary.payments?.total_by_currency, financialSummary.payments?.total)}
               subValue={`${financialSummary.payments?.payments_count || 0} ödeme`}
               color="text-indigo-600"
             />
             <StatCard
               icon={ArrowUpDown}
               label="Net Pozisyon"
-              value={money(financialSummary.net_position)}
+              value={breakdown(financialSummary.net_position_by_currency, financialSummary.net_position)}
               subValue={financialSummary.net_position > 0 ? "Alacak" : financialSummary.net_position < 0 ? "Fazla ödeme" : "Dengeli"}
               color={financialSummary.net_position > 0 ? "text-amber-600" : financialSummary.net_position < 0 ? "text-red-600" : "text-emerald-600"}
             />
@@ -76,7 +83,7 @@ export default function FinancialTab(props) {
                             <span className="text-[11px] text-gray-400">({data.count})</span>
                           </div>
                           <div className="text-right">
-                            <span className="text-sm font-semibold text-gray-900">{money(data.amount)}</span>
+                            <span className="text-sm font-semibold text-gray-900">{breakdown(data.amount_by_currency, data.amount)}</span>
                             <span className="text-[11px] text-gray-400 ml-2">{pct}%</span>
                           </div>
                         </div>
@@ -106,7 +113,7 @@ export default function FinancialTab(props) {
                           <span className="text-sm font-medium text-gray-700">{paymentMethodLabels[method] || method}</span>
                           <span className="text-[11px] text-gray-400">({data.count})</span>
                         </div>
-                        <span className="text-sm font-semibold text-gray-900">{money(data.amount)}</span>
+                        <span className="text-sm font-semibold text-gray-900">{breakdown(data.amount_by_currency, data.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -130,15 +137,15 @@ export default function FinancialTab(props) {
                   <p className="text-xs text-gray-500">{t('cm.components_nightaudit_tabs_FinancialTab.toplam_acik_folyo')}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-2xl font-bold text-gray-900">{money(financialSummary.open_folios?.balance?.total)}</p>
+                  <p className="text-lg font-bold text-gray-900">{balanceBreakdown('total')}</p>
                   <p className="text-xs text-gray-500">{t('cm.components_nightaudit_tabs_FinancialTab.toplam_bakiye')}</p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-lg">
-                  <p className="text-2xl font-bold text-amber-700">{money(financialSummary.open_folios?.balance?.receivable)}</p>
+                  <p className="text-lg font-bold text-amber-700">{balanceBreakdown('receivable')}</p>
                   <p className="text-xs text-amber-600">Çıkışta tahsil edilecek</p>
                 </div>
                 <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-2xl font-bold text-blue-700">{money(financialSummary.open_folios?.balance?.overpayment)}</p>
+                  <p className="text-lg font-bold text-blue-700">{balanceBreakdown('overpayment')}</p>
                   <p className="text-xs text-blue-600">Ön ödeme / kredi bakiyesi</p>
                 </div>
               </div>
@@ -163,7 +170,7 @@ export default function FinancialTab(props) {
                             <td className="px-3 py-2">{fol.room_no || '?'}</td>
                             <td className="px-3 py-2">{fol.guest_name || 'İsimsiz'}</td>
                             <td className={`px-3 py-2 text-right font-semibold ${fol.balance > 0 ? 'text-amber-600' : (fol.balance < 0 ? 'text-blue-600' : 'text-gray-500')}`}>
-                              {money(fol.balance)}
+                              {money(fol.balance, fol.currency)}
                             </td>
                           </tr>
                         ))}

@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
+import { formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 export default function ReconciliationTab(props) {
   const {
     StatCard,
@@ -12,7 +14,8 @@ export default function ReconciliationTab(props) {
     reportingDate,
     t
   } = props;
-  const money = value => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL`;
+  const money = (value, currency = 'TRY') => formatCurrency(value, currency);
+  const breakdown = (values, fallback) => formatCurrencyBreakdown(values, fallback);
   return <TabsContent value="reconciliation" className="space-y-4 mt-4">
       {reconciliation ? <>
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
@@ -20,9 +23,9 @@ export default function ReconciliationTab(props) {
           </div>
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard icon={Receipt} label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')} value={money(reconciliation.charges_total)} subValue={`${reconciliation.charges_count || 0} masraf`} color="text-blue-600" />
-            <StatCard icon={CreditCard} label={t('common.paymentTotal')} value={money(reconciliation.payments_total)} subValue={`${reconciliation.payments_count || 0} ödeme`} color="text-emerald-600" />
-            <StatCard icon={Scale} label="Fark" value={money(reconciliation.variance)} subValue={reconciliation.is_balanced ? "Dengeli" : "Dengesiz"} color={reconciliation.is_balanced ? "text-emerald-600" : "text-red-600"} />
+            <StatCard icon={Receipt} label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')} value={breakdown(reconciliation.charges_by_currency, reconciliation.charges_total)} subValue={`${reconciliation.charges_count || 0} masraf`} color="text-blue-600" />
+            <StatCard icon={CreditCard} label={t('common.paymentTotal')} value={breakdown(reconciliation.payments_by_currency, reconciliation.payments_total)} subValue={`${reconciliation.payments_count || 0} ödeme`} color="text-emerald-600" />
+            <StatCard icon={Scale} label="Fark" value={breakdown(reconciliation.variance_by_currency, reconciliation.variance)} subValue={reconciliation.is_balanced ? "Dengeli" : "Dengesiz"} color={reconciliation.is_balanced ? "text-emerald-600" : "text-red-600"} />
             <StatCard icon={AlertOctagon} label={t('cm.components_nightaudit_tabs_ReconciliationTab.tutarsizlik')} value={reconciliation.discrepancy_count || 0} subValue={`${reconciliation.high_balance_count || 0} yüksek bakiye`} color={reconciliation.discrepancy_count > 0 ? "text-red-600" : "text-emerald-600"} />
           </div>
 
@@ -49,7 +52,7 @@ export default function ReconciliationTab(props) {
                           <Badge className={`text-[10px] ${d.type === "duplicate_charge" ? "bg-amber-50 text-amber-700 border-amber-200" : d.type === "rate_discrepancy" ? "bg-blue-50 text-blue-700 border-blue-200" : d.type === "high_balance" ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-50 text-gray-600 border-gray-200"} border`}>
                             {d.type === "duplicate_charge" ? "Tekrar Masraf" : d.type === "rate_discrepancy" ? "Oran Tutarsızlığı" : d.type === "high_balance" ? "Yüksek Bakiye" : d.type === "orphan_charge" ? "Sahipsiz Masraf" : d.type}
                           </Badge>
-                        {d.amount && <span className="text-[11px] text-gray-500">{money(d.amount)}</span>}
+                        {d.amount && <span className="text-[11px] text-gray-500">{money(d.amount, d.currency)}</span>}
                         </div>
                       </div>
                     </div>)}
@@ -80,7 +83,7 @@ export default function ReconciliationTab(props) {
                         </div>
                       </div>
                       <span className={`font-bold ${f.balance > 0 ? "text-red-600" : "text-blue-600"}`}>
-                        {money(f.balance)}
+                        {money(f.balance, f.currency)}
                       </span>
                     </div>)}
                 </div>

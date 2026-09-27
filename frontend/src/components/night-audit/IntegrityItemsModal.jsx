@@ -3,31 +3,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { ArrowRight, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
 
-const fmtMoney = (v) => {
+const fmtMoney = (v, currency = 'TRY') => {
   if (v == null) return '';
-  try {
-    return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(v);
-  } catch {
-    return `${v} TL`;
-  }
+  return formatCurrency(v, currency);
 };
 
 function itemSubtitle(it, checkKey) {
   if (checkKey === 'negative_balance_folios') {
     return it.overpayment != null
-      ? `Fazla ödeme: ${fmtMoney(it.overpayment)}`
-      : it.balance != null ? `Bakiye: ${fmtMoney(it.balance)}` : '';
+      ? `Fazla ödeme: ${fmtMoney(it.overpayment, it.currency)}`
+      : it.balance != null ? `Bakiye: ${fmtMoney(it.balance, it.currency)}` : '';
   }
   if (checkKey === 'voided_charges' || checkKey === 'closed_folio_charges') {
     const parts = [];
-    if (it.amount != null) parts.push(fmtMoney(it.amount));
+    if (it.amount != null) parts.push(fmtMoney(it.amount, it.currency));
     if (it.description) parts.push(it.description);
     if (it.reason) parts.push(`Sebep: ${it.reason}`);
     return parts.join(' · ');
   }
   if (checkKey === 'room_rate_consistency') {
-    return `Oda fiyatı: ${fmtMoney(it.rate || 0)}`;
+    return `Oda fiyatı: ${fmtMoney(it.rate || 0, it.currency)}`;
   }
   return '';
 }

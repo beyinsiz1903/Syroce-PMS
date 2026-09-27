@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Globe, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const ChannelManagerDashboard = () => {
   const { t } = useTranslation();
@@ -13,6 +14,7 @@ const ChannelManagerDashboard = () => {
   const [rateComparison, setRateComparison] = useState(null);
   const [revenueByChannel, setRevenueByChannel] = useState(null);
   const [loading, setLoading] = useState(true);
+  const money = (amount, currency) => formatCurrency(amount, currency || overview?.currency || cachedTenantCurrency());
 
   useEffect(() => {
     loadData();
@@ -76,7 +78,7 @@ const ChannelManagerDashboard = () => {
             </div>
             <div className="text-center p-3 bg-green-50 rounded-lg">
               <div className="text-2xl font-bold text-green-600">
-                ₺{overview.summary.total_revenue_today.toLocaleString()}
+                {money(overview.summary.total_revenue_today, overview.summary.currency)}
               </div>
               <div className="text-xs text-gray-600">{t('cm.components_ChannelManagerDashboard.bugunku_gelir')}</div>
             </div>
@@ -92,7 +94,7 @@ const ChannelManagerDashboard = () => {
                     <div>
                       <div className="font-medium text-sm">{channel.name}</div>
                       <div className="text-xs text-gray-500">
-                        {channel.bookings_today} rezervasyon • ₺{channel.revenue_today}
+                        {channel.bookings_today} rezervasyon • {money(channel.revenue_today, channel.currency)}
                       </div>
                     </div>
                   </div>
@@ -125,7 +127,7 @@ const ChannelManagerDashboard = () => {
                     <div key={key} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                       <span className="text-sm">{key}</span>
                       <div className="flex items-center space-x-2">
-                        <span className="font-bold">₺{data.rate}</span>
+                        <span className="font-bold">{money(data.rate, data.currency)}</span>
                         <Badge variant="outline" className="text-xs">
                           #{data.rank}
                         </Badge>
@@ -138,7 +140,7 @@ const ChannelManagerDashboard = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{t('cm.components_ChannelManagerDashboard.sizin_fiyatiniz')}</span>
                     <span className="text-lg font-bold text-blue-600">
-                      ₺{rateComparison.your_rate}
+                      {money(rateComparison.your_rate, rateComparison.currency)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between mt-2">
@@ -150,7 +152,7 @@ const ChannelManagerDashboard = () => {
                         <TrendingDown className="w-4 h-4 text-red-500" />
                       )}
                       <span className="text-sm font-medium">
-                        ₺{rateComparison.suggested_rate}
+                        {money(rateComparison.suggested_rate, rateComparison.currency)}
                       </span>
                     </div>
                   </div>
