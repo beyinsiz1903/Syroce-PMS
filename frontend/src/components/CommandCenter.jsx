@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useCurrency } from '@/context/CurrencyContext';
+import { formatCurrency } from '@/lib/currency';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -83,13 +84,17 @@ export const CommandCenter = ({
     return translated !== key ? translated : alert.title;
   };
   const getAlertDescription = alert => {
+    const currencyTotals = Object.entries(alert.totals_by_currency || {});
+    const formattedTotal = currencyTotals.length
+      ? currencyTotals.map(([currency, amount]) => formatCurrency(amount, currency, { decimals: 2 })).join(' · ')
+      : alert.total_amount ? fmtMoney(alert.total_amount) : '';
     const key = `commandCenter.alerts.${alert.type}.description`;
     const translated = t(key, {
-      amount: alert.total_amount ? fmtMoney(alert.total_amount) : ''
+      amount: formattedTotal
     });
     if (translated !== key) return translated;
     if (alert.type === 'pending_payments' && alert.total_amount) {
-      return `Toplam ${fmtMoney(alert.total_amount)} tahsil edilmedi`;
+      return `Toplam ${formattedTotal} tahsil edilmedi`;
     }
     return alert.description;
   };

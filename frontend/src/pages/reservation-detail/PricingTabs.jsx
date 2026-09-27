@@ -51,7 +51,7 @@ export function DailyRatesTab({
   businessDate,
   summary = {},
 }) {
-  const currency = booking?.currency || "TL";
+  const currency = booking?.currency || "TRY";
   const {
     t
   } = useTranslation();
@@ -256,7 +256,7 @@ export function ExtraChargesTab({
   allBookings,
   readOnly = false,
 }) {
-  const currency = booking?.currency || "TL";
+  const currency = booking?.currency || "TRY";
   const {
     t
   } = useTranslation();
@@ -384,7 +384,7 @@ export function ExtraChargesTab({
           quantity: v
         }))} />
           </div>
-          <p className="text-xs text-amber-800">{isFullComp ? 'Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 TL yansır.' : '0 TL girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.'}</p>
+          <p className="text-xs text-amber-800">{isFullComp ? `Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 ${currency === 'TRY' ? 'TL' : currency} yansır.` : `0 ${currency === 'TRY' ? 'TL' : currency} girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.`}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ekle'}</Button>

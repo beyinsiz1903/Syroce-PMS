@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
 import { compactGuestName, formatGuestName } from './roomTypeMatching';
 import { CALENDAR_DAY_WIDTH } from './bookingDragPlacement';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 // A full guest name must remain legible even for a one-night stay.  A slightly
 // wider day column with a two-line title is a better trade-off than anonymous
@@ -376,7 +377,7 @@ const CalendarGrid = ({
                             }`}
                           >
                             <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
-                              {displayRate > 0 ? `${displayRate.toLocaleString('tr-TR')} TL` : '-'}
+                              {displayRate > 0 ? formatCurrency(displayRate, typeRooms[0]?.currency || cachedTenantCurrency(), { decimals: 0 }) : '-'}
                             </div>
                             <div className="flex items-center justify-center gap-0.5 mt-0.5"
                               title={`${occupiedCount} rezervasyon / ${totalTypeRooms} satılabilir oda · ${capacity.blocked} bloklu · ${capacity.total} toplam`}

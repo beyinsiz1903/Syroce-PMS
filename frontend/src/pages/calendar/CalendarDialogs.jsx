@@ -11,6 +11,7 @@ import { alertDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
 import { deduplicateGuestSearchResults, maskGuestDocument } from './guestIdentity';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 // New Booking Dialog
 export const NewBookingDialog = ({
@@ -22,6 +23,7 @@ export const NewBookingDialog = ({
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
   const effectiveMinDate = minDate || new Date().toISOString().split('T')[0];
   const activeRoom = selectedRoom || (rooms || []).find(room => room.id === newBooking.room_id);
+  const currency = newBooking.currency || activeRoom?.currency || cachedTenantCurrency();
   const occupancyRule = useMemo(
     () => findOccupancyRule(occupancyPricingRules, activeRoom),
     [occupancyPricingRules, activeRoom],
@@ -478,15 +480,15 @@ export const NewBookingDialog = ({
             <div className="font-semibold">Kişi bazlı fiyat özeti</div>
             <div className="mt-1">
               {occupancyQuote.rule.base_occupancy} yetişkin dahil
-              {occupancyQuote.extraAdults > 0 && ` · ${occupancyQuote.extraAdults} ek yetişkin × ₺${occupancyQuote.rule.extra_adult_rate.toLocaleString('tr-TR')}`}
+              {occupancyQuote.extraAdults > 0 && ` · ${occupancyQuote.extraAdults} ek yetişkin × ${formatCurrency(occupancyQuote.rule.extra_adult_rate, currency)}`}
               {occupancyQuote.childBreakdown?.map((child, index) => (
                 <span key={`${child.age}-${index}`}>
-                  {` · ${child.age} yaş ${child.rate > 0 ? `₺${child.rate.toLocaleString('tr-TR')}` : 'ücretsiz'}`}
+                  {` · ${child.age} yaş ${child.rate > 0 ? formatCurrency(child.rate, currency) : 'ücretsiz'}`}
                 </span>
               ))}
             </div>
             <div className="mt-1 font-medium">
-              Gecelik ₺{occupancyQuote.nightlyTotal.toLocaleString('tr-TR')} · {occupancyQuote.nights} gece toplam ₺{occupancyQuote.totalAmount.toLocaleString('tr-TR')}
+              Gecelik {formatCurrency(occupancyQuote.nightlyTotal, currency)} · {occupancyQuote.nights} gece toplam {formatCurrency(occupancyQuote.totalAmount, currency)}
             </div>
           </div>
         )}
@@ -1139,7 +1141,7 @@ export const FindRoomDialog = ({
                     <div className="text-sm text-gray-600 capitalize">
                       {room.room_type} - Kat {room.floor} - Kapasite: {room.capacity}
                     </div>
-                    <div className="text-sm font-semibold text-green-600">{(room.base_price || 0).toLocaleString('tr-TR')} TL/gece</div>
+                    <div className="text-sm font-semibold text-green-600">{formatCurrency(room.base_price || 0, room.currency || cachedTenantCurrency())}/gece</div>
                   </div>
                   <Button size="sm" onClick={() => onSelectRoom(room)}>Rezerve Et</Button>
                 </div>

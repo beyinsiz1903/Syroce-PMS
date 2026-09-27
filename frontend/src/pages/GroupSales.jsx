@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, Plus, Mail, Phone, Home, Trash2, UploadCloud, UnlockKeyhole } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const StatusBadge = ({ status }) => {
   const { t } = useTranslation();
@@ -53,6 +54,8 @@ const emptyRoomingRow = () => ({
 const GroupSales = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const tenantCurrency = tenant?.currency || cachedTenantCurrency();
+  const money = (amount, currency) => formatCurrency(amount, currency || tenantCurrency);
 
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState([]);
@@ -372,7 +375,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                   <p className="text-xs text-gray-500 mt-1">Rezervasyon kapanış tarihi</p>
                 </div>
                 <div>
-                  <Label>Grup Fiyatı (₺) *</Label>
+                  <Label>Grup Fiyatı ({tenantCurrency}) *</Label>
                   <Input
                     type="number"
                     min="0"
@@ -526,7 +529,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Grup Fiyatı</p>
-                        <p className="font-semibold">₺{group.group_rate}</p>
+                        <p className="font-semibold">{money(group.group_rate, group.currency)}</p>
                       </div>
                     </div>
                   </div>
@@ -656,7 +659,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                             </div>
                             <div className="text-right">
                               <p className="text-sm text-gray-500">Tutar</p>
-                              <p className="text-lg font-bold">₺{booking.total_amount}</p>
+                              <p className="text-lg font-bold">{money(booking.total_amount, booking.currency || groupDetails.block.currency)}</p>
                             </div>
                           </div>
                         </CardContent>
@@ -795,7 +798,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div className="bg-indigo-50 border border-indigo-100 rounded p-3">
                               <div className="text-xs text-indigo-700">Toplam Folio Tutarı</div>
-                              <div className="text-2xl font-bold text-indigo-900">₺{total.toFixed(2)}</div>
+                              <div className="text-2xl font-bold text-indigo-900">{money(total, groupDetails.block.currency)}</div>
                             </div>
                             <div className="bg-blue-50 border border-blue-100 rounded p-3">
                               <div className="text-xs text-blue-700">Toplam Geceleme</div>
@@ -803,7 +806,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                             </div>
                             <div className="bg-green-50 border border-green-100 rounded p-3">
                               <div className="text-xs text-green-700">Ortalama Gecelik (ADR)</div>
-                              <div className="text-2xl font-bold text-green-900">₺{adr.toFixed(2)}</div>
+                              <div className="text-2xl font-bold text-green-900">{money(adr, groupDetails.block.currency)}</div>
                             </div>
                             <div className="bg-amber-50 border border-amber-100 rounded p-3">
                               <div className="text-xs text-amber-700">Pickup / Toplam Oda</div>
@@ -836,7 +839,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                                       {ci.toLocaleDateString("tr-TR")} → {co.toLocaleDateString("tr-TR")}
                                     </div>
                                     <div className="col-span-2 text-right">{n}</div>
-                                    <div className="col-span-2 text-right font-medium">₺{Number(b.total_amount || 0).toFixed(2)}</div>
+                                    <div className="col-span-2 text-right font-medium">{money(b.total_amount, b.currency || groupDetails.block.currency)}</div>
                                   </div>
                                 );
                               })
@@ -845,7 +848,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
                               <div className="px-3 py-2 text-sm border-t bg-indigo-50 grid grid-cols-12 gap-2 font-bold">
                                 <div className="col-span-8 text-right">TOPLAM</div>
                                 <div className="col-span-2 text-right">{nightsTotal}</div>
-                                <div className="col-span-2 text-right text-indigo-700">₺{total.toFixed(2)}</div>
+                                <div className="col-span-2 text-right text-indigo-700">{money(total, groupDetails.block.currency)}</div>
                               </div>
                             )}
                           </div>
@@ -901,7 +904,7 @@ const GroupSales = ({ user, tenant, onLogout }) => {
               <div className="text-center">
                 <p className="text-sm text-gray-500">Potansiyel Oda Geliri</p>
                 <p className="text-xl font-bold text-amber-600">
-                  ₺{groups.reduce((sum, g) => sum + (g.total_rooms * (g.group_rate || 0)), 0).toFixed(0)}
+                  {money(groups.reduce((sum, g) => sum + (g.total_rooms * (g.group_rate || 0)), 0), tenantCurrency)}
                 </p>
               </div>
             </CardContent>

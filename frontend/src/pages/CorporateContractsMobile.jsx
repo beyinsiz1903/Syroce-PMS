@@ -7,8 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { ArrowLeft, Building2, AlertTriangle, Calendar, DollarSign, RefreshCw, Award } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
-const CorporateContractsMobile = ({ user }) => {
+const CorporateContractsMobile = ({ user, tenant }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -16,6 +17,7 @@ const CorporateContractsMobile = ({ user }) => {
   const [customers, setCustomers] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [activeView, setActiveView] = useState('contracts');
+  const currency = tenant?.currency || cachedTenantCurrency();
 
   useEffect(() => {
     loadData();
@@ -80,7 +82,7 @@ const CorporateContractsMobile = ({ user }) => {
               <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                 <div className="bg-violet-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">Anlaşma Fiyat</div>
-                  <div className="font-bold text-violet-600">₺{contract.contracted_rate}</div>
+                  <div className="font-bold text-violet-600">{formatCurrency(contract.contracted_rate, contract.currency || currency)}</div>
                 </div>
                 <div className="bg-green-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">İndirim</div>
@@ -121,7 +123,7 @@ const CorporateContractsMobile = ({ user }) => {
                 </div>
                 <div className="bg-green-50 p-2 rounded">
                   <div className="text-gray-500 text-xs">Toplam Gelir</div>
-                  <div className="font-bold text-green-600">₺{(customer.total_revenue / 1000).toFixed(0)}K</div>
+                  <div className="font-bold text-green-600">{formatCurrency(customer.total_revenue, customer.currency || currency, { decimals: 0 })}</div>
                 </div>
               </div>
               <div className="text-xs text-gray-500 mt-2">Son rezervasyon: {customer.last_booking}</div>

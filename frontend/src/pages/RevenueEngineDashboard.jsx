@@ -7,6 +7,7 @@ import { TrendingUp, DollarSign, BarChart3, Target, Calendar, ArrowUp, ArrowDown
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const API = "";
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'];
 export default function RevenueEngineDashboard({
@@ -20,6 +21,8 @@ export default function RevenueEngineDashboard({
   } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [forecast, setForecast] = useState(null);
+  const currency = dashboard?.currency || forecast?.currency || cachedTenantCurrency();
+  const money = (amount, code) => formatCurrency(amount, code || currency);
   const [suggestions, setSuggestions] = useState(null);
   const [yieldRecs, setYieldRecs] = useState(null);
   const [channelPerf, setChannelPerf] = useState(null);
@@ -115,13 +118,13 @@ export default function RevenueEngineDashboard({
           <Card className="border-l-4 border-l-teal-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide">ADR (30g)</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-adr">{p30.adr?.toFixed(2) || '0'} TL</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-adr">{money(p30.adr, p30.currency)}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-sky-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide">RevPAR (30g)</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revpar">{p30.revpar?.toFixed(2) || '0'} TL</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revpar">{money(p30.revpar, p30.currency)}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-violet-500">
@@ -133,7 +136,7 @@ export default function RevenueEngineDashboard({
           <Card className="border-l-4 border-l-amber-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide">Toplam Gelir (30g)</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revenue">{(p30.total_revenue || 0).toLocaleString()} TL</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revenue">{money(p30.total_revenue, p30.currency)}</p>
             </CardContent>
           </Card>
         </div>
@@ -165,7 +168,7 @@ export default function RevenueEngineDashboard({
                   fontSize: 10
                 }} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="adr" stroke="#0f766e" fill="#0f766e" fillOpacity={0.15} name="ADR (TL)" />
+                      <Area type="monotone" dataKey="adr" stroke="#0f766e" fill="#0f766e" fillOpacity={0.15} name={`ADR (${currency})`} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -183,7 +186,7 @@ export default function RevenueEngineDashboard({
                   fontSize: 10
                 }} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="revpar" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.15} name="RevPAR (TL)" />
+                      <Area type="monotone" dataKey="revpar" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.15} name={`RevPAR (${currency})`} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -208,7 +211,7 @@ export default function RevenueEngineDashboard({
               }} domain={[0, 100]} />
                     <Tooltip />
                     <Legend />
-                    <Bar yAxisId="left" dataKey="revenue" fill="#0f766e" name="Gelir (TL)" radius={[2, 2, 0, 0]} />
+                    <Bar yAxisId="left" dataKey="revenue" fill="#0f766e" name={`Gelir (${currency})`} radius={[2, 2, 0, 0]} />
                     <Line yAxisId="right" type="monotone" dataKey="occupancy_pct" stroke="#f59e0b" name="Doluluk %" strokeWidth={2} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -241,8 +244,8 @@ export default function RevenueEngineDashboard({
                           <td className="py-2 px-3 font-medium">{s.date}</td>
                           <td className="py-2 px-3 text-center">{s.current_occupancy_pct}%</td>
                           <td className="py-2 px-3 text-center">x{s.demand_multiplier}</td>
-                          <td className="py-2 px-3 text-right font-semibold">{s.ideal_adr?.toFixed(2)} TL</td>
-                          <td className="py-2 px-3 text-right">{s.revpar_estimate?.toFixed(2)} TL</td>
+                          <td className="py-2 px-3 text-right font-semibold">{money(s.ideal_adr, s.currency)}</td>
+                          <td className="py-2 px-3 text-right">{money(s.revpar_estimate, s.currency)}</td>
                           <td className="py-2 px-3 text-center">
                             <span className="inline-flex items-center gap-1">{recIcon(s.recommendation)} {s.recommendation}</span>
                           </td>
@@ -271,7 +274,7 @@ export default function RevenueEngineDashboard({
                           <p className="text-xs text-slate-500">{o.message}</p>
                         </div>
                         <Badge variant={o.type === 'price_increase' ? 'default' : 'secondary'}>
-                          +{o.potential_revenue?.toLocaleString()} TL
+                          +{money(o.potential_revenue, o.currency)}
                         </Badge>
                       </div>)}
                   </div>
@@ -405,7 +408,7 @@ export default function RevenueEngineDashboard({
                   fontSize: 11
                 }} width={80} />
                       <Tooltip />
-                      <Bar dataKey="revenue" fill="#0f766e" name="Gelir (TL)" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="revenue" fill="#0f766e" name={`Gelir (${currency})`} radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -432,8 +435,8 @@ export default function RevenueEngineDashboard({
                       {(channelPerf?.channels || []).map((c, i) => <tr key={c.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                           <td className="py-2 px-3 font-medium">{c.channel}</td>
                           <td className="py-2 px-3 text-right">{c.bookings}</td>
-                          <td className="py-2 px-3 text-right">{c.revenue?.toLocaleString()} TL</td>
-                          <td className="py-2 px-3 text-right">{c.avg_booking_value?.toFixed(2)} TL</td>
+                          <td className="py-2 px-3 text-right">{money(c.revenue, c.currency)}</td>
+                          <td className="py-2 px-3 text-right">{money(c.avg_booking_value, c.currency)}</td>
                           <td className="py-2 px-3 text-right">{c.booking_share_pct}%</td>
                           <td className="py-2 px-3 text-right">{c.revenue_share_pct}%</td>
                         </tr>)}
