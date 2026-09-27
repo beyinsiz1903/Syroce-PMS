@@ -19,6 +19,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/currency';
 
 const RevenueMobile = ({ user }) => {
   const { t } = useTranslation();
@@ -101,9 +102,7 @@ const RevenueMobile = ({ user }) => {
     return 'text-gray-600';
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amount);
-  };
+  const formatCurrency = (amount, currency) => formatMoney(amount, currency || cachedTenantCurrency());
 
   if (loading) {
     return (

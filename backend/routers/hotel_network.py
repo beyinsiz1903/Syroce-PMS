@@ -17,6 +17,7 @@ from pymongo import ReturnDocument
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
 
@@ -194,9 +195,10 @@ async def create_listing(data: NetworkListingCreate, user: User = Depends(get_cu
     tenant_id = _tenant(user)
     if datetime.fromisoformat(data.date_end) <= datetime.fromisoformat(data.date_start):
         raise HTTPException(400, "İlan bitiş tarihi başlangıçtan sonra olmalıdır")
+    currency, _ = await get_tenant_currency(tenant_id)
     doc = {
         "id": _id(), "seller_tenant_id": tenant_id, "status": "active",
-        "reserved_count": 0, **data.model_dump(), "created_by": user.id,
+        "reserved_count": 0, "currency": currency, **data.model_dump(), "created_by": user.id,
         "created_at": _now(), "updated_at": _now(),
     }
     sysdb = get_system_db()
@@ -274,7 +276,7 @@ async def _create_target_booking(sysdb, request_doc: dict, actor_id: str) -> dic
             "source_channel": "hotel_network", "source": f"Otel Ağı · {source_name}",
             "source_hotel_id": request_doc["source_tenant_id"], "source_hotel_name": source_name,
             "hotel_network_request_id": request_doc["id"], "total_amount": request_doc["total_amount"],
-            "currency": "TRY", "notes": request_doc.get("note", ""), "created_by": actor_id,
+            "currency": request_doc.get("currency") or "TRY", "notes": request_doc.get("note", ""), "created_by": actor_id,
             "created_at": _now(), "updated_at": _now(), "target_hotel_name": target_name,
         }
         try:
@@ -298,7 +300,7 @@ async def _post_interhotel_ledger(sysdb, request_doc: dict, target_booking: dict
         "id": _id(), "transfer_reference": transfer_ref, "request_id": request_doc["id"],
         "source_booking_id": request_doc.get("source_booking_id"), "target_booking_id": target_booking["id"],
         "gross_amount": gross, "commission_amount": commission, "amount": amount,
-        "currency": "TRY", "reason": reason, "status": "open", "created_at": _now(),
+        "currency": request_doc.get("currency") or "TRY", "reason": reason, "status": "open", "created_at": _now(),
     }
     debit = {**common, "id": _id(), "tenant_id": debtor, "counterparty_tenant_id": creditor, "entry_type": "payable"}
     credit = {**common, "id": _id(), "tenant_id": creditor, "counterparty_tenant_id": debtor, "entry_type": "receivable"}
@@ -386,6 +388,7 @@ async def create_request(data: NetworkRequestCreate, user: User = Depends(get_cu
         "id": _id(), "listing_id": listing["id"], "source_tenant_id": source,
         "target_tenant_id": listing["seller_tenant_id"], "room_type": listing["room_type"],
         "nightly_rate": listing["nightly_rate"], "total_amount": round(listing["nightly_rate"] * nights, 2),
+        "currency": listing.get("currency") or "TRY",
         "allotment": listing["allotment"], "commission_pct": commission_pct,
         "relationship": "contracted" if contract else "spot", "status": "pending",
         **data.model_dump(exclude={"listing_id"}), "created_by": user.id, "created_at": _now(), "updated_at": _now(),
@@ -454,8 +457,29 @@ async def network_ledger(status: str | None = Query(None), user: User = Depends(
         query["status"] = status
     sysdb = get_system_db()
     rows = await sysdb.hotel_network_ledger.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    receivable = round(sum(row["amount"] for row in rows if row["entry_type"] == "receivable" and row["status"] == "open"), 2)
-    payable = round(sum(row["amount"] for row in rows if row["entry_type"] == "payable" and row["status"] == "open"), 2)
+    totals_by_currency: dict[str, dict[str, float]] = {}
+    for row in rows:
+        if row.get("status") != "open":
+            continue
+        currency = str(row.get("currency") or "TRY").upper()
+        bucket = totals_by_currency.setdefault(currency, {"open_receivable": 0.0, "open_payable": 0.0, "net": 0.0})
+        key = "open_receivable" if row.get("entry_type") == "receivable" else "open_payable"
+        bucket[key] += float(row.get("amount") or 0)
+    for bucket in totals_by_currency.values():
+        bucket["open_receivable"] = round(bucket["open_receivable"], 2)
+        bucket["open_payable"] = round(bucket["open_payable"], 2)
+        bucket["net"] = round(bucket["open_receivable"] - bucket["open_payable"], 2)
     for row in rows:
         row["counterparty_name"] = await _hotel_name(sysdb, row["counterparty_tenant_id"])
-    return {"entries": rows, "summary": {"open_receivable": receivable, "open_payable": payable, "net": round(receivable - payable, 2), "currency": "TRY"}}
+    single_currency = next(iter(totals_by_currency), None) if len(totals_by_currency) == 1 else None
+    legacy = totals_by_currency.get(single_currency, {}) if single_currency else {}
+    return {
+        "entries": rows,
+        "summary": {
+            "open_receivable": legacy.get("open_receivable"),
+            "open_payable": legacy.get("open_payable"),
+            "net": legacy.get("net"),
+            "currency": single_currency,
+            "totals_by_currency": totals_by_currency,
+        },
+    }
