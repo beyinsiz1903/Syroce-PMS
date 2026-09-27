@@ -13,6 +13,10 @@ _FX_RECEIPT_RE = re.compile(
     r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3}).*?Kur:\s*1\s+[A-Z]{3}\s*=\s*([\d.,]+)",
     re.IGNORECASE,
 )
+_LEGACY_RECEIPT_ONLY_RE = re.compile(
+    r"\[Döviz Çevirici\]\s*([\d.,]+)\s+([A-Z]{2,3})\s+tahsil edildi\.\s*Kur:\s*([\d.,]+)",
+    re.IGNORECASE,
+)
 
 
 def _normalize_currency(value, fallback="TRY") -> str:
@@ -32,6 +36,16 @@ def _enrich_payment_currency(payment: dict, ledger_currency: str) -> dict:
             enriched["received_amount"] = float(match.group(1).replace(",", "."))
             enriched["received_currency"] = _normalize_currency(match.group(2))
             enriched["exchange_rate"] = float(match.group(3).replace(",", "."))
+            return enriched
+        except ValueError:
+            pass
+    legacy_match = _LEGACY_RECEIPT_ONLY_RE.search(str(enriched.get("notes") or ""))
+    if legacy_match:
+        try:
+            enriched["received_amount"] = float(legacy_match.group(1).replace(",", "."))
+            enriched["received_currency"] = _normalize_currency(legacy_match.group(2))
+            enriched["exchange_rate"] = float(legacy_match.group(3).replace(",", "."))
+            enriched["legacy_received_only"] = True
             return enriched
         except ValueError:
             pass
@@ -217,6 +231,8 @@ class FolioDetailService:
                     "received_amount": p.get("received_amount"),
                     "received_currency": _normalize_currency(p.get("received_currency"), p.get("currency")),
                     "exchange_rate": p.get("exchange_rate"),
+                    "display_amount": p.get("received_amount") if p.get("legacy_received_only") else p.get("amount", 0),
+                    "display_currency": p.get("received_currency") if p.get("legacy_received_only") else _normalize_currency(p.get("currency")),
                     "voided": p.get("voided", False),
                     "void_reason": p.get("void_reason"),
                     "voided_by": p.get("voided_by"),

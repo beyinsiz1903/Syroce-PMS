@@ -1155,6 +1155,12 @@ code {
 .dark .disabled\:hover\:bg-indigo-50:disabled:hover { background-color: #1e1b4b; }
 .dark .disabled\:hover\:bg-emerald-50:disabled:hover { background-color: #064e3b; }
 
+/* Advanced folio summary gradients — preserve hue and alpha in dark mode. */
+.dark .to-blue-50\/50 { --tw-gradient-to: rgb(23 37 84 / 0.5) var(--tw-gradient-to-position); }
+.dark .to-amber-50\/60 { --tw-gradient-to: rgb(69 26 3 / 0.6) var(--tw-gradient-to-position); }
+.dark .to-emerald-50\/60 { --tw-gradient-to: rgb(2 44 34 / 0.6) var(--tw-gradient-to-position); }
+.dark .to-blue-50\/70 { --tw-gradient-to: rgb(23 37 84 / 0.7) var(--tw-gradient-to-position); }
+
 /* Fixes for PR 708 */
 .dark .border-slate-100\/50 { border-color: hsl(var(--border)); }
 .dark .placeholder-slate-400::placeholder { color: hsl(var(--muted-foreground)); }

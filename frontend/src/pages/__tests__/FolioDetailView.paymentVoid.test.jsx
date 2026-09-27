@@ -115,7 +115,7 @@ describe('FolioDetailView payment void', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('CASH');
+    await screen.findByText('Ödeme tahsilatı');
     expect(screen.queryByRole('button', { name: 'İade' })).not.toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
