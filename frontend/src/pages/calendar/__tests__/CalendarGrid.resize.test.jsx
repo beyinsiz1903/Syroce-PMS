@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import CalendarGrid from '../CalendarGrid';
+import CalendarGrid, { getReservationCardPresentation } from '../CalendarGrid';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key) => key }),
@@ -59,6 +59,20 @@ const renderGrid = (overrides = {}) => {
 };
 
 describe('CalendarGrid stay resize handle', () => {
+  it('builds a clear, localized reservation card summary', () => {
+    expect(getReservationCardPresentation({
+      ...booking,
+      status: 'checked_in',
+      adults: 2,
+      children: 1,
+      source: 'booking_com',
+    })).toMatchObject({
+      guestName: 'Test Misafir',
+      paxCount: 3,
+      statusLabel: 'Otelde',
+    });
+  });
+
   it('shows sellable capacity and restores it on the block end date', () => {
     renderGrid({
       bookings: [],
@@ -176,5 +190,16 @@ describe('CalendarGrid stay resize handle', () => {
     });
 
     expect(screen.getByTestId('booking-bar-booking-1')).toHaveTextContent('Mustafa Oktay Dalkıran');
+  });
+
+  it('exposes lifecycle, source and guest count without relying on color alone', () => {
+    renderGrid({
+      bookings: [{ ...booking, status: 'checked_in', adults: 2, children: 1 }],
+    });
+
+    const card = screen.getByTestId('booking-bar-booking-1');
+    expect(card).toHaveTextContent('Otelde');
+    expect(card).toHaveTextContent('3 kişi');
+    expect(card).toHaveAccessibleName(expect.stringContaining('Otelde'));
   });
 });
