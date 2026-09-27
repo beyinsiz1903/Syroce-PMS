@@ -9,11 +9,13 @@ import {
   TrendingUp, TrendingDown, DollarSign, Percent,
   RefreshCw, Store, Award, ShoppingCart,
 } from 'lucide-react';
+import { formatCurrency, currencySymbol, cachedTenantCurrency } from '@/lib/currency';
 
 /* ─── helpers ── */
 const fmtDate = (d) => d.toISOString().slice(0, 10);
 const fmt2    = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct  = (n) => `${Number(n || 0).toFixed(1)}%`;
+const activeCurrency = () => cachedTenantCurrency();
 
 function SummaryCard({ icon: Icon, label, value, color }) {
   const c = {
@@ -138,9 +140,9 @@ const FnBOutletDashboard = () => {
           ))
         ) : summary ? (
           <>
-            <SummaryCard icon={DollarSign}  label="Toplam Ciro"   value={`₺${fmt2(summary.total_revenue)}`}     color="blue"  />
-            <SummaryCard icon={TrendingDown} label="Toplam Maliyet" value={`₺${fmt2(summary.total_cost)}`}      color="red"   />
-            <SummaryCard icon={TrendingUp}  label="Brüt Kâr"     value={`₺${fmt2(summary.gross_profit)}`}      color="green" />
+            <SummaryCard icon={DollarSign}  label="Toplam Ciro"   value={formatCurrency(summary.total_revenue, activeCurrency())}     color="blue"  />
+            <SummaryCard icon={TrendingDown} label="Toplam Maliyet" value={formatCurrency(summary.total_cost, activeCurrency())}      color="red"   />
+            <SummaryCard icon={TrendingUp}  label="Brüt Kâr"     value={formatCurrency(summary.gross_profit, activeCurrency())}      color="green" />
             <SummaryCard icon={Percent}     label="Kâr Marjı"    value={fmtPct(summary.profit_margin)}          color="gray"  />
           </>
         ) : (
@@ -165,7 +167,7 @@ const FnBOutletDashboard = () => {
                 value={o.revenue}
                 maxValue={summary?.total_revenue || 1}
                 color="indigo"
-                suffix="₺"
+                suffix={currencySymbol(activeCurrency())}
               />
             ))}
           </div>
@@ -186,7 +188,7 @@ const FnBOutletDashboard = () => {
                 value={c.revenue}
                 maxValue={summary?.total_revenue || 1}
                 color="emerald"
-                suffix="₺"
+                suffix={currencySymbol(activeCurrency())}
               />
             ))}
           </div>
@@ -224,9 +226,9 @@ const FnBOutletDashboard = () => {
                   <tr key={item.item_name} className={`border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
                     <td className="py-2.5 font-medium text-gray-900 truncate max-w-[180px]">{item.item_name}</td>
                     <td className="py-2.5 text-right text-gray-600">{item.quantity_sold}</td>
-                    <td className="py-2.5 text-right font-semibold text-blue-600">₺{fmt2(item.total_revenue)}</td>
-                    <td className="py-2.5 text-right text-red-500">₺{fmt2(item.total_cost)}</td>
-                    <td className="py-2.5 text-right font-semibold text-emerald-600">₺{fmt2(item.gross_profit)}</td>
+                    <td className="py-2.5 text-right font-semibold text-blue-600">{formatCurrency(item.total_revenue, item.currency || activeCurrency())}</td>
+                    <td className="py-2.5 text-right text-red-500">{formatCurrency(item.total_cost, item.currency || activeCurrency())}</td>
+                    <td className="py-2.5 text-right font-semibold text-emerald-600">{formatCurrency(item.gross_profit, item.currency || activeCurrency())}</td>
                   </tr>
                 ))}
               </tbody>

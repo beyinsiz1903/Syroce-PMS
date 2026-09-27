@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/currency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -180,9 +181,7 @@ const MobileFnB = ({ user }) => {
     }
   };
 
-  const formatCurrency = (amount) => {
-    return `₺${parseFloat(amount || 0).toFixed(2)}`;
-  };
+  const formatCurrency = (amount, currency = cachedTenantCurrency()) => formatMoney(amount, currency);
 
   const loadZReport = async () => {
     try {
@@ -863,7 +862,7 @@ const MobileFnB = ({ user }) => {
               onClick={async () => {
                 const name = await promptDialog({ message: 'Ürün adı:' })?.trim();
                 if (!name) return;
-                const priceStr = await promptDialog({ message: 'Fiyat (TL):' })?.trim();
+                const priceStr = await promptDialog({ message: `Fiyat (${cachedTenantCurrency()}):` })?.trim();
                 const price = parseFloat((priceStr || '').replace(',', '.'));
                 if (!price || price <= 0) {
                   toast.error('Geçerli bir fiyat girin');

@@ -1,5 +1,6 @@
 """Auto-split from finance.py — section: mobile."""
 
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -45,6 +46,21 @@ security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
+_FX_RECEIPT_RE = re.compile(
+    r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{2,3}\s*=\s*([\d.,]+)\s+([A-Z]{2,3})",
+    re.IGNORECASE,
+)
+
+
+def _received_payment_amount(payment: dict) -> tuple[float, str]:
+    match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
+    if match:
+        try:
+            return float(match.group(1).replace(",", ".")), match.group(2).upper()
+        except ValueError:
+            pass
+    return float(payment.get("amount") or 0), str(payment.get("currency") or "TRY").upper()
+
 
 class RecordPaymentRequest(BaseModel):
     folio_id: str
@@ -72,6 +88,8 @@ async def get_daily_collections_mobile(
     total_collected = 0.0
     payment_count = 0
     payment_methods = {}
+    totals_by_currency: dict[str, float] = {}
+    methods_by_currency: dict[str, dict[str, float]] = {}
 
     business_day = target_date.date().isoformat()
     payment_query = {
@@ -84,12 +102,15 @@ async def get_daily_collections_mobile(
         ),
     }
     async for payment in db.payments.find(payment_query):
-        amount = payment.get("amount", 0)
+        amount, currency = _received_payment_amount(payment)
         total_collected += amount
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
         payment_count += 1
 
         method = payment.get("payment_method") or payment.get("method") or "unknown"
         payment_methods[method] = payment_methods.get(method, 0) + amount
+        method_totals = methods_by_currency.setdefault(method, {})
+        method_totals[currency] = method_totals.get(currency, 0) + amount
 
     return {
         "date": target_date.date().isoformat(),
@@ -97,6 +118,11 @@ async def get_daily_collections_mobile(
         "payment_count": payment_count,
         "payment_methods": payment_methods,
         "average_transaction": total_collected / payment_count if payment_count > 0 else 0,
+        "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
+        "payment_methods_by_currency": {
+            method: {key: round(value, 2) for key, value in totals.items()}
+            for method, totals in methods_by_currency.items()
+        },
     }
 
 
@@ -127,6 +153,7 @@ async def get_monthly_collections_mobile(
     # Get payments for the month
     total_collected = 0.0
     payments_by_method = {}
+    totals_by_currency: dict[str, float] = {}
 
     last_business_day = (end_of_month - timedelta(days=1)).date().isoformat()
     payment_query = {
@@ -139,13 +166,14 @@ async def get_monthly_collections_mobile(
         ),
     }
     async for payment in db.payments.find(payment_query):
-        amount = payment.get("amount", 0)
+        amount, currency = _received_payment_amount(payment)
         total_collected += amount
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
 
         method = payment.get("payment_method") or payment.get("method") or "unknown"
         payments_by_method[method] = payments_by_method.get(method, 0) + amount
 
-    return {"total_collected": round(total_collected, 2), "month": target_month, "year": target_year, "payments_by_method": {k: round(v, 2) for k, v in payments_by_method.items()}, "currency": "TRY"}
+    return {"total_collected": round(total_collected, 2), "month": target_month, "year": target_year, "payments_by_method": {k: round(v, 2) for k, v in payments_by_method.items()}, "totals_by_currency": {k: round(v, 2) for k, v in totals_by_currency.items()}}
 
 
 @router.get("/finance/profit-loss")
@@ -252,6 +280,7 @@ async def get_pending_receivables_mobile(
 
     # Get all open folios with balance
     total_pending = 0.0
+    totals_by_currency: dict[str, float] = {}
     overdue_amount = 0.0
     receivables = []
 
@@ -271,7 +300,9 @@ async def get_pending_receivables_mobile(
 
     for folio in open_folios:
         balance = folio.get("balance", 0)
+        currency = str(folio.get("currency") or "TRY").upper()
         total_pending += balance
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + balance
 
         # Get booking info from batch lookup
         booking = bookings_by_id.get(folio.get("booking_id"))
@@ -303,6 +334,7 @@ async def get_pending_receivables_mobile(
                 "folio_number": folio.get("folio_number"),
                 "guest_name": booking.get("guest_name") if booking else "Unknown",
                 "balance": balance,
+                "currency": currency,
                 "is_overdue": is_overdue,
                 "checkout_date": checkout_date_str,
                 "created_at": folio.get("created_at").isoformat() if isinstance(folio.get("created_at"), datetime) else folio.get("created_at"),
@@ -317,6 +349,7 @@ async def get_pending_receivables_mobile(
         "overdue_amount": overdue_amount,
         "receivables_count": len(receivables),
         "receivables": receivables[:20],  # Top 20
+        "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
     }
 
 

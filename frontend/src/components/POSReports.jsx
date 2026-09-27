@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 
 const PAYMENT_LABEL = {
   cash: 'Nakit',
@@ -29,6 +30,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('tr-TR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency());
 
 const POSReports = ({ outletId }) => {
   const { t } = useTranslation();
@@ -135,7 +137,7 @@ const POSReports = ({ outletId }) => {
                       <p className="text-2xl font-bold text-green-600">
                         {fmt(report.gross_sales)}
                       </p>
-                      <p className="text-xs text-gray-400">TL</p>
+                      <p className="text-xs text-gray-400">{report.currency || cachedTenantCurrency()}</p>
                     </CardContent>
                   </Card>
                   <Card>
@@ -145,7 +147,7 @@ const POSReports = ({ outletId }) => {
                       <p className="text-2xl font-bold text-blue-600">
                         {fmt(report.net_sales)}
                       </p>
-                      <p className="text-xs text-gray-400">TL</p>
+                      <p className="text-xs text-gray-400">{report.currency || cachedTenantCurrency()}</p>
                     </CardContent>
                   </Card>
                   <Card>
@@ -165,7 +167,7 @@ const POSReports = ({ outletId }) => {
                         {report.void_count || 0}
                       </p>
                       {(report.refunds || 0) > 0 && (
-                        <p className="text-xs text-red-500">{fmt(report.refunds)} TL</p>
+                        <p className="text-xs text-red-500">{money(report.refunds, report.currency)}</p>
                       )}
                     </CardContent>
                   </Card>
@@ -174,13 +176,13 @@ const POSReports = ({ outletId }) => {
                   <Card>
                     <CardContent className="p-3 flex items-center justify-between">
                       <span className="text-sm text-gray-600">{t('cm.components_POSReports.toplam_kdv')}</span>
-                      <span className="font-semibold">{fmt(report.tax_total)} TL</span>
+                      <span className="font-semibold">{money(report.tax_total, report.currency)}</span>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-3 flex items-center justify-between">
                       <span className="text-sm text-gray-600">{t('cm.components_POSReports.indirim')}</span>
-                      <span className="font-semibold text-amber-600">{fmt(report.discounts)} TL</span>
+                      <span className="font-semibold text-amber-600">{money(report.discounts, report.currency)}</span>
                     </CardContent>
                   </Card>
                 </div>
@@ -200,7 +202,7 @@ const POSReports = ({ outletId }) => {
                             <CreditCard className="w-4 h-4 text-gray-500" />
                             <span className="font-medium">{PAYMENT_LABEL[method] || method}</span>
                           </div>
-                          <span className="font-bold">{fmt(amount)} TL</span>
+                          <span className="font-bold">{money(amount, report.currency)}</span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                           <div className="h-full bg-blue-500" style={{ width: `${pct}%` }} />
@@ -224,7 +226,7 @@ const POSReports = ({ outletId }) => {
                       <div key={cat} className="border rounded-lg p-3">
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-medium">{cat}</span>
-                          <span className="font-bold">{fmt(amount)} TL</span>
+                          <span className="font-bold">{money(amount, report.currency)}</span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                           <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
@@ -255,7 +257,7 @@ const POSReports = ({ outletId }) => {
                           </div>
                           <div className="text-right">
                             <p className="font-bold text-red-600">
-                              {fmt(v.total_amount || v.amount)} TL
+                              {money(v.total_amount || v.amount, v.currency || report.currency)}
                             </p>
                             <p className="text-xs text-gray-500">
                               {v.void_date || v.created_at?.slice(0, 10) || ''}

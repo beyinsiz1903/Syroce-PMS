@@ -33,6 +33,7 @@ def _safe_transaction(transaction: dict) -> dict:
         "id": transaction.get("id"),
         "date": transaction.get("date"),
         "amount": transaction.get("amount", 0),
+        "currency": str(transaction.get("currency") or "TRY").upper(),
         "description": transaction.get("description", ""),
         "sender_name": transaction.get("sender_name", ""),
         "sender_account_masked": _mask_account(transaction.get("sender_iban")),
@@ -80,6 +81,7 @@ async def get_open_invoices(
                 "billing_name": 1,
                 "total": 1,
                 "amount_paid": 1,
+                "currency": 1,
                 "status": 1,
                 "payment_status": 1,
             },
@@ -100,6 +102,7 @@ async def get_open_invoices(
                 ),
                 0,
             ),
+            "currency": str(invoice.get("currency") or "TRY").upper(),
             "status": invoice.get("payment_status") or invoice.get("status") or "pending",
         }
         for invoice in invoices
@@ -150,6 +153,25 @@ async def reconcile_transaction(
     amount = round(float(transaction.get("amount") or 0), 2)
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Banka işlem tutarı pozitif olmalıdır.")
+
+    transaction_currency = str(transaction.get("currency") or "TRY").upper()
+    invoice_currency = str(invoice.get("currency") or "TRY").upper()
+    if transaction_currency != invoice_currency:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Banka işlemi {transaction_currency}, fatura {invoice_currency}. "
+                "Farklı para birimleri kur ve çevrim kaydı olmadan eşleştirilemez."
+            ),
+        )
+    if transaction_currency != "TRY":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{transaction_currency} banka mutabakatı için muhasebe kuru eksik. "
+                "Önce işlemi kur bilgisiyle TRY karşılığına dönüştürün."
+            ),
+        )
 
     claim_id = f"bank-reconcile:{request.transaction_id}"
     claim = await db.bank_transactions.update_one(

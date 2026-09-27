@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 
 /* ── helper ── */
 const fmt = (n, digits = 0) =>
@@ -181,7 +182,7 @@ const POSDashboard = () => {
             />
             <StatCard
               icon={TrendingUp}  label={t('posDashboard.todaysRevenue', 'Bugün Ciro')}
-              value={`${fmt(stats.today_revenue)} ₺`}
+              value={formatCurrency(stats.today_revenue, stats.currency || cachedTenantCurrency())}
               sub={`${stats.today_orders} ${t('posDashboard.transactions', 'işlem')}`}
               color="blue" loading={loadingStats} testId="stat-revenue"
             />

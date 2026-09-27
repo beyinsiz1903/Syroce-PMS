@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 
 const localISODate = (d) => {
   const y = d.getFullYear();
@@ -26,8 +27,8 @@ const localISODate = (d) => {
   return `${y}-${m}-${day}`;
 };
 
-const fmtTRY = (v) =>
-  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(v || 0));
+const bookingCurrency = (booking) => booking?.currency || booking?.folio_currency || cachedTenantCurrency();
+const fmtMoney = (value, booking) => formatCurrency(value, bookingCurrency(booking));
 
 // tel:/sms: URI'larında XSS önlemek için telefonu sadece rakam ve + ile sınırla
 const sanitizePhone = (raw) => (raw ? String(raw).replace(/[^\d+]/g, '') : '');
@@ -125,6 +126,15 @@ const DepartureList = () => {
   }, [departures, search, sortBy, onlyDebt]);
 
   const totalBalance = departures.reduce((s, b) => s + (b.balance || 0), 0);
+  const balanceByCurrency = departures.reduce((totals, booking) => {
+    const code = bookingCurrency(booking);
+    totals[code] = (totals[code] || 0) + Number(booking.balance || 0);
+    return totals;
+  }, {});
+  const totalBalanceLabel = Object.entries(balanceByCurrency)
+    .filter(([, amount]) => Math.abs(amount) > 0.001)
+    .map(([currency, amount]) => formatCurrency(amount, currency))
+    .join(' · ') || formatCurrency(0, cachedTenantCurrency());
   const withDebt = departures.filter((b) => (b.balance || 0) > 0).length;
 
   // ── Checkout (single)
@@ -138,7 +148,7 @@ const DepartureList = () => {
 
     const ok = await confirmDialog({
       message: force
-        ? `${PRIMARY_LABEL(booking)} için ${fmtTRY(booking.balance)} açık bakiye varken zorla çıkış yapılacak. Bu işlem yalnızca yetkili istisna durumlarında kullanılmalıdır. Devam edilsin mi?`
+        ? `${PRIMARY_LABEL(booking)} için ${fmtMoney(booking.balance, booking)} açık bakiye varken zorla çıkış yapılacak. Bu işlem yalnızca yetkili istisna durumlarında kullanılmalıdır. Devam edilsin mi?`
         : `${booking.guest_name || PRIMARY_LABEL(booking)} için çıkış yapılsın mı?`,
       variant: force ? 'danger' : 'default',
     });
@@ -229,7 +239,7 @@ const DepartureList = () => {
         notes: 'Çıkış tahsilatı (DepartureList)',
       });
       const remaining = (payTarget.balance || 0) - n;
-      toast.success(`Tahsilat alındı: ${fmtTRY(n)}`);
+      toast.success(`Tahsilat alındı: ${fmtMoney(n, payTarget)}`);
       setPayTarget(null);
       // Bakiye sıfırlanır sıfırlanmaz otomatik çıkış öner
       if (remaining <= 0.001) {
@@ -240,7 +250,7 @@ const DepartureList = () => {
         if (auto) await checkout({ ...payTarget, balance: 0 }, false);
         else load();
       } else {
-        toast(`Kalan bakiye: ${fmtTRY(remaining)}`);
+        toast(`Kalan bakiye: ${fmtMoney(remaining, payTarget)}`);
         load();
       }
     } catch (e) {
@@ -267,7 +277,7 @@ const DepartureList = () => {
         checkout_time: lateTime || null,
         extra_charge: charge,
       });
-      toast.success(`Geç çıkış kaydedildi (${lateTime}${charge > 0 ? `, +${fmtTRY(charge)}` : ''})`);
+      toast.success(`Geç çıkış kaydedildi (${lateTime}${charge > 0 ? `, +${fmtMoney(charge, lateTarget)}` : ''})`);
       setLateTarget(null);
       load();
     } catch (e) {
@@ -307,7 +317,7 @@ const DepartureList = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard icon={LogOut} label="Planlanan çıkış" value={departures.length} intent="info" />
         <KpiCard icon={AlertCircle} label="Tahsilat bekleyen" value={withDebt} intent="warning" highlight={withDebt > 0} />
-        <KpiCard icon={Wallet} label="Açık folyo toplamı" value={fmtTRY(totalBalance)} intent={totalBalance > 0 ? 'warning' : 'success'} highlight={totalBalance > 0} />
+        <KpiCard icon={Wallet} label="Açık folyo toplamı" value={totalBalanceLabel} intent={totalBalance > 0 ? 'warning' : 'success'} highlight={totalBalance > 0} />
       </div>
 
       {/* Filtre çubuğu */}
@@ -417,12 +427,12 @@ const DepartureList = () => {
                           </div>
                           <div>
                             <p className="text-slate-500 text-xs">{t('cm.pages_DepartureList.toplam')}</p>
-                            <p className="font-semibold">{fmtTRY(b.total_amount)}</p>
+                            <p className="font-semibold">{fmtMoney(b.total_amount, b)}</p>
                           </div>
                           <div>
                             <p className="text-slate-500 text-xs">Folyo bakiyesi</p>
                             <p className={`font-semibold ${debt ? 'text-amber-700' : 'text-emerald-700'}`}>
-                              {fmtTRY(b.balance || 0)}
+                              {fmtMoney(b.balance || 0, b)}
                             </p>
                           </div>
                           </div>
@@ -464,7 +474,7 @@ const DepartureList = () => {
           <DialogHeader>
             <DialogTitle>Tahsilat — {payTarget && PRIMARY_LABEL(payTarget)}</DialogTitle>
             <DialogDescription>
-              {t('cm.pages_DepartureList.acik_bakiye')} <strong>{fmtTRY(payTarget?.balance || 0)}</strong>
+              {t('cm.pages_DepartureList.acik_bakiye')} <strong>{fmtMoney(payTarget?.balance || 0, payTarget)}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -556,12 +566,12 @@ const DepartureList = () => {
                 <div><span className="text-slate-500">{t('cm.pages_DepartureList.giris')}</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_DepartureList.cikis')}</span> <strong>{(detail.check_out || '').slice(0, 10)} {detail.check_out_time || '12:00'}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_DepartureList.yetiskin_cocuk')}</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
-                <div><span className="text-slate-500">{t('cm.pages_DepartureList.toplam_68af4')}</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
-                <div><span className="text-slate-500">{t('cm.pages_DepartureList.odenen')}</span> <strong>{fmtTRY(detail.paid_amount)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.toplam_68af4')}</span> <strong>{fmtMoney(detail.total_amount, detail)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.odenen')}</span> <strong>{fmtMoney(detail.paid_amount, detail)}</strong></div>
                 <div>
                   <span className="text-slate-500">{t('cm.pages_DepartureList.bakiye')}</span>{' '}
                   <strong className={(detail.balance || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}>
-                    {fmtTRY(detail.balance || 0)}
+                    {fmtMoney(detail.balance || 0, detail)}
                   </strong>
                 </div>
                 {displayableGuestPhone(detail.guest_phone) && (
@@ -587,12 +597,12 @@ const DepartureList = () => {
                   </div>
                 ) : detailFolio ? (
                   <div className="text-sm space-y-1">
-                    <div className="flex justify-between"><span>Toplam harcama</span><strong>{fmtTRY(detailFolio.charges_total ?? detailFolio.total_charges)}</strong></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_DepartureList.toplam_odeme')}</span><strong>{fmtTRY(detailFolio.payments_total ?? detailFolio.total_payments)}</strong></div>
+                    <div className="flex justify-between"><span>Toplam harcama</span><strong>{fmtMoney(detailFolio.charges_total ?? detailFolio.total_charges, { currency: detailFolio.currency || bookingCurrency(detail) })}</strong></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_DepartureList.toplam_odeme')}</span><strong>{fmtMoney(detailFolio.payments_total ?? detailFolio.total_payments, { currency: detailFolio.currency || bookingCurrency(detail) })}</strong></div>
                     <div className="flex justify-between border-t pt-1 mt-1">
                       <span>{t('cm.pages_DepartureList.bakiye_33769')}</span>
                       <strong className={(detailFolio.balance || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}>
-                        {fmtTRY(detailFolio.balance || 0)}
+                        {fmtMoney(detailFolio.balance || 0, { currency: detailFolio.currency || bookingCurrency(detail) })}
                       </strong>
                     </div>
                   </div>
