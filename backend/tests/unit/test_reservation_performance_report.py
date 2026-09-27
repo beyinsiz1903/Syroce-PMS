@@ -48,6 +48,7 @@ def test_aggregate_reservation_performance_separates_cancellations_and_channels(
         "total_bookings": 3,
         "commercial_bookings": 1,
         "booked_revenue": 4500.0,
+        "booked_revenue_by_currency": {"TRY": 4500.0},
         "total_room_nights": 3,
         "average_stay": 3.0,
         "average_lead_time": 6.7,
@@ -55,6 +56,7 @@ def test_aggregate_reservation_performance_separates_cancellations_and_channels(
         "no_show_count": 1,
         "cancellation_rate": 33.3,
         "cancelled_value": 3700.0,
+        "cancelled_value_by_currency": {"TRY": 3700.0},
     }
     assert [(item["channel"], item["bookings"], item["revenue"], item["cancelled"]) for item in payload["channel_breakdown"]] == [
         ("agoda", 1, 0.0, 1),
@@ -62,9 +64,9 @@ def test_aggregate_reservation_performance_separates_cancellations_and_channels(
         ("direct", 1, 4500.0, 0),
     ]
     assert payload["daily_arrivals"] == [
-        {"date": "2026-09-10", "reservations": 1, "commercial_reservations": 1, "revenue": 4500.0},
-        {"date": "2026-09-11", "reservations": 1, "commercial_reservations": 0, "revenue": 0.0},
-        {"date": "2026-09-12", "reservations": 1, "commercial_reservations": 0, "revenue": 0.0},
+        {"date": "2026-09-10", "reservations": 1, "commercial_reservations": 1, "revenue": 4500.0, "revenue_by_currency": {"TRY": 4500.0}},
+        {"date": "2026-09-11", "reservations": 1, "commercial_reservations": 0, "revenue": 0.0, "revenue_by_currency": {}},
+        {"date": "2026-09-12", "reservations": 1, "commercial_reservations": 0, "revenue": 0.0, "revenue_by_currency": {}},
     ]
     assert {item["bucket"]: item["count"] for item in payload["lead_time_breakdown"]} == {
         "same_day": 1,
@@ -96,7 +98,23 @@ def test_aggregate_reservation_performance_handles_legacy_invalid_dates_without_
             "status_label": "Onaylandı",
             "channel": "direct",
             "total_amount": 200.0,
+            "currency": "TRY",
             "nights": 0,
             "lead_time_days": None,
         }
     ]
+
+
+def test_aggregate_reservation_performance_keeps_currencies_separate():
+    payload = aggregate_reservation_performance(
+        [
+            {"id": "eur", "guest_name": "EUR Guest", "check_in": "2026-09-10", "check_out": "2026-09-11", "status": "confirmed", "total_amount": 100, "currency": "EUR", "channel": "direct"},
+            {"id": "usd", "guest_name": "USD Guest", "check_in": "2026-09-10", "check_out": "2026-09-11", "status": "confirmed", "total_amount": 120, "currency": "USD", "channel": "direct"},
+        ],
+        start_date=date(2026, 9, 10),
+        end_date=date(2026, 9, 10),
+    )
+
+    assert payload["summary"]["booked_revenue_by_currency"] == {"EUR": 100.0, "USD": 120.0}
+    assert payload["channel_breakdown"][0]["revenue_by_currency"] == {"EUR": 100.0, "USD": 120.0}
+    assert {row["currency"] for row in payload["rows"]} == {"EUR", "USD"}

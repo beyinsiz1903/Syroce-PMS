@@ -10,10 +10,12 @@ import { ArrowRightLeft, FileText, DollarSign, CreditCard, AlertTriangle, Shield
 import { printFolio, printProformaInvoice } from "@/components/pms/PrintTemplates";
 import { toast } from "sonner";
 import FolioWindowsPanel from "@/components/folio/FolioWindowsPanel";
+import { cachedTenantCurrency, formatCurrency } from "@/lib/currency";
 const API = "";
 function TimelineItem({
   event,
   t,
+  currency,
   onVoidPayment
 }) {
   const typeConfig = {
@@ -50,13 +52,13 @@ function TimelineItem({
             {event.category && <Badge variant="outline" className="text-xs text-gray-500 border-gray-300">{event.category}</Badge>}
           </div>
           <span className={`text-sm font-semibold ${event.voided ? "text-gray-400 line-through" : cfg.color}`}>
-            {cfg.sign}{Math.abs(event.amount || 0).toFixed(2)}
+            {cfg.sign}{formatCurrency(Math.abs(event.amount || 0), event.currency || currency)}
           </span>
         </div>
         <div className="flex items-center justify-between mt-1">
           <span className="text-xs text-gray-400">{event.timestamp?.slice(0, 19).replace("T", " ")}</span>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">{t("folio.balance")}: {event.running_balance?.toFixed(2)}</span>
+            <span className="text-xs text-gray-500">{t("folio.balance")}: {formatCurrency(event.running_balance || 0, currency)}</span>
             {event.type === "payment" && !event.voided && onVoidPayment && <Button
               type="button"
               variant="outline"
@@ -78,7 +80,8 @@ function TimelineItem({
 }
 function TaxBreakdownTable({
   taxData,
-  t
+  t,
+  currency,
 }) {
   if (!taxData?.lines?.length) return <p className="text-sm text-gray-400 py-4">{t("folio.noTaxData")}</p>;
   return <div data-testid="tax-breakdown-table">
@@ -97,26 +100,26 @@ function TaxBreakdownTable({
           {taxData.lines.map((l, i) => <tr key={l.id || i} className="border-b border-gray-100">
               <td className="py-1.5 text-gray-700">{l.description?.slice(0, 40)}</td>
               <td className="py-1.5 text-gray-500">{l.category}</td>
-              <td className="py-1.5 text-right text-gray-700">{l.net_amount?.toFixed(2)}</td>
+              <td className="py-1.5 text-right text-gray-700">{formatCurrency(l.net_amount || 0, l.currency || currency)}</td>
               <td className="py-1.5 text-right text-gray-500">{l.tax_rate}%</td>
-              <td className="py-1.5 text-right text-amber-600">{l.tax_amount?.toFixed(2)}</td>
-              <td className="py-1.5 text-right text-gray-800 font-medium">{l.gross_amount?.toFixed(2)}</td>
+              <td className="py-1.5 text-right text-amber-600">{formatCurrency(l.tax_amount || 0, l.currency || currency)}</td>
+              <td className="py-1.5 text-right text-gray-800 font-medium">{formatCurrency(l.gross_amount || 0, l.currency || currency)}</td>
             </tr>)}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-300">
             <td colSpan={2} className="py-2 text-gray-800 font-semibold">{t("folio.total")}</td>
-            <td className="py-2 text-right text-gray-800 font-semibold">{taxData.totals?.net?.toFixed(2)}</td>
+            <td className="py-2 text-right text-gray-800 font-semibold">{formatCurrency(taxData.totals?.net || 0, currency)}</td>
             <td></td>
-            <td className="py-2 text-right text-amber-600 font-semibold">{taxData.totals?.tax?.toFixed(2)}</td>
-            <td className="py-2 text-right text-gray-900 font-bold">{taxData.totals?.gross?.toFixed(2)}</td>
+            <td className="py-2 text-right text-amber-600 font-semibold">{formatCurrency(taxData.totals?.tax || 0, currency)}</td>
+            <td className="py-2 text-right text-gray-900 font-bold">{formatCurrency(taxData.totals?.gross || 0, currency)}</td>
           </tr>
         </tfoot>
       </table>
       {taxData.by_tax_rate && Object.keys(taxData.by_tax_rate).length > 0 && <div className="mt-3 flex flex-wrap gap-2">
           {Object.entries(taxData.by_tax_rate).map(([rate, data]) => <div key={rate} className="bg-gray-50 border border-gray-200 rounded px-3 py-1.5 text-xs">
               <span className="text-gray-500">{rate}:</span>
-              <span className="text-amber-600 ml-1">{data.tax?.toFixed(2)} {t("folio.tax").toLowerCase()}</span>
+              <span className="text-amber-600 ml-1">{formatCurrency(data.tax || 0, currency)} {t("folio.tax").toLowerCase()}</span>
               <span className="text-gray-400 ml-1">({data.count} {t("folio.items")})</span>
             </div>)}
         </div>}
@@ -124,7 +127,8 @@ function TaxBreakdownTable({
 }
 function SplitFolioInfo({
   splitInfo,
-  t
+  t,
+  currency,
 }) {
   if (!splitInfo?.has_splits) return <p className="text-sm text-gray-400 py-4">{t("folio.noSplitOperations")}</p>;
   return <div data-testid="split-folio-info" className="space-y-3">
@@ -133,7 +137,7 @@ function SplitFolioInfo({
           <span className="text-gray-700">{t("folio.splitCharges", {
           count: op.charge_ids?.length
         })}</span>
-          <span className="text-gray-500">{op.amount?.toFixed(2)}</span>
+          <span className="text-gray-500">{formatCurrency(op.amount || 0, op.currency || currency)}</span>
           <span className="text-gray-400">- {op.reason}</span>
         </div>)}
       {splitInfo.related_folios?.map(f => <div key={f.id} className="flex items-center justify-between p-2 rounded bg-gray-50 border border-gray-200 text-xs">
@@ -144,14 +148,15 @@ function SplitFolioInfo({
           </div>
           <div className="flex items-center gap-2">
             <Badge className={f.status === "open" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}>{f.status}</Badge>
-            <span className="text-gray-700">{f.balance?.toFixed(2)}</span>
+            <span className="text-gray-700">{formatCurrency(f.balance || 0, f.currency || currency)}</span>
           </div>
         </div>)}
     </div>;
 }
 function VoidDetailsPanel({
   voidDetails,
-  t
+  t,
+  currency,
 }) {
   if (!voidDetails?.length) return <p className="text-sm text-gray-400 py-4">{t("folio.noVoidOperations")}</p>;
   return <div data-testid="void-details-panel" className="space-y-2">
@@ -162,7 +167,7 @@ function VoidDetailsPanel({
               <span className="text-xs font-medium text-red-600">{v.type === "charge_void" ? t("folio.chargeVoid") : t("folio.paymentVoid")}</span>
               {v.is_supervisor_override && <Badge className="text-xs bg-amber-100 text-amber-700">{t("folio.supervisorOverride")}</Badge>}
             </div>
-            <span className="text-xs text-red-500">{v.original_amount?.toFixed(2)}</span>
+            <span className="text-xs text-red-500">{formatCurrency(v.original_amount || 0, v.currency || currency)}</span>
           </div>
           <p className="text-xs text-gray-500 mt-1">{v.description}</p>
           <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
@@ -264,6 +269,7 @@ export default function FolioDetailView({
   }, [propFolioId, paramFolioId, fetchDetail]);
   const summary = data?.summary;
   const folio = data?.folio;
+  const currency = folio?.currency || data?.currency || tenant?.currency || cachedTenantCurrency();
   const content = <div data-testid="folio-detail-view" className="max-w-[1400px] mx-auto px-4 py-6">
       {!propFolioId && <div className="flex items-center gap-3 mb-6">
           <input data-testid="folio-search-input" type="text" placeholder={t("folio.enterFolioId")} value={folioId} onChange={e => setFolioId(e.target.value)} className="bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm text-gray-700 w-96 focus:outline-none focus:ring-1 focus:ring-blue-500" />
@@ -339,17 +345,17 @@ export default function FolioDetailView({
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
             <Card className="bg-white border-gray-200 shadow-sm"><CardContent className="p-3">
               <p className="text-xs text-gray-500">{t("folio.totalCharges")}</p>
-              <p className="text-lg font-bold text-amber-600">{summary?.total_charges?.toFixed(2)}</p>
+              <p className="text-lg font-bold text-amber-600">{formatCurrency(summary?.total_charges || 0, currency)}</p>
               <p className="text-xs text-gray-400">{summary?.charge_count} {t("folio.items")}</p>
             </CardContent></Card>
             <Card className="bg-white border-gray-200 shadow-sm"><CardContent className="p-3">
               <p className="text-xs text-gray-500">{t("folio.totalPayments")}</p>
-              <p className="text-lg font-bold text-emerald-600">{summary?.total_payments?.toFixed(2)}</p>
+              <p className="text-lg font-bold text-emerald-600">{formatCurrency(summary?.total_payments || 0, currency)}</p>
               <p className="text-xs text-gray-400">{summary?.payment_count} {t("folio.items")}</p>
             </CardContent></Card>
             <Card className="bg-white border-gray-200 shadow-sm"><CardContent className="p-3">
               <p className="text-xs text-gray-500">{t("folio.balance")}</p>
-              <p className={`text-lg font-bold ${(summary?.balance || 0) > 0 ? "text-red-600" : "text-emerald-600"}`}>{summary?.balance?.toFixed(2)}</p>
+              <p className={`text-lg font-bold ${(summary?.balance || 0) > 0 ? "text-red-600" : "text-emerald-600"}`}>{formatCurrency(summary?.balance || 0, currency)}</p>
             </CardContent></Card>
             <Card className="bg-white border-gray-200 shadow-sm"><CardContent className="p-3">
               <p className="text-xs text-gray-500">{t("folio.voidedCharges")}</p>
@@ -395,7 +401,7 @@ export default function FolioDetailView({
                 <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500">{t("folio.folioTimeline")} ({data?.timeline?.length || 0} {t("folio.events")})</CardTitle></CardHeader>
                 <CardContent className="px-4 pb-4">
                   <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                    {data?.timeline?.length ? data.timeline.map(e => <TimelineItem key={e.id} event={e} t={t} onVoidPayment={setVoidTarget} />) : <p className="text-sm text-gray-400 py-4">{t("folio.noTransactions")}</p>}
+                    {data?.timeline?.length ? data.timeline.map(e => <TimelineItem key={e.id} event={e} t={t} currency={currency} onVoidPayment={setVoidTarget} />) : <p className="text-sm text-gray-400 py-4">{t("folio.noTransactions")}</p>}
                   </div>
                 </CardContent>
               </Card>
@@ -404,21 +410,21 @@ export default function FolioDetailView({
             <TabsContent value="tax">
               <Card className="bg-white border-gray-200 shadow-sm">
                 <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500">{t("folio.lineLevelTaxBreakdown")}</CardTitle></CardHeader>
-                <CardContent className="px-4 pb-4"><TaxBreakdownTable taxData={data?.tax_breakdown} t={t} /></CardContent>
+                <CardContent className="px-4 pb-4"><TaxBreakdownTable taxData={data?.tax_breakdown} t={t} currency={currency} /></CardContent>
               </Card>
             </TabsContent>
 
             <TabsContent value="splits">
               <Card className="bg-white border-gray-200 shadow-sm">
                 <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500">{t("folio.splitFolioOperations")}</CardTitle></CardHeader>
-                <CardContent className="px-4 pb-4"><SplitFolioInfo splitInfo={data?.split_folio_info} t={t} /></CardContent>
+                <CardContent className="px-4 pb-4"><SplitFolioInfo splitInfo={data?.split_folio_info} t={t} currency={currency} /></CardContent>
               </Card>
             </TabsContent>
 
             <TabsContent value="voids">
               <Card className="bg-white border-gray-200 shadow-sm">
                 <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500">{t("folio.voidReversalDetails")}</CardTitle></CardHeader>
-                <CardContent className="px-4 pb-4"><VoidDetailsPanel voidDetails={data?.void_details} t={t} /></CardContent>
+                <CardContent className="px-4 pb-4"><VoidDetailsPanel voidDetails={data?.void_details} t={t} currency={currency} /></CardContent>
               </Card>
             </TabsContent>
 
@@ -432,7 +438,7 @@ export default function FolioDetailView({
                             <span className="text-gray-700">{tr.description?.slice(0, 60)}</span>
                             <p className="text-gray-400">{tr.transaction_date?.slice(0, 19)}</p>
                           </div>
-                          <span className="text-amber-600 font-medium">{tr.amount?.toFixed(2)}</span>
+                          <span className="text-amber-600 font-medium">{formatCurrency(tr.amount || 0, tr.currency || currency)}</span>
                         </div>)}
                     </div> : <p className="text-sm text-gray-400 py-4">{t("folio.noCityLedgerTransfers")}</p>}
                 </CardContent>
@@ -468,7 +474,7 @@ export default function FolioDetailView({
                         <span className="text-gray-700">{inv.invoice_number || inv.id?.slice(0, 8)}</span>
                         <Badge variant="outline" className="text-xs">{inv.status}</Badge>
                       </div>
-                      <span className="text-gray-700">{inv.total_amount?.toFixed(2) || "-"}</span>
+                      <span className="text-gray-700">{inv.total_amount == null ? "-" : formatCurrency(inv.total_amount, inv.currency || currency)}</span>
                     </div>)}
                 </div>
               </CardContent>
@@ -542,7 +548,7 @@ export default function FolioDetailView({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500">Tutar (TL)</label>
+              <label className="text-xs text-gray-500">Tutar ({currency})</label>
               <input type="number" className="w-full border rounded-md p-2 text-sm" value={chargeForm.amount} onChange={e => setChargeForm(p => ({
               ...p,
               amount: e.target.value
@@ -607,7 +613,7 @@ export default function FolioDetailView({
         <div>
           <h3 className="text-lg font-semibold text-gray-900">Ödeme İadesi</h3>
           <p className="mt-1 text-sm text-gray-500">
-            {voidTarget.method?.toUpperCase()} ödemesi {Math.abs(voidTarget.amount || 0).toFixed(2)} TL iade edilecek.
+            {voidTarget.method?.toUpperCase()} ödemesi {formatCurrency(Math.abs(voidTarget.amount || 0), voidTarget.currency || currency)} iade edilecek.
             {voidTarget.method === "cash" && " Nakit iadesi için açık vardiya gerekir."}
           </p>
         </div>
