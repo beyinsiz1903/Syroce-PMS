@@ -13,8 +13,6 @@ finish booting. Fix: static SPA serving bypasses the limiter; /api throttling
 import asyncio
 import importlib
 
-import pytest
-
 
 def _fresh_limiter(monkeypatch, env: dict):
     for k in (
@@ -40,7 +38,7 @@ def _fresh_limiter(monkeypatch, env: dict):
     return apm_middleware.EnhancedRateLimitMiddleware(app=_dummy_app)
 
 
-def _call(rl, path, method="GET", ip="9.9.9.9"):
+def _call(rl, path, method="GET", ip="9.9.9.9", headers=None):
     """Drive one request through the middleware; return the response status."""
     captured = {}
 
@@ -51,11 +49,13 @@ def _call(rl, path, method="GET", ip="9.9.9.9"):
     async def _receive():
         return {}
 
+    request_headers = [(b"x-forwarded-for", ip.encode())]
+    request_headers.extend(headers or [])
     scope = {
         "type": "http",
         "path": path,
         "method": method,
-        "headers": [(b"x-forwarded-for", ip.encode())],
+        "headers": request_headers,
         "client": (ip, 0),
     }
     asyncio.run(rl(scope, _receive, _send))
@@ -99,3 +99,49 @@ def test_api_anonymous_still_throttled(monkeypatch):
     assert rl.limits["anonymous"] == (60, 60)
     statuses = [_call(rl, "/api/public/some-endpoint") for _ in range(100)]
     assert 429 in statuses, "anonymous /api DoS surface must still be throttled"
+
+
+def test_cookie_authenticated_users_do_not_share_anonymous_ip_budget(monkeypatch):
+    """HttpOnly JWT sessions behind one hotel NAT get independent user buckets."""
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
+    token_a = b"header.payload.signature-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    token_b = b"header.payload.signature-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    statuses_a = [
+        _call(rl, "/api/pms/reservations/a/full-detail", headers=[(b"cookie", b"access_token=" + token_a)])
+        for _ in range(70)
+    ]
+    statuses_b = [
+        _call(rl, "/api/pms/reservations/b/full-detail", headers=[(b"cookie", b"access_token=" + token_b)])
+        for _ in range(70)
+    ]
+
+    assert set(statuses_a) == {200}
+    assert set(statuses_b) == {200}
+    assert rl._get_identifier({"headers": [(b"cookie", b"access_token=" + token_a)]}) != rl._get_identifier(
+        {"headers": [(b"cookie", b"access_token=" + token_b)]}
+    )
+
+
+def test_dummy_cookie_cannot_escape_anonymous_bucket(monkeypatch):
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
+    statuses = [
+        _call(rl, "/api/public/some-endpoint", headers=[(b"cookie", b"access_token=not-a-jwt")])
+        for _ in range(70)
+    ]
+    assert 429 in statuses
+
+
+def test_authenticated_edit_lock_uses_coordination_bucket(monkeypatch):
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
+    token = b"header.payload.signature-cccccccccccccccccccccccccccccccc"
+    statuses = [
+        _call(
+            rl,
+            "/api/pms/reservations/a/edit-lock/heartbeat",
+            method="POST",
+            headers=[(b"cookie", b"access_token=" + token)],
+        )
+        for _ in range(150)
+    ]
+    assert set(statuses) == {200}

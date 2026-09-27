@@ -463,6 +463,48 @@ async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance
     assert charge["is_complimentary"] is True
     assert charge["complimentary_original_amount"] == 1500
     assert charge["complimentary_scope"] == "full"
+    assert charge["currency"] == "TRY"
+
+
+@pytest.mark.asyncio
+async def test_extra_charge_void_is_audited_soft_delete(monkeypatch):
+    charge = {
+        "id": "extra-a",
+        "tenant_id": "tenant-a",
+        "booking_id": "booking-a",
+        "total": 390,
+        "currency": "EUR",
+        "voided": False,
+    }
+    update_one = AsyncMock()
+    database = SimpleNamespace(
+        extra_charges=SimpleNamespace(
+            find_one=AsyncMock(return_value=charge),
+            update_one=update_one,
+        )
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "_gb_cache", None)
+    from routers import webhook_retry_service
+    monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", lambda *_args, **_kwargs: None)
+
+    result = await reservation_detail.void_reservation_extra_charge(
+        "booking-a",
+        "extra-a",
+        reservation_detail.ExtraChargeVoid(reason="Yanlış para birimi"),
+        current_user=SimpleNamespace(
+            id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
+        ),
+        _perm=None,
+    )
+
+    assert result == {"success": True, "voided": True, "charge_id": "extra-a"}
+    update = update_one.await_args.args[1]["$set"]
+    assert update["voided"] is True
+    assert update["void_reason"] == "Yanlış para birimi"
 
 
 @pytest.mark.asyncio

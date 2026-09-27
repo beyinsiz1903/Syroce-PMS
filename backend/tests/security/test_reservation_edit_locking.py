@@ -31,9 +31,9 @@ def _lease_doc(*, now, owner="user-a", lock_id="lock-a"):
     }
 
 
-def test_lock_timing_contract_is_120_second_lease_and_30_second_heartbeat():
-    assert locking.LEASE_SECONDS == 120
-    assert locking.HEARTBEAT_SECONDS == 30
+def test_lock_timing_contract_is_60_second_lease_and_20_second_heartbeat():
+    assert locking.LEASE_SECONDS == 60
+    assert locking.HEARTBEAT_SECONDS == 20
 
 
 @pytest.mark.asyncio
@@ -55,7 +55,7 @@ async def test_acquire_is_atomic_expired_or_exact_same_view_upsert(monkeypatch):
     )
 
     assert lease.lock_id == "lock-a"
-    assert lease.expires_at == now + timedelta(seconds=120)
+    assert lease.expires_at == now + timedelta(seconds=60)
 
     call = collection.find_one_and_update.await_args
     query = call.args[0]
@@ -67,7 +67,7 @@ async def test_acquire_is_atomic_expired_or_exact_same_view_upsert(monkeypatch):
     assert call.kwargs["upsert"] is True
     assert update["$set"]["acquired_at"] == now
     assert update["$set"]["heartbeat_at"] == now
-    assert update["$set"]["expires_at"] == now + timedelta(seconds=120)
+    assert update["$set"]["expires_at"] == now + timedelta(seconds=60)
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@ import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
 import { canAccessPmsTab } from '@/utils/moduleAccess';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
+import { calculateBookingStats } from '@/lib/bookingStats';
 // Tur 5: Bundle code-split — tab içerikleri ve büyük dialog'lar lazy.
 // İlk yüklemede sadece varsayılan 'frontdesk' tab'ı indirilir; kullanıcı
 // diğer sekmelere geçince ilgili chunk talep üzerine yüklenir.
@@ -403,12 +404,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   });
 
   const bookingStats = useMemo(() => {
-    const total = bookings.length;
-    const confirmed = bookings.filter(b => b.status === 'confirmed').length;
-    const checkedIn = bookings.filter(b => b.status === 'checked_in').length;
-    const totalRevenue = bookings.reduce((sum, b) => sum + (b.total_amount || 0), 0);
-    const avgAdr = total > 0 ? totalRevenue / total : 0;
-    return { total, confirmed, checkedIn, totalRevenue, avgAdr };
+    return calculateBookingStats(bookings);
   }, [bookings]);
 
   const [newCharge, setNewCharge] = useState({ charge_type: 'food', description: '', amount: 0, quantity: 1 });

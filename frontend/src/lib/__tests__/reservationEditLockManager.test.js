@@ -3,6 +3,7 @@ import {
   RESERVATION_EDIT_LOCK_HEADER,
   RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS,
   RESERVATION_EDIT_LOCK_LEASE_SECONDS,
+  reservationEditLockReleaseUrl,
   reservationIdFromFullDetailUrl,
   reservationIdFromProtectedMutation,
   reservationEditLockManager,
@@ -11,9 +12,15 @@ import axios from 'axios';
 
 describe('reservationEditLockManager contract', () => {
   it('pins the server lease and heartbeat cadence', () => {
-    expect(RESERVATION_EDIT_LOCK_LEASE_SECONDS).toBe(120);
-    expect(RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS).toBe(30);
+    expect(RESERVATION_EDIT_LOCK_LEASE_SECONDS).toBe(60);
+    expect(RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS).toBe(20);
     expect(RESERVATION_EDIT_LOCK_HEADER).toBe('X-Reservation-Lock-ID');
+  });
+
+  it('builds a same-origin release URL for reliable page-exit beacons', () => {
+    expect(reservationEditLockReleaseUrl('booking/a')).toBe(
+      '/api/pms/reservations/booking%2Fa/edit-lock/release',
+    );
   });
 
   it('detects the full-detail view that must acquire a per-view lock', () => {

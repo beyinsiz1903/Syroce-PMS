@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { toast } from 'sonner';
 
-export const RESERVATION_EDIT_LOCK_LEASE_SECONDS = 120;
-export const RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS = 30;
+export const RESERVATION_EDIT_LOCK_LEASE_SECONDS = 60;
+export const RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS = 20;
 export const RESERVATION_EDIT_LOCK_HEADER = 'X-Reservation-Lock-ID';
 
 const VIEW_RELEASE_GRACE_MS = 15000;
@@ -46,6 +46,10 @@ const lockError = (message) => {
   return error;
 };
 
+export const reservationEditLockReleaseUrl = (bookingId) => (
+  `/api/pms/reservations/${encodeURIComponent(bookingId)}/edit-lock/release`
+);
+
 function createManager() {
   let current = null;
   let heartbeatTimer = null;
@@ -88,6 +92,24 @@ function createManager() {
       // Lease expiry is the safety net for abrupt navigation/network loss.
       return false;
     }
+  };
+
+  const releaseOnPageExit = () => {
+    const owned = current;
+    current = null;
+    acquirePromise = null;
+    clearHeartbeat();
+    clearViewMonitor();
+    if (!owned?.bookingId || !owned?.lockId || owned.status !== 'acquired') return false;
+
+    const body = JSON.stringify({ lock_id: owned.lockId });
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      return navigator.sendBeacon(
+        reservationEditLockReleaseUrl(owned.bookingId),
+        new Blob([body], { type: 'application/json' }),
+      );
+    }
+    return false;
   };
 
   const startViewMonitor = () => {
@@ -228,17 +250,16 @@ function createManager() {
   }) : null;
 
   if (typeof window !== 'undefined') {
-    window.addEventListener('beforeunload', () => {
-      clearHeartbeat();
-      clearViewMonitor();
-      // Do not attempt an unreliable async unlock during unload. The 120 s
-      // server lease is intentionally the crash/tab-close safety net.
-    });
+    // pagehide is reliable on Safari/iOS and also covers back-forward cache.
+    // beforeunload remains as a fallback; releaseOnPageExit is idempotent.
+    window.addEventListener('pagehide', releaseOnPageExit);
+    window.addEventListener('beforeunload', releaseOnPageExit);
   }
 
   return {
     acquire,
     releaseCurrent,
+    releaseOnPageExit,
     getCurrent: () => current,
     interceptorId,
   };

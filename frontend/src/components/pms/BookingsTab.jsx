@@ -7,6 +7,7 @@ import { AlertTriangle, Home, Plus } from 'lucide-react';
 import VirtualizedBookingList from '@/components/VirtualizedBookingList';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
 import { useNavigate } from 'react-router-dom';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const BookingsTab = ({
   bookingStats,
@@ -23,13 +24,6 @@ const BookingsTab = ({
   const navigate = useNavigate();
   const [listFilter, setListFilter] = useState('all');
   const tc = (k) => t(`pmsComponents.bookings.${k}`);
-  const listCurrency = bookings.find(item => item.currency || item.currency_code)?.currency
-    || bookings.find(item => item.currency || item.currency_code)?.currency_code
-    || 'TRY';
-  const money = value => new Intl.NumberFormat('tr-TR', {
-    style: 'currency', currency: listCurrency === 'TL' ? 'TRY' : listCurrency,
-    maximumFractionDigits: 0,
-  }).format(Number(value) || 0);
   const unassignedBookings = useMemo(() => bookings.filter(item => (
     !item.room_id && !['cancelled', 'checked_out', 'no_show'].includes(item.status)
   )), [bookings]);
@@ -86,7 +80,7 @@ const BookingsTab = ({
           <CardContent className="p-4">
             <div className="text-xs text-gray-600">{tc('totalRevenue')}</div>
             <div className="text-2xl font-bold text-green-600">
-              {money(bookingStats?.totalRevenue)}
+              {formatCurrencyBreakdown(bookingStats?.revenueByCurrency)}
             </div>
           </CardContent>
         </Card>
@@ -94,7 +88,7 @@ const BookingsTab = ({
           <CardContent className="p-4">
             <div className="text-xs text-gray-600">{tc('avgAdr')}</div>
             <div className="text-2xl font-bold text-indigo-600">
-              {money(bookingStats?.avgAdr)}
+              {formatCurrencyBreakdown(bookingStats?.adrByCurrency)}
             </div>
           </CardContent>
         </Card>

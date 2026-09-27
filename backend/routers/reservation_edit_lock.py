@@ -87,6 +87,7 @@ async def heartbeat_edit_lock(
 
 
 @router.delete("/{booking_id}/edit-lock")
+@router.post("/{booking_id}/edit-lock/release")
 async def release_edit_lock(
     booking_id: str,
     request: EditLockRequest,

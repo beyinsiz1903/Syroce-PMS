@@ -10,6 +10,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
+from http.cookies import CookieError, SimpleCookie
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -423,6 +424,7 @@ class EnhancedRateLimitMiddleware:
                 "default": (10000, 60),
                 "anonymous": (10000, 60),
                 "room_qr_public": (10000, 60),
+                "coordination": (10000, 60),
             }
         elif stress_e2e_enabled:
             # Scoped stress profile: elevate authenticated test surfaces
@@ -437,6 +439,7 @@ class EnhancedRateLimitMiddleware:
                 "default": (10000, 60),
                 "anonymous": (60, 60),
                 "room_qr_public": (120, 60),
+                "coordination": (10000, 60),
             }
         else:
             self.limits = {
@@ -450,6 +453,10 @@ class EnhancedRateLimitMiddleware:
                 # bounded IP ceiling while allowing a busy hotel's shared NAT;
                 # room_qr_requests.py still caps each IP+room at 20/10 min.
                 "room_qr_public": (120, 60),
+                # Reservation view locks are lightweight coordination calls.
+                # Heartbeats must not consume the operator's business-action
+                # budget or prevent an unlock after a busy front-desk burst.
+                "coordination": (600, 60),
             }
 
         # Register state globally for stats access
@@ -501,23 +508,52 @@ class EnhancedRateLimitMiddleware:
         if not has_token:
             return "anonymous"
 
+        if "/api/pms/reservations/" in path and "/edit-lock" in path:
+            return "coordination"
+
         if method in ("POST", "PUT", "PATCH", "DELETE"):
             return "write"
 
         return "default"
 
-    def _get_identifier(self, scope) -> str:
-        """Extract unique identifier from request"""
+    @staticmethod
+    def _auth_credential(scope) -> str | None:
+        """Return a plausible bearer/JWT cookie used only for bucket identity.
+
+        Authentication is still performed by the normal security dependency.
+        This merely prevents cookie-authenticated browser users behind one NAT
+        from all sharing the anonymous per-IP bucket.
+        """
         headers = dict(scope.get("headers", []))
-        # Check for auth token
-        auth = headers.get(b"authorization", b"").decode()
+        auth = headers.get(b"authorization", b"").decode(errors="ignore")
         if auth.startswith("Bearer ") and len(auth) > 20:
-            # Use first 16 chars of token hash as identifier
+            return auth
+
+        raw_cookie = headers.get(b"cookie", b"").decode(errors="ignore")
+        if raw_cookie:
+            try:
+                cookies = SimpleCookie()
+                cookies.load(raw_cookie)
+                token = cookies.get("access_token")
+                value = token.value if token else ""
+                # Access tokens are JWTs. Requiring their basic structure keeps
+                # arbitrary dummy cookies in the anonymous bucket.
+                if len(value) > 40 and value.count(".") == 2:
+                    return "Cookie " + value
+            except (CookieError, KeyError, ValueError):
+                pass
+        return None
+
+    def _get_identifier(self, scope) -> str:
+        """Extract a privacy-preserving user or network identifier."""
+        credential = self._auth_credential(scope)
+        if credential:
             import hashlib
 
-            return "user:" + hashlib.sha256(auth.encode()).hexdigest()[:16]
+            return "user:" + hashlib.sha256(credential.encode()).hexdigest()[:16]
 
         # Fallback to IP
+        headers = dict(scope.get("headers", []))
         forwarded = headers.get(b"x-forwarded-for", b"").decode()
         if forwarded:
             return "ip:" + forwarded.split(",")[0].strip()
@@ -597,15 +633,10 @@ class EnhancedRateLimitMiddleware:
             return
 
         method = scope.get("method", "GET")
-        headers = dict(scope.get("headers", []))
-        # SECURITY: classify as `has_token` only when the Authorization
-        # header is a structurally valid Bearer token. Otherwise any
-        # anonymous caller could send a dummy `Authorization: x` header to
-        # escape the `anonymous` bucket (60/min) into `default`/`write`
-        # (especially relevant under the stress profile where those are
-        # elevated to 10000/min).
-        auth_header = headers.get(b"authorization", b"")
-        has_token = auth_header.startswith(b"Bearer ") and len(auth_header) > 20
+        # Browser sessions authenticate with the access_token HttpOnly cookie;
+        # API clients may still use Authorization: Bearer. Dummy cookies stay
+        # anonymous because _auth_credential requires JWT structure.
+        has_token = self._auth_credential(scope) is not None
 
         identifier = self._get_identifier(scope)
         category = self._get_category(path, method, has_token)
