@@ -6,7 +6,7 @@ Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Au
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
