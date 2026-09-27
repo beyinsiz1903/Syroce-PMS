@@ -91,6 +91,17 @@ def test_received_payment_uses_physical_currency_from_converter_note():
     assert _received_payment_amount(payment) == {"amount": 138.1, "currency": "USD"}
 
 
+def test_received_payment_prefers_structured_currency_fields():
+    payment = {
+        "amount": 121.21,
+        "currency": "EUR",
+        "received_amount": 138.1,
+        "received_currency": "USD",
+        "notes": "legacy free text that must not drive accounting",
+    }
+    assert _received_payment_amount(payment) == {"amount": 138.1, "currency": "USD"}
+
+
 def test_cashier_collection_excludes_non_cash_folio_settlements():
     assert _payment_is_collection({"status": "paid", "method": "cash"}) is True
     assert _payment_is_collection({"status": "paid", "method": "credit_card"}) is True

@@ -564,10 +564,13 @@ async def currency_exchange(
 
     payments = await db.payments.find(
         {"tenant_id": tenant_id, "booking_id": booking_id, "voided": {"$ne": True}},
-        {"_id": 0, "notes": 1},
+        {"_id": 0, "notes": 1, "received_amount": 1, "received_currency": 1},
     ).to_list(1000)
     received_total = 0.0
     for payment in payments:
+        if payment.get("received_currency") and str(payment["received_currency"]).upper() == source_currency:
+            received_total += _safe_float(payment.get("received_amount"))
+            continue
         match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
         if match and match.group(2).upper() == source_currency:
             received_total += _safe_float(match.group(1).replace(",", "."))

@@ -105,6 +105,13 @@ describe('kur çevirici', () => {
       .toEqual({ amount: 165.71, currency: 'USD' });
   });
 
+  it('yapılandırılmış tahsilat dövizini eski nottan önce kullanır', () => {
+    expect(parseReceivedCurrency('bozuk eski not', {
+      received_amount: 165.71,
+      received_currency: 'USD',
+    })).toEqual({ amount: 165.71, currency: 'USD' });
+  });
+
   it('peşin tahsilat özetinde gerçekten alınan dövizi kullanır', () => {
     expect(summarizeReceivedPayments([
       { amount: 121.21, notes: '[Döviz Çevirici] 121.21 EUR = 138.10 USD. Kur: 1 EUR = 1.1393 USD' },
@@ -430,8 +437,12 @@ describe('FoliosTab — sade ödeme akışı', () => {
       '/pms/reservations/bk-1/record-payment',
       {
         amount: 100,
+        currency: 'TRY',
+        exchange_rate: 1,
         method: 'cash',
         payment_type: 'final',
+        received_amount: 100,
+        received_currency: 'TRY',
         reference: '',
       },
     ));

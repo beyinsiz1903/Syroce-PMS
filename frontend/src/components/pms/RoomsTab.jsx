@@ -374,10 +374,18 @@ const RoomsTab = ({
         amount,
         method: paymentMethod,
         payment_type: classifyGuestPayment(amount, paymentTarget.balance),
+        currency: String(paymentTarget.currency || 'TRY').toUpperCase() === 'TL' ? 'TRY' : String(paymentTarget.currency || 'TRY').toUpperCase(),
       };
       
       if (useCurrencyConverter && foreignAmount && exchangeRate) {
+        payload.received_currency = String(foreignCurrency || 'TRY').toUpperCase() === 'TL' ? 'TRY' : String(foreignCurrency || 'TRY').toUpperCase();
+        payload.received_amount = Number(foreignAmount);
+        payload.exchange_rate = Number(exchangeRate);
         payload.notes = `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`;
+      } else {
+        payload.received_currency = payload.currency;
+        payload.received_amount = amount;
+        payload.exchange_rate = 1;
       }
 
       // Keep the room-card payment flow on the canonical folio endpoint.  The

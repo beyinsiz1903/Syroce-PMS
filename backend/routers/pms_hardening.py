@@ -130,6 +130,10 @@ class PaymentPostRequest(BaseModel):
     payment_type: str = "final"
     reference: str | None = None
     notes: str | None = None
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    received_currency: str | None = Field(None, min_length=3, max_length=3)
+    received_amount: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class RefundRequest(BaseModel):

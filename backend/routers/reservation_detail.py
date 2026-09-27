@@ -744,6 +744,10 @@ class PaymentRecord(BaseModel):
     payment_type: str = Field("interim", max_length=50)  # prepayment, deposit, interim, final
     reference: str | None = Field(None, max_length=200)
     notes: str | None = Field(None, max_length=2000)
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    received_currency: str | None = Field(None, min_length=3, max_length=3)
+    received_amount: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class ChannelPricingRepairRequest(BaseModel):
@@ -1718,6 +1722,16 @@ async def record_payment(
                 round(float(existing.get("amount") or 0), 2) != round(float(data.amount), 2)
                 or (existing.get("method") or "") != data.method
                 or (existing.get("payment_type") or "") != data.payment_type
+                or (
+                    data.received_currency
+                    and str(existing.get("received_currency") or existing.get("currency") or "TRY").upper()
+                    != str(data.received_currency).upper()
+                )
+                or (
+                    data.received_amount is not None
+                    and round(float(existing.get("received_amount") or existing.get("amount") or 0), 2)
+                    != round(float(data.received_amount), 2)
+                )
             ):
                 raise HTTPException(
                     status_code=409,
@@ -1779,6 +1793,9 @@ async def record_payment(
         "booking_id": booking_id,
         "amount": data.amount,
         "currency": currency,
+        "received_currency": str(data.received_currency or currency).upper(),
+        "received_amount": float(data.received_amount if data.received_amount is not None else data.amount),
+        "exchange_rate": float(data.exchange_rate if data.exchange_rate is not None else 1),
         "method": data.method,
         "payment_type": data.payment_type,
         "status": "paid",

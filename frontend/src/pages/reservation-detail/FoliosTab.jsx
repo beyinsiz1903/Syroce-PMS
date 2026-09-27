@@ -37,7 +37,12 @@ export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurre
   return { rate, amount: numericAmount * rate };
 }
 
-export function parseReceivedCurrency(notes) {
+export function parseReceivedCurrency(notes, payment = null) {
+  const structuredAmount = Number(payment?.received_amount);
+  const structuredCurrency = normalizeCurrency(payment?.received_currency);
+  if (payment?.received_currency && Number.isFinite(structuredAmount) && structuredAmount > 0) {
+    return { amount: structuredAmount, currency: structuredCurrency };
+  }
   const match = String(notes || '').match(
     /\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3})/i,
   );
@@ -50,7 +55,7 @@ export function parseReceivedCurrency(notes) {
 export function summarizeReceivedPayments(payments, fallbackAmount, fallbackCurrency) {
   const totals = (payments || [])
     .filter(payment => !payment.voided)
-    .map(payment => parseReceivedCurrency(payment.notes))
+    .map(payment => parseReceivedCurrency(payment.notes, payment))
     .filter(Boolean)
     .reduce((result, payment) => {
       result[payment.currency] = (result[payment.currency] || 0) + payment.amount;
@@ -449,10 +454,18 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
               ...payForm,
               amount,
+              currency: normalizeCurrency(currency),
               payment_type: classifyGuestPayment(amount, reservationTotalDue),
               ...(useCurrencyConverter && foreignAmount && exchangeRate ? {
+                received_currency: normalizeCurrency(foreignCurrency),
+                received_amount: Number(foreignAmount),
+                exchange_rate: Number(exchangeRate),
                 notes: `[Döviz Çevirici] ${Number(amount).toFixed(2)} ${currency} = ${Number(foreignAmount).toFixed(2)} ${foreignCurrency}. Kur: 1 ${currency} = ${exchangeRate} ${foreignCurrency}`
-              } : {}),
+              } : {
+                received_currency: normalizeCurrency(currency),
+                received_amount: amount,
+                exchange_rate: 1,
+              }),
             });
             toast.success('Ödeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', reference: '' });
             setUseCurrencyConverter(false);
@@ -678,7 +691,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         </div>
         {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Henüz işlem bulunmuyor</div> : (
           allItems.map((item, i) => {
-            const received = item._type === 'payment' ? parseReceivedCurrency(item.notes) : null;
+            const received = item._type === 'payment' ? parseReceivedCurrency(item.notes, item) : null;
             return (
             <div key={item.id || i} className={`flex items-center gap-3 p-3 rounded-lg border ${item.voided ? 'opacity-60 bg-gray-50' : 'bg-white'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${item._type === 'payment' ? 'bg-emerald-100' : 'bg-amber-100'}`}>

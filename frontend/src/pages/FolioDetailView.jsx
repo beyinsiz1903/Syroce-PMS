@@ -75,6 +75,10 @@ function TimelineItem({
             <span className="text-red-500">{event.void_reason}</span>
             {event.voided_by && <span className="text-gray-400 ml-1">{t("folio.by")} {event.voided_by}</span>}
           </div>}
+        {event.type === "payment" && event.received_currency && !event.voided && <div className="mt-1 text-xs font-semibold text-emerald-700">
+            Alınan: {formatCurrency(event.received_amount ?? event.amount, event.received_currency)}
+            {event.exchange_rate && Number(event.exchange_rate) !== 1 ? ` · Kur ${Number(event.exchange_rate).toFixed(4)}` : ""}
+          </div>}
       </div>
     </div>;
 }
