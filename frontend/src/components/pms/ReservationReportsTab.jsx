@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
@@ -15,7 +16,12 @@ const isoDate = (date) => {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 };
 
-const money = (value) => `₺${Number(value || 0).toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`;
+const money = (value, currency) => formatCurrency(value, currency || cachedTenantCurrency(), { decimals: 0 });
+const moneyBreakdown = (totals, fallback, currency) => {
+  const entries = Object.entries(totals || {});
+  if (!entries.length) return money(fallback, currency);
+  return entries.map(([code, amount]) => money(amount, code)).join(' · ');
+};
 
 const ReservationReportsTab = () => {
   const today = useMemo(() => new Date(), []);
@@ -113,7 +119,7 @@ const ReservationReportsTab = () => {
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <Metric title="Toplam rezervasyon" value={summary.total_bookings ?? 0} />
-            <Metric title="Rezerve gelir" value={money(summary.booked_revenue)} tone="text-emerald-700" />
+            <Metric title="Rezerve gelir" value={moneyBreakdown(summary.booked_revenue_by_currency, summary.booked_revenue, summary.currency)} tone="text-emerald-700" />
             <Metric title="Oda/gece" value={summary.total_room_nights ?? 0} />
             <Metric title="Ort. konaklama" value={`${summary.average_stay ?? 0} gece`} />
             <Metric title="Ort. rezervasyon süresi" value={`${summary.average_lead_time ?? 0} gün`} />
@@ -174,7 +180,7 @@ const ReservationReportsTab = () => {
                     </thead>
                     <tbody>
                       {channels.map((item) => <tr key={item.channel} className="border-b last:border-0">
-                        <td className="py-2 font-medium">{item.channel}</td><td className="py-2 text-right">{item.bookings}</td><td className="py-2 text-right">{item.nights}</td><td className="py-2 text-right">{money(item.revenue)}</td><td className="py-2 text-right text-rose-700">{item.cancelled}</td>
+                        <td className="py-2 font-medium">{item.channel}</td><td className="py-2 text-right">{item.bookings}</td><td className="py-2 text-right">{item.nights}</td><td className="py-2 text-right">{moneyBreakdown(item.revenue_by_currency, item.revenue, item.currency)}</td><td className="py-2 text-right text-rose-700">{item.cancelled}</td>
                       </tr>)}
                     </tbody>
                   </table>
@@ -214,7 +220,7 @@ const ReservationReportsTab = () => {
                   </thead>
                   <tbody>
                     {rows.map((row) => <tr key={row.booking_id || `${row.guest_name}-${row.check_in}`} className="border-t">
-                      <td className="p-3 font-medium">{row.guest_name}</td><td className="p-3">{row.room_number}</td><td className="p-3 whitespace-nowrap">{row.check_in} — {row.check_out}</td><td className="p-3">{row.status_label}</td><td className="p-3">{row.channel}</td><td className="p-3 text-right">{row.nights}</td><td className="p-3 text-right">{money(row.total_amount)}</td><td className="p-3 text-right">{row.lead_time_days == null ? '—' : `${row.lead_time_days} gün`}</td>
+                      <td className="p-3 font-medium">{row.guest_name}</td><td className="p-3">{row.room_number}</td><td className="p-3 whitespace-nowrap">{row.check_in} — {row.check_out}</td><td className="p-3">{row.status_label}</td><td className="p-3">{row.channel}</td><td className="p-3 text-right">{row.nights}</td><td className="p-3 text-right">{money(row.total_amount, row.currency)}</td><td className="p-3 text-right">{row.lead_time_days == null ? '—' : `${row.lead_time_days} gün`}</td>
                     </tr>)}
                   </tbody>
                 </table>

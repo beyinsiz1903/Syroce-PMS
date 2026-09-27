@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Home, Repeat2, AlertTriangle } from 'lucide-react';
-import { API, fmtTL, fmtCurrency, fmtTs, reservationNights } from './helpers';
+import { API, fmtCurrency, fmtTs, reservationNights } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
@@ -259,7 +259,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
               <div className="flex gap-2">
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="per_night" checked={noshowChargeType === 'per_night'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  1 Gecelik ({fmtTL(Math.round(nightlyRate))} TL)
+                  1 Gecelik ({fmtCurrency(Math.round(nightlyRate), currency)})
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="full_stay" checked={noshowChargeType === 'full_stay'} onChange={e => setNoshowChargeType(e.target.value)} />

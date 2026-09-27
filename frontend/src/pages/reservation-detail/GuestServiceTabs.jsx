@@ -8,7 +8,7 @@ import {
   Mail, MessageSquare, Phone, Plus, Send, Loader2,
   Clock, CreditCard, Home, History
 } from 'lucide-react';
-import { API, fmtDate, fmtTs, EmptyState, FormField, SelectField } from './helpers';
+import { API, fmtCurrency, fmtDate, fmtTs, EmptyState, FormField, SelectField } from './helpers';
 import { useTranslation } from 'react-i18next';
 
 export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
@@ -148,7 +148,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
   );
 }
 
-export function HistoryTab({ history, roomMoves }) {
+export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
   const { t } = useTranslation();
   const allEvents = [
     ...(history || []).map(h => ({ ...h, _src: 'activity' })),
@@ -180,7 +180,7 @@ export function HistoryTab({ history, roomMoves }) {
   const formatChangeValue = (field, value) => {
     if (value === null || value === undefined || value === '') return '-';
     if (field === 'check_in' || field === 'check_out') return fmtDate(value);
-    if (field === 'total_amount') return `${Number(value).toLocaleString('tr-TR')} TL`;
+    if (field === 'total_amount') return fmtCurrency(Number(value), currency);
     return String(value);
   };
   const visibleChanges = details => Object.entries(details?.changes || {}).filter(([field]) => field !== 'room_id');
@@ -222,7 +222,7 @@ export function HistoryTab({ history, roomMoves }) {
                   <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-2">
                     {ev.details.from_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.eski')} {ev.details.from_room}</span>}
                     {ev.details.to_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.yeni')} {ev.details.to_room}</span>}
-                    {ev.details.amount && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.tutar')} {ev.details.amount} TL</span>}
+                    {ev.details.amount && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.tutar')} {fmtCurrency(ev.details.amount, ev.details.currency || currency)}</span>}
                     {ev.details.method && <span>Yontem: {ev.details.method}</span>}
                     {ev.details.reason && <span>Sebep: {ev.details.reason}</span>}
                     {ev.details.cari_account && <span>Cari: {ev.details.cari_account}</span>}

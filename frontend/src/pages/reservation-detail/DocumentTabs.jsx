@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Plus, Banknote, RefreshCw, Shield, FileText } from 'lucide-react';
-import { API, fmtTL, fmtCurrency, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
+import { API, fmtCurrency, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
 import { useTranslation } from 'react-i18next';
 
 export function DepositsTab({ deposits, booking, onRefresh }) {
@@ -94,7 +94,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                     variant="ghost"
                     onClick={() => setShowRefund(showRefund === d.id ? null : d.id)}
                     className="h-7 px-2 text-xs text-red-600"
-                    aria-label={`Depozito iade işlemini aç - ${fmtTL((d.amount || 0) - (d.refunded_amount || 0))} TL`}
+                    aria-label={`Depozito iade işlemini aç - ${fmtCurrency((d.amount || 0) - (d.refunded_amount || 0), d.currency || currency)}`}
                   >
                     <RefreshCw className="w-3 h-3" />
                   </Button>
