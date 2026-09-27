@@ -10,6 +10,7 @@ import {
   ShieldAlert, Clock, Info, Play,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 
 const ACTION_LABELS = {
   edit_booking: 'Rezervasyona git',
@@ -66,7 +67,9 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/night-audit/preview');
+      // The preview contains operational blockers. Never reuse its 30-second
+      // snapshot after a check-in/check-out has just changed the source data.
+      const res = await axios.get('/night-audit/preview', { params: { nocache: 1 } });
       setData(res.data);
       const cb = onPreviewLoadedRef.current;
       if (typeof cb === 'function') {
@@ -82,14 +85,18 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   useEffect(() => { load(); }, [load, refreshKey]);
 
   const closeInlineBooking = useCallback(() => {
+    const closingBookingId = selectedBookingId;
     setSelectedBookingId(null);
+    void reservationEditLockManager?.releaseCurrent(closingBookingId);
     void load();
-  }, [load]);
+  }, [load, selectedBookingId]);
 
   const completeInlineOperation = useCallback(async () => {
+    const closingBookingId = selectedBookingId;
     setSelectedBookingId(null);
+    await reservationEditLockManager?.releaseCurrent(closingBookingId);
     await load();
-  }, [load]);
+  }, [load, selectedBookingId]);
 
   if (loading && !data) {
     return (
@@ -318,6 +325,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
           </div>
         )}>
           <ReservationDetailModal
+            key={selectedBookingId}
             bookingId={selectedBookingId}
             onClose={closeInlineBooking}
             onOperationComplete={completeInlineOperation}

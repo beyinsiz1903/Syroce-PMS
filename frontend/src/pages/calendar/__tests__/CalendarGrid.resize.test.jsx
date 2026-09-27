@@ -115,6 +115,17 @@ describe('CalendarGrid stay resize handle', () => {
     expect(handlers.onDrop.mock.calls[0][2].toISOString()).toBe('2026-09-10T00:00:00.000Z');
   });
 
+  it('opens a reservation reliably on the first card click', () => {
+    const handlers = renderGrid();
+    const card = screen.getByTestId('booking-bar-booking-1');
+
+    fireEvent.click(card);
+
+    expect(handlers.onBookingDoubleClick).toHaveBeenCalledTimes(1);
+    expect(handlers.onBookingDoubleClick).toHaveBeenCalledWith(booking);
+    expect(handlers.onCellClick).not.toHaveBeenCalled();
+  });
+
   it('provides the reservation start cell as the drag anchor for whole-stay moves', () => {
     const handlers = renderGrid();
     const card = screen.getByTestId('booking-bar-booking-1');

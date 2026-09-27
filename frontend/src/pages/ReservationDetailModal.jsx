@@ -31,6 +31,7 @@ import { confirmDialog } from '@/lib/dialogs';
 import { performCheckout } from '@/utils/offlineCheckout';
 import { useTranslation } from 'react-i18next';
 import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
 const STATUS_PILL = {
@@ -109,6 +110,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [staySaving, setStaySaving] = useState(false);
   const loadGenerationRef = useRef(0);
   const tabsListRef = useRef(null);
+
+  const handleClose = useCallback(() => {
+    // Normal close is deterministic; the 15-second DOM monitor is reserved
+    // for abrupt/unexpected view loss only.
+    void reservationEditLockManager?.releaseCurrent(bookingId);
+    onClose?.();
+  }, [bookingId, onClose]);
 
   useEffect(() => {
     const active = tabsListRef.current?.querySelector(`[data-reservation-tab="${activeTab}"]`);
@@ -249,13 +257,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     const fbStatus = fb.status || 'pending';
     const isOffline = loadError?.isOffline;
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={handleClose}>
         <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between px-5 py-3 border-b">
             <h2 className="text-slate-800 font-semibold text-base">
               {isOffline ? 'Rezervasyon (çevrimdışı)' : 'Rezervasyon özeti'}
             </h2>
-            <button onClick={onClose} aria-label="Kapat" className="text-slate-400 hover:text-slate-600">
+            <button onClick={handleClose} aria-label="Kapat" className="text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -290,7 +298,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             </div>
           </div>
           <div className="flex justify-end gap-2 px-5 py-3 border-t">
-            <Button variant="outline" onClick={onClose}>Kapat</Button>
+            <Button variant="outline" onClick={handleClose}>Kapat</Button>
             <Button onClick={loadData} data-testid="retry-reservation-detail">Tekrar dene</Button>
           </div>
         </div>
@@ -308,7 +316,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           Rezervasyonda herhangi bir değişiklik yapılmadı.
         </p>
         <div className="flex justify-center gap-2 mt-5">
-          <Button variant="outline" onClick={onClose}>Kapat</Button>
+          <Button variant="outline" onClick={handleClose}>Kapat</Button>
           <Button onClick={loadData} data-testid="retry-reservation-detail">Tekrar dene</Button>
         </div>
       </div>
@@ -506,7 +514,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             )}
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full p-2 transition-colors"
             data-testid="close-reservation-detail"
             aria-label={t('cm.pages_ReservationDetailModal.kapat')}
@@ -962,7 +970,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} summary={summary} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
                 <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>
+                <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={handleClose} /></TabsContent>
                 <TabsContent value="voucher" className="mt-0"><VoucherTab booking={booking} bookingId={bookingId} /></TabsContent>
                 <TabsContent value="invoice" className="mt-0"><InvoiceTab booking={booking} bookingId={bookingId} /></TabsContent>
                 <TabsContent value="deposits" className="mt-0"><DepositsTab deposits={deposits} booking={booking} onRefresh={loadData} /></TabsContent>

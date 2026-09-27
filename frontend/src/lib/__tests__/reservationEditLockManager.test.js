@@ -1,10 +1,13 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   RESERVATION_EDIT_LOCK_HEADER,
   RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS,
   RESERVATION_EDIT_LOCK_LEASE_SECONDS,
   reservationIdFromFullDetailUrl,
   reservationIdFromProtectedMutation,
+  reservationEditLockManager,
 } from '../reservationEditLockManager';
+import axios from 'axios';
 
 describe('reservationEditLockManager contract', () => {
   it('pins the server lease and heartbeat cadence', () => {
@@ -51,5 +54,30 @@ describe('reservationEditLockManager contract', () => {
     expect(
       reservationIdFromProtectedMutation('/pms/reservations/booking-a/transfer-to-cari', 'post'),
     ).toBeNull();
+  });
+});
+
+describe('reservationEditLockManager release isolation', () => {
+  afterEach(async () => {
+    await reservationEditLockManager.releaseCurrent();
+    vi.restoreAllMocks();
+  });
+
+  it('does not let an older modal release the active reservation lock', async () => {
+    vi.spyOn(axios, 'post').mockResolvedValue({ data: { expires_at: '2026-09-27T10:00:00Z' } });
+    const remove = vi.spyOn(axios, 'delete').mockResolvedValue({ data: { success: true } });
+
+    await reservationEditLockManager.acquire('booking-current');
+
+    expect(await reservationEditLockManager.releaseCurrent('booking-old')).toBe(false);
+    expect(reservationEditLockManager.getCurrent()?.bookingId).toBe('booking-current');
+    expect(remove).not.toHaveBeenCalled();
+
+    expect(await reservationEditLockManager.releaseCurrent('booking-current')).toBe(true);
+    expect(remove).toHaveBeenCalledWith(
+      '/pms/reservations/booking-current/edit-lock',
+      expect.objectContaining({ data: expect.objectContaining({ lock_id: expect.any(String) }) }),
+    );
+    expect(reservationEditLockManager.getCurrent()).toBeNull();
   });
 });

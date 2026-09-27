@@ -86,6 +86,7 @@ describe('Night Audit inline blocker resolution', () => {
     fireEvent.click(screen.getByRole('button', { name: 'İşlemi tamamla' }));
     await waitFor(() => expect(screen.queryByTestId('inline-reservation-detail')).not.toBeInTheDocument());
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    expect(get).toHaveBeenLastCalledWith('/night-audit/preview', { params: { nocache: 1 } });
     expect(screen.getByTestId('location')).toHaveTextContent('/night-audit');
   });
 });
