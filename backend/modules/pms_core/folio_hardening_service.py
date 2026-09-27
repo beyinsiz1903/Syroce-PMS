@@ -81,15 +81,15 @@ class FolioHardeningService:
         if folio.get("status") != "open":
             return {"success": False, "error": f"Folio is {folio.get('status')}, cannot post payments"}
 
+        amount = payment_data.get("amount", 0)
+        if amount <= 0:
+            return {"success": False, "error": "Payment amount must be positive"}
+
         booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tenant_id},
             {"_id": 0, "currency": 1},
         )
         ledger_currency = str(payment_data.get("currency") or (booking or {}).get("currency") or folio.get("currency") or "TRY").upper()
-
-        amount = payment_data.get("amount", 0)
-        if amount <= 0:
-            return {"success": False, "error": "Payment amount must be positive"}
 
         payment_id = str(uuid.uuid4())
         now = datetime.now(UTC)

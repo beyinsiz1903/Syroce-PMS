@@ -873,7 +873,26 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         method_str = payment_data.method.value if hasattr(payment_data.method, "value") else str(payment_data.method)
         await ensure_active_shift(current_user.tenant_id, method_str)
 
-        payment = Payment(tenant_id=current_user.tenant_id, folio_id=folio_id, booking_id=folio["booking_id"], processed_by=current_user.id, **payment_data.model_dump())
+        payment_payload = payment_data.model_dump(exclude_none=True)
+        if not payment_payload.get("currency"):
+            booking = None
+            bookings_collection = getattr(db, "bookings", None)
+            if bookings_collection is not None:
+                booking = await bookings_collection.find_one(
+                    {"id": folio["booking_id"], "tenant_id": current_user.tenant_id},
+                    {"_id": 0, "currency": 1},
+                )
+            payment_payload["currency"] = str(
+                (booking or {}).get("currency") or folio.get("currency") or "TRY"
+            ).upper()
+
+        payment = Payment(
+            tenant_id=current_user.tenant_id,
+            folio_id=folio_id,
+            booking_id=folio["booking_id"],
+            processed_by=current_user.id,
+            **payment_payload,
+        )
 
         payment_dict = payment.model_dump()
         payment_dict["processed_at"] = payment_dict["processed_at"].isoformat()
