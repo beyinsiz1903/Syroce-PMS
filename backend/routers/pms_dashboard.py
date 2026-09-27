@@ -206,7 +206,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         ).to_list(200),
         db.bookings.find(
             {"tenant_id": tenant_id, "status": "checked_in", "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]}},
-            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1, "currency": 1},
         ).to_list(200),
         db.bookings.find(
             {
@@ -215,7 +215,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
                 "check_out": {"$gte": today, "$lt": today_end},
                 "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]},
             },
-            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1, "currency": 1},
         ).to_list(200),
         db.bookings.count_documents({"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_out": {"$gte": today, "$lt": today_end}}),
         db.bookings.count_documents({"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_in": {"$lte": today + "T23:59:59"}, "check_out": {"$gt": today}}),
@@ -253,11 +253,14 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
     # 2) Pending payments (balance > 0 for checked-in guests)
     pending_payments = []
     total_outstanding = 0
+    outstanding_by_currency: dict[str, float] = {}
     for b in unpaid:
         balance = round((b.get("total_amount", 0) or 0) - (b.get("paid_amount", 0) or 0), 2)
         if balance > 0.01:
+            booking_currency = str(b.get("currency") or currency_code or "TRY").upper()
             total_outstanding += balance
-            pending_payments.append({"booking_id": b["id"], "guest_name": display_guest_name(b.get("guest_name"), b.get("guest_id")), "room_number": str(b.get("room_number", "")), "balance": balance})
+            outstanding_by_currency[booking_currency] = round(outstanding_by_currency.get(booking_currency, 0) + balance, 2)
+            pending_payments.append({"booking_id": b["id"], "guest_name": display_guest_name(b.get("guest_name"), b.get("guest_id")), "room_number": str(b.get("room_number", "")), "balance": balance, "currency": booking_currency})
 
     if pending_payments:
         alerts.append(
@@ -265,9 +268,10 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
                 "type": "pending_payments",
                 "severity": "medium",
                 "title": f"{len(pending_payments)} odenmemis hesap",
-                "description": f"Toplam {total_outstanding:,.2f} TL tahsil edilmedi",
+                "description": " · ".join(f"{amount:,.2f} {code}" for code, amount in sorted(outstanding_by_currency.items())) + " tahsil edilmedi",
                 "count": len(pending_payments),
                 "total_amount": round(total_outstanding, 2),
+                "totals_by_currency": outstanding_by_currency,
                 "items": sorted(pending_payments, key=lambda x: -x["balance"])[:5],
                 "action": "payments",
                 "action_label": "Odemelere Git",
@@ -313,7 +317,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         dep_items = []
         for d in departures_with_balance:
             bal = round((d.get("total_amount", 0) or 0) - (d.get("paid_amount", 0) or 0), 2)
-            dep_items.append({"booking_id": d["id"], "guest_name": display_guest_name(d.get("guest_name"), d.get("guest_id")), "room_number": str(d.get("room_number", "")), "balance": bal})
+            dep_items.append({"booking_id": d["id"], "guest_name": display_guest_name(d.get("guest_name"), d.get("guest_id")), "room_number": str(d.get("room_number", "")), "balance": bal, "currency": str(d.get("currency") or currency_code or "TRY").upper()})
         alerts.append(
             {
                 "type": "departures_with_balance",
@@ -337,6 +341,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             "pending_payments_count": len(pending_payments),
             "vip_arrivals": len(vip_arrivals),
             "total_outstanding": round(total_outstanding, 2),
+            "outstanding_by_currency": outstanding_by_currency,
         },
         "currency": currency_code,
         "currency_symbol": currency_symbol,

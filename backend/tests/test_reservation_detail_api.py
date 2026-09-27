@@ -133,6 +133,7 @@ class TestPaymentRecording:
         assert data.get("success") is True
         assert "payment" in data
         assert data["payment"]["amount"] == 100.0
+        assert data["payment"]["currency"] == "TRY"
         assert data["payment"]["method"] == "cash"
         assert data["payment"]["payment_type"] == "interim"
 
@@ -424,6 +425,7 @@ class TestDeposit:
         assert data.get("success") is True
         assert "deposit" in data
         assert data["deposit"]["amount"] == 200.0
+        assert data["deposit"]["currency"] == "TRY"
 
 
 class TestGuestUpdate:

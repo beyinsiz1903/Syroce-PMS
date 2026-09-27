@@ -1771,12 +1771,14 @@ async def record_payment(
             await release_idempotency(db, lock_id=auto_lock_id)
         raise
 
+    currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
     payment = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
         "folio_id": folio["id"],
         "booking_id": booking_id,
         "amount": data.amount,
+        "currency": currency,
         "method": data.method,
         "payment_type": data.payment_type,
         "status": "paid",
@@ -1856,6 +1858,7 @@ async def record_payment(
         current_user.name,
         {
             "amount": data.amount,
+            "currency": currency,
             "method": data.method,
             "payment_type": data.payment_type,
         },
@@ -1868,7 +1871,7 @@ async def record_payment(
         tid,
         booking_id,
         "payment_added",
-        {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": data.payment_type},
+        {"payment_id": payment["id"], "amount": data.amount, "currency": currency, "method": data.method, "payment_type": data.payment_type},
     )
 
     payment.pop("_id", None)
@@ -2934,6 +2937,7 @@ async def record_deposit(
         )
 
     folio = await _ensure_reservation_folio(tid, booking)
+    currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
 
     deposit = {
         "id": str(uuid.uuid4()),
@@ -2941,6 +2945,7 @@ async def record_deposit(
         "booking_id": booking_id,
         "folio_id": folio["id"],
         "amount": data.amount,
+        "currency": currency,
         "method": data.method,
         "reference": data.reference,
         "deposit_type": "deposit",
@@ -2958,6 +2963,7 @@ async def record_deposit(
         "booking_id": booking_id,
         "deposit_id": deposit["id"],
         "amount": data.amount,
+        "currency": currency,
         "method": data.method,
         "payment_type": "deposit",
         "status": "paid",
@@ -2994,7 +3000,7 @@ async def record_deposit(
         tid,
         booking_id,
         "payment_added",
-        {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": "deposit"},
+        {"payment_id": payment["id"], "amount": data.amount, "currency": currency, "method": data.method, "payment_type": "deposit"},
     )
 
     deposit.pop("_id", None)
@@ -4860,6 +4866,12 @@ async def refund_deposit(
             preferred_folio_id=current_deposit.get("folio_id"),
             session=session,
         )
+        currency = str(
+            current_deposit.get("currency")
+            or current_booking.get("currency")
+            or folio.get("currency")
+            or "TRY"
+        ).upper()
 
         refund = {
             "id": refund_id,
@@ -4869,6 +4881,7 @@ async def refund_deposit(
             "booking_id": booking_id,
             "deposit_id": data.deposit_id,
             "refund_amount": data.refund_amount,
+            "currency": currency,
             "refund_method": data.refund_method,
             "reason": data.reason,
             "status": "refunded",
@@ -4885,6 +4898,7 @@ async def refund_deposit(
             "deposit_id": data.deposit_id,
             "deposit_refund_id": refund_id,
             "amount": -round(data.refund_amount, 2),
+            "currency": currency,
             "method": data.refund_method,
             "payment_type": "refund",
             "status": "refunded",
@@ -4963,6 +4977,7 @@ async def refund_deposit(
             {
                 "deposit_id": data.deposit_id,
                 "refund_amount": data.refund_amount,
+                "currency": result["payment"]["currency"],
             },
         ),
         operation="refund_deposit_activity",
@@ -4978,6 +4993,7 @@ async def refund_deposit(
             {
                 "payment_id": result["payment"]["id"],
                 "amount": data.refund_amount,
+                "currency": result["payment"]["currency"],
                 "method": data.refund_method,
                 "payment_type": "refund",
             },
@@ -4999,10 +5015,14 @@ async def list_all_deposits(current_user: User = Depends(get_current_user)):
     deposits = []
     async for d in db.deposits.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
         # Enrich with booking info
-        booking = await db.bookings.find_one({"id": d.get("booking_id"), "tenant_id": tid}, {"_id": 0, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1})
+        booking = await db.bookings.find_one({"id": d.get("booking_id"), "tenant_id": tid}, {"_id": 0, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "currency": 1})
         if booking:
             d["guest_name"] = booking.get("guest_name")
             d["room_number"] = booking.get("room_number")
+            # Legacy deposit rows did not persist currency. Enrich them from
+            # their reservation so foreign-currency deposits are never shown
+            # or aggregated as TRY.
+            d["currency"] = str(d.get("currency") or booking.get("currency") or "TRY").upper()
         deposits.append(d)
 
     return {"deposits": deposits}
