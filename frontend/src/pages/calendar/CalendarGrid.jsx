@@ -30,6 +30,27 @@ export const clearCalendarTextSelection = () => {
   window.getSelection?.()?.removeAllRanges();
 };
 
+export const normalizeRoomTypeKey = (value) => String(value || 'standard').trim().toLocaleLowerCase('tr-TR');
+
+export const formatRoomTypeLabel = (value) => {
+  const normalized = normalizeRoomTypeKey(value);
+  return normalized.charAt(0).toLocaleUpperCase('tr-TR') + normalized.slice(1);
+};
+
+export const formatCalendarMonthRange = (dateRange) => {
+  if (!dateRange?.length) return '';
+  const first = dateRange[0];
+  const last = dateRange[dateRange.length - 1];
+  const month = (date) => date.toLocaleDateString('tr-TR', { month: 'long' }).toLocaleUpperCase('tr-TR');
+  const firstMonth = month(first);
+  const lastMonth = month(last);
+  const firstYear = first.getFullYear();
+  const lastYear = last.getFullYear();
+  if (firstMonth === lastMonth && firstYear === lastYear) return `${firstMonth} ${firstYear}`;
+  if (firstYear === lastYear) return `${firstMonth} — ${lastMonth} ${lastYear}`;
+  return `${firstMonth} ${firstYear} — ${lastMonth} ${lastYear}`;
+};
+
 const CalendarGrid = ({
   rooms,
   bookings,
@@ -216,7 +237,7 @@ const CalendarGrid = ({
     const groups = {};
     const byId = new Map();
     rooms.forEach((room) => {
-      const type = room.room_type || 'standard';
+      const type = normalizeRoomTypeKey(room.room_type);
       if (!groups[type]) groups[type] = [];
       groups[type].push(room);
       byId.set(room.id, room);
@@ -229,11 +250,11 @@ const CalendarGrid = ({
     bookings.forEach((booking) => {
       if (['cancelled', 'checked_out', 'no_show'].includes(booking.status)) return;
       const room = booking.room_id ? roomById.get(booking.room_id) : null;
-      const type = room?.room_type || booking.room_type || booking.room_type_id || '';
+      const type = normalizeRoomTypeKey(room?.room_type || booking.room_type || booking.room_type_id || '');
       if (!type) return;
       dateRange.forEach((date) => {
         if (!isBookingOnDate(booking, date)) return;
-        const key = `${type.toLowerCase()}|${toDateStringUTC(date)}`;
+        const key = `${type}|${toDateStringUTC(date)}`;
         counts.set(key, (counts.get(key) || 0) + 1);
       });
     });
@@ -275,7 +296,7 @@ const CalendarGrid = ({
           <div className="flex">
             <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 border-r border-slate-300 bg-slate-50`}></div>
             <div className="flex-1 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 py-1.5 bg-slate-50">
-              {dateRange.length > 0 && dateRange[Math.floor(dateRange.length / 2)].toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
+              {formatCalendarMonthRange(dateRange)}
             </div>
           </div>
           <div className="flex bg-white shadow-[0_2px_6px_rgba(15,23,42,0.06)]">
@@ -361,7 +382,7 @@ const CalendarGrid = ({
                           ) : (
                             <ChevronDown className="w-3 h-3" />
                           )}
-                          <span>{roomType}</span>
+                          <span>{formatRoomTypeLabel(roomType)}</span>
                         </button>
                       </div>
                       {dateRange.map((date, idx) => {
@@ -372,7 +393,8 @@ const CalendarGrid = ({
                         const capacity = getRoomTypeCapacityForDate(typeRooms, date, roomBlocks);
                         const totalTypeRooms = capacity.sellable;
                         const isFull = occupiedCount >= totalTypeRooms;
-                        const configuredRate = dailyRates[`${roomType}|${dayKey}`];
+                        const sourceRoomType = typeRooms[0]?.room_type || roomType;
+                        const configuredRate = dailyRates[`${sourceRoomType}|${dayKey}`] ?? dailyRates[`${roomType}|${dayKey}`];
                         const displayRate = configuredRate ?? typeRooms[0]?.base_price ?? 0;
 
                         return (

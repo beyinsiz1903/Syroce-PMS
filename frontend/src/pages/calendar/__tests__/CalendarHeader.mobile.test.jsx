@@ -19,6 +19,7 @@ const defaultProps = {
   onNavigatePrevious: vi.fn(),
   onNavigateNext: vi.fn(),
   onGoToDate: vi.fn(),
+  onGoToToday: vi.fn(),
   onSyncReservations: vi.fn(),
   onShowFindRoomDialog: vi.fn(),
   onShowNewBookingDialog: vi.fn(),
@@ -51,10 +52,10 @@ describe('CalendarHeader mobile toolbar', () => {
   it('wires the compact date navigation to calendar callbacks', () => {
     const onPrevious = vi.fn();
     const onNext = vi.fn();
-    const onGoToDate = vi.fn();
+    const onGoToToday = vi.fn();
     render(
       <MemoryRouter>
-        <CalendarHeader {...defaultProps} onNavigatePrevious={onPrevious} onNavigateNext={onNext} onGoToDate={onGoToDate} />
+        <CalendarHeader {...defaultProps} onNavigatePrevious={onPrevious} onNavigateNext={onNext} onGoToToday={onGoToToday} />
       </MemoryRouter>,
     );
 
@@ -63,7 +64,7 @@ describe('CalendarHeader mobile toolbar', () => {
     fireEvent.click(screen.getByTestId('mobile-calendar-nav-next'));
 
     expect(onPrevious).toHaveBeenCalledTimes(1);
-    expect(onGoToDate).toHaveBeenCalledTimes(1);
+    expect(onGoToToday).toHaveBeenCalledTimes(1);
     expect(onNext).toHaveBeenCalledTimes(1);
   });
 

@@ -27,6 +27,7 @@ const CalendarHeader = ({
   onNavigatePrevious,
   onNavigateNext,
   onGoToDate,
+  onGoToToday,
   onSyncReservations,
   onShowFindRoomDialog,
   onShowNewBookingDialog,
@@ -202,7 +203,7 @@ const CalendarHeader = ({
           <Button variant="outline" size="icon" onClick={onNavigatePrevious} className="h-9 w-9" data-testid="mobile-calendar-nav-prev" aria-label="Önceki tarih aralığı">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => onGoToDate(new Date())} className="h-9 flex-1 text-xs font-semibold" data-testid="mobile-calendar-nav-today">
+          <Button variant="outline" size="sm" onClick={onGoToToday} className="h-9 flex-1 text-xs font-semibold" data-testid="mobile-calendar-nav-today">
             {t('cm.pages_calendar_CalendarHeader.bugun_01475')}
           </Button>
           <Button variant="outline" size="icon" onClick={onNavigateNext} className="h-9 w-9" data-testid="mobile-calendar-nav-next" aria-label="Sonraki tarih aralığı">
@@ -312,7 +313,7 @@ const CalendarHeader = ({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => onGoToDate(new Date())}
+          onClick={onGoToToday}
           className="h-8 px-3 text-xs font-medium"
           data-testid="calendar-nav-today"
         >
