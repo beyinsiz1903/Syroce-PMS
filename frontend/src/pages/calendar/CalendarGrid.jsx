@@ -209,13 +209,36 @@ const CalendarGrid = ({
     return color;
   };
 
-  // Group rooms by type
-  const groupedRooms = rooms.reduce((acc, room) => {
-    const type = room.room_type || 'standard';
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(room);
-    return acc;
-  }, {});
+  // Build room lookups once. The room-type summary used to scan every booking
+  // and every room for every visible day, which made 14/30-day navigation feel
+  // heavier as the property filled up.
+  const { groupedRooms, roomById } = useMemo(() => {
+    const groups = {};
+    const byId = new Map();
+    rooms.forEach((room) => {
+      const type = room.room_type || 'standard';
+      if (!groups[type]) groups[type] = [];
+      groups[type].push(room);
+      byId.set(room.id, room);
+    });
+    return { groupedRooms: groups, roomById: byId };
+  }, [rooms]);
+
+  const occupiedByTypeAndDate = useMemo(() => {
+    const counts = new Map();
+    bookings.forEach((booking) => {
+      if (['cancelled', 'checked_out', 'no_show'].includes(booking.status)) return;
+      const room = booking.room_id ? roomById.get(booking.room_id) : null;
+      const type = room?.room_type || booking.room_type || booking.room_type_id || '';
+      if (!type) return;
+      dateRange.forEach((date) => {
+        if (!isBookingOnDate(booking, date)) return;
+        const key = `${type.toLowerCase()}|${toDateStringUTC(date)}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+    return counts;
+  }, [bookings, dateRange, roomById]);
 
   const roomTypeOrder = ['suite', 'deluxe', 'superior', 'standard', 'economy'];
   const sortedTypes = Object.keys(groupedRooms).sort((a, b) => {
@@ -229,7 +252,7 @@ const CalendarGrid = ({
 
   return (
     <div
-      className="bg-white border-y border-slate-300 relative flex flex-col h-full overflow-hidden select-none"
+      className="relative flex h-full flex-col overflow-hidden border-y border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] select-none"
       data-testid="calendar-grid"
       onPointerDown={clearCalendarTextSelection}
       onPointerMove={updatePointerResize}
@@ -323,13 +346,13 @@ const CalendarGrid = ({
               return (
                 <div key={roomType}>
                   {/* Room Type Header */}
-                  <div className="bg-slate-50 border-y border-slate-300" data-testid="room-type-row">
+                  <div className="border-y border-slate-200 bg-slate-50" data-testid="room-type-row">
                     <div className="flex">
                       <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1.5 border-r border-slate-300 bg-slate-50 flex items-center`}>
                         <button
                           type="button"
                           onClick={() => toggleType(roomType)}
-                          className="flex items-center gap-1.5 font-extrabold text-[13px] text-slate-900 tracking-tight hover:text-blue-700 select-none"
+                          className="flex items-center gap-1.5 font-extrabold text-[13px] text-slate-900 tracking-tight transition-colors hover:text-blue-700 select-none"
                           data-testid={`room-type-${roomType}`}
                           title={collapsedTypes.has(roomType) ? 'Aç' : 'Daralt'}
                         >
@@ -344,28 +367,11 @@ const CalendarGrid = ({
                       {dateRange.map((date, idx) => {
                         const weekend = isWeekend(date);
                         const past = isPastDate(date);
-                        // Count assigned bookings for this room type
-                        const assignedBookings = bookings.filter(b => {
-                          if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
-                          const room = rooms.find(r => r.id === b.room_id);
-                          if (!room || (room.room_type || 'standard') !== roomType) return false;
-                          return isBookingOnDate(b, date);
-                        });
-                        // Count unassigned bookings for this room type on this date
-                        const rtLower = roomType.toLowerCase();
-                        const unassignedOnDate = bookings.filter(b => {
-                          if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
-                          if (b.room_id) return false;
-                          const bType = (b.room_type || '').toLowerCase();
-                          const bTypeId = (b.room_type_id || '').toLowerCase();
-                          if (bType !== rtLower && bTypeId !== rtLower) return false;
-                          return isBookingOnDate(b, date);
-                        });
-                        const occupiedCount = assignedBookings.length + unassignedOnDate.length;
+                        const dayKey = toDateStringUTC(date);
+                        const occupiedCount = occupiedByTypeAndDate.get(`${roomType.toLowerCase()}|${dayKey}`) || 0;
                         const capacity = getRoomTypeCapacityForDate(typeRooms, date, roomBlocks);
                         const totalTypeRooms = capacity.sellable;
                         const isFull = occupiedCount >= totalTypeRooms;
-                        const dayKey = toDateStringUTC(date);
                         const configuredRate = dailyRates[`${roomType}|${dayKey}`];
                         const displayRate = configuredRate ?? typeRooms[0]?.base_price ?? 0;
 
@@ -686,10 +692,10 @@ const CalendarGrid = ({
                                 }}
                                 onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                                className={`absolute rounded-md text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 transition-[transform,box-shadow,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging || isResizing
                                     ? 'opacity-35 shadow-sm z-30'
-                                    : 'shadow-[0_1px_3px_rgba(15,23,42,0.22)] hover:z-30'
+                                    : 'shadow-[0_2px_5px_rgba(15,23,42,0.2)] hover:z-30 hover:-translate-y-px hover:shadow-[0_7px_16px_rgba(15,23,42,0.24)]'
                                 } ${isResizing ? 'pointer-events-none' : ''} ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,

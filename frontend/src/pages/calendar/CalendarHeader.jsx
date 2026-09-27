@@ -238,7 +238,7 @@ const CalendarHeader = ({
       </div>
 
       <div
-        className={`hidden items-center md:flex ${compactMode ? 'flex-nowrap gap-2' : 'flex-wrap gap-x-4 gap-y-3'}`}
+        className={`hidden items-center rounded-xl border border-slate-200 bg-white/95 px-2.5 shadow-sm backdrop-blur md:flex ${compactMode ? 'flex-nowrap gap-2' : 'flex-wrap gap-x-4 gap-y-3 py-1'}`}
         data-testid="reservation-toolbar"
       >
       {/* ─── LEFT GROUP: title + date range + alert chips ─── */}
@@ -255,10 +255,10 @@ const CalendarHeader = ({
           </span>
           <span className="flex flex-col leading-tight text-left min-w-0">
             <span className={`${compactMode ? 'text-base' : 'text-lg'} font-extrabold text-slate-900 group-hover:text-amber-600 transition-colors`}>
-              Rezervasyonlar
+              Oda Takvimi
             </span>
-            {dateRangeLabel && !compactMode && (
-              <span className="text-xs text-gray-500 font-medium truncate" data-testid="toolbar-date-range">
+            {dateRangeLabel && (
+              <span className={`${compactMode ? 'max-w-36 text-[10px]' : 'text-xs'} truncate font-medium text-slate-500`} data-testid="toolbar-date-range">
                 {dateRangeLabel}
               </span>
             )}
@@ -303,7 +303,7 @@ const CalendarHeader = ({
           variant="outline"
           size="sm"
           onClick={onNavigatePrevious}
-          className="h-8 w-8 p-0"
+          className="h-8 w-8 p-0 transition-transform hover:-translate-x-0.5"
           data-testid="calendar-nav-prev"
           title="Önceki"
         >
@@ -322,7 +322,7 @@ const CalendarHeader = ({
           variant="outline"
           size="sm"
           onClick={onNavigateNext}
-          className="h-8 w-8 p-0"
+          className="h-8 w-8 p-0 transition-transform hover:translate-x-0.5"
           data-testid="calendar-nav-next"
           title="Sonraki"
         >
@@ -387,16 +387,6 @@ const CalendarHeader = ({
           <span className={compactMode ? 'hidden 2xl:inline' : ''}>Odayı Blokla</span>
         </Button>}
 
-        <div className="flex items-center gap-1.5">
-          {!compactMode && <span className="text-xs text-gray-600 whitespace-nowrap">{t('cm.pages_calendar_CalendarHeader.rezervasyon_durumu')}</span>}
-          <select
-            className="border border-gray-300 rounded-md px-2 text-xs h-8 bg-white"
-            data-testid="reservation-status-filter"
-          >
-            <option>Hepsi</option>
-          </select>
-        </div>
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 px-2" data-testid="calendar-view-settings" aria-label="Takvim görünüm ayarları">
@@ -446,7 +436,7 @@ const CalendarHeader = ({
 
         {canCreateBooking && <Button
           onClick={onShowNewBookingDialog}
-          className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm hover:shadow-md"
+          className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
           data-testid="add-reservation-button"
         >
           <Plus className="w-3.5 h-3.5 mr-1" />

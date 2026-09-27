@@ -1508,7 +1508,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
       <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28 bg-white" role="main" aria-label="Rezervasyon takvimi">
         <div
-          className="flex-none px-5 py-3 bg-white border-b border-slate-200 space-y-3"
+          className="flex-none border-b border-slate-200 bg-slate-50 px-5 py-2.5"
           data-testid="calendar-sticky-header"
           role="toolbar"
           aria-label="Takvim kontrol araçları"
@@ -1597,7 +1597,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
-        <div className={`flex-1 min-h-0 overflow-hidden ${calendarSafetyError ? 'pointer-events-none opacity-60' : ''}`} aria-disabled={Boolean(calendarSafetyError)}>
+        <div className={`flex-1 min-h-0 overflow-hidden animate-in fade-in duration-200 ${calendarSafetyError ? 'pointer-events-none opacity-60' : ''}`} aria-disabled={Boolean(calendarSafetyError)}>
         <CalendarGrid
           rooms={rooms}
           bookings={bookings}
