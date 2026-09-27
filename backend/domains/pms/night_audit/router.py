@@ -210,13 +210,14 @@ async def get_audit_status(
 
 @router.get("/preview")
 async def preview_night_audit(
+    _nocache: bool = Query(False, alias="nocache"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_night_audit")),
 ):
     """Gece denetimi Hazirlik ozeti — engelleyiciler, uyarilar, oda/misafir durumu."""
     from core.night_audit_hardened import build_audit_preview
 
-    return await build_audit_preview(current_user.tenant_id)
+    return await build_audit_preview(current_user.tenant_id, _nocache=_nocache)
 
 
 @router.get("/runs")

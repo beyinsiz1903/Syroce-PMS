@@ -67,21 +67,26 @@ function createManager() {
     if (current) current.lastViewActivityAt = Date.now();
   };
 
-  const releaseCurrent = async () => {
+  const releaseCurrent = async (expectedBookingId = null) => {
+    // A delayed close from an older modal must never release the lock that a
+    // newer reservation view has just acquired.
+    if (expectedBookingId && current?.bookingId !== expectedBookingId) return false;
     const owned = current;
     current = null;
     acquirePromise = null;
     clearHeartbeat();
     clearViewMonitor();
-    if (!owned?.bookingId || !owned?.lockId || owned.status !== 'acquired') return;
+    if (!owned?.bookingId || !owned?.lockId || owned.status !== 'acquired') return false;
 
     try {
       await axios.delete(`/pms/reservations/${owned.bookingId}/edit-lock`, {
         data: { lock_id: owned.lockId },
         __skipReservationEditLock: true,
       });
+      return true;
     } catch (_error) {
       // Lease expiry is the safety net for abrupt navigation/network loss.
+      return false;
     }
   };
 

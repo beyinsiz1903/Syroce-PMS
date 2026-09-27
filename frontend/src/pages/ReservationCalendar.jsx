@@ -47,6 +47,7 @@ import RoomBlockDialog from '@/components/pms/RoomBlockDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
 import { bookingDragGrip, bookingDropCheckIn } from './calendar/bookingDragPlacement';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import {
   applyCalendarViewPreference,
   CALENDAR_VIEW_PREFERENCES_KEY,
@@ -757,8 +758,23 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   }, []);
 
   const handleBookingDoubleClick = async (booking) => {
+    const previousBookingId = detailModalBookingId;
+    if (previousBookingId && previousBookingId !== booking.id) {
+      // Release the previous reservation immediately. The DOM monitor remains
+      // only as a crash/network fallback; operators should not wait 15 seconds
+      // while moving between cards.
+      await reservationEditLockManager?.releaseCurrent(previousBookingId);
+    }
     setDetailModalBookingId(booking.id);
     setShowDetailModal(true);
+  };
+
+  const closeReservationDetail = () => {
+    const closingBookingId = detailModalBookingId;
+    setShowDetailModal(false);
+    setDetailModalBookingId(null);
+    void reservationEditLockManager?.releaseCurrent(closingBookingId);
+    loadCalendarData();
   };
 
   const handleCreateBooking = async (e) => {
@@ -1859,8 +1875,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       {showDetailModal && detailModalBookingId && (
         <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">{t('cm.pages_ReservationCalendar.yukleniyor_4deb0')}</div></div>}>
           <ReservationDetailModal
+            key={detailModalBookingId}
             bookingId={detailModalBookingId}
-            onClose={() => { setShowDetailModal(false); setDetailModalBookingId(null); loadCalendarData(); }}
+            onClose={closeReservationDetail}
             allBookings={bookings}
           />
         </Suspense>

@@ -448,7 +448,10 @@ const CalendarGrid = ({
                                 aria-label={`${fullGuestName}, ${urgency.label}, atanmamış — odaya sürükleyin`}
                                 onDragStart={(e) => onDragStart(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
-                                onDoubleClick={() => onBookingDoubleClick(booking)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onBookingDoubleClick(booking);
+                                }}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className="absolute rounded text-[10px] text-white shadow-sm hover:shadow-lg hover:-translate-y-px transition-all cursor-move z-20 border-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                                 style={{
@@ -676,7 +679,10 @@ const CalendarGrid = ({
                                   e.stopPropagation();
                                   onDrop(e, room.id, dateRange[startIdx], booking.id);
                                 }}
-                                onDoubleClick={() => onBookingDoubleClick(booking)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onBookingDoubleClick(booking);
+                                }}
                                 onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
