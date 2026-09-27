@@ -275,6 +275,7 @@ export function ExtraChargesTab({
     reason: ''
   });
   const [loading, setLoading] = useState(false);
+  const [voidingId, setVoidingId] = useState(null);
   const [formError, setFormError] = useState('');
   const isFullComp = booking?.is_complimentary && booking?.complimentary_scope === 'full';
   const lifecycleStatus = String(booking?.status || '').toLowerCase();
@@ -353,6 +354,29 @@ export function ExtraChargesTab({
     }
     setLoading(false);
   };
+  const handleVoid = async charge => {
+    const chargeCurrency = charge.currency || currency;
+    const reason = window.prompt(
+      `${fmtCurrency(charge.total ?? charge.charge_amount ?? charge.amount, chargeCurrency)} tutarındaki ek ücreti iptal etme nedenini yazın:`,
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      toast.error('İptal nedeni en az 3 karakter olmalı');
+      return;
+    }
+    setVoidingId(charge.id);
+    try {
+      await axios.post(`/pms/reservations/${booking.id}/extra-charges/${charge.id}/void`, {
+        reason: reason.trim(),
+      });
+      toast.success('Ek ücret iptal edildi');
+      onRefresh?.();
+    } catch (e) {
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setVoidingId(null);
+    }
+  };
   return <div data-testid="extra-charges-tab" className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.ek_ucretler')}</span>
@@ -366,6 +390,10 @@ export function ExtraChargesTab({
       </div>
       <EarlyLateChargeModal open={!!elDirection} onClose={() => setElDirection(null)} bookingId={booking?.id} direction={elDirection || 'early_checkin'} defaultHour={elDirection === 'late_checkout' ? 14 : 10} onApplied={onRefresh} />
       {showAdd && <div className="border rounded-lg p-4 bg-amber-50/50 space-y-3">
+          <div className="flex items-center justify-between rounded-md border border-amber-200 bg-white px-3 py-2 text-sm">
+            <span className="font-medium text-slate-700">Ek ücret para birimi</span>
+            <span className="rounded-full bg-amber-100 px-3 py-1 font-bold text-amber-800">{currency === 'TRY' ? 'TL' : currency}</span>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <FormField label={t('cm.pages_reservationdetail_PricingTabs.aciklama')} value={form.description} onChange={v => setForm(p => ({
           ...p,
@@ -375,7 +403,7 @@ export function ExtraChargesTab({
           ...p,
           category: v
         }))} options={Object.entries(cats)} />
-            <FormField label={t('cm.pages_reservationdetail_PricingTabs.tutar_tl')} type="number" value={form.amount} onChange={v => setForm(p => ({
+            <FormField label={`Tutar (${currency === 'TRY' ? 'TL' : currency})`} type="number" value={form.amount} onChange={v => setForm(p => ({
           ...p,
           amount: v
         }))} />
@@ -387,7 +415,7 @@ export function ExtraChargesTab({
           <p className="text-xs text-amber-800">{isFullComp ? `Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 ${currency === 'TRY' ? 'TL' : currency} yansır.` : `0 ${currency === 'TRY' ? 'TL' : currency} girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.`}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ekle'}</Button>
+            <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : `${form.amount || '0'} ${currency === 'TRY' ? 'TL' : currency} Ekle`}</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_PricingTabs.iptal')}</Button>
           </div>
         </div>}
@@ -399,7 +427,16 @@ export function ExtraChargesTab({
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
                   <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtCurrency(c.complimentary_original_amount, currency)}</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
-                <div className="text-sm font-bold text-amber-700">{fmtCurrency(c.total ?? c.charge_amount ?? c.amount, currency)}</div>
+                <div className="text-sm font-bold text-amber-700">{fmtCurrency(c.total ?? c.charge_amount ?? c.amount, c.currency || currency)}</div>
+                {!readOnly && c.id && (extra_charges || []).some(extra => extra.id === c.id) && <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleVoid(c)}
+                  disabled={voidingId === c.id}
+                  className="h-7 px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                  aria-label={`${c.description || c.charge_name || 'Ek ücret'} kaydını iptal et`}
+                  title="Ek ücreti iptal et"
+                >{voidingId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}</Button>}
                 {!readOnly && !c.is_complimentary && <Button
                   size="sm"
                   variant="ghost"

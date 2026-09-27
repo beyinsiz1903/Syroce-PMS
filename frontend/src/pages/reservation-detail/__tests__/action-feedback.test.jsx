@@ -127,13 +127,35 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Kola' } });
     const inputs = screen.getAllByRole('spinbutton');
     fireEvent.change(inputs[0], { target: { value: '0' } });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ekle' }).at(-1));
+    fireEvent.click(screen.getByRole('button', { name: '0 TL Ekle' }));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
       '/pms/reservations/booking-a/add-extra-charge',
       expect.objectContaining({ description: 'Kola', amount: 0, quantity: 1 }),
     ));
     expect(toast.success).toHaveBeenCalledWith('Komp / ikram kaydı eklendi');
+  });
+
+  it('shows the reservation currency and can void a mistaken extra charge', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    vi.spyOn(window, 'prompt').mockReturnValue('Yanlış para birimi');
+    render(
+      <ExtraChargesTab
+        extra_charges={[{ id: 'extra-eur', description: 'Türk kahvesi', total: 390, currency: 'EUR' }]}
+        charges={[]}
+        booking={{ id: 'booking-a', currency: 'EUR' }}
+        allBookings={[]}
+      />,
+    );
+
+    expect(screen.getByText('390 EUR')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Türk kahvesi kaydını iptal et' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/extra-charges/extra-eur/void',
+      { reason: 'Yanlış para birimi' },
+    ));
+    expect(toast.success).toHaveBeenCalledWith('Ek ücret iptal edildi');
   });
 
   it('shows negative extra-charge validation inside the form', async () => {
@@ -149,7 +171,7 @@ describe('reservation detail action feedback', () => {
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hatalı kalem' } });
     fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '-1' } });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ekle' }).at(-1));
+    fireEvent.click(screen.getByRole('button', { name: '-1 TL Ekle' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('sıfır veya üzeri tutar');
     expect(axiosPost).not.toHaveBeenCalled();

@@ -1,8 +1,8 @@
 """Pessimistic reservation-detail edit locks.
 
 One active edit lease is allowed per ``(tenant_id, booking_id)``.  The browser
-owns a per-view ``lock_id`` and renews the lease every 30 seconds.  The server
-lease is 120 seconds, so an abandoned tab self-heals without an operator-only
+owns a per-view ``lock_id`` and renews the lease every 20 seconds.  The server
+lease is 60 seconds, so an abandoned tab self-heals without an operator-only
 cleanup path.
 
 The unique index makes acquire atomic across processes.  A competing upsert
@@ -20,8 +20,8 @@ from pymongo import ASCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 LOCK_COLLECTION = "reservation_edit_locks"
-LEASE_SECONDS = 120
-HEARTBEAT_SECONDS = 30
+LEASE_SECONDS = 60
+HEARTBEAT_SECONDS = 20
 
 _INDEX_READY = False
 _INDEX_LOCK = asyncio.Lock()

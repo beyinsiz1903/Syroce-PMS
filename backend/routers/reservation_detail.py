@@ -849,6 +849,10 @@ class ExtraChargeAdd(BaseModel):
     quantity: float = Field(1.0, gt=0, le=1e6)
 
 
+class ExtraChargeVoid(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
 class GuestUpdate(BaseModel):
     name: str | None = None
     email: str | None = None
@@ -3056,6 +3060,7 @@ async def add_extra_charge_detail(
         "amount": 0.0 if full_comp else data.amount,
         "quantity": data.quantity,
         "total": total,
+        "currency": str(booking.get("currency") or "TRY").upper(),
         "is_complimentary": is_complimentary,
         "complimentary_scope": "full" if full_comp else ("item" if is_complimentary else None),
         "complimentary_original_amount": requested_total if full_comp else None,
@@ -3099,6 +3104,68 @@ async def add_extra_charge_detail(
 
     charge.pop("_id", None)
     return {"success": True, "charge": charge}
+
+
+@router.post("/reservations/{booking_id}/extra-charges/{charge_id}/void")
+async def void_reservation_extra_charge(
+    booking_id: str,
+    charge_id: str,
+    data: ExtraChargeVoid,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("void_charge")),
+):
+    """Auditably cancel a mistaken booking-scoped extra charge."""
+    _enforce_perm(current_user, "void_charge")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    charge = await db.extra_charges.find_one(
+        {"id": charge_id, "booking_id": booking_id, "tenant_id": tid, "voided": {"$ne": True}},
+        {"_id": 0},
+    )
+    if not charge:
+        raise HTTPException(status_code=404, detail="Ek ücret bulunamadı veya daha önce iptal edildi")
+
+    now = datetime.now(UTC).isoformat()
+    await db.extra_charges.update_one(
+        {"id": charge_id, "booking_id": booking_id, "tenant_id": tid, "voided": {"$ne": True}},
+        {"$set": {"voided": True, "void_reason": data.reason, "voided_by": current_user.id, "voided_at": now}},
+    )
+    if _gb_cache:
+        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+
+    await _log_activity(
+        tid,
+        booking_id,
+        "extra_charge_voided",
+        current_user.name,
+        {"charge_id": charge_id, "amount": _extra_charge_total(charge), "reason": data.reason},
+    )
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+
+    schedule_emit_reservation_updated(
+        tid,
+        booking_id,
+        "charge_voided",
+        {"charge_id": charge_id, "amount": _extra_charge_total(charge), "reason": data.reason},
+    )
+    try:
+        from core.audit import log_audit_event
+
+        await log_audit_event(
+            tenant_id=tid,
+            user_id=current_user.id,
+            action="reservation_extra_charge_voided",
+            entity_type="extra_charge",
+            entity_id=charge_id,
+            details=f"Reservation extra charge voided: {data.reason}",
+            before_value={"voided": False, "amount": _extra_charge_total(charge), "currency": charge.get("currency")},
+            after_value={"voided": True, "void_reason": data.reason, "voided_by": current_user.id},
+            severity="warning",
+        )
+    except Exception:
+        logger.exception("audit log for reservation extra-charge void failed")
+    return {"success": True, "voided": True, "charge_id": charge_id}
 
 
 @router.post("/reservations/{booking_id}/mark-complimentary")
