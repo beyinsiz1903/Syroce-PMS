@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canUpdateMobileOrderStatus } from '@/utils/mobilePermissions';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const MobileOrderTracking = ({ user }) => {
   const { t } = useTranslation();
@@ -316,7 +317,7 @@ const MobileOrderTracking = ({ user }) => {
 
                 <div className="flex justify-between items-center mt-3 pt-3 border-t">
                   <div className="text-lg font-bold text-amber-600">
-                    ₺{order.total_amount.toFixed(2)}
+                    {formatCurrency(order.grand_total ?? order.total_amount, order.currency || cachedTenantCurrency())}
                   </div>
                   
                   {canUpdateMobileOrderStatus(user, order.status) && getNextStatus(order.status) && (
@@ -409,15 +410,15 @@ const MobileOrderTracking = ({ user }) => {
               <div className="space-y-1 border-t pt-2">
                 <div className="flex justify-between text-sm">
                   <span>Ara Toplam</span>
-                  <span>₺{selectedOrder.subtotal?.toFixed(2)}</span>
+                  <span>{formatCurrency(selectedOrder.subtotal, selectedOrder.currency || cachedTenantCurrency())}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>KDV</span>
-                  <span>₺{selectedOrder.tax_amount?.toFixed(2)}</span>
+                  <span>{formatCurrency(selectedOrder.tax_amount, selectedOrder.currency || cachedTenantCurrency())}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg">
                   <span>Toplam</span>
-                  <span className="text-amber-600">₺{selectedOrder.total_amount.toFixed(2)}</span>
+                  <span className="text-amber-600">{formatCurrency(selectedOrder.grand_total ?? selectedOrder.total_amount, selectedOrder.currency || cachedTenantCurrency())}</span>
                 </div>
               </div>
 
@@ -503,7 +504,7 @@ const MobileOrderTracking = ({ user }) => {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>{order.items_count} ürün</span>
-                  <span className="font-semibold">₺{order.total_amount.toFixed(2)}</span>
+                  <span className="font-semibold">{formatCurrency(order.grand_total ?? order.total_amount, order.currency || cachedTenantCurrency())}</span>
                 </div>
               </div>
             ))}

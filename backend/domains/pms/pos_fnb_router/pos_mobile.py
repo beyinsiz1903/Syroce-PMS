@@ -23,6 +23,7 @@ from core.security import (
     get_current_user,
     security,
 )
+from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_module  # v89 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 
@@ -475,6 +476,7 @@ async def get_active_orders(
     Filters by status and outlet, calculates preparation time and delayed orders
     """
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Build query
     query = {
@@ -523,6 +525,7 @@ async def get_active_orders(
                 # reads grand_total). Additive; legacy docs without it stay absent
                 # so the client falls back to total_amount.
                 "grand_total": order.get("grand_total"),
+                "currency": str(order.get("currency") or tenant_currency).upper(),
                 "time_elapsed_minutes": int(time_elapsed),
                 "is_delayed": is_delayed,
                 "created_at": order.get("created_at"),
@@ -541,6 +544,7 @@ async def get_order_details(order_id: str, credentials: HTTPAuthorizationCredent
     Including items, notes, timing, and guest information
     """
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     order = await db.pos_orders.find_one({"id": order_id, "tenant_id": current_user.tenant_id})
 
@@ -584,6 +588,8 @@ async def get_order_details(order_id: str, credentials: HTTPAuthorizationCredent
         "subtotal": order.get("subtotal", 0),
         "tax_amount": order.get("tax_amount", 0),
         "total_amount": order.get("total_amount", 0),
+        "grand_total": order.get("grand_total"),
+        "currency": str(order.get("currency") or tenant_currency).upper(),
         "payment_status": order.get("payment_status", "unpaid"),
         "server_name": order.get("server_name", ""),
         "notes": order.get("notes", ""),
@@ -658,6 +664,7 @@ async def get_order_history(
     Filters: date range, outlet, server, status
     """
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Build query
     query = {"tenant_id": current_user.tenant_id}
@@ -695,6 +702,8 @@ async def get_order_history(
                 "guest_name": order.get("guest_name", "Walk-in"),
                 "items_count": len(order.get("order_items", [])),
                 "total_amount": order.get("total_amount", 0),
+                "grand_total": order.get("grand_total"),
+                "currency": str(order.get("currency") or tenant_currency).upper(),
                 "server_name": order.get("server_name", ""),
                 "created_at": order.get("created_at"),
                 "payment_status": order.get("payment_status", "unpaid"),

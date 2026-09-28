@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { useTranslation } from 'react-i18next';
 import GuestMessaging from '@/components/GuestMessaging';
 import { Home, Calendar, Award, Settings, LogOut, User, QrCode, Bell, Utensils, Hotel, MapPin, Clock, Phone, Mail, Star, Sparkles, CheckCircle, AlertCircle, MessageCircle } from 'lucide-react';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const GuestPortal = ({
   user,
   onLogout
@@ -391,7 +392,7 @@ const GuestPortal = ({
                               </div>
                             </div>
                             <div className="flex flex-col items-end space-y-2">
-                              <div className="text-2xl font-bold text-blue-600">${booking.total_amount}</div>
+                              <div className="text-2xl font-bold text-blue-600">{formatCurrency(booking.total_amount, booking.currency || booking.currency_code || cachedTenantCurrency())}</div>
                               <span className={`px-3 py-1 rounded-full text-xs font-medium ${booking.status === 'confirmed' ? 'bg-green-100 text-green-700' : booking.status === 'checked_in' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
                                 {booking.status.replace('_', ' ').toUpperCase()}
                               </span>
@@ -437,7 +438,7 @@ const GuestPortal = ({
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-xl font-bold text-gray-600">${booking.total_amount}</div>
+                              <div className="text-xl font-bold text-gray-600">{formatCurrency(booking.total_amount, booking.currency || booking.currency_code || cachedTenantCurrency())}</div>
                               <span className="text-xs text-gray-500">{booking.status.toUpperCase()}</span>
                             </div>
                           </div>
@@ -646,7 +647,7 @@ const GuestPortal = ({
                                 </div>
                                 <div>
                                   <Label className="text-gray-500">Total Amount</Label>
-                                  <p className="font-medium text-blue-600">${booking.total_amount}</p>
+                                  <p className="font-medium text-blue-600">{formatCurrency(booking.total_amount, booking.currency || booking.currency_code || cachedTenantCurrency())}</p>
                                 </div>
                               </div>
                             </div>
