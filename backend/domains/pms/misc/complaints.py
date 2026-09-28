@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.enums import UserRole
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -255,6 +256,7 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
     Returns: {folio_adjusted, folio_id?, entry_id?, new_balance?, reason?}
     """
     booking_id = complaint.get("booking_id")
+    tenant_currency, _ = await get_tenant_currency(actor.tenant_id)
     raw_amount = complaint.get("compensation_amount") or 0
     try:
         amount = float(raw_amount)
@@ -276,7 +278,7 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
                 "booking_id": booking_id,
                 "status": "open",
             },
-            {"_id": 0, "id": 1, "folio_number": 1, "balance": 1},
+            {"_id": 0, "id": 1, "folio_number": 1, "balance": 1, "currency": 1},
         )
     except Exception as exc:
         logger.warning("[complaints] folio lookup failed: error_type=%s", type(exc).__name__)
@@ -286,6 +288,7 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
         return {"folio_adjusted": False, "reason": "Açık folyo bulunamadı"}
 
     folio_id = folio["id"]
+    currency = str(folio.get("currency") or complaint.get("compensation_currency") or tenant_currency).upper()
     charge_code = _COMPENSATION_CODE_MAP.get(comp_type, "MISC")
     comp_label = COMPENSATION_LABELS.get(comp_type, comp_type)
     short_id = (complaint.get("id") or "")[:8]
@@ -332,6 +335,7 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
             "entry_id": result.get("entry_id"),
             "amount_credited": round(amount, 2),
             "new_balance": new_balance,
+            "currency": currency,
         }
     except Exception as exc:
         logger.exception("[complaints] folio adjustment failed: error_type=%s", type(exc).__name__)
@@ -397,6 +401,7 @@ async def complaint_compensation_report(
     current_user: User = Depends(get_current_user),
 ):
     """Tazminat raporu — çözülmüş şikayetlerde verilen tazminatların özeti."""
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     pipeline = [
         {
             "$match": {
@@ -407,7 +412,10 @@ async def complaint_compensation_report(
         },
         {
             "$group": {
-                "_id": "$compensation_offered",
+                "_id": {
+                    "type": "$compensation_offered",
+                    "currency": {"$ifNull": ["$compensation_currency", tenant_currency]},
+                },
                 "count": {"$sum": 1},
                 "total_amount": {"$sum": {"$ifNull": ["$compensation_amount", 0]}},
             }
@@ -416,18 +424,25 @@ async def complaint_compensation_report(
     items = await db.service_complaints.aggregate(pipeline).to_list(50)
     breakdown = [
         {
-            "type": it["_id"],
-            "label": COMPENSATION_LABELS.get(it["_id"], it["_id"]),
+            "type": it["_id"]["type"],
+            "label": COMPENSATION_LABELS.get(it["_id"]["type"], it["_id"]["type"]),
+            "currency": it["_id"]["currency"],
             "count": it["count"],
             "total_amount": it.get("total_amount", 0),
         }
         for it in items
     ]
+    totals_by_currency: dict[str, float] = {}
+    for item in breakdown:
+        code = str(item.get("currency") or tenant_currency).upper()
+        totals_by_currency[code] = round(totals_by_currency.get(code, 0) + float(item.get("total_amount", 0) or 0), 2)
     return {
         "breakdown": breakdown,
         "totals": {
             "count": sum(b["count"] for b in breakdown),
             "amount": sum(b["total_amount"] for b in breakdown),
+            "amount_by_currency": totals_by_currency,
+            "currency": tenant_currency,
         },
     }
 
@@ -494,11 +509,14 @@ async def resolve_complaint(
 ):
     now = _now_iso()
     resolution_notes = resolve_data.get("resolution_notes", "")
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    compensation_currency = str(resolve_data.get("compensation_currency") or tenant_currency).upper()
     update = {
         "status": "resolved",
         "resolution_notes": resolution_notes,
         "compensation_offered": resolve_data.get("compensation_offered"),
         "compensation_amount": resolve_data.get("compensation_amount", 0),
+        "compensation_currency": compensation_currency,
         "resolved_at": now,
         "resolved_by": current_user.id,
         "updated_at": now,

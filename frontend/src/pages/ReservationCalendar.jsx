@@ -51,6 +51,7 @@ import { getRoomBlockForDate } from './calendar/calendarHelpers';
 import { bookingDragGrip, bookingDropCheckIn } from './calendar/bookingDragPlacement';
 import { mergeQuickPanelDetail, primaryQuickPanelFolio } from './calendar/quickPanel';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+import { cachedTenantCurrency } from '@/lib/currency';
 import {
   applyCalendarViewPreference,
   CALENDAR_VIEW_PREFERENCES_KEY,
@@ -1133,7 +1134,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       ? 0
       : Math.round(nextDailyRates.reduce((sum, rate) => sum + rate.rate, 0) * 100) / 100;
 
-      const currency = booking.currency || 'TL';
+      const currency = booking.currency || cachedTenantCurrency();
 
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-resize-${Date.now()}-${Math.random()}`;
       await axios.put(`/pms/bookings/${booking.id}`, {

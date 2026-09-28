@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Printer, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 const EMPTY = '—';
-const currencyCode = value => value === 'TL' ? 'TRY' : (value || 'TRY');
+const currencyCode = value => value === 'TL' ? 'TRY' : (value || cachedTenantCurrency());
 const money = (value, currency) => new Intl.NumberFormat('tr-TR', {
   style: 'currency', currency: currencyCode(currency), minimumFractionDigits: 2,
 }).format(Number(value) || 0);
@@ -52,7 +53,7 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
 
-  const currency = folioData.currency || booking.currency || 'TL';
+  const currency = folioData.currency || booking.currency || cachedTenantCurrency();
   const charges = useMemo(() => {
     const seen = new Set();
     return [...(Array.isArray(folioData.charges) ? folioData.charges : []), ...(Array.isArray(folioData.extra_charges) ? folioData.extra_charges : [])]

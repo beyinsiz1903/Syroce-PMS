@@ -9,6 +9,7 @@ export function normalizeCheckoutResponse(response) {
       : 'Çıkış işlemi tamamlandı',
     totalBalance: Number.isFinite(totalBalance) ? totalBalance : 0,
     foliosClosed: Number.isFinite(foliosClosed) ? foliosClosed : 0,
+    currency: typeof data.currency === 'string' ? data.currency.toUpperCase() : '',
   };
 }
 
