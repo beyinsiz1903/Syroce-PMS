@@ -70,6 +70,11 @@ def _as_finite_money(value: object, *, default: float = 0.0) -> float:
     return amount if math.isfinite(amount) else default
 
 
+def _normalize_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback).strip().upper()
+    return code if len(code) == 3 and code.isalpha() else fallback
+
+
 def _city_ledger_booking_label(booking: dict | None, booking_id: str) -> dict:
     """Keep the city-ledger source item readable even for a deleted legacy booking."""
     booking = booking or {}
@@ -390,7 +395,13 @@ async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depend
 
             days_old = (today - transaction_date).days
 
-            aging_entry = {"account_id": account["id"], "account_name": account["account_name"], "balance": account["current_balance"], "days_old": days_old}
+            aging_entry = {
+                "account_id": account["id"],
+                "account_name": account["account_name"],
+                "balance": account["current_balance"],
+                "currency": _normalize_currency(account.get("currency")),
+                "days_old": days_old,
+            }
 
             if days_old <= 30:
                 aging_buckets["current"].append(aging_entry)
@@ -411,7 +422,26 @@ async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depend
 
     totals["total"] = sum(totals.values())
 
-    return {"aging_buckets": aging_buckets, "totals": totals, "generated_at": today.isoformat()}
+    totals_by_currency: dict[str, dict[str, float]] = {}
+    for bucket, entries in aging_buckets.items():
+        bucket_totals: dict[str, float] = {}
+        for entry in entries:
+            code = entry["currency"]
+            bucket_totals[code] = bucket_totals.get(code, 0) + _as_finite_money(entry.get("balance"))
+        totals_by_currency[bucket] = {code: round(amount, 2) for code, amount in sorted(bucket_totals.items())}
+
+    all_totals: dict[str, float] = {}
+    for bucket_totals in totals_by_currency.values():
+        for code, amount in bucket_totals.items():
+            all_totals[code] = all_totals.get(code, 0) + amount
+    totals_by_currency["total"] = {code: round(amount, 2) for code, amount in sorted(all_totals.items())}
+
+    return {
+        "aging_buckets": aging_buckets,
+        "totals": totals,
+        "totals_by_currency": totals_by_currency,
+        "generated_at": today.isoformat(),
+    }
 
 
 @router.post("/cashiering/credit-limit")
@@ -781,7 +811,17 @@ async def get_city_ledger_transactions(account_id: str, limit: int = 100, creden
     current_user = await get_current_user(credentials)
     _enforce(current_user, "view_city_ledger_transactions")  # Bug CT
 
+    account = await db.city_ledger_accounts.find_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "currency": 1, "current_balance": 1},
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    account_currency = _normalize_currency(account.get("currency"))
     transactions = await db.city_ledger_transactions.find({"account_id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("transaction_date", -1).limit(limit).to_list(limit)
+    for transaction in transactions:
+        transaction["currency"] = _normalize_currency(transaction.get("currency"), account_currency)
 
     charges = sum(t["amount"] for t in transactions if t["transaction_type"] == "charge")
     payments = sum(t["amount"] for t in transactions if t["transaction_type"] == "payment")
@@ -789,7 +829,13 @@ async def get_city_ledger_transactions(account_id: str, limit: int = 100, creden
     return {
         "account_id": account_id,
         "transactions": transactions,
-        "summary": {"total_charges": round(charges, 2), "total_payments": round(payments, 2), "current_balance": round(charges - payments, 2), "transaction_count": len(transactions)},
+        "summary": {
+            "total_charges": round(charges, 2),
+            "total_payments": round(payments, 2),
+            "current_balance": round(_as_finite_money(account.get("current_balance"), default=charges - payments), 2),
+            "currency": account_currency,
+            "transaction_count": len(transactions),
+        },
     }
 
 
