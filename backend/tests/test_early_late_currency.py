@@ -12,9 +12,11 @@ from routers import early_late_pricing
 @pytest.mark.asyncio
 async def test_settings_expose_tenant_currency(monkeypatch):
     monkeypatch.setattr(
-        early_late_pricing.db,
-        "tenant_settings",
-        SimpleNamespace(find_one=AsyncMock(return_value={})),
+        early_late_pricing,
+        "db",
+        SimpleNamespace(
+            tenant_settings=SimpleNamespace(find_one=AsyncMock(return_value={})),
+        ),
     )
     monkeypatch.setattr(
         early_late_pricing,
@@ -45,18 +47,18 @@ async def test_calculation_uses_tenant_currency_for_legacy_booking(monkeypatch):
         "late_checkout": [],
     }
     monkeypatch.setattr(
-        early_late_pricing.db,
-        "bookings",
+        early_late_pricing,
+        "db",
         SimpleNamespace(
-            find_one=AsyncMock(
-                return_value={"id": "booking-1", "total_amount": 100, "nights": 1}
-            )
+            bookings=SimpleNamespace(
+                find_one=AsyncMock(
+                    return_value={"id": "booking-1", "total_amount": 100, "nights": 1}
+                )
+            ),
+            tenant_settings=SimpleNamespace(
+                find_one=AsyncMock(return_value={"early_late_pricing": rule_config})
+            ),
         ),
-    )
-    monkeypatch.setattr(
-        early_late_pricing.db,
-        "tenant_settings",
-        SimpleNamespace(find_one=AsyncMock(return_value={"early_late_pricing": rule_config})),
     )
     monkeypatch.setattr(
         early_late_pricing,
