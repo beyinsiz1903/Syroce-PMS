@@ -1444,6 +1444,28 @@ async def get_profit_loss_report(
     # Get all expenses
     expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
 
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+
+    def _currency_totals(records, amount_field):
+        totals: dict[str, float] = {}
+        for record in records:
+            code = str(record.get("currency") or tenant_currency).upper()
+            totals[code] = totals.get(code, 0) + float(record.get(amount_field, 0) or 0)
+        return {code: round(amount, 2) for code, amount in sorted(totals.items())}
+
+    total_revenue_by_currency = _currency_totals(invoices, "total")
+    total_expenses_by_currency = _currency_totals(expenses, "total_amount")
+    gross_profit_by_currency = {
+        code: round(total_revenue_by_currency.get(code, 0) - total_expenses_by_currency.get(code, 0), 2)
+        for code in sorted(set(total_revenue_by_currency) | set(total_expenses_by_currency))
+    }
+    profit_margin_by_currency = {
+        code: round((gross_profit_by_currency[code] / revenue * 100), 2) if revenue > 0 else 0
+        for code, revenue in total_revenue_by_currency.items()
+    }
+
     total_revenue = sum(inv["total"] for inv in invoices)
     total_expenses = sum(exp["total_amount"] for exp in expenses)
     gross_profit = total_revenue - total_expenses
@@ -1451,16 +1473,24 @@ async def get_profit_loss_report(
 
     # Revenue breakdown
     revenue_by_category = {}
+    revenue_by_category_currency: dict[str, dict[str, float]] = {}
     for inv in invoices:
         for item in inv["items"]:
             desc = item["description"]
             revenue_by_category[desc] = revenue_by_category.get(desc, 0) + item["total"]
+            code = str(inv.get("currency") or tenant_currency).upper()
+            category_totals = revenue_by_category_currency.setdefault(desc, {})
+            category_totals[code] = round(category_totals.get(code, 0) + float(item.get("total", 0) or 0), 2)
 
     # Expense breakdown
     expense_by_category = {}
+    expense_by_category_currency: dict[str, dict[str, float]] = {}
     for exp in expenses:
         cat = exp["category"]
         expense_by_category[cat] = expense_by_category.get(cat, 0) + exp["total_amount"]
+        code = str(exp.get("currency") or tenant_currency).upper()
+        category_totals = expense_by_category_currency.setdefault(cat, {})
+        category_totals[code] = round(category_totals.get(code, 0) + float(exp.get("total_amount", 0) or 0), 2)
 
     return {
         "period": {"start": start_date, "end": end_date},
@@ -1470,6 +1500,12 @@ async def get_profit_loss_report(
         "profit_margin": round(profit_margin, 2),
         "revenue_breakdown": revenue_by_category,
         "expense_breakdown": expense_by_category,
+        "total_revenue_by_currency": total_revenue_by_currency,
+        "total_expenses_by_currency": total_expenses_by_currency,
+        "gross_profit_by_currency": gross_profit_by_currency,
+        "profit_margin_by_currency": profit_margin_by_currency,
+        "revenue_breakdown_by_currency": revenue_by_category_currency,
+        "expense_breakdown_by_currency": expense_by_category_currency,
     }
 
 
@@ -1486,6 +1522,17 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
     # Sales VAT (collected)
     invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
 
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+
+    def _vat_totals(records, field):
+        totals: dict[str, float] = {}
+        for record in records:
+            code = str(record.get("currency") or tenant_currency).upper()
+            totals[code] = totals.get(code, 0) + float(record.get(field, 0) or 0)
+        return {code: round(amount, 2) for code, amount in sorted(totals.items())}
+
     sales_vat = sum(inv["total_vat"] for inv in invoices)
 
     # Purchase VAT (paid)
@@ -1495,7 +1542,22 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
 
     vat_payable = sales_vat - purchase_vat
 
-    return {"period": {"start": start_date, "end": end_date}, "sales_vat": round(sales_vat, 2), "purchase_vat": round(purchase_vat, 2), "vat_payable": round(vat_payable, 2)}
+    sales_vat_by_currency = _vat_totals(invoices, "total_vat")
+    purchase_vat_by_currency = _vat_totals(expenses, "vat_amount")
+    vat_payable_by_currency = {
+        code: round(sales_vat_by_currency.get(code, 0) - purchase_vat_by_currency.get(code, 0), 2)
+        for code in sorted(set(sales_vat_by_currency) | set(purchase_vat_by_currency))
+    }
+
+    return {
+        "period": {"start": start_date, "end": end_date},
+        "sales_vat": round(sales_vat, 2),
+        "purchase_vat": round(purchase_vat, 2),
+        "vat_payable": round(vat_payable, 2),
+        "sales_vat_by_currency": sales_vat_by_currency,
+        "purchase_vat_by_currency": purchase_vat_by_currency,
+        "vat_payable_by_currency": vat_payable_by_currency,
+    }
 
 
 @router.get("/accounting/reports/balance-sheet")
@@ -1505,6 +1567,22 @@ async def get_balance_sheet(
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     tenant_id = current_user.tenant_id
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
+
+    async def _group_currency(collection, match, amount_expression):
+        pipeline = [
+            {"$match": match},
+            {
+                "$group": {
+                    "_id": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}},
+                    "total": {"$sum": amount_expression},
+                }
+            },
+        ]
+        rows = await collection.aggregate(pipeline).to_list(100)
+        return {str(row.get("_id") or tenant_currency).upper(): round(float(row.get("total") or 0), 2) for row in rows}
 
     async def _sum_cash():
         pipeline = [
@@ -1566,15 +1644,50 @@ async def get_balance_sheet(
 
     total_cash, total_inventory, total_receivables, total_payables = await asyncio.gather(_sum_cash(), _sum_inventory(), _sum_receivables(), _sum_payables())
 
+    cash_by_currency, receivables_by_currency = await asyncio.gather(
+        _group_currency(db.bank_accounts, {"tenant_id": tenant_id}, {"$ifNull": ["$balance", 0]}),
+        _group_currency(
+            db.accounting_invoices,
+            {"tenant_id": tenant_id, "status": {"$in": ["pending", "partial"]}},
+            {"$ifNull": ["$total", 0]},
+        ),
+    )
+    inventory_by_currency = {tenant_currency: round(total_inventory, 2)} if total_inventory else {}
+    payables_by_currency = {tenant_currency: round(total_payables, 2)} if total_payables else {}
+    asset_codes = set(cash_by_currency) | set(inventory_by_currency) | set(receivables_by_currency)
+    total_assets_by_currency = {
+        code: round(cash_by_currency.get(code, 0) + inventory_by_currency.get(code, 0) + receivables_by_currency.get(code, 0), 2)
+        for code in sorted(asset_codes)
+    }
+    equity_codes = asset_codes | set(payables_by_currency)
+    total_equity_by_currency = {
+        code: round(total_assets_by_currency.get(code, 0) - payables_by_currency.get(code, 0), 2)
+        for code in sorted(equity_codes)
+    }
+
     total_assets = total_cash + total_inventory + total_receivables
 
     # Equity
     total_equity = total_assets - total_payables
 
     return {
-        "assets": {"cash": round(total_cash, 2), "inventory": round(total_inventory, 2), "receivables": round(total_receivables, 2), "total": round(total_assets, 2)},
-        "liabilities": {"payables": round(total_payables, 2), "total": round(total_payables, 2)},
-        "equity": {"total": round(total_equity, 2)},
+        "assets": {
+            "cash": round(total_cash, 2),
+            "inventory": round(total_inventory, 2),
+            "receivables": round(total_receivables, 2),
+            "total": round(total_assets, 2),
+            "cash_by_currency": cash_by_currency,
+            "inventory_by_currency": inventory_by_currency,
+            "receivables_by_currency": receivables_by_currency,
+            "total_by_currency": total_assets_by_currency,
+        },
+        "liabilities": {
+            "payables": round(total_payables, 2),
+            "total": round(total_payables, 2),
+            "payables_by_currency": payables_by_currency,
+            "total_by_currency": payables_by_currency,
+        },
+        "equity": {"total": round(total_equity, 2), "total_by_currency": total_equity_by_currency},
     }
 
 

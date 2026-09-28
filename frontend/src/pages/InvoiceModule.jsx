@@ -570,13 +570,13 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                 <CardContent>
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-4">
-                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalRevenue')}</div><div className="text-3xl font-bold text-green-600">{money(reports.profitLoss.total_revenue)}</div></div>
-                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalExpenses')}</div><div className="text-3xl font-bold text-red-600">{money(reports.profitLoss.total_expenses)}</div></div>
-                      <div><div className="text-sm text-gray-600">{t('invoice.reports.grossProfit')}</div><div className="text-3xl font-bold text-blue-600">{money(reports.profitLoss.gross_profit)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalRevenue')}</div><div className="text-3xl font-bold text-green-600">{moneyTotals(reports.profitLoss.total_revenue_by_currency, reports.profitLoss.total_revenue)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalExpenses')}</div><div className="text-3xl font-bold text-red-600">{moneyTotals(reports.profitLoss.total_expenses_by_currency, reports.profitLoss.total_expenses)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.grossProfit')}</div><div className="text-3xl font-bold text-blue-600">{moneyTotals(reports.profitLoss.gross_profit_by_currency, reports.profitLoss.gross_profit)}</div></div>
                     </div>
                     <div className="pt-4 border-t">
                       <div className="text-sm font-medium mb-2">{t('invoice.reports.profitMargin')}</div>
-                      <div className="text-2xl font-bold">{reports.profitLoss.profit_margin}%</div>
+                      <div className="text-2xl font-bold">{reports.profitLoss.profit_margin_by_currency ? Object.entries(reports.profitLoss.profit_margin_by_currency).map(([code, value]) => `${code} %${value}`).join(' · ') : `${reports.profitLoss.profit_margin}%`}</div>
                     </div>
                     {reports.profitLoss.expense_breakdown && Object.keys(reports.profitLoss.expense_breakdown).length > 0 && (
                       <div className="pt-4 border-t">
@@ -585,7 +585,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                           {Object.entries(reports.profitLoss.expense_breakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between text-sm">
                               <span className="capitalize text-gray-600">{cat.replace('_', ' ')}:</span>
-                              <span className="font-medium">{money(amt)}</span>
+                              <span className="font-medium">{moneyTotals(reports.profitLoss.expense_breakdown_by_currency?.[cat], amt)}</span>
                             </div>
                           ))}
                         </div>
@@ -604,9 +604,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-4">
-                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatCollected')}</div><div className="text-2xl font-bold text-green-600">{money(reports.vat.sales_vat)}</div></div>
-                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPaid')}</div><div className="text-2xl font-bold text-blue-600">{money(reports.vat.purchase_vat)}</div></div>
-                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPayable')}</div><div className="text-2xl font-bold text-red-600">{money(reports.vat.vat_payable)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatCollected')}</div><div className="text-2xl font-bold text-green-600">{moneyTotals(reports.vat.sales_vat_by_currency, reports.vat.sales_vat)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPaid')}</div><div className="text-2xl font-bold text-blue-600">{moneyTotals(reports.vat.purchase_vat_by_currency, reports.vat.purchase_vat)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPayable')}</div><div className="text-2xl font-bold text-red-600">{moneyTotals(reports.vat.vat_payable_by_currency, reports.vat.vat_payable)}</div></div>
                   </div>
                 </CardContent>
               </Card>
@@ -620,23 +620,23 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div>
                       <div className="font-semibold mb-3">{t('invoice.reports.assets')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.cash')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.cash)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.inventory')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.inventory)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.receivables')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.receivables)}</span></div>
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalAssets')}:</span><span className="text-blue-600">{money(reports.balanceSheet.assets.total)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.cash')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.assets.cash_by_currency, reports.balanceSheet.assets.cash)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.inventory')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.assets.inventory_by_currency, reports.balanceSheet.assets.inventory)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.receivables')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.assets.receivables_by_currency, reports.balanceSheet.assets.receivables)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalAssets')}:</span><span className="text-blue-600 text-right">{moneyTotals(reports.balanceSheet.assets.total_by_currency, reports.balanceSheet.assets.total)}</span></div>
                       </div>
                     </div>
                     <div>
                       <div className="font-semibold mb-3">{t('invoice.reports.liabilities')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.payables')}:</span><span className="font-medium">{money(reports.balanceSheet.liabilities.payables)}</span></div>
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalLiabilities')}:</span><span className="text-red-600">{money(reports.balanceSheet.liabilities.total)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.payables')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.liabilities.payables_by_currency, reports.balanceSheet.liabilities.payables)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalLiabilities')}:</span><span className="text-red-600 text-right">{moneyTotals(reports.balanceSheet.liabilities.total_by_currency, reports.balanceSheet.liabilities.total)}</span></div>
                       </div>
                     </div>
                     <div>
                       <div className="font-semibold mb-3">{t('invoice.reports.equity')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalEquity')}:</span><span className="text-green-600">{money(reports.balanceSheet.equity.total)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalEquity')}:</span><span className="text-green-600 text-right">{moneyTotals(reports.balanceSheet.equity.total_by_currency, reports.balanceSheet.equity.total)}</span></div>
                       </div>
                     </div>
                   </div>

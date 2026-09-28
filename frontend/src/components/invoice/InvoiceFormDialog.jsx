@@ -275,7 +275,7 @@ const InvoiceFormDialog = ({
                     {item.additional_taxes && item.additional_taxes.length > 0 && <div className="ml-4 space-y-1">
                         {item.additional_taxes.map((tax, taxIndex) => <div key={taxIndex} className="flex items-center justify-between text-sm bg-blue-50 px-2 py-1 rounded">
                             <span className="text-blue-700">
-                              {tax.tax_name}: {tax.is_percentage ? `${tax.rate}%` : `₺${tax.amount}`}
+                              {tax.tax_name}: {tax.is_percentage ? `${tax.rate}%` : formatMoney(tax.amount, { decimals: 2 })}
                               {tax.withholding_rate && ` (${tax.withholding_rate})`}
                             </span>
                             <Button type="button" size="sm" variant="ghost" onClick={() => removeAdditionalTax(index, taxIndex)} className="h-6 w-6 p-0 text-red-600">
