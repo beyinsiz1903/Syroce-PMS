@@ -33,6 +33,7 @@ from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
 from core.pos_folio_consumer import _recalc_folio_balance
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from domains.pms.pos_extensions._idem import ensure_compound_unique
 from models.schemas import User
 from shared_kernel.idempotency import claim_idempotency, complete_idempotency, get_idempotency_key, release_idempotency
@@ -174,6 +175,7 @@ async def create_resource(
 ):
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
     if payload.kind not in _VALID_KINDS:
         raise HTTPException(status_code=422, detail="Geçersiz kaynak tipi")
 
@@ -203,6 +205,7 @@ async def create_resource(
         "name": payload.name.strip(),
         "kind": payload.kind,
         "price": round(float(payload.price), 2),
+        "currency": tenant_currency,
         "capacity": payload.capacity,
         "active": payload.active,
         "created_at": now,
@@ -394,6 +397,7 @@ async def _claim_slots(tenant_id: str, resource_id: str, booking_id: str, slots:
 
 async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) -> dict:
     """Rezervasyonu açık guest folio'ya idempotent yazar (tek satır)."""
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
     booking_id = booking_doc.get("booking_id")
     pms_booking = None
     if not booking_id:
@@ -424,6 +428,7 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
 
     src_id = booking_doc["id"]
     total = round(float(booking_doc.get("total", 0)), 2)
+    currency = str(booking_doc.get("currency") or tenant_currency).upper()
     label = "Transfer" if booking_doc.get("kind") == _KIND_TRANSFER else "Otopark"
     now = _now_iso()
 
@@ -442,6 +447,7 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
             "amount": total,
             "tax_amount": 0,
             "total": total,
+            "currency": currency,
             "voided": False,
             "date": now,
             "posted_by": actor,
@@ -456,7 +462,7 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
             # Zaten yazılmış — idempotent.
             charged = True
         balance = await _recalc_folio_balance(db, tenant_id, folio_id)
-        return {"charged": charged, "amount": total, "folio_id": folio_id, "balance": balance}
+        return {"charged": charged, "amount": total, "currency": currency, "folio_id": folio_id, "balance": balance}
 
     # Açık folio yok → late-charge.
     any_folio = None
@@ -480,6 +486,7 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
                 "folio_id": any_folio.get("id") if any_folio else None,
                 "folio_status_at_apply": any_folio.get("status") if any_folio else "missing",
                 "total": total,
+                "currency": currency,
                 "status": "pending_review",
                 "updated_at": now,
             },
@@ -504,6 +511,7 @@ async def create_booking(
 ):
     _require_role(current_user, _BOOK_ROLES)
     tenant_id = _tenant_of(current_user)
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
     actor = _actor_id(current_user)
 
     # Idempotency: aynı anahtarla önceki rezervasyonu dön.
@@ -557,6 +565,7 @@ async def create_booking(
         "resource_id": payload.resource_id,
         "resource_name": resource.get("name"),
         "kind": resource.get("kind"),
+        "currency": str(resource.get("currency") or tenant_currency).upper(),
         "guest_name": (payload.guest_name or "").strip() or None,
         "room_number": (payload.room_number or "").strip() or None,
         "booking_id": payload.booking_id or None,
@@ -790,11 +799,16 @@ async def create_lpr_event(payload: LPREventIn, current_user: User = Depends(get
 @router.get("/analytics", dependencies=[Depends(require_feature("parking", "parking_analytics"))])
 async def parking_analytics(current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
     resources = await db.transport_resources.find({"tenant_id": tenant_id, "active": True}, {"_id": 0}).to_list(1000)
     bookings = await db.transport_bookings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
     valet = await db.parking_valet_tickets.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
     lpr = await db.parking_lpr_events.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
     active_bookings = [row for row in bookings if row.get("status") == "reserved"]
+    revenue_by_currency: dict[str, float] = {}
+    for row in active_bookings:
+        currency = str(row.get("currency") or tenant_currency).upper()
+        revenue_by_currency[currency] = round(revenue_by_currency.get(currency, 0) + float(row.get("total", 0) or 0), 2)
     completed_valet = [row for row in valet if row.get("status") == "delivered"]
     return {
         "resources": {
@@ -807,6 +821,8 @@ async def parking_analytics(current_user: User = Depends(get_current_user)):
             "cancelled": sum(1 for row in bookings if row.get("status") == "cancelled"),
             "folio_charged": sum(1 for row in bookings if row.get("folio_charged")),
             "revenue": round(sum(float(row.get("total", 0) or 0) for row in active_bookings), 2),
+            "revenue_by_currency": revenue_by_currency,
+            "currency": tenant_currency,
         },
         "valet": {"active": sum(1 for row in valet if row.get("status") in {"waiting", "parked", "requested"}), "delivered": len(completed_valet)},
         "lpr": {"events": len(lpr), "entries": sum(1 for row in lpr if row.get("direction") == "in"), "exits": sum(1 for row in lpr if row.get("direction") == "out")},

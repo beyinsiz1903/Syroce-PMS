@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart3, TrendingUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const MarketSegmentChart = () => {
   const { t } = useTranslation();
@@ -51,7 +52,7 @@ const MarketSegmentChart = () => {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-medium">{name}</span>
                 <span className="text-sm font-bold">
-                  ₺{data.revenue.toLocaleString()} ({data.revenue_pct}%)
+                  {formatCurrencyBreakdown(data.revenue_by_currency, data.revenue, segmentData.currency)} ({data.revenue_pct}%)
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
