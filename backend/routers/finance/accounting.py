@@ -1594,6 +1594,27 @@ async def get_accounting_dashboard(
 
     expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(1000)
 
+    # Never combine nominal amounts from different currencies.  Keep the legacy
+    # scalar fields for older clients, and expose currency-safe breakdowns for
+    # current clients.
+    from core.tenant_currency import get_tenant_currency
+
+    cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
+
+    def totals_by_currency(records, amount_field, predicate=lambda _record: True):
+        totals = {}
+        for record in records:
+            if not predicate(record):
+                continue
+            currency = str(record.get("currency") or cur_code).upper()
+            totals[currency] = totals.get(currency, 0) + float(record.get(amount_field, 0) or 0)
+        return {currency: round(amount, 2) for currency, amount in totals.items()}
+
+    collected_by_currency = totals_by_currency(invoices, "total", lambda inv: inv.get("status") == "paid")
+    accrued_by_currency = totals_by_currency(invoices, "total")
+    pending_by_currency = totals_by_currency(invoices, "total", lambda inv: inv.get("status") in ("pending", "partial"))
+    overdue_by_currency = totals_by_currency(invoices, "total", lambda inv: inv.get("status") == "overdue")
+
     collected_income = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "paid")
     accrued_revenue = sum(inv.get("total", 0) for inv in invoices)
     pending_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") in ("pending", "partial"))
@@ -1605,11 +1626,7 @@ async def get_accounting_dashboard(
     # Get bank balances
     bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
     total_bank_balance = sum(acc["balance"] for acc in bank_accounts)
-
-    # Tenant currency for display.
-    from core.tenant_currency import get_tenant_currency
-
-    cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
+    bank_balance_by_currency = totals_by_currency(bank_accounts, "balance")
 
     return {
         # Backward-compat field (paid invoices only).
@@ -1624,6 +1641,11 @@ async def get_accounting_dashboard(
         "pending_invoices": pending_invoices,
         "overdue_invoices": overdue_invoices,
         "total_bank_balance": round(total_bank_balance, 2),
+        "collected_income_by_currency": collected_by_currency,
+        "accrued_revenue_by_currency": accrued_by_currency,
+        "pending_amount_by_currency": pending_by_currency,
+        "overdue_amount_by_currency": overdue_by_currency,
+        "bank_balance_by_currency": bank_balance_by_currency,
         "currency": cur_code,
         "currency_symbol": cur_symbol,
     }
