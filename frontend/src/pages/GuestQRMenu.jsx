@@ -50,7 +50,11 @@ const GuestQRMenu = () => {
     });
   };
 
-  const totalAmount = Object.values(cart).reduce((sum, item) => sum + (item.unit_price * item.qty), 0);
+  const totalsByCurrency = Object.values(cart).reduce((totals, item) => {
+    const currency = String(item.currency || menuCurrency).toUpperCase();
+    totals[currency] = (totals[currency] || 0) + (item.unit_price * item.qty);
+    return totals;
+  }, {});
 
   const placeOrder = async () => {
     if (Object.keys(cart).length === 0) return;
@@ -129,7 +133,11 @@ const GuestQRMenu = () => {
           <div className="max-w-3xl mx-auto flex items-center justify-between">
             <div>
               <div className="text-sm text-gray-500 font-medium">Toplam Tutar</div>
-              <div className="text-xl font-bold text-gray-800">{formatCurrency(totalAmount, menuCurrency)}</div>
+              <div className="text-xl font-bold text-gray-800">
+                {Object.entries(totalsByCurrency).map(([currency, amount]) => (
+                  <span key={currency} className="block">{formatCurrency(amount, currency)}</span>
+                ))}
+              </div>
             </div>
             
             <button 

@@ -9,6 +9,7 @@ import axios from "axios";
 import { Calendar, Users, Briefcase, Wifi, Coffee, Wind, BedDouble, CheckCircle, ArrowRight } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
+import { formatCurrency } from "@/lib/currency";
 
 const FEATURED_ROOMS = [
   {
@@ -138,7 +139,7 @@ export default function WebBookingEngine() {
               </div>
               <div className="col-span-2 bg-slate-800 text-white rounded-lg p-4 flex justify-between items-center shadow-md">
                 <span className="text-sm font-medium text-slate-300">Toplam Tutar</span>
-                <span className="text-xl font-bold">{bookingResult.total_price.toLocaleString()} TRY</span>
+                <span className="text-xl font-bold">{formatCurrency(bookingResult.total_price, bookingResult.currency || 'TRY')}</span>
               </div>
             </div>
             <p className="text-sm text-slate-500 mt-6 px-4">
