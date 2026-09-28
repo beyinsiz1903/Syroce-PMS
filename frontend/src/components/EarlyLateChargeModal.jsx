@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Clock, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
 
 export default function EarlyLateChargeModal({ open, onClose, bookingId, direction, defaultHour = 10, onApplied }) {
   const { t } = useTranslation();
@@ -35,12 +36,17 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
     if (!calc?.applicable && !overrideAmount) { toast.error('Uygulanacak bir tutar bulunamadı.'); return; }
     const amount = overrideAmount ? parseFloat(overrideAmount) : calc.amount;
     const label = (calc?.label || (direction === 'early_checkin' ? 'Erken Giriş' : 'Geç Çıkış')) + ` (saat ${hour})`;
+    const description = overrideAmount
+      ? `${label} — Manuel: ${overrideReason || 'sebep belirtilmedi'}`
+      : label;
     setBusy(true);
     try {
-      await api.post(`/reservations/${bookingId}/extra-charges`, {
-        charge_name: label,
-        charge_amount: amount,
-        notes: overrideAmount ? `Manuel override: ${overrideReason || 'sebep belirtilmedi'}` : 'Saat-bazli otomatik ucret',
+      await api.post(`/reservations/${bookingId}/add-extra-charge`, {
+        description,
+        category: 'other',
+        amount,
+        quantity: 1,
+        input_currency: calc?.currency,
       });
       toast.success('Ek ücret folyoya işlendi');
       onApplied?.();
@@ -63,7 +69,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
             <Label className="text-xs">{t('cm.components_EarlyLateChargeModal.gerceklesen_saat_0_23')}</Label>
             <div className="flex gap-2">
               <Input type="number" step="0.25" min={0} max={24} value={hour} onChange={e => setHour(parseFloat(e.target.value) || 0)} className="h-9" placeholder={t('cm.components_EarlyLateChargeModal.orn_13_75_13_45')} />
-              <Button onClick={calculate} disabled={busy} variant="outline">
+              <Button onClick={calculate} disabled={busy} variant="outline" aria-label="Ücreti hesapla">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-4 h-4" />}
               </Button>
             </div>
@@ -74,8 +80,8 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
               {calc.applicable ? (
                 <>
                   <div className="font-semibold">{calc.label}</div>
-                  <div className="text-xs text-gray-600 mt-1">Gecelik: {calc.nightly_rate} {calc.currency} · {calc.nights} gece</div>
-                  <div className="text-lg font-bold mt-1">{calc.amount} {calc.currency}</div>
+                  <div className="text-xs text-gray-600 mt-1">Gecelik: {formatCurrency(calc.nightly_rate, calc.currency)} · {calc.nights} gece</div>
+                  <div className="text-lg font-bold mt-1">{formatCurrency(calc.amount, calc.currency)}</div>
                 </>
               ) : (
                 <div className="text-emerald-800">{calc.reason}</div>
