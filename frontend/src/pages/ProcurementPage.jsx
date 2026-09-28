@@ -13,6 +13,8 @@ import { Plus, Truck, ClipboardList, Package, FileCheck2, RefreshCw, Trash2, Sen
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 import ProcurementB2BTab from './ProcurementB2BTab';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 // Status → CSS class only. Display label comes from i18n via prStatuses/poStatuses.
 const PR_STATUS_CLS = {
   draft: 'bg-slate-100 text-slate-700',
@@ -30,10 +32,6 @@ const PO_STATUS_CLS = {
   cancelled: 'bg-red-100 text-red-800',
   closed: 'bg-slate-200 text-slate-700'
 };
-const tl = (n, locale='tr-TR') => `${Number(n || 0).toLocaleString(locale, {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2
-})} ₺`;
 const Modal = ({
   title,
   children,
@@ -54,6 +52,8 @@ const ProcurementPage = ({
   onLogout
 }) => {
   const { t, i18n } = useTranslation();
+  const tenantCurrency = tenant?.currency || cachedTenantCurrency();
+  const money = (amount, currency = tenantCurrency) => formatCurrency(amount, currency, { locale: i18n.language, decimals: 2 });
   const location = useLocation();
   const navigate = useNavigate();
   const [tab, setTab] = useState('summary');
@@ -353,7 +353,7 @@ const ProcurementPage = ({
     setPoForm({
       supplier_id: '',
       source_pr_id: pr.id,
-      currency: 'TRY',
+      currency: pr.currency || tenantCurrency,
       tax_rate: 20,
       lines: (pr.lines || []).map(l => ({
         item_name: l.item_name,
@@ -519,7 +519,7 @@ const ProcurementPage = ({
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        {[[t('procurement.summary.activeSuppliers'), summary.suppliers_active ?? 0], [t('procurement.summary.pendingPR'), summary.pr_pending ?? 0], [t('procurement.summary.approvedPR'), summary.pr_approved ?? 0], [t('procurement.summary.openPO'), summary.po_open ?? 0], [t('procurement.summary.completedPO'), summary.po_received ?? 0], [t('procurement.summary.openAmount'), tl(summary.open_commitment_value)]].map(([k, v]) => <Card key={k}><CardContent className="p-3">
+        {[[t('procurement.summary.activeSuppliers'), summary.suppliers_active ?? 0], [t('procurement.summary.pendingPR'), summary.pr_pending ?? 0], [t('procurement.summary.approvedPR'), summary.pr_approved ?? 0], [t('procurement.summary.openPO'), summary.po_open ?? 0], [t('procurement.summary.completedPO'), summary.po_received ?? 0], [t('procurement.summary.openAmount'), formatCurrencyBreakdown(summary.open_commitment_by_currency, summary.open_commitment_value, tenantCurrency, i18n.language)]].map(([k, v]) => <Card key={k}><CardContent className="p-3">
             <div className="text-xs text-slate-500">{k}</div>
             <div className="text-lg font-semibold mt-1">{v}</div>
           </CardContent></Card>)}
@@ -639,7 +639,7 @@ const ProcurementPage = ({
                         <td className="p-2">{pr.department}</td>
                         <td className="p-2 text-xs text-slate-600">{pr.requester}</td>
                         <td className="p-2">{pr.lines?.length || 0}</td>
-                        <td className="p-2 text-right">{tl(pr.lines_total)}</td>
+                        <td className="p-2 text-right">{money(pr.lines_total, pr.currency)}</td>
                         <td className="p-2"><Badge className={`${cls} border-0`}>{prLabel(pr.status)}</Badge></td>
                         <td className="p-2 text-right space-x-1 whitespace-nowrap">
                           {pr.status === 'draft' && <Button size="sm" variant="outline" onClick={() => changePRStatus(pr.id, 'submitted')}><Send className="w-3.5 h-3.5 mr-1" />{t('procurement.prList.actions.send')}</Button>}
@@ -681,7 +681,7 @@ const ProcurementPage = ({
               </div>
               <Button onClick={() => setPoForm({
                 supplier_id: '',
-                currency: 'TRY',
+                currency: tenantCurrency,
                 tax_rate: 20,
                 lines: [{
                   item_name: '',
@@ -710,7 +710,7 @@ const ProcurementPage = ({
                         <td className="p-2 font-mono text-xs">{po.po_no}</td>
                         <td className="p-2">{po.supplier_name}</td>
                         <td className="p-2">{po.lines?.length || 0}</td>
-                        <td className="p-2 text-right">{tl(po.grand_total)}</td>
+                        <td className="p-2 text-right">{money(po.grand_total, po.currency)}</td>
                         <td className="p-2"><Badge className={`${cls} border-0`}>{poLabel(po.status)}</Badge></td>
                         <td className="p-2 text-right space-x-1 whitespace-nowrap">
                           <Button size="sm" variant="ghost" onClick={() => openPo(po.id)}>{t('procurement.poList.actions.details')}</Button>
@@ -860,12 +860,12 @@ const ProcurementPage = ({
                     return <tr key={row.supplier_id} className="border-b hover:bg-slate-50">
                         <td className="p-2 font-mono text-xs">{row.supplier_code || '—'}</td>
                         <td className="p-2 font-medium">{row.supplier_name}</td>
-                        <td className={`p-2 text-right tabular-nums ${tone}`}>{tl(row.open_total)}</td>
+                        <td className={`p-2 text-right tabular-nums ${tone}`}>{money(row.open_total, row.currency)}</td>
                         <td className="p-2 text-right tabular-nums">
-                          {row.limit === null ? '—' : tl(row.limit)}
+                          {row.limit === null ? '—' : money(row.limit, row.currency)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${tone}`}>
-                          {row.headroom === null ? '—' : tl(row.headroom)}
+                          {row.headroom === null ? '—' : money(row.headroom, row.currency)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${tone}`}>
                           {row.used_pct === null ? '—' : `${row.used_pct.toFixed(1)}%`}
@@ -1093,15 +1093,15 @@ const ProcurementPage = ({
                 const cl = s.credit_limit;
                 const label = cl !== null && cl !== undefined ? t('procurement.poModal.supplierOptionCredit', {
                   name: s.name,
-                  limit: tl(cl)
+                  limit: money(cl, creditUtil.currency)
                 }) : s.name;
                 return <option key={s.id} value={s.id}>{label}</option>;
               })}
               </select>
               {creditUtil && creditUtil.limit !== null && <div className="text-xs text-slate-500 mt-1">
                   {t('procurement.poModal.creditHeadroom', {
-                headroom: tl(creditUtil.headroom),
-                limit: tl(creditUtil.limit)
+                headroom: money(creditUtil.headroom, creditUtil.currency),
+                limit: money(creditUtil.limit, creditUtil.currency)
               })}
                 </div>}
             </div>
@@ -1124,10 +1124,10 @@ const ProcurementPage = ({
               </div>
               <div className="text-xs mt-0.5">
                 {t('procurement.poModal.creditWarnDetail', {
-              open: tl(creditUtil.open_total),
-              projected: tl(creditUtil.projected_amount),
-              total: tl(creditUtil.projected_total),
-              limit: tl(creditUtil.limit)
+              open: money(creditUtil.open_total, creditUtil.currency),
+              projected: money(creditUtil.projected_amount, creditUtil.currency),
+              total: money(creditUtil.projected_total, creditUtil.currency),
+              limit: money(creditUtil.limit, creditUtil.currency)
             })}
               </div>
             </div>}
@@ -1195,7 +1195,7 @@ const ProcurementPage = ({
                     });
                   }} /></td>
                     <td className="p-1 text-right text-xs">
-                      {tl((Number(l.quantity) || 0) * (Number(l.unit_cost) || 0))}
+                      {money((Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), poForm.currency)}
                     </td>
                     <td className="p-1"><Button size="sm" variant="ghost" onClick={() => setPoForm({
                     ...poForm,
@@ -1207,7 +1207,7 @@ const ProcurementPage = ({
                 <tr className="border-t font-semibold">
                   <td colSpan="5" className="p-2 text-right">{t('procurement.poModal.subtotal')}</td>
                   <td className="p-2 text-right">
-                    {tl(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0))}
+                    {money(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0), poForm.currency)}
                   </td>
                   <td></td>
                 </tr>
@@ -1216,14 +1216,14 @@ const ProcurementPage = ({
                     rate: poForm.tax_rate
                   })}</td>
                   <td className="p-2 text-right">
-                    {tl(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0) * poForm.tax_rate / 100)}
+                    {money(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0) * poForm.tax_rate / 100, poForm.currency)}
                   </td>
                   <td></td>
                 </tr>
                 <tr className="font-bold text-base">
                   <td colSpan="5" className="p-2 text-right">{t('procurement.poModal.grandTotal')}</td>
                   <td className="p-2 text-right">
-                    {tl(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0) * (1 + poForm.tax_rate / 100))}
+                    {money(poForm.lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0) * (1 + poForm.tax_rate / 100), poForm.currency)}
                   </td>
                   <td></td>
                 </tr>
@@ -1249,7 +1249,7 @@ const ProcurementPage = ({
           <div className="grid grid-cols-3 gap-3 text-sm">
             <div><span className="text-slate-500">{t('procurement.poDetail.status')}</span> <Badge className={`${PO_STATUS_CLS[selectedPo.status] || PO_STATUS_CLS.draft} border-0`}>{poLabel(selectedPo.status)}</Badge></div>
             <div><span className="text-slate-500">{t('procurement.poDetail.expected')}</span> {selectedPo.expected_delivery || '—'}</div>
-            <div><span className="text-slate-500">{t('procurement.poDetail.total')}</span> <strong>{tl(selectedPo.grand_total)}</strong></div>
+            <div><span className="text-slate-500">{t('procurement.poDetail.total')}</span> <strong>{money(selectedPo.grand_total, selectedPo.currency)}</strong></div>
           </div>
           <h3 className="font-semibold text-sm mt-4 mb-1">{t('procurement.poDetail.items')}</h3>
           <table className="w-full text-sm">
@@ -1267,8 +1267,8 @@ const ProcurementPage = ({
                   <td className="p-1">{l.quantity} {l.unit}</td>
                   <td className="p-1">{l.received_qty || 0}</td>
                   <td className="p-1">{(l.quantity || 0) - (l.received_qty || 0)}</td>
-                  <td className="p-1 text-right">{tl(l.unit_cost)}</td>
-                  <td className="p-1 text-right">{tl(l.line_total)}</td>
+                  <td className="p-1 text-right">{money(l.unit_cost, selectedPo.currency)}</td>
+                  <td className="p-1 text-right">{money(l.line_total, selectedPo.currency)}</td>
                 </tr>)}
             </tbody>
           </table>

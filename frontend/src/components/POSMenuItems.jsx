@@ -19,6 +19,7 @@ import {
 } from './ui/alert-dialog';
 import { UtensilsCrossed, RefreshCw, Search, Plus, Pencil, Trash2, Loader2, TrendingUp, Tag } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, currencySymbol, formatCurrency } from '@/lib/currency';
 
 /* ── constants ── */
 const DEFAULT_CATEGORIES = ['food', 'appetizer', 'dessert', 'beverage', 'alcohol'];
@@ -49,6 +50,7 @@ const blankForm = {
 /* ── main component ── */
 const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
   const { t } = useTranslation();
+  const currency = cachedTenantCurrency();
   const [menuItems,        setMenuItems]        = useState([]);
   const [loading,          setLoading]          = useState(true);
   const [searchTerm,       setSearchTerm]       = useState('');
@@ -199,7 +201,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
           </Select>
         </div>
         <div>
-          <Label className="text-sm font-medium">Satış Fiyatı (₺) <span className="text-red-500">*</span></Label>
+          <Label className="text-sm font-medium">Satış Fiyatı ({currency}) <span className="text-red-500">*</span></Label>
           <Input
             type="number" step="0.01"
             value={form.price}
@@ -209,7 +211,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
           />
         </div>
         <div>
-          <Label className="text-sm font-medium">Maliyet (₺)</Label>
+          <Label className="text-sm font-medium">Maliyet ({currency})</Label>
           <Input
             type="number" step="0.01"
             value={form.cost}
@@ -442,11 +444,11 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                     <div>
                       <p className="text-xl font-extrabold text-gray-900">
                         {price.toFixed(2)}
-                        <span className="text-sm font-normal text-gray-400 ml-1">₺</span>
+                        <span className="text-sm font-normal text-gray-400 ml-1">{currencySymbol(currency)}</span>
                       </p>
                       {cost > 0 && (
                         <p className="text-xs text-gray-400 mt-0.5">
-                          Maliyet: {cost.toFixed(2)} ₺
+                          Maliyet: {formatCurrency(cost, currency, { decimals: 2 })}
                         </p>
                       )}
                     </div>
