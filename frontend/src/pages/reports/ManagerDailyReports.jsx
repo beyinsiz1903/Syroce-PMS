@@ -4,16 +4,18 @@ import { ArrowLeftRight, BarChart3, BedDouble, DollarSign } from 'lucide-react';
 import { EmptyState, KPICard, SectionHeader, formatCurrency } from './ReportHelpers';
 
 const formatDateTime = value => value ? new Date(value).toLocaleString('tr-TR') : '-';
-const CurrencyBreakdown = ({ totals = {} }) => {
+const CurrencyBreakdown = ({ totals = {}, fallback }) => {
   const entries = Object.entries(totals);
-  return entries.length ? <>{entries.map(([code, amount]) => <div key={code}>{formatCurrency(amount, code)}</div>)}</> : <>-</>;
+  return entries.length
+    ? <>{entries.map(([code, amount]) => <div key={code}>{formatCurrency(amount, code)}</div>)}</>
+    : <>{fallback == null ? '-' : formatCurrency(fallback)}</>;
 };
 
 const FrontCashierReport = ({ summary, payments, reportDate }) => (
   <div className="space-y-5" data-testid="section-front-cashier">
     <SectionHeader title="Ön Kasa Raporu" description={`${reportDate} tarihli folyo ve tahsilat özeti`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Folyo İşlem Tutarı" value={summary.charge_total || 0} icon={DollarSign} color="amber" />
+      <KPICard title="Folyo İşlem Tutarı" value={<CurrencyBreakdown totals={summary.charge_total_by_currency} fallback={summary.charge_total} />} icon={DollarSign} color="amber" />
       <KPICard title="Toplam Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_currency} />} icon={DollarSign} color="green" />
       <KPICard title="Nakit Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_method_currency?.cash} />} icon={DollarSign} color="blue" />
       <KPICard title="Kart / Havale Tahsilatı" value={<CurrencyBreakdown totals={Object.entries(payments.totals_by_method_currency || {}).filter(([method]) => method !== 'cash').reduce((result, [, totals]) => { Object.entries(totals).forEach(([code, amount]) => { result[code] = (result[code] || 0) + amount; }); return result; }, {})} />} icon={DollarSign} color="purple" />
@@ -21,9 +23,9 @@ const FrontCashierReport = ({ summary, payments, reportDate }) => (
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
       <div><p className="text-gray-500">Folyo hareketi</p><p className="font-bold text-lg">{summary.charge_count || 0}</p></div>
       <div><p className="text-gray-500">Ödeme hareketi</p><p className="font-bold text-lg">{summary.payment_count || 0}</p></div>
-      <div><p className="text-gray-500">Net nakit tahsilatı</p><p className="font-bold text-lg">{formatCurrency(summary.net_cash_movement || 0)}</p></div>
-      <div><p className="text-gray-500">Günlük bakiye değişimi</p><p className={`font-bold text-lg ${(summary.daily_balance_change || 0) < 0 ? 'text-emerald-700' : (summary.daily_balance_change || 0) > 0 ? 'text-rose-700' : ''}`}>{formatCurrency(summary.daily_balance_change || 0)}</p><p className="text-xs text-gray-400">Folyo işlemleri − tahsilatlar</p></div>
-      <div><p className="text-gray-500">Tahsil edilmemiş yeni tutar</p><p className="font-bold text-lg">{formatCurrency(summary.uncollected_charges || 0)}</p></div>
+      <div><p className="text-gray-500">Net nakit tahsilatı</p><p className="font-bold text-lg"><CurrencyBreakdown totals={summary.net_cash_movement_by_currency} fallback={summary.net_cash_movement} /></p></div>
+      <div><p className="text-gray-500">Günlük bakiye değişimi</p><p className="font-bold text-lg"><CurrencyBreakdown totals={summary.daily_balance_change_by_currency} fallback={summary.daily_balance_change} /></p><p className="text-xs text-gray-400">Folyo işlemleri − tahsilatlar</p></div>
+      <div><p className="text-gray-500">Tahsil edilmemiş yeni tutar</p><p className="font-bold text-lg"><CurrencyBreakdown totals={summary.uncollected_charges_by_currency} fallback={summary.uncollected_charges} /></p></div>
       <div><p className="text-gray-500">Rapor tarihi</p><p className="font-bold text-lg">{reportDate}</p></div>
     </CardContent></Card>
   </div>
@@ -46,7 +48,7 @@ const CashMovementsReport = ({ payments, reportDate }) => (
       <CardHeader className="pb-2"><CardTitle className="text-sm">Döviz Bozdurma İşlemleri ({payments.currency_exchanges.length})</CardTitle></CardHeader>
       <CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm">
         <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-right p-3">Bozdurulan</th><th className="text-right p-3">Kur</th><th className="text-right p-3">Kasaya Giren</th><th className="text-left p-3">İşleyen / Not</th></tr></thead>
-        <tbody>{payments.currency_exchanges.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.created_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right font-semibold">{Number(row.source_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {row.source_currency}</td><td className="p-3 text-right">{Number(row.rate || 0).toLocaleString('tr-TR', { minimumFractionDigits: 4 })}</td><td className="p-3 text-right font-semibold text-emerald-700">{formatCurrency(row.target_amount || 0)}</td><td className="p-3">{row.created_by || '-'}{row.note ? ` · ${row.note}` : ''}</td></tr>)}</tbody>
+        <tbody>{payments.currency_exchanges.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.created_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.source_amount || 0, row.source_currency)}</td><td className="p-3 text-right">{Number(row.rate || 0).toLocaleString('tr-TR', { minimumFractionDigits: 4 })}</td><td className="p-3 text-right font-semibold text-emerald-700">{formatCurrency(row.target_amount || 0, row.target_currency || 'TRY')}</td><td className="p-3">{row.created_by || '-'}{row.note ? ` · ${row.note}` : ''}</td></tr>)}</tbody>
       </table></CardContent>
     </Card>}
   </div>
@@ -58,7 +60,7 @@ const RateControlReport = ({ rows, reportDate }) => (
     <Card><CardContent className="p-0 overflow-x-auto">
       {rows.length ? <table className="w-full text-sm">
         <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Oda</th><th className="text-left p-3">Oda Tipi</th><th className="text-left p-3">Misafir</th><th className="text-right p-3">Rezervasyon Gece Fiyatı</th><th className="text-right p-3">Folyoya İşlenen</th><th className="text-right p-3">Fark</th><th className="text-left p-3">Durum</th></tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.booking_id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number}</td><td className="p-3">{row.room_type || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right">{formatCurrency(row.agreed_rate)}</td><td className="p-3 text-right">{formatCurrency(row.posted_rate)}</td><td className={`p-3 text-right font-semibold ${row.variance !== 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(row.variance)}</td><td className="p-3">{row.posting_status === 'posted' ? 'İşlendi' : 'Gün sonu bekliyor'}</td></tr>)}</tbody>
+        <tbody>{rows.map((row, index) => <tr key={row.booking_id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number}</td><td className="p-3">{row.room_type || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right">{formatCurrency(row.agreed_rate, row.currency)}</td><td className="p-3 text-right">{formatCurrency(row.posted_rate, row.currency)}</td><td className={`p-3 text-right font-semibold ${row.variance !== 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(row.variance, row.currency)}</td><td className="p-3">{row.posting_status === 'posted' ? 'İşlendi' : 'Gün sonu bekliyor'}</td></tr>)}</tbody>
       </table> : <div className="py-12"><EmptyState icon={BedDouble} message="Seçili tarihte fiyat kontrol kaydı yok" /></div>}
     </CardContent></Card>
   </div>
@@ -77,10 +79,10 @@ const DailyAnalysisReport = ({ analysis }) => (
       <div><p className="text-gray-500">Dolu / Toplam oda</p><p className="font-bold text-lg">{analysis.occupied_rooms || 0} / {analysis.total_rooms || 0}</p></div>
       <div><p className="text-gray-500">Giriş / Çıkış</p><p className="font-bold text-lg">{analysis.arrivals || 0} / {analysis.departures || 0}</p></div>
       <div><p className="text-gray-500">Konaklayan misafir</p><p className="font-bold text-lg">{analysis.in_house_guests || 0}</p></div>
-      <div><p className="text-gray-500">Tahsilat</p><p className="font-bold text-lg">{formatCurrency(analysis.collections || 0)}</p></div>
-      <div><p className="text-gray-500">Folyoya işlenen oda geliri</p><p className="font-bold text-lg">{formatCurrency(analysis.posted_room_revenue || 0)}</p></div>
-      <div><p className="text-gray-500">ADR</p><p className="font-bold text-lg">{formatCurrency(analysis.adr || 0)}</p></div>
-      <div><p className="text-gray-500">RevPAR</p><p className="font-bold text-lg">{formatCurrency(analysis.revpar || 0)}</p></div>
+      <div><p className="text-gray-500">Tahsilat</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.collections_by_currency} fallback={analysis.collections} /></p></div>
+      <div><p className="text-gray-500">Folyoya işlenen oda geliri</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.posted_room_revenue_by_currency} fallback={analysis.posted_room_revenue} /></p></div>
+      <div><p className="text-gray-500">ADR</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.adr_by_currency} fallback={analysis.adr} /></p></div>
+      <div><p className="text-gray-500">RevPAR</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.revpar_by_currency} fallback={analysis.revpar} /></p></div>
     </CardContent></Card>
   </div>
 );
