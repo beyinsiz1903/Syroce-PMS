@@ -2178,6 +2178,14 @@ async def reverse_journal(
     if original.get("reverses_entry_id"):
         raise HTTPException(status_code=409, detail="Bir ters kayıt fişi yeniden ters kayda alınamaz")
 
+    reversal_date = normalize_posting_date(payload.date)
+    original_date = normalize_posting_date(original.get("date"))
+    if reversal_date < original_date:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ters kayıt tarihi kaynak fiş tarihinden ({original_date}) önce olamaz",
+        )
+
     reversed_lines = [
         {
             "account_code": line.get("account_code"),
@@ -2208,7 +2216,7 @@ async def reverse_journal(
         reversal = await post_journal_entry(
             db,
             tenant_id,
-            date=payload.date,
+            date=reversal_date,
             memo=f"{original.get('entry_no') or entry_id} ters kaydı — {payload.reason.strip()}",
             lines=reversed_lines,
             source="reversal",
