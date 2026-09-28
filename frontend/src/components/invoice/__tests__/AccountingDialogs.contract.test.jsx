@@ -22,11 +22,23 @@ describe('accounting dialog defaults', () => {
       'recordExpense', 'amountExclVAT', 'currency', 'supplierOptional', 'selectSupplier',
       'totalInclVAT', 'addSupplier', 'taxOffice', 'addBankAccount', 'accountName',
       'bankName', 'accountNumber', 'openingBalance', 'addInventoryItem', 'itemName',
-      'unit', 'reorderLevel',
+      'unit', 'quantity', 'reorderLevel',
     ];
     keys.forEach((key) => {
       expect(tr.invoice[key]).toBeTruthy();
       expect(en.invoice[key]).toBeTruthy();
+    });
+  });
+
+  it('has localized inventory categories and units in Turkish and English', () => {
+    ['supplies', 'amenity', 'food', 'beverage', 'linen', 'cleaning', 'maintenance',
+      'stationery', 'electronics', 'uniform', 'general', 'other'].forEach((key) => {
+      expect(tr.invoice.inventoryCategories[key]).toBeTruthy();
+      expect(en.invoice.inventoryCategories[key]).toBeTruthy();
+    });
+    ['piece', 'bottle', 'kilogram', 'liter', 'pack', 'box', 'set'].forEach((key) => {
+      expect(tr.invoice.inventoryUnits[key]).toBeTruthy();
+      expect(en.invoice.inventoryUnits[key]).toBeTruthy();
     });
   });
 });

@@ -6,6 +6,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
+import {
+  expenseCategoryLabel,
+  invoiceTypeLabel,
+  inventoryCategoryLabel,
+  inventoryUnitLabel,
+  paymentMethodLabel,
+} from '@/lib/accountingLabels';
 import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import InvoiceTemplate from '@/components/invoice/InvoiceTemplate';
@@ -387,7 +394,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         <div className="text-sm text-gray-500 mt-1">
                           {t('invoice.labels.issue')}: {new Date(invoice.issue_date).toLocaleDateString()} | {t('invoice.labels.due')}: {new Date(invoice.due_date).toLocaleDateString()}
                         </div>
-                        <div className="text-xs text-gray-400 mt-1 capitalize">{t('invoice.labels.type')}: {invoice.invoice_type}</div>
+                        <div className="text-xs text-gray-400 mt-1">{t('invoice.labels.type')}: {invoiceTypeLabel(t, invoice.invoice_type)}</div>
                         {invoice.efatura_status && (() => {
                           const cfg = {
                             pending: { cls: 'bg-yellow-100 text-yellow-700', label: t('invoice.efatura.pending') || 'E-Fatura: Kuyrukta' },
@@ -462,9 +469,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="font-bold">{expense.expense_number}</div>
-                        <div className="text-sm text-gray-600 capitalize">{expense.category} - {expense.description}</div>
+                        <div className="text-sm text-gray-600">{expenseCategoryLabel(t, expense.category)} - {expense.description}</div>
                         <div className="text-sm text-gray-500">{t('invoice.labels.date')}: {new Date(expense.date).toLocaleDateString()}</div>
-                        {expense.payment_method && <div className="text-xs text-gray-400 capitalize mt-1">{t('invoice.labels.payment')}: {expense.payment_method}</div>}
+                        {expense.payment_method && <div className="text-xs text-gray-400 mt-1">{t('invoice.labels.payment')}: {paymentMethodLabel(t, expense.payment_method)}</div>}
                       </div>
                       <div className="text-right">
                         <div className="text-xl font-bold text-red-600">{money(expense.total_amount, expense.currency)}</div>
@@ -541,14 +548,14 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div className="flex justify-between items-start">
                       <div>
                         <CardTitle className="text-lg">{item.name}</CardTitle>
-                        <div className="text-sm text-gray-600 capitalize">{item.category}</div>
+                        <div className="text-sm text-gray-600">{inventoryCategoryLabel(t, item.category)}</div>
                       </div>
                       {item.quantity <= item.reorder_level && <AlertCircle className="w-5 h-5 text-amber-500" />}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     {item.sku && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.sku')}:</span><span className="font-medium">{item.sku}</span></div>}
-                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.qty')}:</span><span className="font-bold">{item.quantity} {item.unit}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.qty')}:</span><span className="font-bold">{item.quantity} {inventoryUnitLabel(t, item.unit)}</span></div>
                     <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.unitPrice')}:</span><span className="font-medium">{money(item.unit_cost, item.currency)}</span></div>
                     <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.totalValue')}:</span><span className="font-bold text-blue-600">{money((item.quantity || 0) * (item.unit_cost || 0), item.currency)}</span></div>
                     {item.quantity <= item.reorder_level && <div className="text-xs text-amber-600 font-medium">{t('invoice.labels.lowStock')}</div>}
@@ -584,7 +591,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         <div className="space-y-2">
                           {Object.entries(reports.profitLoss.expense_breakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between text-sm">
-                              <span className="capitalize text-gray-600">{cat.replace('_', ' ')}:</span>
+                              <span className="text-gray-600">{expenseCategoryLabel(t, cat)}:</span>
                               <span className="font-medium">{moneyTotals(reports.profitLoss.expense_breakdown_by_currency?.[cat], amt)}</span>
                             </div>
                           ))}
