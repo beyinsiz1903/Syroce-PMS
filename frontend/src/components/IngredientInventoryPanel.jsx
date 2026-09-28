@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Package, AlertTriangle, DollarSign, Boxes, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const categoryLabels = {
   produce: 'Sebze/Meyve',
@@ -27,6 +28,8 @@ const categoryLabels = {
 
 const IngredientInventoryPanel = () => {
   const { t } = useTranslation();
+  const currency = cachedTenantCurrency();
+  const money = amount => formatCurrency(amount, currency, { decimals: 2 });
   const [ingredients, setIngredients] = useState([]);
   const [summary, setSummary] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -122,7 +125,7 @@ const IngredientInventoryPanel = () => {
               {t('cm.components_IngredientInventoryPanel.envanter_degeri', 'Envanter Değeri')}
             </p>
             <p className="text-3xl font-bold text-emerald-900 mt-1">
-              ₺{summary?.inventory_value?.toFixed(2) ?? '0.00'}
+              {money(summary?.inventory_value)}
             </p>
           </CardContent>
         </Card>
@@ -226,7 +229,7 @@ const IngredientInventoryPanel = () => {
                     </div>
                   </div>
                   <div>
-                    <Label className="text-gray-600">Birim Maliyet (₺)</Label>
+                    <Label className="text-gray-600">Birim Maliyet ({currency})</Label>
                     <Input
                       className="mt-1 max-w-[200px]"
                       type="number"
@@ -294,7 +297,7 @@ const IngredientInventoryPanel = () => {
                     
                     <div>
                       <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Birim Maliyeti</p>
-                      <p className="font-semibold text-gray-800">₺{ingredient.unit_cost?.toFixed(2) || '0.00'}</p>
+                      <p className="font-semibold text-gray-800">{money(ingredient.unit_cost)}</p>
                     </div>
                     
                     <div className="flex items-center md:justify-end gap-2">

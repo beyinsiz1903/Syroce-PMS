@@ -13,6 +13,8 @@ import { Label } from '@/components/ui/label';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
 import VirtualizedGrid from '@/components/VirtualizedGrid';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 const EMPTY_ITEM = {
   name: '',
   sku: '',
@@ -36,6 +38,10 @@ const HotelInventory = ({
     t
   } = useTranslation();
   const navigate = useNavigate();
+  const tenantCurrency = tenant?.currency || cachedTenantCurrency();
+  const [inventoryCurrency, setInventoryCurrency] = useState(tenantCurrency);
+  const [totalValueByCurrency, setTotalValueByCurrency] = useState({});
+  const money = (amount, currency = inventoryCurrency) => formatCurrency(amount, currency, { decimals: 2 });
   const [newItem, setNewItem] = useState(null);
   const [saving, setSaving] = useState(false);
   const [movement, setMovement] = useState(null); // { item, type, quantity, reference, notes }
@@ -353,6 +359,7 @@ const HotelInventory = ({
         unit: newItem.unit,
         quantity: Number(newItem.quantity) || 0,
         unit_cost: Number(newItem.unit_cost) || 0,
+        currency: inventoryCurrency,
         reorder_level: Number(newItem.reorder_level) || 0,
         sku: newItem.sku || null,
         location: newItem.location || null,
@@ -408,6 +415,8 @@ const HotelInventory = ({
   const loadInventory = async () => {
     try {
       const response = await axios.get('/accounting/inventory');
+      setInventoryCurrency(response.data.currency || tenantCurrency);
+      setTotalValueByCurrency(response.data.total_value_by_currency || {});
       setInventory(response.data.items || []);
       setStats({
         totalItems: response.data.items?.length || 0,
@@ -552,7 +561,7 @@ const HotelInventory = ({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600">Toplam Değer</p>
-                  <p className="text-2xl font-bold">₺{stats.totalValue.toFixed(0)}</p>
+                  <p className="text-xl font-bold">{formatCurrencyBreakdown(totalValueByCurrency, stats.totalValue, inventoryCurrency)}</p>
                 </div>
                 <BarChart3 className="w-10 h-10 text-green-500" />
               </div>
@@ -622,11 +631,11 @@ const HotelInventory = ({
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-600">Birim Fiyat:</span>
-                                <span>₺{item.unit_cost.toFixed(2)}</span>
+                                <span>{money(item.unit_cost, item.currency)}</span>
                               </div>
                               <div className="flex justify-between border-t pt-1 mt-1">
                                 <span className="text-gray-600">Toplam Değer:</span>
-                                <span className="font-semibold">₺{(item.quantity * item.unit_cost).toFixed(2)}</span>
+                                <span className="font-semibold">{money(item.quantity * item.unit_cost, item.currency)}</span>
                               </div>
                             </div>
                             <div className="flex gap-1 mt-3">
@@ -707,7 +716,7 @@ const HotelInventory = ({
                                 </div>
                                 <div>
                                   <p className="text-gray-600">Tahmini Maliyet:</p>
-                                  <p className="font-semibold">₺{alert.estimated_cost.toFixed(2)}</p>
+                                  <p className="font-semibold">{money(alert.estimated_cost, alert.currency)}</p>
                                 </div>
                               </div>
                             </div>
@@ -819,7 +828,15 @@ const HotelInventory = ({
                         <div>
                           <p className="text-gray-600">Toplam Maliyet:</p>
                           <p className="font-bold text-lg text-blue-600">
-                            ₺{alerts.reduce((sum, a) => sum + a.estimated_cost, 0).toFixed(2)}
+                            {formatCurrencyBreakdown(
+                              alerts.reduce((totals, alert) => {
+                                const code = alert.currency || inventoryCurrency;
+                                totals[code] = (totals[code] || 0) + Number(alert.estimated_cost || 0);
+                                return totals;
+                              }, {}),
+                              0,
+                              inventoryCurrency,
+                            )}
                           </p>
                         </div>
                         <div>
@@ -1421,7 +1438,7 @@ const HotelInventory = ({
               })} />
                 </div>
                 <div>
-                  <Label>Birim Fiyat (₺)</Label>
+                  <Label>Birim Fiyat ({inventoryCurrency})</Label>
                   <Input type="number" min="0" step="0.01" value={newItem.unit_cost} onChange={e => setNewItem({
                 ...newItem,
                 unit_cost: e.target.value
