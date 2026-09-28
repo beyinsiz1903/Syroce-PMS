@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-const API_URL = import.meta.env.VITE_BACKEND_URL || '';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 const EnhancedReservationCalendar = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [rooms, setRooms] = useState([]);
@@ -10,6 +11,7 @@ const EnhancedReservationCalendar = () => {
   const [draggedBooking, setDraggedBooking] = useState(null);
   const [showRateOverride, setShowRateOverride] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const displayCurrency = adrData?.currency || cachedTenantCurrency();
   useEffect(() => {
     fetchRooms();
     fetchADR();
@@ -88,11 +90,11 @@ const EnhancedReservationCalendar = () => {
       {adrData && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <div className="text-sm text-gray-600">Overall ADR</div>
-            <div className="text-2xl font-bold text-blue-600">${adrData.overall_adr}</div>
+            <div className="text-2xl font-bold text-blue-600">{formatCurrencyBreakdown(adrData.overall_adr_by_currency, adrData.overall_adr, displayCurrency)}</div>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
             <div className="text-sm text-gray-600">Total Revenue</div>
-            <div className="text-2xl font-bold text-green-600">${adrData.total_room_revenue}</div>
+            <div className="text-2xl font-bold text-green-600">{formatCurrencyBreakdown(adrData.total_room_revenue_by_currency, adrData.total_room_revenue, displayCurrency)}</div>
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
             <div className="text-sm text-gray-600">Room Nights</div>
@@ -142,7 +144,7 @@ const EnhancedReservationCalendar = () => {
           handleRateOverride(selectedBooking.current_booking_id, formData.get('new_rate'), formData.get('reason'));
         }}>
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">New Rate ($)</label>
+                <label className="block text-sm font-medium mb-2">New Rate ({selectedBooking.currency || displayCurrency})</label>
                 <input type="number" name="new_rate" step="0.01" required className="w-full px-4 py-2 border rounded-lg" placeholder="Enter new rate" />
               </div>
               <div className="mb-4">

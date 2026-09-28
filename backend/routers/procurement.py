@@ -944,7 +944,7 @@ async def procurement_summary(
     db = get_system_db()
     tid = current_user.tenant_id
 
-    async def _commitment_sum() -> float:
+    async def _commitment_sum() -> dict[str, float]:
         pipeline = [
             {
                 "$match": {
@@ -952,12 +952,13 @@ async def procurement_summary(
                     "status": {"$in": ["sent", "partially_received"]},
                 }
             },
-            {"$group": {"_id": None, "total": {"$sum": "$grand_total"}}},
+            {"$group": {"_id": {"$toUpper": {"$ifNull": ["$currency", "TRY"]}}, "total": {"$sum": "$grand_total"}}},
         ]
         cursor = db.proc_purchase_orders.aggregate(pipeline)
+        totals: dict[str, float] = {}
         async for doc in cursor:
-            return float(doc.get("total", 0) or 0)
-        return 0.0
+            totals[str(doc.get("_id") or "TRY")] = round(float(doc.get("total", 0) or 0), 2)
+        return totals
 
     pr_pending, pr_approved, po_open, po_received, suppliers, commitment = await asyncio.gather(
         db.proc_purchase_requests.count_documents({"tenant_id": tid, "status": {"$in": ["draft", "submitted"]}}),
@@ -973,7 +974,8 @@ async def procurement_summary(
         "pr_approved": pr_approved,
         "po_open": po_open,
         "po_received": po_received,
-        "open_commitment_value": round(commitment, 2),
+        "open_commitment_value": round(commitment.get("TRY", 0), 2),
+        "open_commitment_by_currency": commitment,
     }
 
 

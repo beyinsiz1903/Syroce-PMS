@@ -30,6 +30,7 @@ from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.utils import get_cancellation_policy_details
 from models.enums import CancellationPolicyType
 from models.schemas import User
@@ -219,30 +220,73 @@ async def get_adr_and_rate_visibility(start_date: str | None = None, end_date: s
     async for booking in db.bookings.find({"tenant_id": current_user.tenant_id, "check_in": {"$gte": start_date, "$lte": end_date}}):
         bookings.append(booking)
 
-    # Calculate ADR
-    total_room_revenue = sum(b.get("total_amount", 0) for b in bookings)
-    total_room_nights = sum((datetime.fromisoformat(b.get("check_out")) - datetime.fromisoformat(b.get("check_in"))).days for b in bookings)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
-    adr = total_room_revenue / total_room_nights if total_room_nights > 0 else 0
+    # Never add unlike currencies into one business total.  Keep the legacy
+    # scalar fields for compatible single-currency consumers and expose the
+    # authoritative per-currency values for reporting UIs.
+    revenue_by_currency: dict[str, float] = {}
+    room_nights_by_currency: dict[str, int] = {}
+    total_room_nights = 0
+    for booking in bookings:
+        currency = str(booking.get("currency") or tenant_currency).upper()
+        amount = float(booking.get("total_amount", 0) or 0)
+        nights = max(
+            (datetime.fromisoformat(booking.get("check_out")) - datetime.fromisoformat(booking.get("check_in"))).days,
+            0,
+        )
+        revenue_by_currency[currency] = revenue_by_currency.get(currency, 0) + amount
+        room_nights_by_currency[currency] = room_nights_by_currency.get(currency, 0) + nights
+        total_room_nights += nights
+
+    total_room_revenue = revenue_by_currency.get(tenant_currency, 0)
+
+    adr_by_currency = {
+        currency: round(revenue / room_nights_by_currency.get(currency, 0), 2)
+        for currency, revenue in revenue_by_currency.items()
+        if room_nights_by_currency.get(currency, 0) > 0
+    }
+    adr = adr_by_currency.get(tenant_currency, 0)
 
     # By rate type
     rate_breakdown = {}
     for booking in bookings:
         rate_type = booking.get("rate_type", "bar")
         if rate_type not in rate_breakdown:
-            rate_breakdown[rate_type] = {"bookings": 0, "revenue": 0}
+            rate_breakdown[rate_type] = {
+                "bookings": 0,
+                "revenue": 0,
+                "revenue_by_currency": {},
+                "bookings_by_currency": {},
+            }
         rate_breakdown[rate_type]["bookings"] += 1
-        rate_breakdown[rate_type]["revenue"] += booking.get("total_amount", 0)
+        currency = str(booking.get("currency") or tenant_currency).upper()
+        amount = float(booking.get("total_amount", 0) or 0)
+        rate_breakdown[rate_type]["revenue_by_currency"][currency] = (
+            rate_breakdown[rate_type]["revenue_by_currency"].get(currency, 0) + amount
+        )
+        rate_breakdown[rate_type]["bookings_by_currency"][currency] = (
+            rate_breakdown[rate_type]["bookings_by_currency"].get(currency, 0) + 1
+        )
+        rate_breakdown[rate_type]["revenue"] += amount if currency == tenant_currency else 0
 
     # Calculate ADR per rate type
     for rate_type, data in rate_breakdown.items():
-        data["adr"] = round(data["revenue"] / data["bookings"], 2) if data["bookings"] > 0 else 0
+        data["adr_by_currency"] = {
+            currency: round(revenue / data["bookings_by_currency"][currency], 2)
+            for currency, revenue in data["revenue_by_currency"].items()
+        }
+        tenant_bookings = data["bookings_by_currency"].get(tenant_currency, 0)
+        data["adr"] = round(data["revenue"] / tenant_bookings, 2) if tenant_bookings else 0
 
     return {
         "start_date": start_date,
         "end_date": end_date,
         "overall_adr": round(adr, 2),
+        "overall_adr_by_currency": adr_by_currency,
         "total_room_revenue": round(total_room_revenue, 2),
+        "total_room_revenue_by_currency": {currency: round(amount, 2) for currency, amount in revenue_by_currency.items()},
+        "currency": tenant_currency,
         "total_room_nights": total_room_nights,
         "total_bookings": len(bookings),
         "rate_breakdown": rate_breakdown,

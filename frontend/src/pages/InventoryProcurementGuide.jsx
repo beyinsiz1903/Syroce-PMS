@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -44,14 +46,6 @@ const COLORS = {
     badgeBg: 'bg-rose-50', badgeFg: 'text-rose-700',
     border: 'hover:border-rose-200',
   },
-};
-
-const fmtMoney = (n, lang) => {
-  try {
-    return new Intl.NumberFormat(lang || 'tr-TR', {
-      style: 'currency', currency: 'TRY', maximumFractionDigits: 0,
-    }).format(Number(n) || 0);
-  } catch { return `${Number(n || 0).toFixed(0)} ₺`; }
 };
 
 const fmtDate = (iso, lang) => {
@@ -119,6 +113,8 @@ const InventoryProcurementGuide = ({ user, tenant, onLogout }) => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const lang = i18n.language || 'tr';
+  const tenantCurrency = tenant?.currency || cachedTenantCurrency();
+  const fmtMoney = (amount, currency = tenantCurrency) => formatCurrency(amount, currency, { locale: lang, decimals: 0 });
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -279,7 +275,7 @@ const InventoryProcurementGuide = ({ user, tenant, onLogout }) => {
             onClick={() => goToTab('suppliers')} />
           <KpiCard icon={Wallet} color="rose"
             label={t('opsCenter.kpi.commitment')}
-            value={loading ? '—' : fmtMoney(openCommit, lang)}
+            value={loading ? '—' : formatCurrencyBreakdown(summary?.open_commitment_by_currency, openCommit, tenantCurrency, lang)}
             sub={t('opsCenter.kpi.commitmentSub')} />
         </div>
 
@@ -342,7 +338,7 @@ const InventoryProcurementGuide = ({ user, tenant, onLogout }) => {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-sm font-semibold text-blue-700">
-                        {fmtMoney(total, lang)}
+                        {fmtMoney(total, pr.currency)}
                       </div>
                       <div className="text-[10px] text-gray-400">{fmtDate(pr.created_at, lang)}</div>
                     </div>
@@ -379,7 +375,7 @@ const InventoryProcurementGuide = ({ user, tenant, onLogout }) => {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-sm font-semibold text-indigo-700">
-                      {fmtMoney(po.grand_total || 0, lang)}
+                      {fmtMoney(po.grand_total || 0, po.currency)}
                     </div>
                     <div className="text-[10px] text-gray-400">
                       {po.expected_delivery_date
