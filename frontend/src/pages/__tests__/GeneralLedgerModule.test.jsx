@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   collectIntegrationAccountCodes,
+  describeIncomeTotals,
+  downloadBlob,
   formatVoucherHistoryEntry,
   formatAccountMapping,
   getJournalValidationError,
@@ -253,5 +255,36 @@ describe('GeneralLedgerModule persistent GL contract', () => {
   it('loads the account plan before validating integration mappings', () => {
     expect(shouldFetchAccountsForTab('integrations')).toBe(true);
     expect(shouldFetchAccountsForTab('trial-balance')).toBe(false);
+  });
+
+  it('explains negative expense activity as a reversal without changing its sign', () => {
+    expect(describeIncomeTotals({ expenses: -116262.5, net_income: 116263.51 })).toEqual({
+      expenses: -116262.5,
+      netIncome: 116263.51,
+      expenseLabel: 'Net Gider İptali',
+      netLabel: 'Net Dönem Kârı',
+      hasExpenseReversal: true,
+    });
+  });
+
+  it('attaches a blob download before clicking and revokes it asynchronously', () => {
+    vi.useFakeTimers();
+    const createObjectURL = vi.fn(() => 'blob:report');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    const blob = new Blob(['report']);
+    downloadBlob(blob, 'mizan.xlsx');
+
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
+
+    click.mockRestore();
+    vi.useRealTimers();
   });
 });

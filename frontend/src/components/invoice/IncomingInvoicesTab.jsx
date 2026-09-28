@@ -29,7 +29,7 @@ const IncomingInvoicesTab = () => {
   const fetchInvoices = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await axios.get('/api/integrations/incoming-invoices?limit=100');
+      const res = await axios.get('/integrations/incoming-invoices?limit=100');
       setInvoices(res.data?.items || []);
     } catch (err) {
       console.error(err);
@@ -46,7 +46,7 @@ const IncomingInvoicesTab = () => {
   const handleSync = async () => {
     try {
       setSyncing(true);
-      const res = await axios.post('/api/integrations/incoming-invoices/sync', {});
+      const res = await axios.post('/integrations/incoming-invoices/sync', {});
       toast.success(t('invoice.incoming.syncSuccess') || `Senkronizasyon tamamlandı. ${res.data?.invoices_created || 0} yeni fatura eklendi.`);
       fetchInvoices();
     } catch (err) {
@@ -60,7 +60,7 @@ const IncomingInvoicesTab = () => {
   const handleAnswerSubmit = async () => {
     try {
       const { invoice, type, note } = answerDialog;
-      await axios.post(`/api/integrations/incoming-invoices/${invoice.id}/answer`, {
+      await axios.post(`/integrations/incoming-invoices/${invoice.id}/answer`, {
         answer: type,
         note: type === 'APPROVE' ? undefined : (note || undefined),
         request_uuid: crypto.randomUUID(),
