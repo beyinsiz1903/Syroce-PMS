@@ -258,6 +258,11 @@ export default function SalesPipelineTab({ accounts = [] }) {
                      onChange={(e) => setForm({ ...form, estimated_value: e.target.value })} />
             </div>
             <div>
+              <Label>Para Birimi</Label>
+              <Input required maxLength={3} value={form.currency || cachedTenantCurrency()}
+                     onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} />
+            </div>
+            <div>
               <Label>{t('cm.components_mice_SalesPipelineTab.olasilik')}</Label>
               <Input type="number" min={0} max={100} value={form.probability}
                      onChange={(e) => setForm({ ...form, probability: e.target.value })} />

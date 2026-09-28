@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from models.schemas import User
 
@@ -30,6 +31,18 @@ SETUP_TYPES = (
 )
 
 
+def _normalize_currency(value: str | None, fallback: str) -> str:
+    code = (value or fallback).strip().upper()
+    if len(code) != 3 or not code.isascii() or not code.isalpha():
+        raise HTTPException(422, "Para birimi üç harfli ISO kodu olmalı (örn. TRY, EUR, USD)")
+    return code
+
+
+async def _tenant_currency_code(tenant_id: str) -> str:
+    code, _symbol = await get_tenant_currency(tenant_id)
+    return _normalize_currency(code, "TRY")
+
+
 class FunctionRoom(BaseModel):
     id: str | None = None
     name: str = Field(..., min_length=1)
@@ -38,6 +51,7 @@ class FunctionRoom(BaseModel):
     floor: str | None = None
     hourly_rate: float = 0
     daily_rate: float = 0
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     supported_setups: list[str] = Field(default_factory=list)
     active: bool = True
 
@@ -68,10 +82,12 @@ class FunctionBooking(FunctionBookingCreate):
 @router.get("/rooms", response_model=list[FunctionRoom])
 async def list_rooms(user: User = Depends(get_current_user)):
     db = get_system_db()
+    tenant_currency = await _tenant_currency_code(user.tenant_id)
     cur = db.function_rooms.find({"tenant_id": user.tenant_id, "active": True}).sort("name", 1)
     out: list[dict[str, Any]] = []
     async for r in cur:
         r.pop("_id", None)
+        r["currency"] = _normalize_currency(r.get("currency"), tenant_currency)
         out.append(r)
     return out
 
@@ -80,6 +96,7 @@ async def list_rooms(user: User = Depends(get_current_user)):
 async def create_room(payload: FunctionRoom, user: User = Depends(get_current_user)):
     db = get_system_db()
     doc = payload.model_dump()
+    doc["currency"] = _normalize_currency(payload.currency, await _tenant_currency_code(user.tenant_id))
     doc["id"] = str(uuid.uuid4())
     doc["tenant_id"] = user.tenant_id
     doc["created_at"] = datetime.now(UTC).isoformat()
@@ -197,6 +214,7 @@ async def availability(
 ):
     """Belirli gün için boş salonları listele (kapasite + setup filtreli)."""
     db = get_system_db()
+    tenant_currency = await _tenant_currency_code(user.tenant_id)
     rq: dict[str, Any] = {
         "tenant_id": user.tenant_id,
         "active": True,
@@ -205,6 +223,7 @@ async def availability(
     rooms = []
     async for r in db.function_rooms.find(rq):
         r.pop("_id", None)
+        r["currency"] = _normalize_currency(r.get("currency"), tenant_currency)
         if setup_type and r.get("supported_setups") and setup_type not in r["supported_setups"]:
             continue
         rooms.append(r)
@@ -235,6 +254,9 @@ async def availability(
                 "id": r["id"],
                 "name": r["name"],
                 "capacity": r["capacity"],
+                "hourly_rate": r.get("hourly_rate", 0),
+                "daily_rate": r.get("daily_rate", 0),
+                "currency": r["currency"],
                 "supported_setups": r.get("supported_setups", []),
                 "busy_intervals": busy.get(r["id"], []),
             }
