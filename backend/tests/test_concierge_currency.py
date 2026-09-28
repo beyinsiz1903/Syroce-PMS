@@ -15,14 +15,12 @@ async def test_concierge_request_defaults_to_tenant_currency(monkeypatch):
 
     monkeypatch.setattr(operations_router, "get_tenant_currency", AsyncMock(return_value=("EUR", "€")))
     monkeypatch.setattr(
-        operations_router.db,
-        "bookings",
-        SimpleNamespace(find_one=AsyncMock(return_value=None)),
-    )
-    monkeypatch.setattr(
-        operations_router.db,
-        "concierge_requests",
-        SimpleNamespace(insert_one=insert_one),
+        operations_router,
+        "db",
+        SimpleNamespace(
+            bookings=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+            concierge_requests=SimpleNamespace(insert_one=insert_one),
+        ),
     )
 
     result = await operations_router.create_concierge_request(
