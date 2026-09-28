@@ -769,6 +769,29 @@
     "itemName": "Kalem Adı",
     "unit": "Birim",
     "reorderLevel": "Yeniden Sipariş Seviyesi",
+    "inventoryCategories": {
+      "supplies": "Malzemeler",
+      "amenity": "Misafir İkramı",
+      "food": "Yiyecek",
+      "beverage": "İçecek",
+      "linen": "Tekstil",
+      "cleaning": "Temizlik",
+      "maintenance": "Bakım",
+      "stationery": "Kırtasiye",
+      "electronics": "Elektronik",
+      "uniform": "Üniforma",
+      "general": "Genel",
+      "other": "Diğer"
+    },
+    "inventoryUnits": {
+      "piece": "Adet",
+      "bottle": "Şişe",
+      "kilogram": "Kilogram",
+      "liter": "Litre",
+      "pack": "Paket",
+      "box": "Kutu",
+      "set": "Takım"
+    },
     "tabs": {
       "invoices": "Faturalar",
       "incoming": "Gelen e-Faturalar",

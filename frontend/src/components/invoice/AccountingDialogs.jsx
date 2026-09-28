@@ -11,6 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
+import {
+  INVENTORY_CATEGORY_OPTIONS,
+  INVENTORY_UNIT_OPTIONS,
+  inventoryCategoryLabel,
+  inventoryUnitLabel,
+} from '@/lib/accountingLabels';
 
 export const DEFAULT_EXPENSE_VAT_RATE = 20;
 export const createBankAccountInitialState = (currency) => ({
@@ -139,7 +145,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="cash">{t('pms.cash', 'Cash')}</SelectItem>
-                <SelectItem value="card">{t('pms.creditCard', 'Card')}</SelectItem>
+                <SelectItem value="card">{t('pms.card', 'Card')}</SelectItem>
                 <SelectItem value="bank_transfer">{t('pms.bankTransfer', 'Bank Transfer')}</SelectItem>
               </SelectContent>
             </Select>
@@ -350,7 +356,14 @@ export const InventoryDialog = ({ open, onClose }) => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>{t('common.category', 'Category')}</Label>
-              <Input value={form.category} onChange={(e) => setForm({...form, category: e.target.value})} required />
+              <Select value={form.category} onValueChange={(category) => setForm({...form, category})}>
+                <SelectTrigger data-testid="inventory-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_CATEGORY_OPTIONS.map((category) => (
+                    <SelectItem key={category} value={category}>{inventoryCategoryLabel(t, category)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>SKU</Label>
@@ -359,12 +372,19 @@ export const InventoryDialog = ({ open, onClose }) => {
           </div>
           <div className="grid grid-cols-4 gap-4">
             <div>
-              <Label>{t('common.quantity', 'Quantity')}</Label>
+              <Label>{t('invoice.quantity', 'Quantity')}</Label>
               <Input type="number" step="0.01" value={form.quantity} onChange={(e) => setForm({...form, quantity: parseFloat(e.target.value)})} required />
             </div>
             <div>
               <Label>{t('invoice.unit', 'Unit')}</Label>
-              <Input value={form.unit} onChange={(e) => setForm({...form, unit: e.target.value})} required />
+              <Select value={form.unit} onValueChange={(unit) => setForm({...form, unit})}>
+                <SelectTrigger data-testid="inventory-unit"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_UNIT_OPTIONS.map((unit) => (
+                    <SelectItem key={unit} value={unit}>{inventoryUnitLabel(t, unit)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>{t('invoice.unitPrice', 'Unit Price')}</Label>

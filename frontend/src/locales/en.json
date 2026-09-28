@@ -719,6 +719,29 @@
     "itemName": "Item Name",
     "unit": "Unit",
     "reorderLevel": "Reorder Level",
+    "inventoryCategories": {
+      "supplies": "Supplies",
+      "amenity": "Guest Amenity",
+      "food": "Food",
+      "beverage": "Beverage",
+      "linen": "Linen",
+      "cleaning": "Cleaning",
+      "maintenance": "Maintenance",
+      "stationery": "Stationery",
+      "electronics": "Electronics",
+      "uniform": "Uniform",
+      "general": "General",
+      "other": "Other"
+    },
+    "inventoryUnits": {
+      "piece": "Piece",
+      "bottle": "Bottle",
+      "kilogram": "Kilogram",
+      "liter": "Liter",
+      "pack": "Pack",
+      "box": "Box",
+      "set": "Set"
+    },
     "actions": {
       "addAccount": "Add Account",
       "addExpense": "Add Expense",
