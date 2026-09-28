@@ -82,6 +82,8 @@ const ResourcesView = ({ resources, reload }) => {
                 onChange={(e) => setForm({ ...form, total_stock: +e.target.value })} /></Field>
               <Field label={`Birim (${form.currency || cachedTenantCurrency()})`}><Input type="number" value={form.unit_price}
                 onChange={(e) => setForm({ ...form, unit_price: +e.target.value })} /></Field>
+              <Field label="Para Birimi"><Input required maxLength={3} value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.components_mice_ResourcesView.iptal')}</Button>

@@ -271,6 +271,13 @@ export default function PackagesTab() {
               per_pax_price: e.target.value
             })} />
             </div>
+            <div>
+              <Label>Para Birimi</Label>
+              <Input required maxLength={3} value={form.currency || cachedTenantCurrency()} onChange={e => setForm({
+              ...form,
+              currency: e.target.value.toUpperCase()
+            })} />
+            </div>
 
             <div className="col-span-2">
               <div className="flex justify-between items-center mb-2">

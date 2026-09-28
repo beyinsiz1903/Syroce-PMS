@@ -82,8 +82,25 @@ const BeoModal = ({
   const [sending, setSending] = useState(false);
   const postToFolio = async () => {
     try {
-      await axios.post(`/mice/events/${beoData.event.id}/post-to-folio`);
-      // In a real app we might use toast from somewhere, we assume it's available or we can just alert if not imported. Wait, toast is used above.
+      const currency = String(beoData.event.currency || cachedTenantCurrency()).toUpperCase();
+      let payload = {};
+      if (!['TRY', 'TRL'].includes(currency)) {
+        const rawRate = await promptDialog({
+          title: `${currency} → TRY Muhasebe Kuru`,
+          message: `1 ${currency} için kullanılacak TRY kurunu girin. Bu kur yevmiye kaydında saklanacaktır.`,
+          defaultValue: '',
+          placeholder: 'Örn. 48,25',
+          confirmText: 'Muhasebeleştir'
+        });
+        if (rawRate === null || rawRate === undefined) return;
+        const exchangeRate = Number(String(rawRate).replace(',', '.'));
+        if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+          toast.error('Geçerli ve sıfırdan büyük bir kur girin.');
+          return;
+        }
+        payload = { exchange_rate: exchangeRate };
+      }
+      await axios.post(`/mice/events/${beoData.event.id}/post-to-folio`, payload);
       toast.success('BEO tutarı başarıyla Genel Muhasebeye işlendi.');
     } catch(err) {
       toast.error(err?.response?.data?.detail || 'Genel Muhasebeye işlenemedi.');
@@ -206,7 +223,7 @@ const BeoModal = ({
 
       <div className="text-right flex justify-end gap-2">
         <Button variant="outline" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={postToFolio}>
-          Folyoya İşle
+          Genel Muhasebeye İşle
         </Button>
         <Button variant="outline" onClick={() => downloadBeoPdf(beoData.event.id, beoData.event.name)}>
           <Download className="w-4 h-4 mr-1" /> PDF İndir

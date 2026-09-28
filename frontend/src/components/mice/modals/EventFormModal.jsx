@@ -100,6 +100,12 @@ const EventFormModal = ({
               ...form,
               expected_pax: +e.target.value
             })} /></Field>
+            <Field label="Para Birimi">
+              <Input required maxLength={3} value={form.currency || cachedTenantCurrency()} onChange={e => setForm({
+                ...form,
+                currency: e.target.value.toUpperCase()
+              })} />
+            </Field>
             <Field label="PMS Rezervasyon ID"><Input value={form.reservation_id} onChange={e => setForm({
               ...form,
               reservation_id: e.target.value
