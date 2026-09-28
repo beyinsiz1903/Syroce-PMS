@@ -3,7 +3,15 @@ import { BarChart3, BookOpenCheck, CheckCircle2, FileText, ListTree, Plus, Zap }
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-export const GeneralLedgerOverview = ({ accounts, vouchers, trialBalance, periods, onSelect }) => {
+const MetricValue = ({ ready, failed, children, className = 'text-2xl' }) => (
+  <p className={`mt-1 font-bold ${className}`} aria-busy={!ready && !failed}>
+    {failed
+      ? <span className="text-slate-400" aria-label="Yüklenemedi" title="Veri yüklenemedi">—</span>
+      : ready ? children : <span className="inline-block h-7 w-16 animate-pulse rounded bg-slate-200" aria-label="Yükleniyor" />}
+  </p>
+);
+
+export const GeneralLedgerOverview = ({ accounts, vouchers, trialBalance, periods, loaded = {}, failed = {}, onSelect }) => {
   const reviewCount = vouchers.filter((voucher) => ['draft', 'submitted', 'approved', 'posting'].includes(voucher.status)).length;
   const openPeriods = periods.filter((period) => period.status === 'open').length;
   const balanced = trialBalance.totals?.balanced !== false;
@@ -27,10 +35,10 @@ export const GeneralLedgerOverview = ({ accounts, vouchers, trialBalance, period
       </Card>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><CardContent className="pt-5"><ListTree className="mb-3 h-5 w-5 text-blue-600" /><p className="text-xs font-medium text-slate-500">AKTİF HESAP</p><p className="mt-1 text-2xl font-bold">{accounts.filter((account) => account.active !== false).length}</p></CardContent></Card>
-        <Card><CardContent className="pt-5"><FileText className="mb-3 h-5 w-5 text-amber-600" /><p className="text-xs font-medium text-slate-500">İŞLEM BEKLEYEN FİŞ</p><p className="mt-1 text-2xl font-bold">{reviewCount}</p></CardContent></Card>
-        <Card><CardContent className="pt-5"><CheckCircle2 className={`mb-3 h-5 w-5 ${balanced ? 'text-emerald-600' : 'text-red-600'}`} /><p className="text-xs font-medium text-slate-500">MİZAN DURUMU</p><p className={`mt-1 text-lg font-bold ${balanced ? 'text-emerald-700' : 'text-red-700'}`}>{balanced ? 'Dengeli' : 'Kontrol Gerekli'}</p></CardContent></Card>
-        <Card><CardContent className="pt-5"><BookOpenCheck className="mb-3 h-5 w-5 text-indigo-600" /><p className="text-xs font-medium text-slate-500">AÇIK MALİ DÖNEM</p><p className="mt-1 text-2xl font-bold">{openPeriods}</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><ListTree className="mb-3 h-5 w-5 text-blue-600" /><p className="text-xs font-medium text-slate-500">AKTİF HESAP</p><MetricValue ready={loaded.accounts} failed={failed.accounts}>{accounts.filter((account) => account.active !== false).length}</MetricValue></CardContent></Card>
+        <Card><CardContent className="pt-5"><FileText className="mb-3 h-5 w-5 text-amber-600" /><p className="text-xs font-medium text-slate-500">İŞLEM BEKLEYEN FİŞ</p><MetricValue ready={loaded.vouchers} failed={failed.vouchers}>{reviewCount}</MetricValue></CardContent></Card>
+        <Card><CardContent className="pt-5"><CheckCircle2 className={`mb-3 h-5 w-5 ${balanced ? 'text-emerald-600' : 'text-red-600'}`} /><p className="text-xs font-medium text-slate-500">MİZAN DURUMU</p><MetricValue ready={loaded.trialBalance} failed={failed.trialBalance} className={`text-lg ${balanced ? 'text-emerald-700' : 'text-red-700'}`}>{balanced ? 'Dengeli' : 'Kontrol Gerekli'}</MetricValue></CardContent></Card>
+        <Card><CardContent className="pt-5"><BookOpenCheck className="mb-3 h-5 w-5 text-indigo-600" /><p className="text-xs font-medium text-slate-500">AÇIK MALİ DÖNEM</p><MetricValue ready={loaded.periods} failed={failed.periods}>{openPeriods}</MetricValue></CardContent></Card>
       </div>
 
       <Card>
@@ -45,4 +53,3 @@ export const GeneralLedgerOverview = ({ accounts, vouchers, trialBalance, period
     </div>
   );
 };
-

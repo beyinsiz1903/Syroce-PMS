@@ -12,12 +12,17 @@ import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 
+export const DEFAULT_EXPENSE_VAT_RATE = 20;
+export const createBankAccountInitialState = (currency) => ({
+  name: '', bank_name: '', account_number: '', iban: '', currency, balance: 0,
+});
+
 export const ExpenseDialog = ({ open, onClose, suppliers }) => {
   const { t } = useTranslation();
   const { code: tenantCurrency } = useCurrency();
   const businessDate = useBusinessDate();
   const [form, setForm] = useState({
-    category: 'supplies', description: '', amount: 0, vat_rate: 18,
+    category: 'supplies', description: '', amount: 0, vat_rate: DEFAULT_EXPENSE_VAT_RATE,
     date: businessDate, supplier_id: '', payment_method: 'cash', notes: '', currency: tenantCurrency
   });
 
@@ -25,11 +30,11 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
     if (open) {
       setForm((current) => (
         !current.description && !(Number(current.amount) > 0)
-          ? { ...current, date: businessDate }
+          ? { ...current, date: businessDate, currency: tenantCurrency }
           : current
       ));
     }
-  }, [businessDate, open]);
+  }, [businessDate, open, tenantCurrency]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,7 +53,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
       await axios.post('/accounting/expenses', payload);
       toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
-      setForm({ category: 'supplies', description: '', amount: 0, vat_rate: 18, date: businessDate, supplier_id: '', payment_method: 'cash', notes: '', currency: tenantCurrency });
+      setForm({ category: 'supplies', description: '', amount: 0, vat_rate: DEFAULT_EXPENSE_VAT_RATE, date: businessDate, supplier_id: '', payment_method: 'cash', notes: '', currency: tenantCurrency });
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
@@ -223,9 +228,18 @@ export const SupplierDialog = ({ open, onClose, onCreated }) => {
 
 export const BankAccountDialog = ({ open, onClose }) => {
   const { t } = useTranslation();
-  const [form, setForm] = useState({
-    name: '', bank_name: '', account_number: '', iban: '', currency: 'TRY', balance: 0
-  });
+  const { code: tenantCurrency } = useCurrency();
+  const [form, setForm] = useState(() => createBankAccountInitialState(tenantCurrency));
+
+  useEffect(() => {
+    if (open) {
+      setForm((current) => (
+        !current.name && !current.bank_name && !current.account_number && !(Number(current.balance) > 0)
+          ? { ...current, currency: tenantCurrency }
+          : current
+      ));
+    }
+  }, [open, tenantCurrency]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -235,12 +249,12 @@ export const BankAccountDialog = ({ open, onClose }) => {
         bank_name: form.bank_name,
         account_number: form.account_number,
         iban: form.iban || null,
-        currency: form.currency || 'TRY',
+        currency: form.currency || tenantCurrency,
         balance: Number.isFinite(form.balance) ? form.balance : 0,
       });
       toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
-      setForm({ name: '', bank_name: '', account_number: '', iban: '', currency: 'TRY', balance: 0 });
+      setForm(createBankAccountInitialState(tenantCurrency));
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
@@ -278,6 +292,7 @@ export const BankAccountDialog = ({ open, onClose }) => {
                   <SelectItem value="USD">USD</SelectItem>
                   <SelectItem value="EUR">EUR</SelectItem>
                   <SelectItem value="TRY">TRY</SelectItem>
+                  <SelectItem value="GBP">GBP</SelectItem>
                 </SelectContent>
               </Select>
             </div>

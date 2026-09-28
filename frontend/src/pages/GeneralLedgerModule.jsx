@@ -315,6 +315,29 @@ export const normalizeTrialBalance = (data = {}) => ({
   },
 });
 
+export const describeIncomeTotals = (totals = {}) => {
+  const expenses = Number(totals.expenses) || 0;
+  const netIncome = Number(totals.net_income) || 0;
+  return {
+    expenses,
+    netIncome,
+    expenseLabel: expenses < 0 ? 'Net Gider İptali' : 'Toplam Gider',
+    netLabel: netIncome < 0 ? 'Net Dönem Zararı' : 'Net Dönem Kârı',
+    hasExpenseReversal: expenses < 0,
+  };
+};
+
+export const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  globalThis.setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
 // Older reversal rows predate `reversal_status` on the source entry. The
 // linked contra entry remains authoritative, so derive the display state from
 // that immutable relationship while loading the journal list.
@@ -400,6 +423,18 @@ const GeneralLedgerModule = () => {
   const [fixedAssetGLMapping, setFixedAssetGLMapping] = useState(DEFAULT_FIXED_ASSET_GL_MAPPING);
   const [integrationFailures, setIntegrationFailures] = useState([]);
   const [integrationBusy, setIntegrationBusy] = useState('');
+  const [overviewLoaded, setOverviewLoaded] = useState({
+    accounts: false,
+    vouchers: false,
+    trialBalance: false,
+    periods: false,
+  });
+  const [overviewFailed, setOverviewFailed] = useState({
+    accounts: false,
+    vouchers: false,
+    trialBalance: false,
+    periods: false,
+  });
 
   const handleTabChange = (value) => {
     setActiveTab(value);
@@ -444,13 +479,17 @@ const GeneralLedgerModule = () => {
   }, [businessDate]);
 
   const fetchAccounts = async () => {
+    setOverviewFailed((current) => ({ ...current, accounts: false, trialBalance: false }));
     try {
       const [accountsRes, balanceRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.accounts),
         axios.get(GL_ENDPOINTS.trialBalance),
       ]);
       setAccounts(mergeAccountBalances(accountsRes.data?.accounts || [], balanceRes.data));
+      setTrialBalance(normalizeTrialBalance(balanceRes.data));
+      setOverviewLoaded((current) => ({ ...current, accounts: true, trialBalance: true }));
     } catch {
+      setOverviewFailed((current) => ({ ...current, accounts: true, trialBalance: true }));
       toast.error('Hesap planı yüklenemedi.');
     }
   };
@@ -469,6 +508,7 @@ const GeneralLedgerModule = () => {
   };
 
   const fetchJournals = async () => {
+    setOverviewFailed((current) => ({ ...current, vouchers: false }));
     try {
       const [journalRes, voucherRes, auditRes, integrityRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.journal, { params: { limit: 1000 } }),
@@ -480,21 +520,27 @@ const GeneralLedgerModule = () => {
       setVouchers(voucherRes.data?.vouchers || []);
       setSequenceAudit(auditRes.data || null);
       setIntegrityAudit(integrityRes.data || null);
+      setOverviewLoaded((current) => ({ ...current, vouchers: true }));
     } catch {
+      setOverviewFailed((current) => ({ ...current, vouchers: true }));
       toast.error('Yevmiye fişleri yüklenemedi.');
     }
   };
 
   const fetchTrialBalance = async () => {
+    setOverviewFailed((current) => ({ ...current, trialBalance: false }));
     try {
       const res = await axios.get(GL_ENDPOINTS.trialBalance);
       setTrialBalance(normalizeTrialBalance(res.data));
+      setOverviewLoaded((current) => ({ ...current, trialBalance: true }));
     } catch {
+      setOverviewFailed((current) => ({ ...current, trialBalance: true }));
       toast.error('Mizan yüklenemedi.');
     }
   };
 
   const fetchPeriods = async () => {
+    setOverviewFailed((current) => ({ ...current, periods: false }));
     const [periodResult, yearEndResult] = await Promise.allSettled([
       axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } }),
       axios.get(`${GL_ENDPOINTS.yearEnd}/${periodYear}`),
@@ -502,8 +548,10 @@ const GeneralLedgerModule = () => {
     if (periodResult.status === 'fulfilled') {
       const periodRes = periodResult.value;
       setPeriods(periodRes.data?.periods || []);
+      setOverviewLoaded((current) => ({ ...current, periods: true }));
     } else {
       setPeriods([]);
+      setOverviewFailed((current) => ({ ...current, periods: true }));
       toast.error('Mali dönemler yüklenemedi.');
     }
     if (yearEndResult.status === 'fulfilled') {
@@ -643,12 +691,7 @@ const GeneralLedgerModule = () => {
         params: { period: eledgerPeriod },
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `syroce-eledger-source-${eledgerPeriod}.zip`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(response.data, `syroce-eledger-source-${eledgerPeriod}.zip`);
       toast.success('Kaynak paket indirildi; mali mühür veya GİB gönderimi yapılmadı.');
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Kaynak paket indirilemedi.');
@@ -664,14 +707,10 @@ const GeneralLedgerModule = () => {
         params: { report, format, as_of: today, start: `${today.slice(0, 4)}-01-01`, end: today },
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `gl-${report}-${today}.${format}`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Rapor indirilemedi.');
+      downloadBlob(response.data, `gl-${report}-${today}.${format}`);
+      toast.success('Rapor indirildi.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Rapor indirilemedi.');
     }
   };
 
@@ -1074,6 +1113,7 @@ const GeneralLedgerModule = () => {
   ).filter((code) => !knownAccountCodes.has(code));
   const workspaceUnavailable = (label) => workspaceFailures.includes(label);
   const journalValidationError = getJournalValidationError(newJournal, ledgerCurrency);
+  const incomePresentation = describeIncomeTotals(statements.income?.totals);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto overflow-x-hidden">
@@ -1092,6 +1132,8 @@ const GeneralLedgerModule = () => {
             vouchers={vouchers}
             trialBalance={trialBalance}
             periods={periods}
+            loaded={overviewLoaded}
+            failed={overviewFailed}
             onSelect={handleTabChange}
           />
         </TabsContent>
@@ -1499,8 +1541,9 @@ const GeneralLedgerModule = () => {
                 {(statements.income?.revenue || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
                 <div className="border-t pt-2 flex justify-between font-semibold text-emerald-700"><span>Toplam Gelir</span><span>{fmtMoney(statements.income?.totals?.revenue || 0)} <small>({comparison.income?.variance?.revenue?.percent ?? '—'}%)</small></span></div>
                 {(statements.income?.expenses || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
-                <div className="border-t pt-2 flex justify-between font-semibold text-red-700"><span>Toplam Gider</span><span>{fmtMoney(statements.income?.totals?.expenses || 0)} <small>({comparison.income?.variance?.expenses?.percent ?? '—'}%)</small></span></div>
-                <div className="rounded-lg bg-slate-900 text-white p-3 flex justify-between font-bold"><span>Net Dönem Kârı / Zararı</span><span>{fmtMoney(statements.income?.totals?.net_income || 0)} <small>({comparison.income?.variance?.net_income?.percent ?? '—'}%)</small></span></div>
+                <div className="border-t pt-2 flex justify-between font-semibold text-red-700"><span>{incomePresentation.expenseLabel}</span><span>{fmtMoney(incomePresentation.expenses)} <small>({comparison.income?.variance?.expenses?.percent ?? '—'}%)</small></span></div>
+                {incomePresentation.hasExpenseReversal && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">Negatif gider, gider hesaplarındaki ters kayıtların dönem giderlerinden fazla olduğunu gösterir.</p>}
+                <div className="rounded-lg bg-slate-900 text-white p-3 flex justify-between font-bold"><span>{incomePresentation.netLabel}</span><span>{fmtMoney(incomePresentation.netIncome)} <small>({comparison.income?.variance?.net_income?.percent ?? '—'}%)</small></span></div>
                 <p className="text-xs text-slate-500">Parantez içindeki oranlar önceki yılın aynı dönemine göre değişimi gösterir.</p>
               </CardContent>
             </Card>

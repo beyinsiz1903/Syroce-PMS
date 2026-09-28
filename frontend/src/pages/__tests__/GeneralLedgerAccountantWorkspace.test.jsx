@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildAccountLedgerRows } from '@/pages/accounting/AccountLedgerView';
 import { GeneralLedgerNavigation, GL_NAV_GROUPS } from '@/pages/accounting/GeneralLedgerNavigation';
+import { GeneralLedgerOverview } from '@/pages/accounting/GeneralLedgerOverview';
 
 describe('General ledger accountant workspace', () => {
   it('keeps every general-ledger destination in the expanded left menu', () => {
@@ -100,5 +101,33 @@ describe('General ledger accountant workspace', () => {
 
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]).toMatchObject({ accountCode: '102', accountName: 'Bankalar', debit: 125 });
+  });
+
+  it('does not present temporary zeroes or a false balanced state while overview data loads', () => {
+    const { rerender } = render(
+      <GeneralLedgerOverview
+        accounts={[]}
+        vouchers={[]}
+        trialBalance={{ totals: {} }}
+        periods={[]}
+        loaded={{ accounts: false, vouchers: false, trialBalance: false, periods: false }}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByLabelText('Yükleniyor')).toHaveLength(4);
+    expect(screen.queryByText('Dengeli')).not.toBeInTheDocument();
+
+    rerender(
+      <GeneralLedgerOverview
+        accounts={[{ code: '100', active: true }]}
+        vouchers={[{ id: 'v1', status: 'submitted' }]}
+        trialBalance={{ totals: { balanced: true } }}
+        periods={[{ period_no: 9, status: 'open' }]}
+        loaded={{ accounts: true, vouchers: true, trialBalance: true, periods: true }}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText('Yükleniyor')).not.toBeInTheDocument();
+    expect(screen.getByText('Dengeli')).toBeInTheDocument();
   });
 });
