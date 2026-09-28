@@ -24,6 +24,7 @@ def test_wbe_availability(client):
     assert len(data) > 0
     assert data[0]["price_per_night"] > 0
     assert data[0]["total_price"] == data[0]["price_per_night"] * 2
+    assert data[0]["currency"] == "TRY"
 
 def test_wbe_booking(client):
     tenant_id = "test_hotel"
@@ -48,6 +49,7 @@ def test_wbe_booking(client):
     assert data["status"] == "pending"
     assert "booking_id" in data
     assert "confirmation_number" in data
+    assert data["currency"] == "TRY"
 
 def test_wbe_invalid_dates(client):
     tenant_id = "test_hotel"

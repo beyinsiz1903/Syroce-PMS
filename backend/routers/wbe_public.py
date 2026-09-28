@@ -45,6 +45,7 @@ class WBEBookingResponse(BaseModel):
     confirmation_number: str
     status: str
     total_price: float
+    currency: str = "TRY"
 
 
 # Mock room types for WBE (in reality, query from `room_types` collection)
@@ -141,6 +142,7 @@ async def create_booking(tenant_id: str, req: WBEBookingRequest):
         "adults": req.adults,
         "children": req.children,
         "total_price": total_price,
+        "currency": "TRY",
         "special_requests": req.special_requests,
         "created_at": datetime.now(UTC),
     }
@@ -162,4 +164,10 @@ async def create_booking(tenant_id: str, req: WBEBookingRequest):
         # Just pass for tests if DB is mocked differently
         pass
 
-    return WBEBookingResponse(booking_id=booking_id, confirmation_number=confirmation_number, status="pending", total_price=total_price)
+    return WBEBookingResponse(
+        booking_id=booking_id,
+        confirmation_number=confirmation_number,
+        status="pending",
+        total_price=total_price,
+        currency="TRY",
+    )
