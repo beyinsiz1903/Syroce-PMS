@@ -26,4 +26,11 @@ describe('VirtualizedBookingList money presentation', () => {
     expect(formatBookingAmount(100, 'USD')).toContain('$');
     expect(formatBookingAmount(100, 'EUR')).toContain('€');
   });
+
+  it('uses the cached tenant currency when a legacy row has no currency', () => {
+    localStorage.setItem('user', JSON.stringify({ tenant_id: 'tenant-eur' }));
+    localStorage.setItem('tenant_currency:tenant-eur', JSON.stringify({ code: 'EUR' }));
+
+    expect(formatBookingAmount(100, undefined)).toContain('€');
+  });
 });

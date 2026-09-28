@@ -1,4 +1,5 @@
 import { bookingSourceLabel } from '@/utils/bookingSource';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 /**
  * Print templates for guest registration card, folio statement, and proforma invoice.
@@ -40,7 +41,7 @@ function escapeHtml(value) {
 }
 
 function normalizeCurrency(value) {
-  const code = String(value || 'TRY').toUpperCase();
+  const code = String(value || cachedTenantCurrency()).toUpperCase();
   return code === 'TL' ? 'TRY' : code;
 }
 
@@ -54,7 +55,7 @@ function money(value, currency) {
       maximumFractionDigits: 2,
     }).format(Number.isFinite(amount) ? amount : 0);
   } catch {
-    return `${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'} ${escapeHtml(currency || 'TRY')}`;
+    return `${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'} ${escapeHtml(currency || cachedTenantCurrency())}`;
   }
 }
 
@@ -133,7 +134,7 @@ export function printFolio(folioData, hotelArg) {
   const folio = folioData?.folio;
   const summary = folioData?.summary;
   const timeline = folioData?.timeline || [];
-  const currency = folioData?.currency || summary?.currency || folio?.currency || 'TRY';
+  const currency = folioData?.currency || summary?.currency || folio?.currency || cachedTenantCurrency();
   w.document.write(`<html><head><title>Folio - ${escapeHtml(folio?.folio_number || '')}</title>
   <style>
     body{font-family:Arial,sans-serif;padding:30px;font-size:11px;color:#333}
@@ -209,7 +210,7 @@ export function printProformaInvoice(booking, guest, charges, hotelArg) {
   const w = window.open('', '_blank');
   if (!w) return;
   const totalAmount = booking?.total_amount || charges?.reduce((s, c) => s + (c.amount || 0), 0) || 0;
-  const currency = booking?.currency || charges?.find(c => c.currency)?.currency || 'TRY';
+  const currency = booking?.currency || charges?.find(c => c.currency)?.currency || cachedTenantCurrency();
   const taxRate = 0.10;
   const netAmount = totalAmount / (1 + taxRate);
   const taxAmount = totalAmount - netAmount;

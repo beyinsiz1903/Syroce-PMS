@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DollarSign, FileText, Loader2, LogIn, Save, UserX, X, XCircle } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
-import { formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const toDateInput = (val) => {
   if (!val) return '';
@@ -44,6 +44,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
   const guest = guests.find(g => g.id === booking.guest_id);
   const room = rooms.find(r => r.id === booking.room_id);
   const company = booking.company_id ? companies.find(c => c.id === booking.company_id) : null;
+  const bookingCurrency = booking.currency || cachedTenantCurrency();
 
   const updateField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
@@ -206,7 +207,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
               {editing ? (
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs text-gray-600">{t('booking.totalAmount')} ({booking.currency || 'TRY'})</Label>
+                    <Label className="text-xs text-gray-600">{t('booking.totalAmount')} ({bookingCurrency})</Label>
                     <Input type="number" min="0" step="0.01" value={form?.total_amount ?? 0} onChange={e => updateField('total_amount', e.target.value)} className="h-9" />
                   </div>
                   <div className="space-y-1">
@@ -225,7 +226,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
               ) : (
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
-                    <div className="text-2xl font-bold text-green-700">{formatCurrency(booking.total_amount || 0, booking.currency || 'TRY', { decimals: 2 })}</div>
+                    <div className="text-2xl font-bold text-green-700">{formatCurrency(booking.total_amount || 0, bookingCurrency, { decimals: 2 })}</div>
                     <div className="text-xs text-gray-600">{t('booking.totalAmount')}</div>
                   </div>
                   <div>

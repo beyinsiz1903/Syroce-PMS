@@ -14,7 +14,7 @@ import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
-import { formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const VAT_OPTIONS = [{
   value: '0',
   label: '%0'
@@ -52,7 +52,8 @@ const FolioViewDialog = ({
   const {
     t
   } = useTranslation();
-  const money = (value) => formatCurrency(value, selectedFolio?.currency || 'TRY', { decimals: 2 });
+  const folioCurrency = selectedFolio?.currency || cachedTenantCurrency();
+  const money = (value) => formatCurrency(value, folioCurrency, { decimals: 2 });
   const [subDialog, setSubDialog] = useState(null);
   const [expandedChargeItems, setExpandedChargeItems] = useState({});
   const [voidTarget, setVoidTarget] = useState(null);
@@ -590,7 +591,7 @@ th{background:#f5f5f5}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Birim Fiyat ({selectedFolio?.currency || 'TRY'})</Label>
+                <Label>Birim Fiyat ({folioCurrency})</Label>
                 <Input type="number" step="0.01" min="0" value={newFolioCharge.amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 amount: e.target.value
@@ -606,7 +607,7 @@ th{background:#f5f5f5}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>İndirim ({selectedFolio?.currency || 'TRY'})</Label>
+                <Label>İndirim ({folioCurrency})</Label>
                 <Input type="number" step="0.01" min="0" value={newFolioCharge.discount_amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 discount_amount: e.target.value
@@ -642,7 +643,7 @@ th{background:#f5f5f5}
           </DialogHeader>
           <form onSubmit={handlePostPayment} className="space-y-4">
             <div>
-              <Label>Tutar ({selectedFolio?.currency || 'TRY'})</Label>
+              <Label>Tutar ({folioCurrency})</Label>
               <Input type="number" step="0.01" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
               ...newFolioPayment,
               amount: parseFloat(e.target.value)
