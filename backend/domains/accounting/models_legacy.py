@@ -207,6 +207,12 @@ class AccountingInvoice(BaseModel):
     vat_withholding: float = 0.0  # Tevkifat on VAT
     total_additional_taxes: float = 0.0  # Other additional taxes (ÖTV, etc.)
     total: float
+    currency: str = "TRY"
+    base_currency: str = "TRY"
+    exchange_rate: float = 1.0
+    subtotal_base: float | None = None
+    total_vat_base: float | None = None
+    total_base: float | None = None
     status: PaymentStatus = PaymentStatus.PENDING
     issue_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     due_date: datetime
