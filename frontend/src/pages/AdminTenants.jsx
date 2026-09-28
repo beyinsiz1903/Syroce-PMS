@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -32,6 +33,8 @@ import TenantStatsPanel from './admin/TenantStatsPanel';
 import TenantProvisioningModal from './admin/TenantProvisioningModal';
 import { useTranslation } from 'react-i18next';
 import { persistEnteredTenantContext } from '@/lib/adminTenantContext';
+import { adminManagementQueries } from '@/lib/adminManagementQueries';
+import { preloadRoute } from '@/routes/preload';
 
 // Map plan tier → shared StatusBadge intent (palette-compliant)
 const TIER_INTENT = {
@@ -40,6 +43,7 @@ const TIER_INTENT = {
   professional: 'info',     // sky
   enterprise: 'default',    // indigo via default neutral-strong
 };
+const EMPTY_TENANTS = [];
 
 const PlanBadge = ({ tier }) => {
   const { t: _t } = useTranslation();
@@ -55,9 +59,7 @@ const PlanBadge = ({ tier }) => {
 
 const AdminTenants = ({ user, tenant, onLogout }) => {
   const { t: _t } = useTranslation();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [tenants, setTenants] = useState([]);
   const [filter, setFilter] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
   const [expandedTenants, setExpandedTenants] = useState({});
@@ -84,20 +86,19 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
   const [provisioningTenant, setProvisioningTenant] = useState(null);
   const [contextTarget, setContextTarget] = useState(null);
   const [switchingContext, setSwitchingContext] = useState(false);
+  const queryClient = useQueryClient();
+  const tenantsQuery = useQuery(adminManagementQueries.tenants);
+  const tenants = tenantsQuery.data?.tenants ?? EMPTY_TENANTS;
+  const loading = tenantsQuery.isLoading;
+  const refreshing = tenantsQuery.isFetching && !tenantsQuery.isLoading;
 
-  const loadTenants = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.get('/admin/tenants');
-      setTenants(res.data?.tenants || []);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Otelleri yüklerken bir hata oluştu');
-    } finally {
-      setLoading(false);
+  const loadTenants = () => tenantsQuery.refetch();
+
+  useEffect(() => {
+    if (tenantsQuery.error) {
+      toast.error(tenantsQuery.error.response?.data?.detail || 'Otelleri yüklerken bir hata oluştu');
     }
-  };
-
-  useEffect(() => { loadTenants(); }, []);
+  }, [tenantsQuery.error]);
 
   const handleToggle = async (tenantId, moduleKey, value) => {
     setSaving(true);
@@ -105,7 +106,10 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       const current = tenants.find((t) => (t.id || t._id) === tenantId);
       const updated = { ...(current?.modules || {}), [moduleKey]: value };
       const res = await axios.patch(`/admin/tenants/${tenantId}/modules`, { modules: updated });
-      setTenants((prev) => prev.map((t) => (t.id || t._id) === tenantId ? { ...t, modules: res.data.modules } : t));
+      queryClient.setQueryData(adminManagementQueries.tenants.queryKey, (current) => ({
+        ...current,
+        tenants: (current?.tenants || []).map((t) => (t.id || t._id) === tenantId ? { ...t, modules: res.data.modules } : t),
+      }));
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Modül güncellenemedi');
     } finally {
@@ -236,7 +240,11 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" aria-label="Süperadmin kayıt türü">
         <Button size="sm" className="pointer-events-none"><Building2 className="mr-1.5 h-4 w-4" />Oteller</Button>
         <Button asChild variant="ghost" size="sm" className="text-slate-600">
-          <Link to="/admin/agencies"><Handshake className="mr-1.5 h-4 w-4" />Acenteler</Link>
+          <Link
+            to="/admin/agencies"
+            onMouseEnter={() => preloadRoute('/admin/agencies')}
+            onFocus={() => preloadRoute('/admin/agencies')}
+          ><Handshake className="mr-1.5 h-4 w-4" />Acenteler</Link>
         </Button>
       </div>
       <PageHeader
@@ -248,8 +256,8 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
             <Button variant="outline" size="sm" onClick={() => setActiveView('users')} data-testid="view-all-users-btn">
               <UsersRound className="w-4 h-4 mr-1.5" aria-hidden="true" /> {_t('cm.pages_AdminTenants.tum_kullanicilar')}
             </Button>
-            <Button variant="outline" size="sm" onClick={loadTenants} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> {_t('cm.pages_AdminTenants.yenile')}
+            <Button variant="outline" size="sm" onClick={loadTenants} disabled={tenantsQuery.isFetching}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading || refreshing ? 'animate-spin' : ''}`} aria-hidden="true" /> {_t('cm.pages_AdminTenants.yenile')}
             </Button>
             <Button size="sm" onClick={() => setShowCreateModal(true)} data-testid="create-tenant-btn">
               <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> {_t('cm.pages_AdminTenants.yeni_otel_ekle')}

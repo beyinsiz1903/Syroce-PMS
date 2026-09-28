@@ -14,6 +14,7 @@ Mimari farklar (mevcut /api/b2b ile karşılaştırma):
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import hashlib
 import html
@@ -824,15 +825,19 @@ async def admin_create_agency(
 @router.get("/admin/agencies")
 async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
     sysdb = get_system_db()
-    docs = await sysdb.marketplace_agencies.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    contract_rows = await sysdb.agency_contracts.aggregate([
-        {"$match": {"status": "approved"}},
-        {"$group": {"_id": "$agency_id", "connected_hotels": {"$addToSet": "$tenant_id"}}},
-    ]).to_list(500)
-    booking_rows = await sysdb.marketplace_bookings.aggregate([
-        {"$match": {"status": {"$ne": "cancelled"}}},
-        {"$group": {"_id": "$agency_id", "booking_count": {"$sum": 1}, "gross_volume": {"$sum": "$total_amount"}, "platform_revenue": {"$sum": "$syroce_b2b_fee_amount"}}},
-    ]).to_list(500)
+    # These snapshots are independent. Awaiting them one by one multiplied
+    # database latency and made every Hotels <-> Agencies switch feel blocked.
+    docs, contract_rows, booking_rows = await asyncio.gather(
+        sysdb.marketplace_agencies.find({}, {"_id": 0}).sort("created_at", -1).to_list(500),
+        sysdb.agency_contracts.aggregate([
+            {"$match": {"status": "approved"}},
+            {"$group": {"_id": "$agency_id", "connected_hotels": {"$addToSet": "$tenant_id"}}},
+        ]).to_list(500),
+        sysdb.marketplace_bookings.aggregate([
+            {"$match": {"status": {"$ne": "cancelled"}}},
+            {"$group": {"_id": "$agency_id", "booking_count": {"$sum": 1}, "gross_volume": {"$sum": "$total_amount"}, "platform_revenue": {"$sum": "$syroce_b2b_fee_amount"}}},
+        ]).to_list(500),
+    )
     contract_stats = {row["_id"]: len(row.get("connected_hotels") or []) for row in contract_rows}
     booking_stats = {row["_id"]: row for row in booking_rows}
     for agency in docs:

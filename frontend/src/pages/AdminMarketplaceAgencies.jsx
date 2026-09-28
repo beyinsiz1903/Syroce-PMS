@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import {
   Building2, Handshake, KeyRound, Pencil, Plus, RefreshCw, Search,
   TrendingUp, WalletCards,
@@ -16,19 +17,20 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { adminManagementQueries } from '@/lib/adminManagementQueries';
+import { preloadRoute } from '@/routes/preload';
 
 const EMPTY_FORM = {
   name: '', contact_email: '', contact_phone: '', country: 'TR',
   default_commission_pct: '12', platform_fee_pct: '1',
 };
+const EMPTY_AGENCIES = [];
 
 const money = (value) => new Intl.NumberFormat('tr-TR', {
   style: 'currency', currency: 'TRY', maximumFractionDigits: 2,
 }).format(Number(value || 0));
 
 export default function AdminMarketplaceAgencies() {
-  const [agencies, setAgencies] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
@@ -36,20 +38,18 @@ export default function AdminMarketplaceAgencies() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [createdKey, setCreatedKey] = useState(null);
+  const agenciesQuery = useQuery(adminManagementQueries.agencies);
+  const agencies = agenciesQuery.data?.agencies ?? EMPTY_AGENCIES;
+  const loading = agenciesQuery.isLoading;
+  const refreshing = agenciesQuery.isFetching && !agenciesQuery.isLoading;
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get('/marketplace/v1/admin/agencies');
-      setAgencies(response.data?.agencies || []);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Acenteler yüklenemedi');
-    } finally {
-      setLoading(false);
+  const load = () => agenciesQuery.refetch();
+
+  useEffect(() => {
+    if (agenciesQuery.error) {
+      toast.error(agenciesQuery.error.response?.data?.detail || 'Acenteler yüklenemedi');
     }
-  };
-
-  useEffect(() => { load(); }, []);
+  }, [agenciesQuery.error]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('tr-TR');
@@ -115,7 +115,11 @@ export default function AdminMarketplaceAgencies() {
     <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
       <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" aria-label="Süperadmin kayıt türü">
         <Button asChild variant="ghost" size="sm" className="text-slate-600">
-          <Link to="/admin/tenants"><Building2 className="mr-1.5 h-4 w-4" />Oteller</Link>
+          <Link
+            to="/admin/tenants"
+            onMouseEnter={() => preloadRoute('/admin/tenants')}
+            onFocus={() => preloadRoute('/admin/tenants')}
+          ><Building2 className="mr-1.5 h-4 w-4" />Oteller</Link>
         </Button>
         <Button size="sm" className="pointer-events-none"><Handshake className="mr-1.5 h-4 w-4" />Acenteler</Button>
       </div>
@@ -125,8 +129,8 @@ export default function AdminMarketplaceAgencies() {
         title="Acente Yönetimi"
         subtitle="Acenteleri, otel bağlantılarını, işlem hacmini ve acentenin Syroce'a ödeyeceği hizmet bedelini tek yerden yönetin."
         actions={<>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Yenile
+          <Button variant="outline" size="sm" onClick={load} disabled={agenciesQuery.isFetching}>
+            <RefreshCw className={`mr-1.5 h-4 w-4 ${loading || refreshing ? 'animate-spin' : ''}`} />Yenile
           </Button>
           <Button size="sm" onClick={openCreate} data-testid="create-marketplace-agency">
             <Plus className="mr-1.5 h-4 w-4" />Yeni acente
