@@ -72,4 +72,19 @@ describe('ReservationSidebar quick panel', () => {
     expect(screen.getByText('Telefon bilgisi yok')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Ara/ })).not.toBeInTheDocument();
   });
+
+  it('shows a friendly agency name instead of the technical channel code', () => {
+    render(
+      <ReservationSidebar
+        booking={{ ...booking, channel: 'agodaycs5' }}
+        folio={null}
+        room={{ room_number: '201', room_type: 'Deluxe' }}
+        onClose={() => {}}
+        getStatusLabel={() => 'Onaylandı'}
+      />,
+    );
+
+    expect(screen.getByText('Agoda · 3 misafir')).toBeInTheDocument();
+    expect(screen.queryByText(/agodaycs5/i)).not.toBeInTheDocument();
+  });
 });

@@ -16,7 +16,7 @@ import {
   ArrowLeftRight, Pencil, Plus, CheckCircle2,
 } from 'lucide-react';
 
-import { API, fmtTL, fmtCurrency, fmtDate, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
+import { API, fmtTL, fmtCurrency, fmtDate, fmtDateTime, statusLabel, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
@@ -33,6 +33,7 @@ import { performCheckout } from '@/utils/offlineCheckout';
 import { useTranslation } from 'react-i18next';
 import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
 const STATUS_PILL = {
@@ -490,7 +491,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const activeMore = moreTabs.find(t => t.id === activeTab);
 
   const refLabel = bookingRef(booking);
-  const channelLabel = translateValue(booking?.source_channel || booking?.channel) || 'Doğrudan';
+  const channelLabel = bookingSourceLabel(booking);
   const guestName = guest?.name || booking?.guest_name || 'Misafir';
   const stayNights = Math.max(1, reservationNights(booking?.check_in, booking?.check_out));
   const headerDateRange = `${fmtDate(booking?.check_in)} — ${fmtDate(booking?.check_out)}`;

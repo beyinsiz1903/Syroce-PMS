@@ -17,6 +17,7 @@ import {
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { promptDialog } from '@/lib/dialogs';
 import CallButton from '@/components/contact-center/CallButton';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 export const normalizeGuestNotes = (value) => {
   if (value == null || value === '') return [];
@@ -76,11 +77,7 @@ const Guest360Dialog = ({
     vip: 'VIP',
   };
   const loyaltyLabel = (value) => loyaltyLabels[value] || loyaltyLabels.standard;
-  const formatChannel = (booking) => {
-    const channel = booking?.ota_channel || booking?.channel;
-    if (channel && typeof channel === 'object') return channel.name || channel.code || 'Doğrudan';
-    return channel || 'Doğrudan';
-  };
+  const formatChannel = bookingSourceLabel;
 
   useEffect(() => {
     if (!open || loadingGuest360 || initialSection !== 'history' || !guest360Data) return;

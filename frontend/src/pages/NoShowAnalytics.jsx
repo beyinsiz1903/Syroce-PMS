@@ -13,8 +13,10 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency());
+const channelName = (channel) => bookingSourceLabel({ channel });
 
 /* ─── Color maps ───────────────────────────────────────── */
 const CHANNEL_COLORS = {
@@ -86,7 +88,7 @@ const ChannelLossTab = ({ period }) => {
         <Card className="border-l-4 border-l-amber-500" data-testid="ch-worst-channel">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.en_kotu_kanal')}</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1 capitalize">{data.top3_worst?.[0]?.channel || '-'}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{data.top3_worst?.[0]?.channel ? channelName(data.top3_worst[0].channel) : '-'}</p>
             <p className="text-xs text-gray-400 mt-1">{data.top3_worst?.[0]?.total_loss?.toLocaleString(i18n.language)} {t('cm.pages_NoShowAnalytics.tl_kayip')}</p>
           </CardContent>
         </Card>
@@ -117,7 +119,7 @@ const ChannelLossTab = ({ period }) => {
                     <Badge className={`text-xs font-bold ${clr.bar} text-white`}>#{i + 1}</Badge>
                     <span className="text-xs text-gray-500">{ch.no_show_rate}% oran</span>
                   </div>
-                  <p className={`text-lg font-bold capitalize ${clr.text}`}>{ch.channel}</p>
+                  <p className={`text-lg font-bold ${clr.text}`}>{channelName(ch.channel)}</p>
                   <div className="mt-2 space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between"><span>No-show</span><span className="font-semibold">{ch.no_show_count}</span></div>
                     <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">-{money(ch.total_loss, ch.currency || data.currency)}</span></div>
@@ -154,7 +156,7 @@ const ChannelLossTab = ({ period }) => {
                     <td className="py-2.5 pr-3 capitalize font-medium">
                       <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full ${getChColor(ch.channel).bar}`} />
-                        {ch.channel}
+                        {channelName(ch.channel)}
                       </div>
                     </td>
                     <td className="py-2.5 pr-3 text-right font-semibold">{ch.no_show_count}</td>
@@ -406,7 +408,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                 const clr = getChColor(ch.channel);
                 return (
                   <div key={ch.channel} className={`rounded-lg border p-3 ${clr.light} min-w-[120px]`} data-testid={`ob-ch-${i}`}>
-                    <p className={`text-sm font-medium capitalize ${clr.text}`}>{ch.channel}</p>
+                    <p className={`text-sm font-medium ${clr.text}`}>{channelName(ch.channel)}</p>
                     <p className="text-xl font-bold text-gray-900 mt-1">{ch.count}</p>
                     <p className="text-[10px] text-gray-400">overbooking</p>
                   </div>
@@ -757,7 +759,7 @@ const PredictionTab = () => {
                           </span>
                         </td>
                         <td className="py-2.5 pr-3 font-medium text-gray-800">{p.guest_name}</td>
-                        <td className="py-2.5 pr-3 capitalize text-gray-600">{p.channel}</td>
+                        <td className="py-2.5 pr-3 text-gray-600">{channelName(p.channel)}</td>
                         <td className="py-2.5 pr-3 text-gray-600">{p.check_in}</td>
                         <td className="py-2.5 pr-3 text-gray-600">{p.room_type}</td>
                         <td className="py-2.5 pr-3 text-right font-medium">{money(p.total_amount, p.currency || data.currency)}</td>
@@ -792,7 +794,7 @@ const PredictionTab = () => {
               <div className="space-y-2">
                 {Object.entries(data.historical_rates.by_channel || {}).sort((a, b) => b[1] - a[1]).map(([ch, rate], i) => (
                   <div key={ch} className="flex items-center gap-3" data-testid={`hist-ch-${i}`}>
-                    <div className="w-16 text-xs font-medium text-gray-700 capitalize truncate">{ch}</div>
+                    <div className="w-20 text-xs font-medium text-gray-700 truncate">{channelName(ch)}</div>
                     <div className="flex-1 h-5 bg-gray-100 rounded relative overflow-hidden">
                       <div className={`h-full rounded ${getChColor(ch).bar}`} style={{ width: `${Math.min(rate * 3, 100)}%` }} />
                     </div>

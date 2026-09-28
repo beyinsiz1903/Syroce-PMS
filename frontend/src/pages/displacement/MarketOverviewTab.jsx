@@ -8,6 +8,7 @@ import { Building2, DollarSign, Percent, BarChart3 } from 'lucide-react';
 import { RISK_COLORS } from './helpers';
 import { LoadingState, EmptyState, MetricCard } from './shared';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 const MarketOverviewTab = ({
   user,
   tenant,
@@ -88,7 +89,7 @@ const MarketOverviewTab = ({
               opacity: 0.3 + ch.share_pct / 100 * 0.7
             }} />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate capitalize">{ch.channel}</p>
+                    <p className="font-medium text-sm truncate">{bookingSourceLabel({ channel: ch.channel })}</p>
                     <p className="text-xs text-gray-500">{ch.bookings} {t('displacement.bookings', 'bookings')} · {ch.share_pct}%</p>
                   </div>
                   <p className="text-sm font-semibold">{formatCurrency(ch.avg_rate, ch.currency || currency)}</p>
