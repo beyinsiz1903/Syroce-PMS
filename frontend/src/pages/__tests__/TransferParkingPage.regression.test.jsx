@@ -40,7 +40,7 @@ describe('Transfer and parking regressions', () => {
       if (url === '/transfer-parking/resources') return Promise.resolve({ data: { resources: [] } });
       if (url === '/transfer-parking/bookings') return Promise.resolve({ data: { bookings: [{
         id: 'transport-1', kind: 'transfer_vehicle', resource_name: 'QA Transfer',
-        room_number: '998', guest_name: 'QA', total: 500, status: 'reserved',
+        room_number: '998', guest_name: 'QA', total: 500, currency: 'USD', status: 'reserved',
         folio_charged: false, schedule: { pickup_at: '2026-11-11T00:00:00Z' },
       }] } });
       if (url === '/transfer-parking/late-charges') return Promise.resolve({ data: { late_charges: [] } });
@@ -52,6 +52,7 @@ describe('Transfer and parking regressions', () => {
     render(<MemoryRouter><TransferParkingPage /></MemoryRouter>);
 
     await screen.findByText('QA Transfer');
+    expect(screen.getByText(/\$500\.00/)).toBeInTheDocument();
     const row = screen.getByText('QA Transfer').closest('tr');
     fireEvent.click(row.querySelector('button'));
 

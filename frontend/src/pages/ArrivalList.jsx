@@ -14,6 +14,7 @@ import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const ArrivalList = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -377,7 +378,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                         </Button>
                       </div>
                     )}
-                    <p className="text-lg font-semibold">€{booking.total_amount}</p>
+                    <p className="text-lg font-semibold">{formatCurrency(booking.total_amount, booking.currency || tenant?.currency || cachedTenantCurrency())}</p>
                   </div>
                 </div>
               </CardContent>
