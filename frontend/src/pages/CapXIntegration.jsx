@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { toast } from "sonner";
 import { Network, CheckCircle2, XCircle, Send, Activity, RefreshCw, Link2, Copy } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 const isoDate = (offset = 0) => {
   const d = new Date();
@@ -19,6 +20,7 @@ const isoDate = (offset = 0) => {
 
 export default function CapXIntegration({ user, tenant, onLogout }) {
   const { t } = useTranslation();
+  const defaultCurrency = String(tenant?.currency || cachedTenantCurrency()).toUpperCase();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [pinging, setPinging] = useState(false);
@@ -36,7 +38,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
     available_count: 5,
     price_min: 2500,
     price_max: 3200,
-    currency: "TRY",
+    currency: defaultCurrency,
     auto_publish: true,
     pms_external_ref: `syroce-test-${Date.now()}`,
   });
@@ -50,7 +52,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
     check_in: isoDate(7),
     check_out: isoDate(14),
     amount: 3200,
-    currency: "TRY",
+    currency: defaultCurrency,
   });
   const [eventResult, setEventResult] = useState(null);
 
