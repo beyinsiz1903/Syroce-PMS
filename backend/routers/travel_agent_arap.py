@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
@@ -99,12 +100,57 @@ def _invalidate_arap(tenant_id: str):
 router = APIRouter(prefix="/api/agent-arap", tags=["travel-agent-arap"])
 
 
+def _currency_code(value: Any, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return code if len(code) == 3 and code.isalpha() else str(fallback or "TRY").upper()
+
+
+def _round_currency_map(values: dict[str, Any] | None) -> dict[str, float]:
+    return {_currency_code(currency): round(float(amount or 0), 2) for currency, amount in (values or {}).items() if abs(float(amount or 0)) > 0.000001}
+
+
+def _add_currency(target: dict[str, float], currency: Any, amount: Any, fallback: str = "TRY") -> None:
+    code = _currency_code(currency, fallback)
+    target[code] = target.get(code, 0.0) + float(amount or 0)
+
+
+def _sum_currency_maps(rows: list[dict], field: str) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for row in rows:
+        for currency, amount in (row.get(field) or {}).items():
+            _add_currency(totals, currency, amount)
+    return _round_currency_map(totals)
+
+
+def _single_currency_amount(values: dict[str, Any] | None) -> float:
+    """Legacy scalar compatibility without silently mixing currencies."""
+    rounded = _round_currency_map(values)
+    return next(iter(rounded.values()), 0.0) if len(rounded) == 1 else 0.0
+
+
+def _oldest_date(values: list[Any]) -> Any | None:
+    """Return the oldest parseable value even when legacy rows mix types."""
+    parsed: list[tuple[datetime, Any]] = []
+    for value in values:
+        if not value:
+            continue
+        try:
+            candidate = datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
+            if candidate.tzinfo is None:
+                candidate = candidate.replace(tzinfo=UTC)
+            parsed.append((candidate, value))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return min(parsed, key=lambda item: item[0])[1] if parsed else None
+
+
 class RecordPaymentRequest(BaseModel):
     agency_id: str
     amount: float = Field(..., gt=0)
     payment_method: str = "bank_transfer"
     reference: str = ""
     notes: str = ""
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
 
 
 class CreatePaymentPlanRequest(BaseModel):
@@ -113,6 +159,7 @@ class CreatePaymentPlanRequest(BaseModel):
     installments: int = Field(..., ge=2, le=24)
     start_date: str
     notes: str = ""
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
 
 
 class UpdatePaymentPlanInstallment(BaseModel):
@@ -134,6 +181,8 @@ async def _get_agency_ledger(
     tenant-scoped `db` handle'ı kullanılır.
     """
     _db = db_handle if db_handle is not None else db
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
+    tenant_currency = _currency_code(tenant_currency)
     match = {"tenant_id": tenant_id}
     if agency_id:
         match["id"] = agency_id
@@ -156,7 +205,10 @@ async def _get_agency_ledger(
         {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids}, "status": {"$nin": ["cancelled"]}}},
         {
             "$group": {
-                "_id": "$agency_id",
+                "_id": {
+                    "agency_id": "$agency_id",
+                    "currency": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}},
+                },
                 "total_revenue": {"$sum": {"$ifNull": ["$total_amount", 0]}},
                 "count": {"$sum": 1},
                 # Oldest unpaid: bekleyen status'lardaki en eski created_at
@@ -176,7 +228,10 @@ async def _get_agency_ledger(
         {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids}}},
         {
             "$group": {
-                "_id": "$agency_id",
+                "_id": {
+                    "agency_id": "$agency_id",
+                    "currency": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}},
+                },
                 "total_paid": {"$sum": {"$cond": [{"$eq": ["$type", "payment"]}, {"$ifNull": ["$amount", 0]}, 0]}},
                 "total_adjustments": {"$sum": {"$cond": [{"$eq": ["$type", "adjustment"]}, {"$ifNull": ["$amount", 0]}, 0]}},
                 "last_payment_date": {"$max": {"$cond": [{"$eq": ["$type", "payment"]}, "$created_at", None]}},
@@ -194,27 +249,39 @@ async def _get_agency_ledger(
         _db.agency_payment_plans.aggregate(plans_pipe).to_list(len(aids) + 10),
     )
 
-    book_by = {row["_id"]: row for row in bookings_agg}
-    txn_by = {row["_id"]: row for row in txns_agg}
+    book_by: dict[str, dict[str, dict]] = {}
+    for row in bookings_agg:
+        group = row.get("_id") or {}
+        book_by.setdefault(group.get("agency_id"), {})[_currency_code(group.get("currency"), tenant_currency)] = row
+    txn_by: dict[str, dict[str, dict]] = {}
+    for row in txns_agg:
+        group = row.get("_id") or {}
+        txn_by.setdefault(group.get("agency_id"), {})[_currency_code(group.get("currency"), tenant_currency)] = row
     plan_by = {row["_id"]: row for row in plans_agg}
 
     results = []
     now = datetime.now(UTC)
     for agency in agencies:
         aid = agency["id"]
-        bk = book_by.get(aid, {})
-        tx = txn_by.get(aid, {})
+        booking_currencies = book_by.get(aid, {})
+        transaction_currencies = txn_by.get(aid, {})
         pl = plan_by.get(aid, {})
 
-        total_bookings_revenue = bk.get("total_revenue", 0) or 0
         commission_rate = agency.get("commission_rate", 10) / 100
-        total_commission_owed = round(total_bookings_revenue * commission_rate, 2)
+        revenue_by_currency = {currency: float(row.get("total_revenue", 0) or 0) for currency, row in booking_currencies.items()}
+        commission_by_currency = {currency: round(amount * commission_rate, 2) for currency, amount in revenue_by_currency.items()}
+        paid_by_currency = {currency: float(row.get("total_paid", 0) or 0) for currency, row in transaction_currencies.items()}
+        adjustments_by_currency = {currency: float(row.get("total_adjustments", 0) or 0) for currency, row in transaction_currencies.items()}
+        balance_by_currency = {
+            currency: round(
+                commission_by_currency.get(currency, 0) - paid_by_currency.get(currency, 0) + adjustments_by_currency.get(currency, 0),
+                2,
+            )
+            for currency in set(commission_by_currency) | set(paid_by_currency) | set(adjustments_by_currency)
+        }
 
-        total_paid = tx.get("total_paid", 0) or 0
-        total_adjustments = tx.get("total_adjustments", 0) or 0
-        balance = round(total_commission_owed - total_paid + total_adjustments, 2)
-
-        oldest_unpaid = bk.get("oldest_pending_created_at")
+        oldest_candidates = [row.get("oldest_pending_created_at") for row in booking_currencies.values()]
+        oldest_unpaid = _oldest_date(oldest_candidates)
         days_outstanding = 0
         if oldest_unpaid:
             try:
@@ -239,17 +306,26 @@ async def _get_agency_ledger(
                 "contact_phone": agency.get("contact_phone", ""),
                 "commission_rate": agency.get("commission_rate", 10),
                 "status": agency.get("status", "active"),
-                "total_bookings": bk.get("count", 0) or 0,
-                "total_bookings_revenue": total_bookings_revenue,
-                "total_commission_owed": total_commission_owed,
-                "total_paid": round(total_paid, 2),
-                "total_adjustments": round(total_adjustments, 2),
-                "balance": balance,
-                "balance_type": "receivable" if balance >= 0 else "payable",
+                "currency": tenant_currency,
+                "total_bookings": sum(int(row.get("count", 0) or 0) for row in booking_currencies.values()),
+                "total_bookings_revenue": round(revenue_by_currency.get(tenant_currency, 0), 2),
+                "total_bookings_revenue_by_currency": _round_currency_map(revenue_by_currency),
+                "total_commission_owed": round(commission_by_currency.get(tenant_currency, 0), 2),
+                "total_commission_owed_by_currency": _round_currency_map(commission_by_currency),
+                "total_paid": round(paid_by_currency.get(tenant_currency, 0), 2),
+                "total_paid_by_currency": _round_currency_map(paid_by_currency),
+                "total_adjustments": round(adjustments_by_currency.get(tenant_currency, 0), 2),
+                "total_adjustments_by_currency": _round_currency_map(adjustments_by_currency),
+                "balance": round(balance_by_currency.get(tenant_currency, 0), 2),
+                "balance_by_currency": _round_currency_map(balance_by_currency),
+                "balance_type": "receivable" if balance_by_currency.get(tenant_currency, 0) >= 0 else "payable",
                 "days_outstanding": days_outstanding,
                 "oldest_unpaid_date": oldest_unpaid if isinstance(oldest_unpaid, str) else (oldest_unpaid.isoformat() if oldest_unpaid else None),
                 "active_payment_plans": active_plans_count,
-                "last_payment_date": (tx.get("last_payment_date").isoformat() if hasattr(tx.get("last_payment_date"), "isoformat") else tx.get("last_payment_date")),
+                "last_payment_date": max(
+                    (value.isoformat() if hasattr(value, "isoformat") else value for value in (row.get("last_payment_date") for row in transaction_currencies.values()) if value),
+                    default=None,
+                ),
             }
         )
 
@@ -263,25 +339,43 @@ async def get_summary(
     _perm=Depends(require_op("view_finance_reports")),  # v80 Bug DP: agency A/R aging
 ):
     ledger = await _get_agency_ledger(current_user.tenant_id)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    tenant_currency = _currency_code(tenant_currency)
 
-    total_receivable = sum(a["balance"] for a in ledger if a["balance"] > 0)
-    total_payable = abs(sum(a["balance"] for a in ledger if a["balance"] < 0))
-    total_commission = sum(a["total_commission_owed"] for a in ledger)
-    total_paid = sum(a["total_paid"] for a in ledger)
-    total_bookings_revenue = sum(a["total_bookings_revenue"] for a in ledger)
+    balance_totals = _sum_currency_maps(ledger, "balance_by_currency")
+    total_receivable_by_currency = {currency: round(sum(max(float(a.get("balance_by_currency", {}).get(currency, 0)), 0) for a in ledger), 2) for currency in balance_totals}
+    total_payable_by_currency = {currency: round(abs(sum(min(float(a.get("balance_by_currency", {}).get(currency, 0)), 0) for a in ledger)), 2) for currency in balance_totals}
+    total_commission_by_currency = _sum_currency_maps(ledger, "total_commission_owed_by_currency")
+    total_paid_by_currency = _sum_currency_maps(ledger, "total_paid_by_currency")
+    total_bookings_revenue_by_currency = _sum_currency_maps(ledger, "total_bookings_revenue_by_currency")
+    total_receivable = total_receivable_by_currency.get(tenant_currency, 0)
+    total_payable = total_payable_by_currency.get(tenant_currency, 0)
+    total_commission = total_commission_by_currency.get(tenant_currency, 0)
+    total_paid = total_paid_by_currency.get(tenant_currency, 0)
+    total_bookings_revenue = total_bookings_revenue_by_currency.get(tenant_currency, 0)
 
-    overdue_30 = sum(1 for a in ledger if a["days_outstanding"] > 30 and a["balance"] > 0)
-    overdue_60 = sum(1 for a in ledger if a["days_outstanding"] > 60 and a["balance"] > 0)
-    overdue_90 = sum(1 for a in ledger if a["days_outstanding"] > 90 and a["balance"] > 0)
+    def has_receivable(agency: dict) -> bool:
+        return any(float(value or 0) > 0 for value in agency.get("balance_by_currency", {}).values())
+
+    overdue_30 = sum(1 for a in ledger if a["days_outstanding"] > 30 and has_receivable(a))
+    overdue_60 = sum(1 for a in ledger if a["days_outstanding"] > 60 and has_receivable(a))
+    overdue_90 = sum(1 for a in ledger if a["days_outstanding"] > 90 and has_receivable(a))
 
     return {
         "total_agencies": len(ledger),
+        "currency": tenant_currency,
         "total_receivable": round(total_receivable, 2),
+        "total_receivable_by_currency": _round_currency_map(total_receivable_by_currency),
         "total_payable": round(total_payable, 2),
+        "total_payable_by_currency": _round_currency_map(total_payable_by_currency),
         "net_balance": round(total_receivable - total_payable, 2),
+        "net_balance_by_currency": _round_currency_map(balance_totals),
         "total_commission_earned": round(total_commission, 2),
+        "total_commission_earned_by_currency": total_commission_by_currency,
         "total_paid": round(total_paid, 2),
+        "total_paid_by_currency": total_paid_by_currency,
         "total_bookings_revenue": round(total_bookings_revenue, 2),
+        "total_bookings_revenue_by_currency": total_bookings_revenue_by_currency,
         "collection_rate": round((total_paid / total_commission * 100), 1) if total_commission > 0 else 0,
         "overdue_30_count": overdue_30,
         "overdue_60_count": overdue_60,
@@ -293,10 +387,12 @@ async def get_summary(
 @router.get("/aging")
 async def get_aging_report(current_user: User = Depends(get_current_user)):
     ledger = await _get_agency_ledger(current_user.tenant_id)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    tenant_currency = _currency_code(tenant_currency)
 
     buckets = {"current": [], "30_days": [], "60_days": [], "90_days": [], "over_90": []}
     for a in ledger:
-        if a["balance"] <= 0:
+        if not any(float(value or 0) > 0 for value in a.get("balance_by_currency", {}).values()):
             continue
         d = a["days_outstanding"]
         if d <= 30:
@@ -310,33 +406,24 @@ async def get_aging_report(current_user: User = Depends(get_current_user)):
         else:
             buckets["over_90"].append(a)
 
-    return {
-        "current": {
-            "count": len(buckets["current"]),
-            "total": round(sum(a["balance"] for a in buckets["current"]), 2),
-            "agencies": [{"agency_id": a["agency_id"], "agency_name": a["agency_name"], "balance": a["balance"]} for a in buckets["current"]],
-        },
-        "30_days": {
-            "count": len(buckets["30_days"]),
-            "total": round(sum(a["balance"] for a in buckets["30_days"]), 2),
-            "agencies": [{"agency_id": a["agency_id"], "agency_name": a["agency_name"], "balance": a["balance"]} for a in buckets["30_days"]],
-        },
-        "60_days": {
-            "count": len(buckets["60_days"]),
-            "total": round(sum(a["balance"] for a in buckets["60_days"]), 2),
-            "agencies": [{"agency_id": a["agency_id"], "agency_name": a["agency_name"], "balance": a["balance"]} for a in buckets["60_days"]],
-        },
-        "90_days": {
-            "count": len(buckets["90_days"]),
-            "total": round(sum(a["balance"] for a in buckets["90_days"]), 2),
-            "agencies": [{"agency_id": a["agency_id"], "agency_name": a["agency_name"], "balance": a["balance"]} for a in buckets["90_days"]],
-        },
-        "over_90": {
-            "count": len(buckets["over_90"]),
-            "total": round(sum(a["balance"] for a in buckets["over_90"]), 2),
-            "agencies": [{"agency_id": a["agency_id"], "agency_name": a["agency_name"], "balance": a["balance"]} for a in buckets["over_90"]],
-        },
-    }
+    response = {"currency": tenant_currency}
+    for label, agencies in buckets.items():
+        totals = _sum_currency_maps(agencies, "balance_by_currency")
+        response[label] = {
+            "count": len(agencies),
+            "total": round(totals.get(tenant_currency, 0), 2),
+            "totals_by_currency": totals,
+            "agencies": [
+                {
+                    "agency_id": agency["agency_id"],
+                    "agency_name": agency["agency_name"],
+                    "balance": agency["balance"],
+                    "balance_by_currency": agency.get("balance_by_currency", {}),
+                }
+                for agency in agencies
+            ],
+        }
+    return response
 
 
 @router.get("/chain/summary")
@@ -394,18 +481,29 @@ async def get_chain_summary(
 
     for tid, ledger in zip(tenant_ids, per_tenant_ledgers, strict=True):
         prop_name = name_map.get(tid, tid)
-        prop_recv = sum(a["balance"] for a in ledger if a["balance"] > 0)
-        prop_pay = abs(sum(a["balance"] for a in ledger if a["balance"] < 0))
+        prop_balance = _sum_currency_maps(ledger, "balance_by_currency")
+        prop_recv = {currency: round(sum(max(float(a.get("balance_by_currency", {}).get(currency, 0)), 0) for a in ledger), 2) for currency in prop_balance}
+        prop_pay = {currency: round(abs(sum(min(float(a.get("balance_by_currency", {}).get(currency, 0)), 0) for a in ledger)), 2) for currency in prop_balance}
+        prop_commission = _sum_currency_maps(ledger, "total_commission_owed_by_currency")
+        prop_paid = _sum_currency_maps(ledger, "total_paid_by_currency")
+        prop_revenue = _sum_currency_maps(ledger, "total_bookings_revenue_by_currency")
+        property_currencies = set(prop_balance) | set(prop_commission) | set(prop_paid) | set(prop_revenue)
         property_breakdown.append(
             {
                 "tenant_id": tid,
                 "property_name": prop_name,
                 "agency_count": len(ledger),
-                "total_receivable": round(prop_recv, 2),
-                "total_payable": round(prop_pay, 2),
-                "total_commission_owed": round(sum(a["total_commission_owed"] for a in ledger), 2),
-                "total_paid": round(sum(a["total_paid"] for a in ledger), 2),
-                "total_bookings_revenue": round(sum(a["total_bookings_revenue"] for a in ledger), 2),
+                "mixed_currency": len(property_currencies) > 1,
+                "total_receivable": _single_currency_amount(prop_recv),
+                "total_receivable_by_currency": _round_currency_map(prop_recv),
+                "total_payable": _single_currency_amount(prop_pay),
+                "total_payable_by_currency": _round_currency_map(prop_pay),
+                "total_commission_owed": _single_currency_amount(prop_commission),
+                "total_commission_owed_by_currency": prop_commission,
+                "total_paid": _single_currency_amount(prop_paid),
+                "total_paid_by_currency": prop_paid,
+                "total_bookings_revenue": _single_currency_amount(prop_revenue),
+                "total_bookings_revenue_by_currency": prop_revenue,
             }
         )
         for ag in ledger:
@@ -424,6 +522,11 @@ async def get_chain_summary(
                     "total_paid": 0.0,
                     "total_adjustments": 0.0,
                     "balance": 0.0,
+                    "total_bookings_revenue_by_currency": {},
+                    "total_commission_owed_by_currency": {},
+                    "total_paid_by_currency": {},
+                    "total_adjustments_by_currency": {},
+                    "balance_by_currency": {},
                     "max_days_outstanding": 0,
                     "properties": [],
                 },
@@ -434,12 +537,22 @@ async def get_chain_summary(
             slot["total_paid"] += ag["total_paid"]
             slot["total_adjustments"] += ag["total_adjustments"]
             slot["balance"] += ag["balance"]
+            for field in (
+                "total_bookings_revenue_by_currency",
+                "total_commission_owed_by_currency",
+                "total_paid_by_currency",
+                "total_adjustments_by_currency",
+                "balance_by_currency",
+            ):
+                for currency, amount in ag.get(field, {}).items():
+                    _add_currency(slot[field], currency, amount)
             slot["max_days_outstanding"] = max(slot["max_days_outstanding"], ag.get("days_outstanding", 0))
             slot["properties"].append(
                 {
                     "tenant_id": tid,
                     "property_name": prop_name,
                     "balance": ag["balance"],
+                    "balance_by_currency": ag.get("balance_by_currency", {}),
                     "days_outstanding": ag.get("days_outstanding", 0),
                 }
             )
@@ -450,33 +563,75 @@ async def get_chain_summary(
         slot["total_commission_owed"] = round(slot["total_commission_owed"], 2)
         slot["total_paid"] = round(slot["total_paid"], 2)
         slot["total_adjustments"] = round(slot["total_adjustments"], 2)
-        slot["balance"] = round(slot["balance"], 2)
+        for field in (
+            "total_bookings_revenue_by_currency",
+            "total_commission_owed_by_currency",
+            "total_paid_by_currency",
+            "total_adjustments_by_currency",
+            "balance_by_currency",
+        ):
+            slot[field] = _round_currency_map(slot[field])
+        slot["total_bookings_revenue"] = _single_currency_amount(slot["total_bookings_revenue_by_currency"])
+        slot["total_commission_owed"] = _single_currency_amount(slot["total_commission_owed_by_currency"])
+        slot["total_paid"] = _single_currency_amount(slot["total_paid_by_currency"])
+        slot["total_adjustments"] = _single_currency_amount(slot["total_adjustments_by_currency"])
+        slot["mixed_currency"] = len(slot["balance_by_currency"]) > 1
+        slot["balance"] = _single_currency_amount(slot["balance_by_currency"])
         slot["balance_type"] = "receivable" if slot["balance"] >= 0 else "payable"
         consolidated_agencies.append(slot)
 
-    consolidated_agencies.sort(key=lambda a: a["balance"], reverse=True)
+    consolidated_agencies.sort(
+        key=lambda a: sum(max(float(value or 0), 0) for value in a["balance_by_currency"].values()),
+        reverse=True,
+    )
 
-    total_receivable = sum(a["balance"] for a in consolidated_agencies if a["balance"] > 0)
-    total_payable = abs(sum(a["balance"] for a in consolidated_agencies if a["balance"] < 0))
-    total_commission = sum(a["total_commission_owed"] for a in consolidated_agencies)
-    total_paid = sum(a["total_paid"] for a in consolidated_agencies)
-    total_revenue = sum(a["total_bookings_revenue"] for a in consolidated_agencies)
+    balance_totals = _sum_currency_maps(consolidated_agencies, "balance_by_currency")
+    total_receivable = {
+        currency: round(
+            sum(max(float(a.get("balance_by_currency", {}).get(currency, 0)), 0) for a in consolidated_agencies),
+            2,
+        )
+        for currency in balance_totals
+    }
+    total_payable = {
+        currency: round(
+            abs(sum(min(float(a.get("balance_by_currency", {}).get(currency, 0)), 0) for a in consolidated_agencies)),
+            2,
+        )
+        for currency in balance_totals
+    }
+    total_commission = _sum_currency_maps(consolidated_agencies, "total_commission_owed_by_currency")
+    total_paid = _sum_currency_maps(consolidated_agencies, "total_paid_by_currency")
+    total_revenue = _sum_currency_maps(consolidated_agencies, "total_bookings_revenue_by_currency")
 
-    overdue_30 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 30 and a["balance"] > 0)
-    overdue_60 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 60 and a["balance"] > 0)
-    overdue_90 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 90 and a["balance"] > 0)
+    def _has_receivable(agency: dict) -> bool:
+        return any(float(value or 0) > 0 for value in agency.get("balance_by_currency", {}).values())
+
+    overdue_30 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 30 and _has_receivable(a))
+    overdue_60 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 60 and _has_receivable(a))
+    overdue_90 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 90 and _has_receivable(a))
+    currencies = set(balance_totals) | set(total_commission) | set(total_paid) | set(total_revenue)
+    collection_rates = {currency: round(total_paid.get(currency, 0) / commission * 100, 1) if commission > 0 else 0 for currency, commission in total_commission.items()}
 
     return {
         "scope": "chain" if len(tenant_ids) > 1 else "single_property",
         "total_properties": len(tenant_ids),
         "total_unique_agencies": len(consolidated_agencies),
-        "total_receivable": round(total_receivable, 2),
-        "total_payable": round(total_payable, 2),
-        "net_balance": round(total_receivable - total_payable, 2),
-        "total_commission_earned": round(total_commission, 2),
-        "total_paid": round(total_paid, 2),
-        "total_bookings_revenue": round(total_revenue, 2),
-        "collection_rate": round((total_paid / total_commission * 100), 1) if total_commission > 0 else 0,
+        "mixed_currency": len(currencies) > 1,
+        "total_receivable": _single_currency_amount(total_receivable),
+        "total_receivable_by_currency": _round_currency_map(total_receivable),
+        "total_payable": _single_currency_amount(total_payable),
+        "total_payable_by_currency": _round_currency_map(total_payable),
+        "net_balance": _single_currency_amount(balance_totals),
+        "net_balance_by_currency": balance_totals,
+        "total_commission_earned": _single_currency_amount(total_commission),
+        "total_commission_earned_by_currency": total_commission,
+        "total_paid": _single_currency_amount(total_paid),
+        "total_paid_by_currency": total_paid,
+        "total_bookings_revenue": _single_currency_amount(total_revenue),
+        "total_bookings_revenue_by_currency": total_revenue,
+        "collection_rate": _single_currency_amount(collection_rates),
+        "collection_rate_by_currency": collection_rates,
         "overdue_30_count": overdue_30,
         "overdue_60_count": overdue_60,
         "overdue_90_count": overdue_90,
@@ -504,12 +659,15 @@ async def get_chain_aging_report(
     for tid, ledger in zip(tenant_ids, per_tenant_ledgers, strict=True):
         prop_name = name_map.get(tid, tid)
         for a in ledger:
-            if a["balance"] <= 0:
+            positive_balances = {currency: float(amount or 0) for currency, amount in a.get("balance_by_currency", {}).items() if float(amount or 0) > 0}
+            if not positive_balances:
                 continue
             entry = {
                 "agency_id": a["agency_id"],
                 "agency_name": a["agency_name"],
-                "balance": a["balance"],
+                "balance": _single_currency_amount(positive_balances),
+                "balance_by_currency": _round_currency_map(positive_balances),
+                "mixed_currency": len(positive_balances) > 1,
                 "tenant_id": tid,
                 "property_name": prop_name,
                 "days_outstanding": a["days_outstanding"],
@@ -526,18 +684,20 @@ async def get_chain_aging_report(
             else:
                 buckets["over_90"].append(entry)
 
-    return {
+    response = {
         "scope": "chain" if len(tenant_ids) > 1 else "single_property",
         "total_properties": len(tenant_ids),
-        **{
-            label: {
-                "count": len(items),
-                "total": round(sum(x["balance"] for x in items), 2),
-                "agencies": items,
-            }
-            for label, items in buckets.items()
-        },
     }
+    for label, items in buckets.items():
+        totals = _sum_currency_maps(items, "balance_by_currency")
+        response[label] = {
+            "count": len(items),
+            "total": _single_currency_amount(totals),
+            "totals_by_currency": totals,
+            "mixed_currency": len(totals) > 1,
+            "agencies": items,
+        }
+    return response
 
 
 @router.get("/transactions/{agency_id}")
@@ -548,6 +708,8 @@ async def get_agency_transactions(
     agency = await db.agencies.find_one({"tenant_id": current_user.tenant_id, "id": agency_id})
     if not agency:
         raise HTTPException(status_code=404, detail="Agency not found")
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    tenant_currency = _currency_code(tenant_currency)
 
     txns = (
         await db.agency_transactions.find(
@@ -559,11 +721,12 @@ async def get_agency_transactions(
 
     for t in txns:
         t.pop("_id", None)
+        t["currency"] = _currency_code(t.get("currency"), tenant_currency)
 
     bookings = (
         await db.bookings.find(
             {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
-            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "status": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "currency": 1, "status": 1, "created_at": 1},
         )
         .sort("created_at", -1)
         .to_list(500)
@@ -582,6 +745,7 @@ async def get_agency_transactions(
                 "check_out": b.get("check_out", ""),
                 "booking_amount": b.get("total_amount", 0),
                 "amount": round(b.get("total_amount", 0) * commission_rate, 2),
+                "currency": _currency_code(b.get("currency"), tenant_currency),
                 "created_at": b.get("created_at", ""),
             }
         )
@@ -604,6 +768,8 @@ async def record_payment(
     agency = await db.agencies.find_one({"tenant_id": current_user.tenant_id, "id": req.agency_id})
     if not agency:
         raise HTTPException(status_code=404, detail="Agency not found")
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _currency_code(req.currency, tenant_currency)
 
     txn = {
         "id": str(uuid.uuid4()),
@@ -611,6 +777,7 @@ async def record_payment(
         "agency_id": req.agency_id,
         "type": "payment",
         "amount": req.amount,
+        "currency": currency,
         "payment_method": req.payment_method,
         "reference": req.reference,
         "notes": req.notes,
@@ -628,6 +795,8 @@ async def list_payment_plans(
     agency_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    tenant_currency = _currency_code(tenant_currency)
     match: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if agency_id:
         match["agency_id"] = agency_id
@@ -635,6 +804,7 @@ async def list_payment_plans(
     plans = await db.agency_payment_plans.find(match).sort("created_at", -1).to_list(200)
     for p in plans:
         p.pop("_id", None)
+        p["currency"] = _currency_code(p.get("currency"), tenant_currency)
 
     return plans
 
@@ -648,6 +818,8 @@ async def create_payment_plan(
     agency = await db.agencies.find_one({"tenant_id": current_user.tenant_id, "id": req.agency_id})
     if not agency:
         raise HTTPException(status_code=404, detail="Agency not found")
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _currency_code(req.currency, tenant_currency)
 
     try:
         start = datetime.fromisoformat(req.start_date)
@@ -676,6 +848,7 @@ async def create_payment_plan(
         "agency_id": req.agency_id,
         "agency_name": agency.get("name", ""),
         "total_amount": req.total_amount,
+        "currency": currency,
         "installment_count": req.installments,
         "installments": installments,
         "status": "active",
@@ -723,12 +896,14 @@ async def update_installment(
     )
 
     if req.paid and not was_already_paid:
+        tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
         txn = {
             "id": str(uuid.uuid4()),
             "tenant_id": current_user.tenant_id,
             "agency_id": plan["agency_id"],
             "type": "payment",
             "amount": installments[req.installment_index]["amount"],
+            "currency": _currency_code(plan.get("currency"), tenant_currency),
             "payment_method": "payment_plan",
             "reference": req.payment_reference or f"Plan {req.plan_id[:8]} - Inst #{req.installment_index + 1}",
             "notes": f"Payment plan installment #{req.installment_index + 1}",
@@ -763,7 +938,7 @@ async def get_agency_statement(
     bookings = (
         await db.bookings.find(
             {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
-            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "currency": 1, "created_at": 1},
         )
         .sort("created_at", 1)
         .to_list(1000)
@@ -782,6 +957,7 @@ async def get_agency_statement(
                 "description": f"Commission: {b.get('guest_name', 'Guest')} ({b.get('check_in', '')} - {b.get('check_out', '')})",
                 "debit": commission,
                 "credit": 0,
+                "currency": _currency_code(b.get("currency"), agency_data.get("currency", "TRY")),
                 "type": "commission",
                 "booking_id": b.get("id", ""),
             }
@@ -797,6 +973,7 @@ async def get_agency_statement(
                     "description": f"Payment: {t.get('payment_method', '')} - {t.get('reference', '')}",
                     "debit": 0,
                     "credit": t.get("amount", 0),
+                    "currency": _currency_code(t.get("currency"), agency_data.get("currency", "TRY")),
                     "type": "payment",
                     "reference": t.get("reference", ""),
                 }
@@ -809,6 +986,7 @@ async def get_agency_statement(
                     "description": f"Adjustment: {t.get('notes', '')}",
                     "debit": t.get("amount", 0) if t.get("amount", 0) > 0 else 0,
                     "credit": abs(t.get("amount", 0)) if t.get("amount", 0) < 0 else 0,
+                    "currency": _currency_code(t.get("currency"), agency_data.get("currency", "TRY")),
                     "type": "adjustment",
                 }
             )
@@ -816,10 +994,11 @@ async def get_agency_statement(
     raw_lines.sort(key=lambda x: x.get("sort_key", ""))
 
     statement_lines = []
-    running_balance = 0
+    running_balances: dict[str, float] = {}
     for line in raw_lines:
-        running_balance += line.get("debit", 0) - line.get("credit", 0)
-        line["balance"] = round(running_balance, 2)
+        currency = _currency_code(line.get("currency"), agency_data.get("currency", "TRY"))
+        running_balances[currency] = running_balances.get(currency, 0) + line.get("debit", 0) - line.get("credit", 0)
+        line["balance"] = round(running_balances[currency], 2)
         line.pop("sort_key", None)
         statement_lines.append(line)
 
