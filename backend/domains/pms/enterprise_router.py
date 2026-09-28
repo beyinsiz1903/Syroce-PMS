@@ -300,9 +300,15 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
                 {"payment_date": {"$gte": today_start[:10], "$lt": tomorrow_start[:10]}},
             ],
         },
-        {"_id": 0, "amount": 1, "total": 1},
+        {"_id": 0, "amount": 1, "total": 1, "currency": 1},
     ).to_list(10000)
-    revenue = sum((_safe_decimal(p.get("amount", p.get("total", 0))) for p in payments), Decimal("0"))
+    settings = await sys_db.hotel_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "currency": 1})
+    property_currency = str((settings or {}).get("currency") or tenant.get("currency") or "TRY").upper()
+    revenue_by_currency: dict[str, Decimal] = {}
+    for payment in payments:
+        currency = str(payment.get("currency") or property_currency).upper()
+        revenue_by_currency[currency] = revenue_by_currency.get(currency, Decimal("0")) + _safe_decimal(payment.get("amount", payment.get("total", 0)))
+    revenue = revenue_by_currency.get(property_currency, Decimal("0"))
     provider = tenant.get("channel_manager_provider")
     connection = None
     if provider:
@@ -327,8 +333,14 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
         "occupancy_pct": occupancy,
         "occupancy_rate": occupancy,
         "today_revenue": float(revenue.quantize(Decimal("0.01"))),
+        "today_revenue_by_currency": {currency: float(amount.quantize(Decimal("0.01"))) for currency, amount in revenue_by_currency.items()},
+        "currency": property_currency,
         "revenue_mtd": float(revenue.quantize(Decimal("0.01"))),
         "adr": float((revenue / occupied_rooms).quantize(Decimal("0.01"))) if occupied_rooms else 0.0,
+        "adr_by_currency": {
+            currency: float((amount / occupied_rooms).quantize(Decimal("0.01"))) if occupied_rooms else 0.0
+            for currency, amount in revenue_by_currency.items()
+        },
         "total_guests": total_guests,
         "is_headquarters": bool(tenant.get("is_chain_headquarters")),
         "integrations": {
@@ -381,7 +393,11 @@ async def get_multi_property_dashboard(property_id: str | None = None, current_u
     properties = [await _chain_property_metrics(sys_db, member, today.isoformat(), tomorrow.isoformat()) for member in members]
     total_rooms = sum(p["total_rooms"] for p in properties)
     occupied_rooms = sum(p["occupied_rooms"] for p in properties)
-    total_revenue = round(sum(p["today_revenue"] for p in properties), 2)
+    total_revenue_by_currency: dict[str, float] = {}
+    for prop in properties:
+        for currency, amount in prop["today_revenue_by_currency"].items():
+            total_revenue_by_currency[currency] = round(total_revenue_by_currency.get(currency, 0.0) + float(amount), 2)
+    total_revenue = round(sum(total_revenue_by_currency.values()), 2)
     total_guests = sum(p["total_guests"] for p in properties)
     avg_occupancy = round((occupied_rooms / total_rooms * 100) if total_rooms else 0, 1)
     summary = {
@@ -390,6 +406,7 @@ async def get_multi_property_dashboard(property_id: str | None = None, current_u
         "occupied_rooms": occupied_rooms,
         "avg_occupancy": avg_occupancy,
         "total_revenue": total_revenue,
+        "total_revenue_by_currency": total_revenue_by_currency,
         "total_guests": total_guests,
     }
     return {

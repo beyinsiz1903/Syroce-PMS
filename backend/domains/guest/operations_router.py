@@ -17,6 +17,7 @@ from core.security import (
     get_current_user,
     security,
 )
+from core.tenant_currency import get_tenant_currency
 from models.enums import UserRole
 from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomService, RoomServiceCreate, User
 from modules.guest_journey import feedback_reporting_service as feedback_report
@@ -913,8 +914,16 @@ async def refresh_digital_key(booking_id: str, current_user: User = Depends(get_
 @router.get("/guest/upsell-offers/{booking_id}")
 async def get_upsell_offers_v2(booking_id: str, current_user: User = Depends(get_current_user)):
     """Get personalized upsell offers for guest"""
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "currency": 1},
+    )
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    offer_currency = str((booking or {}).get("currency") or tenant_currency).upper()
     # Get AI predictions
     predictions = await db.ai_upsell_predictions.find({"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("confidence", -1).limit(10).to_list(10)
+    for prediction in predictions:
+        prediction["currency"] = str(prediction.get("currency") or offer_currency).upper()
 
     # Get already purchased items — Bug DZ: tenant scoping
     purchased = await db.purchased_upsells.find({"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
@@ -939,13 +948,36 @@ async def purchase_upsell(booking_id: str, purchase_data: dict, current_user: Us
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
+    offer_id = purchase_data.get("offer_id")
+    offer = await db.upsell_products.find_one(
+        {"id": offer_id, "tenant_id": current_user.tenant_id, "is_active": {"$ne": False}},
+        {"_id": 0},
+    )
+    if not offer:
+        offer = await db.ai_upsell_predictions.find_one(
+            {"id": offer_id, "booking_id": booking_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+    if not offer:
+        raise HTTPException(status_code=404, detail="Upsell offer not found")
+    try:
+        amount = float(offer.get("price", offer.get("amount")))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Upsell offer price is invalid")
+    if amount < 0:
+        raise HTTPException(status_code=422, detail="Upsell offer price is invalid")
+    amount = round(amount, 2)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = str(offer.get("currency") or booking.get("currency") or tenant_currency).upper()
+
     purchase = {
         "id": str(uuid.uuid4()),
         "tenant_id": booking.get("tenant_id"),
         "booking_id": booking_id,
-        "offer_id": purchase_data.get("offer_id"),
-        "offer_name": purchase_data.get("offer_name", "Upsell"),
-        "amount": purchase_data.get("price", 0),
+        "offer_id": offer_id,
+        "offer_name": offer.get("name") or offer.get("title") or purchase_data.get("offer_name", "Upsell"),
+        "amount": amount,
+        "currency": currency,
         "purchased_at": datetime.now(UTC).isoformat(),
         "status": "confirmed",
     }
@@ -960,10 +992,11 @@ async def purchase_upsell(booking_id: str, purchase_data: dict, current_user: Us
             "tenant_id": current_user.tenant_id,
             "folio_id": folio["id"],
             "charge_type": "upsell",
-            "description": f"Upsell: {purchase_data.get('offer_type')}",
-            "amount": purchase_data.get("amount"),
+            "description": f"Upsell: {offer.get('name') or offer.get('title') or purchase_data.get('offer_type')}",
+            "amount": amount,
             "quantity": 1,
-            "total": purchase_data.get("amount"),
+            "total": amount,
+            "currency": currency,
             "posted_at": datetime.now(UTC).isoformat(),
             "voided": False,
         }
