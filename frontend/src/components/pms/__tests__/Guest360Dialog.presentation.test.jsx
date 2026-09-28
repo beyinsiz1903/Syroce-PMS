@@ -22,7 +22,7 @@ import Guest360Dialog from '@/components/pms/Guest360Dialog';
 afterEach(() => cleanup());
 
 describe('Guest360Dialog sunum tutarlılığı', () => {
-  it('Türkçe başlıkları ve TRY biçiminde finansal değerleri gösterir', () => {
+  it('Türkçe başlıkları ve API para biriminde finansal değerleri gösterir', () => {
     render(
       <Guest360Dialog
         open
@@ -33,7 +33,7 @@ describe('Guest360Dialog sunum tutarlılığı', () => {
         guest360Data={{
           guest: { id: 'guest-1', name: 'Test Misafir', loyalty_tier: 'standard' },
           profile: { loyalty_status: 'standard', loyalty_points: 250 },
-          stats: { total_stays: 2, total_nights: 4, lifetime_value: 12500, average_adr: 3125 },
+          stats: { currency: 'TRY', total_stays: 2, total_nights: 4, lifetime_value: 12500, average_adr: 3125 },
           stay_history: [],
         }}
       />
@@ -46,6 +46,36 @@ describe('Guest360Dialog sunum tutarlılığı', () => {
     expect(screen.getByText(/₺.*3\.125|3\.125.*₺/)).toBeInTheDocument();
     expect(screen.queryByText(/Guest 360° Profile/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/\$12500/)).not.toBeInTheDocument();
+  });
+
+  it('karma dövizli geçmişi tek para biriminde toplamak yerine ayrı gösterir', () => {
+    render(
+      <Guest360Dialog
+        open
+        onClose={vi.fn()}
+        selectedGuest360="guest-fx"
+        loadGuest360={vi.fn()}
+        loadingGuest360={false}
+        guest360Data={{
+          guest: { id: 'guest-fx', name: 'Dövizli Misafir' },
+          profile: { loyalty_status: 'standard' },
+          stats: {
+            currency: 'EUR',
+            total_stays: 2,
+            total_nights: 3,
+            lifetime_value: 300,
+            average_adr: 150,
+            lifetime_value_by_currency: { EUR: 300, USD: 200 },
+            average_adr_by_currency: { EUR: 150, USD: 200 },
+          },
+          stay_history: [],
+        }}
+      />
+    );
+
+    expect(screen.getAllByText(/300,00\s*€/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\$200\.00/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/500,00\s*€/)).not.toBeInTheDocument();
   });
 
   it('yükleme durumunu kullanıcı dostu Türkçe metinle gösterir', () => {

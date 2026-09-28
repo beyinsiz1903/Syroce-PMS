@@ -5,6 +5,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
@@ -42,6 +43,11 @@ _VALID_CONCIERGE_TYPES = {
 }
 _VALID_CONCIERGE_STATUSES = {"pending", "in_progress", "completed", "cancelled", "confirmed"}
 _VALID_PRIORITIES = {"normal", "high", "vip"}
+
+
+def _normalize_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return "TRY" if code == "TL" else code[:8]
 
 
 async def _lookup_active_booking_for_room(tenant_id: str, room_number: str) -> dict | None:
@@ -124,8 +130,10 @@ async def get_concierge_requests(
         db.concierge_requests.count_documents(query),
         _agg(),
     )
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     for d in docs:
         d["id"] = str(d.pop("_id"))
+        d["currency"] = _normalize_currency(d.get("currency"), tenant_currency)
     counts = {"total": total, "pending": 0, "in_progress": 0, "completed": 0, "cancelled": 0}
     # Aggregate başarısızsa count_documents'tan gelen `total`'ı koru (regression guard).
     if agg_rows is not _AGG_FAIL:
@@ -159,7 +167,8 @@ async def create_concierge_request(
     amount = _safe_float(body.get("amount", 0), 0.0)
     if amount < 0:
         raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
-    currency = (body.get("currency") or "TRY").upper()[:8] or "TRY"
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _normalize_currency(body.get("currency"), tenant_currency)
     charge_to_folio = bool(body.get("charge_to_folio") or False)
 
     # Cross-check active booking for the room (auto-fill missing guest/booking/folio)
@@ -226,6 +235,8 @@ async def _post_charge_to_folio(tenant_id: str, request_doc: dict, user_email: s
     try:
         from domains.pms.folio.services.folio_service import FolioService
 
+        tenant_currency, _ = await get_tenant_currency(tenant_id)
+
         type_label = (request_doc.get("type") or "other").replace("_", " ").title()
         details = request_doc.get("details") or ""
         description = f"Concierge — {type_label}"
@@ -236,7 +247,7 @@ async def _post_charge_to_folio(tenant_id: str, request_doc: dict, user_email: s
             folio_id,
             {
                 "amount": amount,
-                "currency": request_doc.get("currency") or "TRY",
+                "currency": _normalize_currency(request_doc.get("currency"), tenant_currency),
                 "description": description,
                 "category": "concierge",
                 "source": "concierge_request",
@@ -285,7 +296,8 @@ async def update_concierge_request(
             if value < 0:
                 raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
         elif field == "currency":
-            value = (value or "TRY").upper()[:8] or "TRY"
+            tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+            value = _normalize_currency(value, tenant_currency)
         elif field == "charge_to_folio":
             value = bool(value)
         update_set[field] = value

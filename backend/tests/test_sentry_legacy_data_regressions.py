@@ -28,14 +28,12 @@ async def test_connection_status_normalizes_string_and_naive_datetimes(monkeypat
         AsyncMock(return_value=SimpleNamespace(tenant_id="tenant-a")),
     )
     monkeypatch.setattr(
-        security_mobile.db,
-        "pos_transactions",
-        SimpleNamespace(find_one=AsyncMock(return_value={"created_at": "2026-08-14T22:30:00Z"})),
-    )
-    monkeypatch.setattr(
-        security_mobile.db,
-        "channel_manager_syncs",
-        SimpleNamespace(find_one=AsyncMock(return_value={"sync_timestamp": "2026-08-14T22:30:00"})),
+        security_mobile,
+        "db",
+        SimpleNamespace(
+            pos_transactions=SimpleNamespace(find_one=AsyncMock(return_value={"created_at": "2026-08-14T22:30:00Z"})),
+            channel_manager_syncs=SimpleNamespace(find_one=AsyncMock(return_value={"sync_timestamp": "2026-08-14T22:30:00"})),
+        ),
     )
 
     result = await security_mobile.get_connection_status_mobile(credentials=object())
@@ -55,7 +53,7 @@ async def test_portfolio_conversion_accepts_structured_source(monkeypatch):
             {"source": {"unexpected": {"nested": True}}, "status": "confirmed"},
         ]
     )
-    monkeypatch.setattr(revenue_ml.db, "bookings", bookings)
+    monkeypatch.setattr(revenue_ml, "db", SimpleNamespace(bookings=bookings))
 
     result = await revenue_ml.BookingProbabilityModel().get_portfolio_conversion_rates("tenant-a")
 
@@ -73,7 +71,7 @@ async def test_cancellation_report_accepts_mixed_timezone_filters(monkeypatch):
     )
     bookings = MagicMock()
     bookings.find.return_value = _cursor([])
-    monkeypatch.setattr(revenue_mobile.db, "bookings", bookings)
+    monkeypatch.setattr(revenue_mobile, "db", SimpleNamespace(bookings=bookings))
 
     result = await revenue_mobile.get_cancellation_report_mobile(
         start_date="2026-08-01",
@@ -87,11 +85,7 @@ async def test_cancellation_report_accepts_mixed_timezone_filters(monkeypatch):
 @pytest.mark.asyncio
 async def test_guest_360_handles_legacy_dates_source_and_profile_race(monkeypatch):
     monkeypatch.setattr("security.encrypted_lookup.decrypt_guest_doc", lambda doc: doc)
-    monkeypatch.setattr(
-        crm_guest.db,
-        "guests",
-        SimpleNamespace(find_one=AsyncMock(return_value={"id": "guest-a", "name": "Test Guest"})),
-    )
+    guests = SimpleNamespace(find_one=AsyncMock(return_value={"id": "guest-a", "name": "Test Guest"}))
     bookings = MagicMock()
     bookings.find.return_value = _cursor(
         [
@@ -105,25 +99,26 @@ async def test_guest_360_handles_legacy_dates_source_and_profile_race(monkeypatc
             {"check_in": "invalid", "check_out": None},
         ]
     )
-    monkeypatch.setattr(crm_guest.db, "bookings", bookings)
-    monkeypatch.setattr(
-        crm_guest.db,
-        "guest_preferences",
-        SimpleNamespace(find_one=AsyncMock(return_value=None)),
-    )
-    monkeypatch.setattr(
-        crm_guest.db,
-        "guest_behavior",
-        SimpleNamespace(find_one=AsyncMock(return_value=None)),
-    )
+    guest_preferences = SimpleNamespace(find_one=AsyncMock(return_value=None))
+    guest_behavior = SimpleNamespace(find_one=AsyncMock(return_value=None))
     guest_profiles = SimpleNamespace(
         find_one=AsyncMock(side_effect=[None, {"id": "profile-a", "guest_id": "guest-a"}]),
         update_one=AsyncMock(),
     )
-    monkeypatch.setattr(crm_guest.db, "guest_profiles", guest_profiles)
     upsells = MagicMock()
     upsells.find.return_value = _cursor([])
-    monkeypatch.setattr(crm_guest.db, "upsell_offers", upsells)
+    monkeypatch.setattr(
+        crm_guest,
+        "db",
+        SimpleNamespace(
+            guests=guests,
+            bookings=bookings,
+            guest_preferences=guest_preferences,
+            guest_behavior=guest_behavior,
+            guest_profiles=guest_profiles,
+            upsell_offers=upsells,
+        ),
+    )
 
     result = await crm_guest.get_guest_360(
         guest_id="guest-a",
@@ -138,35 +133,91 @@ async def test_guest_360_handles_legacy_dates_source_and_profile_race(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_guest_360_keeps_mixed_currency_value_and_adr_separate(monkeypatch):
+    monkeypatch.setattr("security.encrypted_lookup.decrypt_guest_doc", lambda doc: doc)
+    monkeypatch.setattr(crm_guest, "get_tenant_currency", AsyncMock(return_value=("EUR", "€")))
+    guests = SimpleNamespace(find_one=AsyncMock(return_value={"id": "guest-fx", "name": "FX Guest"}))
+    bookings = MagicMock()
+    bookings.find.return_value = _cursor(
+        [
+            {
+                "status": "checked_out",
+                "check_in": "2026-08-10",
+                "check_out": "2026-08-12",
+                "total_amount": "300",
+                "currency": "EUR",
+            },
+            {
+                "status": "confirmed",
+                "check_in": "2026-09-01",
+                "check_out": "2026-09-02",
+                "total_amount": "200",
+                "currency": "USD",
+            },
+        ]
+    )
+    guest_preferences = SimpleNamespace(find_one=AsyncMock(return_value=None))
+    guest_behavior = SimpleNamespace(find_one=AsyncMock(return_value=None))
+    guest_profiles = SimpleNamespace(find_one=AsyncMock(return_value={"id": "profile-fx"}))
+    upsells = MagicMock()
+    upsells.find.return_value = _cursor([])
+    monkeypatch.setattr(
+        crm_guest,
+        "db",
+        SimpleNamespace(
+            guests=guests,
+            bookings=bookings,
+            guest_preferences=guest_preferences,
+            guest_behavior=guest_behavior,
+            guest_profiles=guest_profiles,
+            upsell_offers=upsells,
+        ),
+    )
+
+    result = await crm_guest.get_guest_360(
+        guest_id="guest-fx",
+        current_user=SimpleNamespace(tenant_id="tenant-a"),
+    )
+
+    assert result["stats"]["currency"] == "EUR"
+    assert result["stats"]["lifetime_value"] == 300.0
+    assert result["stats"]["lifetime_value_by_currency"] == {"EUR": 300.0, "USD": 200.0}
+    assert result["stats"]["average_adr_by_currency"] == {"EUR": 150.0, "USD": 200.0}
+    assert [booking["currency"] for booking in result["stay_history"]] == ["EUR", "USD"]
+
+
+@pytest.mark.asyncio
 async def test_guest_360_normalizes_legacy_scalar_notes_and_tags(monkeypatch):
     monkeypatch.setattr("security.encrypted_lookup.decrypt_guest_doc", lambda doc: doc)
-    monkeypatch.setattr(
-        crm_guest.db,
-        "guests",
-        SimpleNamespace(
-            find_one=AsyncMock(
-                return_value={
-                    "id": "guest-legacy",
-                    "name": "Legacy Guest",
-                    "notes": "Sessiz oda tercih ediyor",
-                    "tags": "VIP",
-                }
-            )
-        ),
+    guests = SimpleNamespace(
+        find_one=AsyncMock(
+            return_value={
+                "id": "guest-legacy",
+                "name": "Legacy Guest",
+                "notes": "Sessiz oda tercih ediyor",
+                "tags": "VIP",
+            }
+        )
     )
     bookings = MagicMock()
     bookings.find.return_value = _cursor([])
-    monkeypatch.setattr(crm_guest.db, "bookings", bookings)
-    monkeypatch.setattr(crm_guest.db, "guest_preferences", SimpleNamespace(find_one=AsyncMock(return_value=None)))
-    monkeypatch.setattr(crm_guest.db, "guest_behavior", SimpleNamespace(find_one=AsyncMock(return_value=None)))
-    monkeypatch.setattr(
-        crm_guest.db,
-        "guest_profiles",
-        SimpleNamespace(find_one=AsyncMock(return_value={"id": "profile-legacy"})),
-    )
+    guest_preferences = SimpleNamespace(find_one=AsyncMock(return_value=None))
+    guest_behavior = SimpleNamespace(find_one=AsyncMock(return_value=None))
+    guest_profiles = SimpleNamespace(find_one=AsyncMock(return_value={"id": "profile-legacy"}))
     upsells = MagicMock()
     upsells.find.return_value = _cursor([])
-    monkeypatch.setattr(crm_guest.db, "upsell_offers", upsells)
+    monkeypatch.setattr(
+        crm_guest,
+        "db",
+        SimpleNamespace(
+            guests=guests,
+            bookings=bookings,
+            guest_preferences=guest_preferences,
+            guest_behavior=guest_behavior,
+            guest_profiles=guest_profiles,
+            upsell_offers=upsells,
+        ),
+    )
 
     result = await crm_guest.get_guest_360(
         guest_id="guest-legacy",

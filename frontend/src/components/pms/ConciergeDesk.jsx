@@ -428,7 +428,7 @@ const ConciergeDesk = () => {
                         {req.priority === 'high' && <StatusBadge intent="danger">{tc('highPriority')}</StatusBadge>}
                         {req.amount > 0 && (
                           <StatusBadge intent={req.folio_charge_id ? 'success' : 'warning'} icon={Wallet}>
-                            {formatCurrency(req.amount, req.currency || 'TRY')}
+                            {formatCurrency(req.amount, req.currency || cachedTenantCurrency())}
                             {req.folio_charge_id ? ' · ' + tc('folioCharged') : (req.charge_to_folio ? ' · ' + tc('folioPending') : '')}
                           </StatusBadge>
                         )}
