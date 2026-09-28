@@ -8,18 +8,11 @@ Locks in regressions for:
 """
 from __future__ import annotations
 
-import sys
-import datetime as dt
-if not hasattr(dt, "UTC"):
-    dt.UTC = dt.timezone.utc
-
+from datetime import datetime
 from types import SimpleNamespace
-from typing import Any
+
 import pytest
-from datetime import datetime, timezone
-from datetime import timezone as dt_timezone
-UTC = dt_timezone.utc
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routers import spa_dining_packages as spa_dining_router
