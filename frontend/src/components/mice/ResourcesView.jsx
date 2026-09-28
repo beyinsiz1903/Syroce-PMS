@@ -8,19 +8,20 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const ResourcesView = ({ resources, reload }) => {
   const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', type: 'av', total_stock: 1, unit: 'unit',
-                                     unit_price: 0, currency: 'TRY' });
+                                     unit_price: 0, currency: cachedTenantCurrency() });
   const create = async (e) => {
     e.preventDefault();
     try {
       await axios.post('/mice/resources', form);
       toast.success('Envanter eklendi');
       setShowForm(false);
-      setForm({ name: '', type: 'av', total_stock: 1, unit: 'unit', unit_price: 0, currency: 'TRY' });
+      setForm({ name: '', type: 'av', total_stock: 1, unit: 'unit', unit_price: 0, currency: cachedTenantCurrency() });
       await reload();
     } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
   };
@@ -56,7 +57,7 @@ const ResourcesView = ({ resources, reload }) => {
                 Stok: <span className="font-bold">{r.total_stock}</span> {r.unit}
               </div>
               <div className="text-sm">
-                Birim: <span className="font-bold">₺{r.unit_price?.toLocaleString('tr-TR')}</span>
+                Birim: <span className="font-bold">{formatCurrency(r.unit_price, r.currency || cachedTenantCurrency())}</span>
               </div>
             </CardContent>
           </Card>
@@ -79,7 +80,7 @@ const ResourcesView = ({ resources, reload }) => {
                 onChange={(e) => setForm({ ...form, unit: e.target.value })} /></Field>
               <Field label={t('cm.components_mice_ResourcesView.toplam_stok')}><Input type="number" required value={form.total_stock}
                 onChange={(e) => setForm({ ...form, total_stock: +e.target.value })} /></Field>
-              <Field label="Birim ₺"><Input type="number" value={form.unit_price}
+              <Field label={`Birim (${form.currency || cachedTenantCurrency()})`}><Input type="number" value={form.unit_price}
                 onChange={(e) => setForm({ ...form, unit_price: +e.target.value })} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">

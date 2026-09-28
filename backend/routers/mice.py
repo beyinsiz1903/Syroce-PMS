@@ -1064,7 +1064,11 @@ async def list_events(
 
     pipe = [
         {"$match": {"tenant_id": current_user.tenant_id}},
-        {"$group": {"_id": "$status", "n": {"$sum": 1}, "total": {"$sum": "$totals.grand_total"}}},
+        {"$group": {
+            "_id": {"status": "$status", "currency": {"$toUpper": {"$ifNull": ["$currency", "TRY"]}}},
+            "n": {"$sum": 1},
+            "total": {"$sum": "$totals.grand_total"},
+        }},
     ]
     tid = current_user.tenant_id
     (
@@ -1084,7 +1088,15 @@ async def list_events(
     )
     summary: dict[str, dict] = {}
     for r in summary_rows:
-        summary[r["_id"]] = {"count": r["n"], "total_value": round(r.get("total", 0) or 0, 2)}
+        group = r.get("_id") or {}
+        status_code = group.get("status") if isinstance(group, dict) else group
+        currency = (group.get("currency") if isinstance(group, dict) else None) or "TRY"
+        bucket = summary.setdefault(status_code, {"count": 0, "total_value": 0, "total_value_by_currency": {}})
+        bucket["count"] += r["n"]
+        amount = round(r.get("total", 0) or 0, 2)
+        bucket["total_value_by_currency"][currency] = amount
+        if currency == "TRY":
+            bucket["total_value"] = amount
     counts = {
         "accounts": cnt_accounts,
         "spaces": cnt_spaces,

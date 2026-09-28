@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, Modal } from '../_shared';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 const MenuFormModal = ({
   editingMenu,
@@ -32,12 +33,12 @@ const MenuFormModal = ({
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Kişi Başı Fiyat (₺)">
+        <Field label={`Kişi Başı Fiyat (${menuForm.currency || cachedTenantCurrency()})`}>
           <Input type="number" min="0" step="0.01"
             value={menuForm.price_per_person}
             onChange={(e) => setMenuForm({ ...menuForm, price_per_person: e.target.value })} />
         </Field>
-        <Field label="Sabit Fiyat (₺)">
+        <Field label={`Sabit Fiyat (${menuForm.currency || cachedTenantCurrency()})`}>
           <Input type="number" min="0" step="0.01"
             value={menuForm.flat_price}
             onChange={(e) => setMenuForm({ ...menuForm, flat_price: e.target.value })} />

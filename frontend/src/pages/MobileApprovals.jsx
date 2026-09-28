@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canApproveMobileRequest } from '@/utils/mobilePermissions';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 export const normalizeMobileApproval = (approval) => {
   const createdAt = approval.created_at || approval.request_date;
@@ -298,12 +299,12 @@ const MobileApprovals = ({ user }) => {
                     <div className="bg-gray-50 rounded p-3 mb-3 space-y-1">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">{t('mobileApprovals.fields.amount')}</span>
-                        <span className="font-bold">₺{approval.amount.toFixed(2)}</span>
+                        <span className="font-bold">{formatCurrency(approval.amount, approval.currency || cachedTenantCurrency())}</span>
                       </div>
                       {approval.original_value && (
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">{t('mobileApprovals.fields.oldNew')}</span>
-                          <span>₺{approval.original_value} → ₺{approval.new_value}</span>
+                          <span>{formatCurrency(approval.original_value, approval.currency || cachedTenantCurrency())} → {formatCurrency(approval.new_value, approval.currency || cachedTenantCurrency())}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-sm">
@@ -376,7 +377,7 @@ const MobileApprovals = ({ user }) => {
                     <div className="text-sm space-y-1 mb-2">
                       <div className="flex justify-between">
                         <span className="text-gray-600">{t('mobileApprovals.fields.amount')}</span>
-                        <span className="font-semibold">₺{request.amount.toFixed(2)}</span>
+                        <span className="font-semibold">{formatCurrency(request.amount, request.currency || cachedTenantCurrency())}</span>
                       </div>
                       <div className="text-gray-700">
                         <span className="font-semibold">{t('mobileApprovals.fields.reason')} </span>
@@ -418,7 +419,7 @@ const MobileApprovals = ({ user }) => {
                 <div className="font-semibold mb-2">{getApprovalTypeLabel(selectedApproval.approval_type)}</div>
                 <div className="text-sm space-y-1">
                   <div>{t('mobileApprovals.modal.requestedBy')} {selectedApproval.requested_by}</div>
-                  <div>{t('mobileApprovals.modal.amountField')} ₺{selectedApproval.amount.toFixed(2)}</div>
+                  <div>{t('mobileApprovals.modal.amountField')} {formatCurrency(selectedApproval.amount, selectedApproval.currency || cachedTenantCurrency())}</div>
                   <div>{t('mobileApprovals.modal.reasonField')} {selectedApproval.reason}</div>
                 </div>
               </div>

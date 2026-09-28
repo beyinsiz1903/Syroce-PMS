@@ -8,6 +8,7 @@ import { CheckCircle, XCircle, Clock, DollarSign, AlertTriangle } from 'lucide-r
 import { toast } from 'sonner';
 import { promptDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const ApprovalWidget = ({ userRole }) => {
   const { t } = useTranslation();
@@ -148,7 +149,7 @@ const ApprovalWidget = ({ userRole }) => {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold text-sm">₺{approval.amount?.toFixed(0)}</div>
+                        <div className="font-bold text-sm">{formatCurrency(approval.amount, approval.currency || cachedTenantCurrency(), { decimals: 0 })}</div>
                         <Badge className={getPriorityColor(approval.priority)}>
                           {approval.priority}
                         </Badge>
@@ -205,7 +206,7 @@ const ApprovalWidget = ({ userRole }) => {
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">{t('cm.components_ApprovalWidget.tutar')}</div>
-                  <div className="font-bold text-green-600">₺{selectedApproval.amount?.toFixed(2)}</div>
+                  <div className="font-bold text-green-600">{formatCurrency(selectedApproval.amount, selectedApproval.currency || cachedTenantCurrency())}</div>
                 </div>
               </div>
 

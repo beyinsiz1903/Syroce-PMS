@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import AITabs from '@/components/AITabs';
 import { reservationLabel } from '@/utils/displayIdentifiers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
   const { t } = useTranslation();
@@ -272,7 +273,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
                               </span>
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <span className="font-semibold text-slate-800">€{forecast.recommended_price}</span>
+                              <span className="font-semibold text-slate-800">{formatCurrency(forecast.recommended_price, forecast.currency || tenant?.currency || cachedTenantCurrency())}</span>
                             </td>
                           </tr>
                         ))}

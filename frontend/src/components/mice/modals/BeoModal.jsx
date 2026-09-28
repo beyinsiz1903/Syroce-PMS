@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Download, Send } from 'lucide-react';
 import { promptDialog } from '@/lib/dialogs';
 import { Info, Modal } from '../_shared';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const downloadBeoPdf = async (eventId, eventName) => {
   try {
     const res = await axios.get(`/mice/events/${eventId}/beo.pdf`, {
@@ -151,8 +152,8 @@ const BeoModal = ({
             <th className="border p-1 text-left">Hat</th>
             <th className="border p-1">Tip</th>
             <th className="border p-1">Adet</th>
-            <th className="border p-1">Birim ₺</th>
-            <th className="border p-1 text-right">Toplam ₺</th>
+            <th className="border p-1">Birim ({beoData.event.currency || cachedTenantCurrency()})</th>
+            <th className="border p-1 text-right">Toplam ({beoData.event.currency || cachedTenantCurrency()})</th>
           </tr></thead>
           <tbody>
             {beoData.resources.map((r, i) => <tr key={r.id || i}>
@@ -161,7 +162,7 @@ const BeoModal = ({
                 <td className="border p-1 text-center">{r.quantity}</td>
                 <td className="border p-1 text-right">{r.unit_price?.toLocaleString('tr-TR')}</td>
                 <td className="border p-1 text-right">
-                  ₺{(r.quantity * r.unit_price).toLocaleString('tr-TR')}
+                  {formatCurrency(r.quantity * r.unit_price, r.currency || beoData.event.currency || cachedTenantCurrency())}
                 </td>
               </tr>)}
           </tbody>
@@ -182,7 +183,7 @@ const BeoModal = ({
               {beoData.payment_schedule.map((p, i) => <tr key={p.id || i}>
                   <td className="border p-1 font-mono">{p.due_date}</td>
                   <td className="border p-1">{p.label}</td>
-                  <td className="border p-1 text-right">₺{p.amount?.toLocaleString('tr-TR')}</td>
+                  <td className="border p-1 text-right">{formatCurrency(p.amount, p.currency || beoData.event.currency || cachedTenantCurrency())}</td>
                   <td className="border p-1 text-center">
                     {p.paid ? <Badge className="bg-emerald-100 text-emerald-800 border-0">Ödendi</Badge> : <Badge className="bg-amber-100 text-amber-800 border-0">Bekliyor</Badge>}
                     {p.reference && <div className="text-[10px] text-gray-500 mt-0.5">Ref: {p.reference}</div>}
@@ -198,9 +199,9 @@ const BeoModal = ({
         </div>}
 
       <Card><CardContent className="p-3 grid grid-cols-3 gap-2 text-xs">
-        <Info l="Mekan Toplamı" v={`₺${(beoData.event.totals?.space_total || 0).toLocaleString('tr-TR')}`} />
-        <Info l="Kaynak Toplamı" v={`₺${(beoData.event.totals?.resources_total || 0).toLocaleString('tr-TR')}`} />
-        <Info l="GRAND TOTAL" v={`₺${(beoData.event.totals?.grand_total || 0).toLocaleString('tr-TR')}`} cls="text-lg text-indigo-600 font-bold" />
+        <Info l="Mekan Toplamı" v={formatCurrency(beoData.event.totals?.space_total, beoData.event.currency || cachedTenantCurrency())} />
+        <Info l="Kaynak Toplamı" v={formatCurrency(beoData.event.totals?.resources_total, beoData.event.currency || cachedTenantCurrency())} />
+        <Info l="GRAND TOTAL" v={formatCurrency(beoData.event.totals?.grand_total, beoData.event.currency || cachedTenantCurrency())} cls="text-lg text-indigo-600 font-bold" />
       </CardContent></Card>
 
       <div className="text-right flex justify-end gap-2">

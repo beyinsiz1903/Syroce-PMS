@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ChefHat, RefreshCw, Check, CheckCheck } from 'lucide-react';
 import { Info } from './_shared';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 // Lifecycle: sent → acknowledged → completed (mirrors backend transitions).
 const ORDER_STATUS_META = {
@@ -132,7 +133,7 @@ const KitchenBoardTab = () => {
                       <span className="text-xs text-gray-500">→ {o.target}</span>
                     </div>
                     <span className="font-semibold">
-                      ₺{(o.total || 0).toLocaleString('tr-TR')}
+                      {formatCurrency(o.total, o.currency || cachedTenantCurrency())}
                     </span>
                   </div>
                   <div className="font-semibold text-sm">{o.event_name || '—'}</div>
