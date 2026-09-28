@@ -459,6 +459,7 @@ async def test_parking_analytics_summarises_operations(_patch):
     assert result["resources"]["parking_spots"] == 1
     assert result["bookings"] == {
         "total": 2, "active": 1, "cancelled": 1, "folio_charged": 1, "revenue": 150.0,
+        "revenue_by_currency": {"TRY": 150.0}, "currency": "TRY",
     }
     assert result["valet"]["active"] == 1
     assert result["lpr"] == {"events": 2, "entries": 1, "exits": 1}

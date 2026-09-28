@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UtensilsCrossed } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const OutletSalesChart = () => {
   const { t } = useTranslation();
@@ -46,7 +47,7 @@ const OutletSalesChart = () => {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium">{name}</span>
                 <div className="text-right">
-                  <div className="text-sm font-bold">₺{data.sales.toLocaleString()}</div>
+                  <div className="text-sm font-bold">{formatCurrencyBreakdown(data.sales_by_currency, data.sales, salesData.currency)}</div>
                   <div className="text-xs text-gray-500">{data.orders} {t('cm.components_OutletSalesChart.siparis')}</div>
                 </div>
               </div>
@@ -57,7 +58,11 @@ const OutletSalesChart = () => {
                 />
               </div>
               <div className="text-xs text-gray-500 mt-1">
-                Ortalama: ₺{data.avg_ticket}
+                Ortalama: {formatCurrencyBreakdown(
+                  Object.fromEntries(Object.entries(data.sales_by_currency || {}).map(([currency, amount]) => [currency, data.orders ? amount / data.orders : 0])),
+                  data.avg_ticket,
+                  salesData.currency,
+                )}
               </div>
             </div>
           ))}
@@ -66,7 +71,7 @@ const OutletSalesChart = () => {
           <div className="flex items-center justify-between">
             <span className="font-bold">{t('cm.components_OutletSalesChart.toplam_satis')}</span>
             <span className="text-lg font-bold text-amber-600">
-              ₺{salesData.total_sales.toLocaleString()}
+              {formatCurrencyBreakdown(salesData.total_sales_by_currency, salesData.total_sales, salesData.currency)}
             </span>
           </div>
         </div>

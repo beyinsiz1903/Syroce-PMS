@@ -17,6 +17,8 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
 import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import {
   Car, ParkingSquare, Plus, RefreshCw, Trash2, Receipt, AlertTriangle,
   KeyRound, ScanLine, BarChart3, CheckCircle2,
@@ -44,6 +46,8 @@ const STATUS_VARIANTS = {
 const TransferParkingPage = () => {
   useTranslation();
   const [tab, setTab] = useState('bookings');
+  const tenantCurrency = cachedTenantCurrency();
+  const money = (amount, currency) => formatCurrency(amount, currency || tenantCurrency);
 
   const [resources, setResources] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -270,7 +274,7 @@ const TransferParkingPage = () => {
       const res = await axios.post('/transfer-parking/bookings', payload);
       const fc = res.data.folio_charge;
       if (fc?.charged) {
-        toast.success(`Rezervasyon oluşturuldu, folyoya ${fc.amount} işlendi`);
+        toast.success(`Rezervasyon oluşturuldu, folyoya ${money(fc.amount, fc.currency)} işlendi`);
       } else if (fc?.reason === 'no_active_booking_or_folio') {
         toast.warning('Rezervasyon oluşturuldu ancak açık folyo yok — geç tahakkuk listesine eklendi');
       } else {
@@ -385,7 +389,7 @@ const TransferParkingPage = () => {
                       <td className="p-3">{bk.room_number || '-'}</td>
                       <td className="p-3">{bk.guest_name || '-'}</td>
                       <td className="p-3">{formatSchedule(bk)}</td>
-                      <td className="p-3 text-right">{bk.total}</td>
+                      <td className="p-3 text-right">{money(bk.total, bk.currency)}</td>
                       <td className="p-3">
                         {bk.folio_charged
                           ? <Badge variant="default">İşlendi</Badge>
@@ -442,7 +446,7 @@ const TransferParkingPage = () => {
                     <tr key={r.id} className="border-b last:border-0">
                       <td className="p-3">{r.name}</td>
                       <td className="p-3">{KIND_LABELS[r.kind] || r.kind}</td>
-                      <td className="p-3 text-right">{r.price}{r.kind === 'parking_spot' ? ' /gün' : ' /sefer'}</td>
+                      <td className="p-3 text-right">{money(r.price, r.currency)}{r.kind === 'parking_spot' ? ' /gün' : ' /sefer'}</td>
                       <td className="p-3">{r.capacity}</td>
                       <td className="p-3">
                         {r.active ? <Badge variant="default">Aktif</Badge> : <Badge variant="outline">Pasif</Badge>}
@@ -485,7 +489,7 @@ const TransferParkingPage = () => {
                       <td className="p-3">{KIND_LABELS[lc.kind] || lc.kind}</td>
                       <td className="p-3">{lc.resource_name || '-'}</td>
                       <td className="p-3">{lc.room_number || '-'}</td>
-                      <td className="p-3 text-right">{lc.total}</td>
+                      <td className="p-3 text-right">{money(lc.total, lc.currency)}</td>
                       <td className="p-3">
                         <Badge variant="outline" className="gap-1">
                           <AlertTriangle className="h-3 w-3" />
@@ -565,7 +569,11 @@ const TransferParkingPage = () => {
                 ['Aktif Rezervasyon', analytics.bookings?.active || 0],
                 ['Folyo Tahakkuku', analytics.bookings?.folio_charged || 0],
                 ['Vale Kuyruğu', analytics.valet?.active || 0],
-                ['Rezervasyon Geliri', `${Number(analytics.bookings?.revenue || 0).toLocaleString('tr-TR')} ₺`],
+                ['Rezervasyon Geliri', formatCurrencyBreakdown(
+                  analytics.bookings?.revenue_by_currency,
+                  analytics.bookings?.revenue || 0,
+                  analytics.bookings?.currency || tenantCurrency,
+                )],
               ].map(([label, value]) => <Card key={label}><CardContent className="p-5">
                 <div className="flex items-center gap-2 text-muted-foreground text-sm"><BarChart3 className="h-4 w-4" />{label}</div>
                 <div className="text-2xl font-bold mt-2">{value}</div>
@@ -620,7 +628,7 @@ const TransferParkingPage = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Fiyat ({resourceForm.kind === 'parking_spot' ? '/gün' : '/sefer'})</Label>
+                <Label>Fiyat ({tenantCurrency} · {resourceForm.kind === 'parking_spot' ? '/gün' : '/sefer'})</Label>
                 <Input
                   type="number" min="0" step="0.01"
                   value={resourceForm.price}
