@@ -391,12 +391,14 @@ const GeneralLedgerModule = () => {
   const [fxForm, setFxForm] = useState(() => ({ date: localIsoDate(), currency: 'USD', closing_rate: '' }));
   const [fxBusy, setFxBusy] = useState(false);
   const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
+  const [workspaceFailures, setWorkspaceFailures] = useState([]);
   const [operationalBridge, setOperationalBridge] = useState(null);
   const [operationalBusy, setOperationalBusy] = useState(false);
   const [nilveraGL, setNilveraGL] = useState({ settings: DEFAULT_NILVERA_GL_SETTINGS, queue: [], counts: {} });
   const [nilveraMappingText, setNilveraMappingText] = useState(EMPTY_NILVERA_MAPPING_TEXT);
   const [apGLMapping, setApGLMapping] = useState(DEFAULT_AP_GL_MAPPING);
   const [fixedAssetGLMapping, setFixedAssetGLMapping] = useState(DEFAULT_FIXED_ASSET_GL_MAPPING);
+  const [integrationFailures, setIntegrationFailures] = useState([]);
   const [integrationBusy, setIntegrationBusy] = useState('');
 
   const handleTabChange = (value) => {
@@ -493,15 +495,22 @@ const GeneralLedgerModule = () => {
   };
 
   const fetchPeriods = async () => {
-    try {
-      const [periodRes, yearEndRes] = await Promise.all([
-        axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } }),
-        axios.get(`${GL_ENDPOINTS.yearEnd}/${periodYear}`),
-      ]);
+    const [periodResult, yearEndResult] = await Promise.allSettled([
+      axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } }),
+      axios.get(`${GL_ENDPOINTS.yearEnd}/${periodYear}`),
+    ]);
+    if (periodResult.status === 'fulfilled') {
+      const periodRes = periodResult.value;
       setPeriods(periodRes.data?.periods || []);
-      setYearEndStatus(yearEndRes.data || null);
-    } catch {
+    } else {
+      setPeriods([]);
       toast.error('Mali dönemler yüklenemedi.');
+    }
+    if (yearEndResult.status === 'fulfilled') {
+      setYearEndStatus(yearEndResult.value.data || null);
+    } else {
+      setYearEndStatus(null);
+      toast.error('Yıl sonu durumu yüklenemedi; dönem listesi kullanılmaya devam edebilir.');
     }
   };
 
@@ -668,23 +677,27 @@ const GeneralLedgerModule = () => {
 
   const fetchWorkspace = async () => {
     const period = businessDate.slice(0, 7);
-    try {
-      const [agingRes, expenseRes, revenueRes, assetsRes, operationalRes] = await Promise.all([
+    const labels = ['Tedarikçi borçları', 'Gider bütçesi', 'Gelir bütçesi', 'Sabit kıymetler', 'PMS/POS köprüsü'];
+    const results = await Promise.allSettled([
         axios.get('/ap/aging'),
         axios.get('/budget/vs-actual', { params: { period, kind: 'expense' } }),
         axios.get('/budget/vs-actual', { params: { period, kind: 'revenue' } }),
         axios.get('/fixed-assets/assets'),
         axios.get(GL_ENDPOINTS.operationalStatus),
-      ]);
-      setWorkspace({
-        aging: agingRes.data,
-        expenseBudget: expenseRes.data,
-        revenueBudget: revenueRes.data,
-        assets: assetsRes.data?.assets || [],
-      });
-      setOperationalBridge(operationalRes.data || null);
-    } catch {
-      toast.error('Muhasebe alt defterleri yüklenemedi.');
+    ]);
+    const failures = results.flatMap((result, index) => result.status === 'rejected' ? [labels[index]] : []);
+    setWorkspaceFailures(failures);
+    setWorkspace((current) => ({
+      aging: results[0].status === 'fulfilled' ? results[0].value.data : current.aging,
+      expenseBudget: results[1].status === 'fulfilled' ? results[1].value.data : current.expenseBudget,
+      revenueBudget: results[2].status === 'fulfilled' ? results[2].value.data : current.revenueBudget,
+      assets: results[3].status === 'fulfilled' ? results[3].value.data?.assets || [] : current.assets,
+    }));
+    if (results[4].status === 'fulfilled') {
+      setOperationalBridge(results[4].value.data || null);
+    }
+    if (failures.length) {
+      toast.error(`Bazı alt defterler yüklenemedi: ${failures.join(', ')}`);
     }
   };
 
@@ -713,30 +726,33 @@ const GeneralLedgerModule = () => {
   };
 
   const fetchAccountingIntegrations = async () => {
-    try {
-      const [nilveraSettingsRes, nilveraQueueRes, apRes, fixedAssetRes] = await Promise.all([
+    const labels = ['Nilvera ayarları', 'Nilvera kuyruğu', 'Tedarikçi eşlemesi', 'Amortisman eşlemesi'];
+    const results = await Promise.allSettled([
         axios.get(GL_ENDPOINTS.nilveraSettings),
         axios.get(GL_ENDPOINTS.nilveraQueue),
         axios.get(GL_ENDPOINTS.apGLMapping),
         axios.get(GL_ENDPOINTS.fixedAssetGLMapping),
-      ]);
+    ]);
+    const failures = results.flatMap((result, index) => result.status === 'rejected' ? [labels[index]] : []);
+    setIntegrationFailures(failures);
+    if (results[0].status === 'fulfilled') {
+      const nilveraSettingsRes = results[0].value;
       const settings = { ...DEFAULT_NILVERA_GL_SETTINGS, ...(nilveraSettingsRes.data?.settings || {}) };
-      setNilveraGL({
-        settings,
-        queue: nilveraQueueRes.data?.items || [],
-        counts: nilveraQueueRes.data?.counts || {},
-      });
+      setNilveraGL((current) => ({ ...current, settings }));
       setNilveraMappingText({
         incoming_other_tax_accounts_by_code: formatAccountMapping(settings.incoming_other_tax_accounts_by_code),
         incoming_deduction_accounts_by_code: formatAccountMapping(settings.incoming_deduction_accounts_by_code),
         outgoing_vat_accounts_by_rate: formatAccountMapping(settings.outgoing_vat_accounts_by_rate),
         outgoing_accommodation_tax_accounts_by_rate: formatAccountMapping(settings.outgoing_accommodation_tax_accounts_by_rate),
       });
-      setApGLMapping({ ...DEFAULT_AP_GL_MAPPING, ...(apRes.data?.mapping || {}) });
-      setFixedAssetGLMapping({ ...DEFAULT_FIXED_ASSET_GL_MAPPING, ...(fixedAssetRes.data?.mapping || {}) });
-    } catch {
-      toast.error('Muhasebe entegrasyon ayarları yüklenemedi.');
     }
+    if (results[1].status === 'fulfilled') {
+      const nilveraQueueRes = results[1].value;
+      setNilveraGL((current) => ({ ...current, queue: nilveraQueueRes.data?.items || [], counts: nilveraQueueRes.data?.counts || {} }));
+    }
+    if (results[2].status === 'fulfilled') setApGLMapping({ ...DEFAULT_AP_GL_MAPPING, ...(results[2].value.data?.mapping || {}) });
+    if (results[3].status === 'fulfilled') setFixedAssetGLMapping({ ...DEFAULT_FIXED_ASSET_GL_MAPPING, ...(results[3].value.data?.mapping || {}) });
+    if (failures.length) toast.error(`Bazı entegrasyon ayarları yüklenemedi: ${failures.join(', ')}`);
   };
 
   const saveNilveraGL = async () => {
@@ -1056,6 +1072,7 @@ const GeneralLedgerModule = () => {
     apGLMapping,
     fixedAssetGLMapping,
   ).filter((code) => !knownAccountCodes.has(code));
+  const workspaceUnavailable = (label) => workspaceFailures.includes(label);
   const journalValidationError = getJournalValidationError(newJournal, ledgerCurrency);
 
   return (
@@ -1621,17 +1638,27 @@ const GeneralLedgerModule = () => {
         </TabsContent>
 
         <TabsContent value="workspace">
+          {workspaceFailures.length > 0 && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+              Verisi alınamayan alanlar: <strong>{workspaceFailures.join(', ')}</strong>. Bu alanlarda sıfır değer gösterilmez ve işlem başlatılmaz.
+            </div>
+          )}
           <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <Card><CardContent className="pt-6"><Landmark className="w-7 h-7 text-amber-600 mb-3" /><p className="text-sm text-slate-500">Tedarikçi Borçları</p><p className="text-2xl font-bold">{fmtMoney(workspace.aging?.total_outstanding || 0)}</p><p className="text-xs text-slate-500 mt-2">90+ gün: {fmtMoney(workspace.aging?.buckets?.d90_plus || 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-red-600 mb-3" /><p className="text-sm text-slate-500">Gider Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.expenseBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.expenseBudget?.totals?.budget || 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-emerald-600 mb-3" /><p className="text-sm text-slate-500">Gelir Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.revenueBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.revenueBudget?.totals?.budget || 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><PackageOpen className="w-7 h-7 text-indigo-600 mb-3" /><p className="text-sm text-slate-500">Sabit Kıymetler</p><p className="text-2xl font-bold">{workspace.assets.length}</p><p className="text-xs text-slate-500 mt-2">Net defter değeri: {fmtMoney(workspace.assets.reduce((sum, item) => sum + (Number(item.book_value) || 0), 0))}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><Landmark className="w-7 h-7 text-amber-600 mb-3" /><p className="text-sm text-slate-500">Tedarikçi Borçları</p>{workspaceUnavailable('Tedarikçi borçları') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{fmtMoney(workspace.aging?.total_outstanding || 0)}</p><p className="text-xs text-slate-500 mt-2">90+ gün: {fmtMoney(workspace.aging?.buckets?.d90_plus || 0)}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-red-600 mb-3" /><p className="text-sm text-slate-500">Gider Bütçesi · Bu Ay</p>{workspaceUnavailable('Gider bütçesi') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{fmtMoney(workspace.expenseBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.expenseBudget?.totals?.budget || 0)}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-emerald-600 mb-3" /><p className="text-sm text-slate-500">Gelir Bütçesi · Bu Ay</p>{workspaceUnavailable('Gelir bütçesi') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{fmtMoney(workspace.revenueBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.revenueBudget?.totals?.budget || 0)}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><PackageOpen className="w-7 h-7 text-indigo-600 mb-3" /><p className="text-sm text-slate-500">Sabit Kıymetler</p>{workspaceUnavailable('Sabit kıymetler') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{workspace.assets.length}</p><p className="text-xs text-slate-500 mt-2">Net defter değeri: {fmtMoney(workspace.assets.reduce((sum, item) => sum + (Number(item.book_value) || 0), 0))}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p>{workspaceUnavailable('PMS/POS köprüsü') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</>}</CardContent></Card>
           </div>
           <p className="text-xs text-slate-500 mt-4">Bu özetler AP, bütçe ve sabit kıymet alt defterlerindeki gerçek tenant verisinden okunur; örnek/sabit rakam kullanılmaz.</p>
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-5">
+          {integrationFailures.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+              Yüklenemeyen ayarlar: <strong>{integrationFailures.join(', ')}</strong>. İlgili ayarlar doğrulanmadan kaydetme işlemi kapatıldı.
+            </div>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Cable className="w-5 h-5 text-blue-600" /> Nilvera → Genel Muhasebe</CardTitle>
@@ -1740,7 +1767,7 @@ const GeneralLedgerModule = () => {
                   </div>
                 </div>
               </div>
-              <Button onClick={saveNilveraGL} disabled={integrationBusy === 'nilvera-settings'}>
+              <Button onClick={saveNilveraGL} disabled={integrationBusy === 'nilvera-settings' || integrationFailures.includes('Nilvera ayarları')}>
                 <Save className="w-4 h-4 mr-2" /> {integrationBusy === 'nilvera-settings' ? 'Kaydediliyor...' : 'Nilvera Muhasebe Eşlemesini Kaydet'}
               </Button>
 
@@ -1785,7 +1812,7 @@ const GeneralLedgerModule = () => {
                   <Input value={apGLMapping.bank_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, bank_account_code: event.target.value })} placeholder="Banka (102)" />
                   <Input value={apGLMapping.cash_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, cash_account_code: event.target.value })} placeholder="Kasa (100)" />
                 </div>
-                <Button variant="outline" onClick={saveAPGLMapping} disabled={integrationBusy === 'ap'}>{integrationBusy === 'ap' ? 'Kaydediliyor...' : 'AP Eşlemesini Kaydet'}</Button>
+                <Button variant="outline" onClick={saveAPGLMapping} disabled={integrationBusy === 'ap' || integrationFailures.includes('Tedarikçi eşlemesi')}>{integrationBusy === 'ap' ? 'Kaydediliyor...' : 'AP Eşlemesini Kaydet'}</Button>
               </CardContent>
             </Card>
             <Card>
@@ -1798,7 +1825,7 @@ const GeneralLedgerModule = () => {
                   <Input value={fixedAssetGLMapping.depreciation_expense_account_code} onChange={(event) => setFixedAssetGLMapping({ ...fixedAssetGLMapping, depreciation_expense_account_code: event.target.value })} placeholder="Amortisman Gideri (770)" />
                   <Input value={fixedAssetGLMapping.accumulated_depreciation_account_code} onChange={(event) => setFixedAssetGLMapping({ ...fixedAssetGLMapping, accumulated_depreciation_account_code: event.target.value })} placeholder="Birikmiş Amortisman (257)" />
                 </div>
-                <Button variant="outline" onClick={saveFixedAssetGLMapping} disabled={integrationBusy === 'fixed-assets'}>{integrationBusy === 'fixed-assets' ? 'Kaydediliyor...' : 'Amortisman Eşlemesini Kaydet'}</Button>
+                <Button variant="outline" onClick={saveFixedAssetGLMapping} disabled={integrationBusy === 'fixed-assets' || integrationFailures.includes('Amortisman eşlemesi')}>{integrationBusy === 'fixed-assets' ? 'Kaydediliyor...' : 'Amortisman Eşlemesini Kaydet'}</Button>
               </CardContent>
             </Card>
           </div>
