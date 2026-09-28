@@ -65,12 +65,14 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             const foliosRes = await axios.get(`/folio/booking/company/${company.id}`);
             const folios = foliosRes.data || [];
 
-            const totalOutstanding = folios.reduce((sum, folio) => {
+            const totalOutstandingByCurrency = folios.reduce((totals, folio) => {
               if (folio.status === 'open' && folio.balance > 0) {
-                return sum + folio.balance;
+                const code = String(folio.currency || 'TRY').toUpperCase();
+                totals[code] = (totals[code] || 0) + Number(folio.balance || 0);
               }
-              return sum;
-            }, 0);
+              return totals;
+            }, {});
+            const totalOutstanding = Object.values(totalOutstandingByCurrency).reduce((sum, amount) => sum + amount, 0);
 
             if (totalOutstanding > 0) {
               // Get oldest invoice date
@@ -88,6 +90,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 contact_phone: company.contact_phone,
                 payment_terms: company.payment_terms,
                 total_outstanding: totalOutstanding,
+                total_outstanding_by_currency: totalOutstandingByCurrency,
                 open_folios_count: openFolios.length,
                 oldest_invoice_date: oldestFolio?.created_at,
                 days_outstanding: oldestFolio
@@ -532,7 +535,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <CardContent className="pt-6">
                     <div className="text-sm text-gray-600">Total AR</div>
                     <div className="text-2xl font-bold text-blue-600 mt-1">
-                      ${agingData.totals.total.toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.total, agingData.totals.total)}
                     </div>
                   </CardContent>
                 </Card>
@@ -540,7 +543,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <CardContent className="pt-6">
                     <div className="text-sm text-gray-600">0-30 days</div>
                     <div className="text-2xl font-bold text-green-600 mt-1">
-                      ${agingData.totals.current.toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.current, agingData.totals.current)}
                     </div>
                   </CardContent>
                 </Card>
@@ -548,7 +551,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <CardContent className="pt-6">
                     <div className="text-sm text-gray-600">31-60 days</div>
                     <div className="text-2xl font-bold text-yellow-600 mt-1">
-                      ${agingData.totals['30_days'].toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.['30_days'], agingData.totals['30_days'])}
                     </div>
                   </CardContent>
                 </Card>
@@ -556,7 +559,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <CardContent className="pt-6">
                     <div className="text-sm text-gray-600">61-90 days</div>
                     <div className="text-2xl font-bold text-amber-600 mt-1">
-                      ${agingData.totals['60_days'].toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.['60_days'], agingData.totals['60_days'])}
                     </div>
                   </CardContent>
                 </Card>
@@ -564,7 +567,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <CardContent className="pt-6">
                     <div className="text-sm text-gray-600">90+ days</div>
                     <div className="text-2xl font-bold text-red-600 mt-1">
-                      ${agingData.totals['90_plus'].toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.['90_plus'], agingData.totals['90_plus'])}
                     </div>
                   </CardContent>
                 </Card>
@@ -600,7 +603,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                         {agingRows.map((row) => (
                           <tr key={`${row.account_id}-${row.bucketKey}`} className="border-b last:border-b-0">
                             <td className="py-2 pr-4 font-medium">{row.account_name}</td>
-                            <td className="py-2 pr-4 text-right">${row.balance.toFixed(2)}</td>
+                            <td className="py-2 pr-4 text-right">{formatCurrency(row.balance, row.currency || 'TRY')}</td>
                             <td className="py-2 pr-4 text-right">{row.days_old}</td>
                             <td className="py-2 pr-4">
                               <Badge variant="outline">{row.bucketLabel}</Badge>
@@ -702,7 +705,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <div>
                     <div className="text-gray-600">Current Balance</div>
                     <div className="font-semibold text-red-600">
-                      ${accountStatement.summary.current_balance.toFixed(2)}
+                      {formatCurrency(accountStatement.summary.current_balance, accountStatement.summary.currency || selectedAccount?.currency || 'TRY')}
                     </div>
                   </div>
                   <div>
@@ -715,8 +718,8 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <div className="bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600 flex justify-between">
                     <span>Transactions</span>
                     <span>
-                      Charges: ${accountStatement.summary.total_charges.toFixed(2)} | Payments: $
-                      {accountStatement.summary.total_payments.toFixed(2)}
+                      Tahakkuk: {formatCurrency(accountStatement.summary.total_charges, accountStatement.summary.currency || selectedAccount?.currency || 'TRY')} | Tahsilat:{' '}
+                      {formatCurrency(accountStatement.summary.total_payments, accountStatement.summary.currency || selectedAccount?.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="max-h-80 overflow-y-auto">
@@ -739,7 +742,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                             <td className="py-2 px-4 capitalize">{tx.transaction_type}</td>
                             <td className="py-2 px-4">{tx.description}</td>
                             <td className="py-2 px-4 text-right">
-                              ${tx.amount.toFixed(2)}
+                              {formatCurrency(tx.amount, tx.currency || accountStatement.summary.currency || selectedAccount?.currency || 'TRY')}
                             </td>
                             <td className="py-2 px-4">{tx.reference_number || '-'}</td>
                           </tr>

@@ -48,6 +48,75 @@ class _Cursor:
     async def to_list(self, _limit):
         return self.rows
 
+    def sort(self, *_args):
+        return self
+
+    def limit(self, *_args):
+        return self
+
+
+@pytest.mark.asyncio
+async def test_ar_aging_keeps_currency_totals_separate(user, monkeypatch):
+    accounts = SimpleNamespace(
+        find=Mock(
+            return_value=_Cursor(
+                [
+                    {"id": "try-account", "account_name": "TRY Cari", "current_balance": 100.0, "currency": "TRY"},
+                    {"id": "eur-account", "account_name": "EUR Cari", "current_balance": 25.0, "currency": "eur"},
+                ]
+            )
+        )
+    )
+    transactions = SimpleNamespace(
+        find_one=AsyncMock(
+            return_value={"transaction_date": "2026-09-01T00:00:00+00:00"}
+        )
+    )
+    monkeypatch.setattr(
+        cashiering,
+        "db",
+        SimpleNamespace(city_ledger_accounts=accounts, city_ledger_transactions=transactions),
+    )
+
+    result = await cashiering.get_ar_aging_report(credentials=None)
+
+    assert result["totals_by_currency"]["total"] == {"EUR": 25.0, "TRY": 100.0}
+    entries = [entry for values in result["aging_buckets"].values() for entry in values]
+    assert {entry["currency"] for entry in entries} == {"EUR", "TRY"}
+
+
+@pytest.mark.asyncio
+async def test_city_ledger_statement_uses_account_currency_and_stored_balance(user, monkeypatch):
+    accounts = SimpleNamespace(
+        find_one=AsyncMock(return_value={"currency": "usd", "current_balance": 40.0})
+    )
+    transactions = SimpleNamespace(
+        find=Mock(
+            return_value=_Cursor(
+                [
+                    {"id": "charge-1", "transaction_type": "charge", "amount": 100.0},
+                    {"id": "payment-1", "transaction_type": "payment", "amount": 25.0},
+                ]
+            )
+        )
+    )
+    monkeypatch.setattr(
+        cashiering,
+        "db",
+        SimpleNamespace(city_ledger_accounts=accounts, city_ledger_transactions=transactions),
+    )
+
+    result = await cashiering.get_city_ledger_transactions("account-1", credentials=None)
+
+    assert result["summary"] == {
+        "total_charges": 100.0,
+        "total_payments": 25.0,
+        "current_balance": 40.0,
+        "currency": "USD",
+        "transaction_count": 2,
+    }
+    assert [transaction["currency"] for transaction in result["transactions"]] == ["USD", "USD"]
+
 
 @pytest.mark.asyncio
 async def test_city_ledger_candidates_are_tenant_scoped_and_exclude_linked_companies(user, monkeypatch):
