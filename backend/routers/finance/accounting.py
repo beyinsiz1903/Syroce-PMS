@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 import re as _re
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -69,6 +70,27 @@ def _accounting_currency(value: object, fallback: str = "TRY") -> str:
     if code not in SUPPORTED_ACCOUNTING_CURRENCIES:
         raise ValueError(f"Unsupported currency: {code}")
     return code
+
+
+def _invoice_currency_terms(
+    requested_currency: object,
+    requested_exchange_rate: object,
+    tenant_currency: str,
+) -> tuple[str, float]:
+    """Resolve one invoice currency without silently inventing an FX rate."""
+    base_currency = _accounting_currency(tenant_currency)
+    currency = _accounting_currency(requested_currency, base_currency)
+    if currency == base_currency:
+        return currency, 1.0
+    try:
+        exchange_rate = float(requested_exchange_rate)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{currency} fatura için 1 {currency} = kaç {base_currency} olduğu girilmelidir"
+        ) from exc
+    if not math.isfinite(exchange_rate) or exchange_rate <= 0:
+        raise ValueError("Fatura döviz kuru sıfırdan büyük olmalıdır")
+    return currency, exchange_rate
 
 
 def _currency_totals(records, amount_field: str, fallback_currency: str, predicate=None) -> dict[str, float]:
@@ -1251,6 +1273,8 @@ class AccountingInvoiceCreateRequest(BaseModel):
     due_date: str
     booking_id: str | None = None
     notes: str | None = None
+    currency: str | None = None
+    exchange_rate: float | None = Field(default=None, gt=0)
 
     @field_validator("customer_tax_number")
     @classmethod
@@ -1262,6 +1286,11 @@ class AccountingInvoiceCreateRequest(BaseModel):
     def _validate_due_date(cls, v: str) -> str:
         return _normalize_accounting_invoice_due_date(v)
 
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, v: str | None) -> str | None:
+        return _accounting_currency(v) if v else None
+
 
 @router.post("/accounting/invoices")
 async def create_accounting_invoice(
@@ -1270,6 +1299,16 @@ async def create_accounting_invoice(
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     # Models are now imported at the top of the file
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    try:
+        invoice_currency, exchange_rate = _invoice_currency_terms(
+            request.currency,
+            request.exchange_rate,
+            tenant_currency,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     count = await db.accounting_invoices.count_documents({"tenant_id": current_user.tenant_id})
     invoice_number = f"INV-{datetime.now().year}-{count + 1:05d}"
@@ -1362,6 +1401,12 @@ async def create_accounting_invoice(
         vat_withholding=vat_withholding,
         total_additional_taxes=total_additional_taxes,
         total=total,
+        currency=invoice_currency,
+        base_currency=tenant_currency,
+        exchange_rate=exchange_rate,
+        subtotal_base=round(subtotal * exchange_rate, 2),
+        total_vat_base=round(total_vat * exchange_rate, 2),
+        total_base=round(total * exchange_rate, 2),
         due_date=datetime.fromisoformat(request.due_date),
         booking_id=request.booking_id,
         notes=request.notes,
@@ -1378,6 +1423,7 @@ async def create_accounting_invoice(
         transaction_type="income",
         category="room_revenue" if request.booking_id else "other_services",
         amount=total,
+        currency=invoice_currency,
         description=f"Invoice {invoice_number}",
         reference_id=invoice.id,
         reference_type="invoice",

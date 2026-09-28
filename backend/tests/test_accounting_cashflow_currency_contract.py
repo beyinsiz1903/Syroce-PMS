@@ -2,10 +2,12 @@ import pytest
 from pydantic import ValidationError
 
 from routers.finance.accounting import (
+    AccountingInvoiceCreateRequest,
     ExpenseCreateRequest,
     InventoryItemCreateRequest,
     _accounting_currency,
     _currency_totals,
+    _invoice_currency_terms,
 )
 
 
@@ -63,3 +65,24 @@ def test_currency_totals_never_add_unrelated_nominal_amounts():
         "TRY": 110.0,
         "EUR": 50.0,
     }
+
+
+def test_standard_invoice_request_preserves_selected_currency_and_rate():
+    request = AccountingInvoiceCreateRequest(
+        invoice_type="sales",
+        customer_name="Foreign guest",
+        due_date="2026-10-15",
+        currency="eur",
+        exchange_rate=48.25,
+    )
+
+    assert request.currency == "EUR"
+    assert _invoice_currency_terms(request.currency, request.exchange_rate, "TRY") == ("EUR", 48.25)
+
+
+def test_foreign_invoice_requires_an_explicit_positive_accounting_rate():
+    with pytest.raises(ValueError, match="kaç TRY"):
+        _invoice_currency_terms("EUR", None, "TRY")
+    with pytest.raises(ValueError, match="sıfırdan büyük"):
+        _invoice_currency_terms("EUR", 0, "TRY")
+    assert _invoice_currency_terms("TRY", None, "TRY") == ("TRY", 1.0)

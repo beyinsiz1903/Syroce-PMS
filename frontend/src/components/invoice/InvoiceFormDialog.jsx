@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus } from 'lucide-react';
 import { useCurrency } from '@/context/CurrencyContext';
+import { formatCurrency } from '@/lib/currency';
 
 export const createAccountingInvoice = (invoice) => axios.post('/accounting/invoices', invoice);
 
@@ -24,6 +25,8 @@ export const INVOICE_ITEM_CATEGORIES = {
   alcoholic_beverage: { label: 'Alkollü içecek', vatRate: 20 },
   other: { label: 'Diğer mal / hizmet', vatRate: 20 },
 };
+
+export const SUPPORTED_INVOICE_CURRENCIES = ['TRY', 'EUR', 'USD', 'GBP'];
 
 export const createInvoiceItem = (category = 'accommodation') => ({
   category,
@@ -44,7 +47,7 @@ const InvoiceFormDialog = ({
   const {
     t
   } = useTranslation();
-  const { amount: formatMoney } = useCurrency();
+  const { code: tenantCurrency } = useCurrency();
   const [newInvoice, setNewInvoice] = useState({
     invoice_type: 'sales',
     customer_name: '',
@@ -54,7 +57,9 @@ const InvoiceFormDialog = ({
     customer_address: '',
     items: [createInvoiceItem()],
     due_date: '',
-    notes: ''
+    notes: '',
+    currency: tenantCurrency || 'TRY',
+    exchange_rate: 1,
   });
   const [showAdditionalTaxDialog, setShowAdditionalTaxDialog] = useState(false);
   const [currentItemIndex, setCurrentItemIndex] = useState(null);
@@ -138,7 +143,9 @@ const InvoiceFormDialog = ({
     e.preventDefault();
     try {
       const dueDate = new FormData(e.currentTarget).get('due_date');
-      const response = await createAccountingInvoice(withSubmittedDueDate(newInvoice, dueDate));
+      const payload = withSubmittedDueDate(newInvoice, dueDate);
+      payload.exchange_rate = payload.currency === tenantCurrency ? 1 : Number(payload.exchange_rate);
+      const response = await createAccountingInvoice(payload);
       if (!response.data?.id) throw new Error('Fatura kaydı doğrulanamadı.');
       toast.success('Fatura oluşturuldu');
       if (onCreated) onCreated(); else onClose();
@@ -171,6 +178,13 @@ const InvoiceFormDialog = ({
     }
   });
   const invoiceTotal = invoiceSubtotal + invoiceTotalVAT + invoiceAdditionalTaxes - invoiceVATWithholding;
+  const selectedCurrency = newInvoice.currency || tenantCurrency || 'TRY';
+  const isForeignCurrency = selectedCurrency !== tenantCurrency;
+  const selectedExchangeRate = Number(newInvoice.exchange_rate);
+  const formatInvoiceMoney = value => formatCurrency(value, selectedCurrency, { decimals: 2 });
+  const accountingEquivalent = Number.isFinite(selectedExchangeRate) && selectedExchangeRate > 0
+    ? invoiceTotal * selectedExchangeRate
+    : null;
   return <>
       <Dialog open={open} onOpenChange={o => !o && onClose()}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
@@ -179,7 +193,7 @@ const InvoiceFormDialog = ({
             <DialogDescription>{t('invoice.subtitle')}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateInvoice} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
                 <Label>{t('invoice.invoiceType')}</Label>
                 <Select value={newInvoice.invoice_type} onValueChange={v => setNewInvoice({
@@ -195,6 +209,24 @@ const InvoiceFormDialog = ({
                 </Select>
               </div>
               <div>
+                <Label>Fatura Para Birimi *</Label>
+                <Select value={selectedCurrency} onValueChange={currency => setNewInvoice({
+                  ...newInvoice,
+                  currency,
+                  exchange_rate: currency === tenantCurrency ? 1 : '',
+                })}>
+                  <SelectTrigger data-testid="invoice-currency-select" aria-label="Fatura para birimi">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_INVOICE_CURRENCIES.map(currency => (
+                      <SelectItem key={currency} value={currency}>{currency}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-slate-500">Tüm kalemler ve vergiler bu para biriminde kaydedilir.</p>
+              </div>
+              <div>
                 <Label>{t('invoice.customerName')} *</Label>
                 <Input value={newInvoice.customer_name} onChange={e => setNewInvoice({
                 ...newInvoice,
@@ -202,6 +234,27 @@ const InvoiceFormDialog = ({
               })} required />
               </div>
             </div>
+
+            {isForeignCurrency && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <Label htmlFor="invoice-exchange-rate">Muhasebe Döviz Kuru *</Label>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="whitespace-nowrap text-sm text-blue-900">1 {selectedCurrency} =</span>
+                  <Input
+                    id="invoice-exchange-rate"
+                    data-testid="invoice-exchange-rate"
+                    type="number"
+                    min="0.000001"
+                    step="0.000001"
+                    value={newInvoice.exchange_rate}
+                    onChange={e => setNewInvoice({ ...newInvoice, exchange_rate: e.target.value })}
+                    required
+                  />
+                  <span className="text-sm font-medium text-blue-900">{tenantCurrency}</span>
+                </div>
+                <p className="mt-2 text-xs text-blue-800">Fatura tutarı değişmez; bu kur yalnızca muhasebe karşılığını kaydeder.</p>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -275,7 +328,7 @@ const InvoiceFormDialog = ({
                     {item.additional_taxes && item.additional_taxes.length > 0 && <div className="ml-4 space-y-1">
                         {item.additional_taxes.map((tax, taxIndex) => <div key={taxIndex} className="flex items-center justify-between text-sm bg-blue-50 px-2 py-1 rounded">
                             <span className="text-blue-700">
-                              {tax.tax_name}: {tax.is_percentage ? `${tax.rate}%` : formatMoney(tax.amount, { decimals: 2 })}
+                              {tax.tax_name}: {tax.is_percentage ? `${tax.rate}%` : formatInvoiceMoney(tax.amount)}
                               {tax.withholding_rate && ` (${tax.withholding_rate})`}
                             </span>
                             <Button type="button" size="sm" variant="ghost" onClick={() => removeAdditionalTax(index, taxIndex)} className="h-6 w-6 p-0 text-red-600">
@@ -291,30 +344,36 @@ const InvoiceFormDialog = ({
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600">{t('invoice.subtotal')}:</span>
-                  <span className="font-medium">{formatMoney(invoiceSubtotal, { decimals: 2 })}</span>
+                  <span className="font-medium">{formatInvoiceMoney(invoiceSubtotal)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">{t('invoice.totalVAT')}:</span>
-                  <span className="font-medium">{formatMoney(invoiceTotalVAT, { decimals: 2 })}</span>
+                  <span className="font-medium">{formatInvoiceMoney(invoiceTotalVAT)}</span>
                 </div>
                 {invoiceAdditionalTaxes > 0 && <div className="flex justify-between">
                     <span className="text-gray-600">{t('invoice.additionalTaxes')}:</span>
-                    <span className="font-medium">{formatMoney(invoiceAdditionalTaxes, { decimals: 2 })}</span>
+                    <span className="font-medium">{formatInvoiceMoney(invoiceAdditionalTaxes)}</span>
                   </div>}
                 {invoiceVATWithholding > 0 && <>
                     <div className="flex justify-between text-red-600">
                       <span>{t('invoice.vatWithholding')}:</span>
-                      <span className="font-medium">-{formatMoney(invoiceVATWithholding, { decimals: 2 })}</span>
+                      <span className="font-medium">-{formatInvoiceMoney(invoiceVATWithholding)}</span>
                     </div>
                     <div className="flex justify-between text-red-600">
                       <span>{t('invoice.totalWithholding')}:</span>
-                      <span className="font-medium">-{formatMoney(invoiceVATWithholding, { decimals: 2 })}</span>
+                      <span className="font-medium">-{formatInvoiceMoney(invoiceVATWithholding)}</span>
                     </div>
                   </>}
                 <div className="flex justify-between text-lg font-bold border-t pt-2">
                   <span>{t('invoice.grandTotal')}:</span>
-                  <span>{formatMoney(invoiceTotal, { decimals: 2 })}</span>
+                  <span>{formatInvoiceMoney(invoiceTotal)}</span>
                 </div>
+                {isForeignCurrency && accountingEquivalent !== null && (
+                  <div className="flex justify-between text-sm text-slate-500" data-testid="invoice-accounting-equivalent">
+                    <span>Muhasebe karşılığı:</span>
+                    <span>{formatCurrency(accountingEquivalent, tenantCurrency, { decimals: 2 })}</span>
+                  </div>
+                )}
               </div>
             </div>
 
