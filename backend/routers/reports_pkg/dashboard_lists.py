@@ -1294,6 +1294,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     payment_methods = {}
     total_paid = 0
     payment_totals_by_currency: dict[str, float] = {}
+    ledger_payment_totals_by_currency: dict[str, float] = {}
     payment_totals_by_method_currency: dict[str, dict[str, float]] = {}
     payment_rows = []
     for p in all_payments:
@@ -1309,6 +1310,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         received = _received_payment_amount(p, p.get("currency") or payment_booking.get("currency") or "TRY")
         received_currency = str(received.get("currency") or "TRY").upper()
         received_amount = float(received.get("amount") or 0)
+        ledger_currency = str(p.get("currency") or payment_booking.get("currency") or "TRY").upper()
+        ledger_payment_totals_by_currency[ledger_currency] = ledger_payment_totals_by_currency.get(ledger_currency, 0) + amt
         payment_totals_by_currency[received_currency] = payment_totals_by_currency.get(received_currency, 0) + received_amount
         method_totals = payment_totals_by_method_currency.setdefault(method, {})
         method_totals[received_currency] = method_totals.get(received_currency, 0) + received_amount
@@ -1320,7 +1323,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "room_number": str(p.get("room_number") or payment_booking.get("room_number") or room_map.get(str(payment_booking.get("room_id"))) or "?").strip() or "?",
                 "guest_name": _guest_display_name(guests_by_id.get(str(payment_booking.get("guest_id"))), payment_booking) if payment_booking else None,
                 "amount": round(amt, 2),
-                "currency": str(p.get("currency") or payment_booking.get("currency") or "TRY").upper(),
+                "currency": ledger_currency,
                 "received_amount": round(received_amount, 2),
                 "received_currency": received_currency,
                 "method": method,
@@ -1336,6 +1339,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
 
     daily_charges = daily_period_charges
     charge_total = round(sum(float(c.get("total") or c.get("amount") or 0) for c in daily_charges), 2)
+    charge_totals_by_currency = _currency_breakdown(daily_charges, charge_amount, charge_currency)
+    balance_change_by_currency = {
+        code: round(charge_totals_by_currency.get(code, 0) - ledger_payment_totals_by_currency.get(code, 0), 2)
+        for code in set(charge_totals_by_currency) | set(ledger_payment_totals_by_currency)
+    }
+    uncollected_by_currency = {code: max(amount, 0) for code, amount in balance_change_by_currency.items()}
     cash_total = round(payment_methods.get("cash", 0), 2)
 
     room_rate_rows = []
@@ -1363,6 +1372,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "agreed_rate": agreed_rate,
                 "posted_rate": posted_rate,
                 "variance": round(posted_rate - agreed_rate, 2),
+                "currency": str(booking.get("currency") or "TRY").upper(),
                 "posting_status": "posted" if posted_rate else "pending",
             }
         )
@@ -1521,12 +1531,16 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         },
         "front_cashier": {
             "charge_total": charge_total,
+            "charge_total_by_currency": charge_totals_by_currency,
             "collection_total": round(total_paid, 2),
             "cash_total": cash_total,
             "non_cash_total": round(total_paid - cash_total, 2),
             "net_cash_movement": cash_total,
+            "net_cash_movement_by_currency": payment_totals_by_method_currency.get("cash", {}),
             "daily_balance_change": round(charge_total - total_paid, 2),
+            "daily_balance_change_by_currency": balance_change_by_currency,
             "uncollected_charges": round(max(charge_total - total_paid, 0), 2),
+            "uncollected_charges_by_currency": uncollected_by_currency,
             "charge_count": len(daily_charges),
             "payment_count": len(payment_rows),
         },
@@ -1548,6 +1562,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "adr": analysis_adr,
             "revpar": analysis_revpar,
             "collections": round(total_paid, 2),
+            "collections_by_currency": {code: round(amount, 2) for code, amount in payment_totals_by_currency.items()},
+            "posted_room_revenue_by_currency": today_room_revenue_by_currency,
+            "adr_by_currency": daily_performance["adr_by_currency"],
+            "revpar_by_currency": daily_performance["revpar_by_currency"],
         },
         "maintenance": {"open": maint_open, "completed_month": maint_completed},
         "finance": {"pending_invoices": pending_invoices, "paid_invoices_month": paid_invoices},
