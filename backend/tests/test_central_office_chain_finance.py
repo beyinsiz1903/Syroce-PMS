@@ -77,7 +77,39 @@ async def test_central_office_dashboard_aggregates_only_chain_properties(monkeyp
         "total_guests": 30,
     }
     assert result["kpis"]["total_revenue_mtd"] == 150.0
+    assert result["kpis"]["total_revenue_mtd_by_currency"] == {"TRY": 150.0}
     assert {row["tenant_id"] for row in result["property_breakdown"]} == {"tenant-a", "tenant-b"}
+
+
+@pytest.mark.asyncio
+async def test_central_office_keeps_mixed_property_currencies_separate(monkeypatch):
+    class _MixedTenantCollection(_TenantCollection):
+        async def find_one(self, *_args, **_kwargs):
+            return {"id": "tenant-a", "chain_id": "chain-1", "hotel_name": "Otel A", "currency": "TRY"}
+
+        def find(self, *_args, **_kwargs):
+            return _Cursor(
+                [
+                    {"id": "tenant-a", "chain_id": "chain-1", "hotel_name": "Otel A", "currency": "TRY"},
+                    {"id": "tenant-b", "chain_id": "chain-1", "hotel_name": "Otel B", "currency": "EUR"},
+                ]
+            )
+
+    database = SimpleNamespace(
+        tenants=_MixedTenantCollection(),
+        rooms=_RowsByTenant({"tenant-a": [], "tenant-b": []}),
+        folio_charges=_RowsByTenant({"tenant-a": [{"total": 100}], "tenant-b": [{"total": 50}]}),
+        bookings=_Counts({}),
+        guests=_Counts({}),
+    )
+    monkeypatch.setattr(central, "_system_db", database)
+
+    result = await central.central_office_revenue(
+        current_user=SimpleNamespace(tenant_id="tenant-a", role="admin", is_chain_headquarters=True)
+    )
+
+    assert result["total_chain_revenue"] is None
+    assert result["total_chain_revenue_by_currency"] == {"TRY": 100.0, "EUR": 50.0}
 
 
 @pytest.mark.asyncio

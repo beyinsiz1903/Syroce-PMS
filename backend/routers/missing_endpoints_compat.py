@@ -79,6 +79,7 @@ async def _central_chain_properties(current_user) -> list[dict]:
         {
             "tenant_id": tenant_id_from_document(tenant),
             "property_name": tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name") or tenant_id_from_document(tenant),
+            "currency": str(tenant.get("currency") or tenant.get("default_currency") or "TRY").upper(),
         }
         for tenant in tenants
         if tenant_id_from_document(tenant)
@@ -98,9 +99,16 @@ async def _central_property_metrics(property_doc: dict, period_start: str, perio
                 {"date": {"$gte": period_start, "$lt": period_end}},
             ],
         },
-        {"_id": 0, "total": 1, "amount": 1},
+        {"_id": 0, "total": 1, "amount": 1, "currency": 1, "currency_code": 1},
     ).to_list(100000)
-    revenue = round(sum(float(row.get("total", row.get("amount", 0)) or 0) for row in charges), 2)
+    revenue_by_currency: dict[str, float] = {}
+    for row in charges:
+        currency = str(row.get("currency") or row.get("currency_code") or property_doc.get("currency") or "TRY").upper()
+        if currency == "TL":
+            currency = "TRY"
+        amount = float(row.get("total", row.get("amount", 0)) or 0)
+        revenue_by_currency[currency] = round(revenue_by_currency.get(currency, 0.0) + amount, 2)
+    revenue = round(sum(revenue_by_currency.values()), 2)
     today_checkins = await _system_db.bookings.count_documents({"tenant_id": tenant_id, "check_in": today, "status": {"$ne": "cancelled"}})
     total_guests = await _system_db.guests.count_documents({"tenant_id": tenant_id})
     total_rooms = len(rooms)
@@ -114,7 +122,24 @@ async def _central_property_metrics(property_doc: dict, period_start: str, perio
         "today_checkins": today_checkins,
         "total_guests": total_guests,
         "total_revenue": revenue,
+        "total_revenue_by_currency": revenue_by_currency,
     }
+
+
+def _central_revenue_totals(rows: list[dict]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for row in rows:
+        for currency, amount in (row.get("total_revenue_by_currency") or {}).items():
+            code = str(currency or "TRY").upper()
+            totals[code] = round(totals.get(code, 0.0) + float(amount or 0), 2)
+    return totals
+
+
+def _single_currency_total(totals: dict[str, float]) -> float | None:
+    non_zero = [float(amount) for amount in totals.values() if float(amount or 0) != 0]
+    if len(non_zero) > 1:
+        return None
+    return round(non_zero[0], 2) if non_zero else 0.0
 
 
 @router.get("/central-office/dashboard")
@@ -127,7 +152,8 @@ async def central_office_dashboard(current_user=Depends(get_current_user), _perm
     breakdown = await asyncio.gather(*(_central_property_metrics(property_doc, month_start, tomorrow, today) for property_doc in properties))
     total_rooms = sum(row["total_rooms"] for row in breakdown)
     occupied = sum(row["occupied_rooms"] for row in breakdown)
-    total_revenue = round(sum(row["total_revenue"] for row in breakdown), 2)
+    total_revenue_by_currency = _central_revenue_totals(breakdown)
+    total_revenue = _single_currency_total(total_revenue_by_currency)
     return {
         "properties": breakdown,
         "property_breakdown": breakdown,
@@ -141,6 +167,7 @@ async def central_office_dashboard(current_user=Depends(get_current_user), _perm
         "total_properties": len(breakdown),
         "kpis": {
             "total_revenue_mtd": total_revenue,
+            "total_revenue_mtd_by_currency": total_revenue_by_currency,
             "average_occupancy": round((occupied / total_rooms) * 100, 2) if total_rooms else 0.0,
         },
     }
@@ -185,11 +212,13 @@ async def central_office_revenue(current_user=Depends(get_current_user), _perm=D
     end = (now.date() + timedelta(days=1)).isoformat()
     properties = await _central_chain_properties(current_user)
     rows = await asyncio.gather(*(_central_property_metrics(row, start, end, today) for row in properties))
-    total = round(sum(row["total_revenue"] for row in rows), 2)
+    totals_by_currency = _central_revenue_totals(rows)
+    total = _single_currency_total(totals_by_currency)
     return {
         "properties": rows,
         "total_chain_revenue": total,
-        "totals": {"revenue": total},
+        "total_chain_revenue_by_currency": totals_by_currency,
+        "totals": {"revenue": total, "revenue_by_currency": totals_by_currency},
         "period": {"start": start, "end": today},
     }
 
