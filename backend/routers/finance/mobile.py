@@ -385,14 +385,27 @@ async def get_monthly_costs_mobile(
     total_costs = 0.0
     costs_by_category = {}
 
-    async for expense in db.expenses.find({"tenant_id": current_user.tenant_id, "expense_date": {"$gte": start_of_month, "$lt": end_of_month}}):
-        amount = expense.get("amount", 0)
+    last_day = (end_of_month - timedelta(days=1)).date().isoformat()
+    expense_query = {
+        "tenant_id": current_user.tenant_id,
+        **accounting_period_match(
+            start_of_month.date().isoformat(),
+            last_day,
+            {"date": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
+            {"expense_date": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
+        ),
+    }
+    async for expense in db.expenses.find(expense_query):
+        amount = expense.get("total_amount", expense.get("amount", 0))
         total_costs += amount
 
         category = expense.get("category", "other")
         costs_by_category[category] = costs_by_category.get(category, 0) + amount
 
-    return {"year": target_year, "month": target_month, "total_costs": total_costs, "costs_by_category": costs_by_category}
+    from core.tenant_currency import get_tenant_currency
+
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    return {"year": target_year, "month": target_month, "total_costs": total_costs, "costs_by_category": costs_by_category, "currency": currency}
 
 
 @router.post("/finance/mobile/record-payment")
@@ -1059,6 +1072,8 @@ async def get_folio_full_extract_mobile(
     # Get booking details
     booking = await db.bookings.find_one({"id": folio.get("booking_id"), "tenant_id": current_user.tenant_id})
 
+    ledger_currency = str((booking or {}).get("currency") or folio.get("currency") or "TRY").upper()
+
     # Get guest details
     guest = None
     if booking:
@@ -1083,6 +1098,7 @@ async def get_folio_full_extract_mobile(
                 "amount": charge.get("amount", 0),
                 "tax_amount": charge.get("tax_amount", 0),
                 "total": charge_amount,
+                "currency": str(charge.get("currency") or ledger_currency).upper(),
                 "posted_by": charge.get("posted_by"),
             }
         )
@@ -1098,6 +1114,7 @@ async def get_folio_full_extract_mobile(
                 "id": payment.get("id"),
                 "date": payment.get("created_at").isoformat() if payment.get("created_at") else None,
                 "amount": payment_amount,
+                "currency": str(payment.get("currency") or ledger_currency).upper(),
                 "payment_method": payment.get("payment_method") or payment.get("method"),
                 "payment_type": payment.get("payment_type"),
                 "notes": payment.get("notes"),
@@ -1113,6 +1130,7 @@ async def get_folio_full_extract_mobile(
             "folio_number": folio.get("folio_number"),
             "folio_type": folio.get("folio_type"),
             "status": folio.get("status"),
+            "currency": ledger_currency,
             "created_at": folio.get("created_at").isoformat() if folio.get("created_at") else None,
             "closed_at": folio.get("closed_at").isoformat() if folio.get("closed_at") else None,
         },

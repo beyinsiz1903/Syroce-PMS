@@ -15,6 +15,12 @@ import { useTranslation } from 'react-i18next';
 export default function ReportsModal(props) {
   const { t } = useTranslation();
   const { dailyCollections, formatCurrency, formatPercent, monthlyCollections, monthlyCosts, reportsModalOpen, setReportsModalOpen } = props;
+  const formatTotals = (totals, fallback, currency) => {
+    const entries = Object.entries(totals || {}).filter(([, amount]) => Number(amount) !== 0);
+    return entries.length
+      ? entries.map(([code, amount]) => formatCurrency(amount, code)).join(' · ')
+      : formatCurrency(fallback || 0, currency);
+  };
   return (
     <Dialog open={reportsModalOpen} onOpenChange={setReportsModalOpen}>
       <DialogContent className="max-w-full w-[95vw] max-h-[80vh] overflow-y-auto">
@@ -29,7 +35,7 @@ export default function ReportsModal(props) {
             <CardContent className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.bugun_tahsilat')}</span>
-                <span className="font-bold text-green-700">{formatCurrency(dailyCollections?.total_collected || 0)}</span>
+                <span className="font-bold text-green-700">{formatTotals(dailyCollections?.totals_by_currency, dailyCollections?.total_collected, dailyCollections?.currency)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.islem_sayisi')}</span>
@@ -49,7 +55,7 @@ export default function ReportsModal(props) {
             <CardContent className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.toplam_tahsilat')}</span>
-                <span className="font-bold text-green-700">{formatCurrency(monthlyCollections?.total_collected || 0)}</span>
+                <span className="font-bold text-green-700">{formatTotals(monthlyCollections?.totals_by_currency, monthlyCollections?.total_collected, monthlyCollections?.currency)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.beklenen_tutar')}</span>
@@ -73,12 +79,12 @@ export default function ReportsModal(props) {
             <CardContent className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.aylik_maliyet')}</span>
-                <span className="font-bold text-red-700">{formatCurrency(monthlyCosts?.total_costs || 0)}</span>
+                <span className="font-bold text-red-700">{formatCurrency(monthlyCosts?.total_costs || 0, monthlyCosts?.currency)}</span>
               </div>
               {monthlyCosts?.costs_by_category && Object.entries(monthlyCosts.costs_by_category).map(([category, amount]) => (
                 <div key={category} className="flex justify-between pl-4">
                   <span className="text-sm text-gray-500 capitalize">{category}:</span>
-                  <span className="text-sm">{formatCurrency(amount)}</span>
+                  <span className="text-sm">{formatCurrency(amount, monthlyCosts?.currency)}</span>
                 </div>
               ))}
             </CardContent>

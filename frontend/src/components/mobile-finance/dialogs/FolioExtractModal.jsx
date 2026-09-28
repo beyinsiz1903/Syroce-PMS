@@ -15,6 +15,7 @@ import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, Ar
 export default function FolioExtractModal(props) {
   const { folioExtractModalOpen, formatCurrency, selectedFolioExtract, setFolioExtractModalOpen} = props;
   const { t } = useTranslation();
+  const folioCurrency = selectedFolioExtract?.folio?.currency;
   return (
     <Dialog open={folioExtractModalOpen} onOpenChange={setFolioExtractModalOpen}>
       <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -75,13 +76,13 @@ export default function FolioExtractModal(props) {
                             {charge.date && new Date(charge.date).toLocaleDateString('tr-TR')} - {charge.category}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {charge.quantity}x {formatCurrency(charge.unit_price)}
+                            {charge.quantity}x {formatCurrency(charge.unit_price, charge.currency || folioCurrency)}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold">{formatCurrency(charge.total)}</p>
+                          <p className="font-bold">{formatCurrency(charge.total, charge.currency || folioCurrency)}</p>
                           {charge.tax_amount > 0 && (
-                            <p className="text-xs text-gray-500">KDV: {formatCurrency(charge.tax_amount)}</p>
+                            <p className="text-xs text-gray-500">KDV: {formatCurrency(charge.tax_amount, charge.currency || folioCurrency)}</p>
                           )}
                         </div>
                       </div>
@@ -112,7 +113,7 @@ export default function FolioExtractModal(props) {
                             <p className="text-xs text-gray-500 italic">{payment.notes}</p>
                           )}
                         </div>
-                        <p className="font-bold text-green-700">{formatCurrency(payment.amount)}</p>
+                        <p className="font-bold text-green-700">{formatCurrency(payment.amount, payment.currency || folioCurrency)}</p>
                       </div>
                     </div>
                   ))
@@ -131,18 +132,18 @@ export default function FolioExtractModal(props) {
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.toplam_harcama')}</span>
-                    <span className="font-bold">{formatCurrency(selectedFolioExtract.summary?.total_charges || 0)}</span>
+                    <span className="font-bold">{formatCurrency(selectedFolioExtract.summary?.total_charges || 0, folioCurrency)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.toplam_odeme')}</span>
-                    <span className="font-bold text-green-700">{formatCurrency(selectedFolioExtract.summary?.total_payments || 0)}</span>
+                    <span className="font-bold text-green-700">{formatCurrency(selectedFolioExtract.summary?.total_payments || 0, folioCurrency)}</span>
                   </div>
                   <div className="flex justify-between pt-2 border-t-2 border-gray-300">
                     <span className="font-bold text-lg text-gray-900">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.kalan_bakiye')}</span>
                     <span className={`font-bold text-xl ${
                       (selectedFolioExtract.summary?.current_balance || 0) > 0 ? 'text-red-700' : 'text-green-700'
                     }`}>
-                      {formatCurrency(selectedFolioExtract.summary?.current_balance || 0)}
+                      {formatCurrency(selectedFolioExtract.summary?.current_balance || 0, folioCurrency)}
                     </span>
                   </div>
                 </div>
