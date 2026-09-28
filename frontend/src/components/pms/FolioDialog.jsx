@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
   const { t } = useTranslation();
@@ -20,7 +20,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const chargeSubmittingRef = useRef(false);
   const paymentSubmittingRef = useRef(false);
-  const folioCurrency = folio?.currency || folio?.currency_code || 'TRY';
+  const folioCurrency = folio?.currency || folio?.currency_code || cachedTenantCurrency();
 
   const handleAddCharge = async (e) => {
     e.preventDefault();

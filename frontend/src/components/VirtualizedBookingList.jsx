@@ -12,12 +12,13 @@ import { useTranslation } from 'react-i18next';
 import { roomLabel } from '@/utils/displayIdentifiers';
 import { statusLabel } from '@/pages/reservation-detail/helpers';
 import { bookingSourceLabel } from '@/utils/bookingSource';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 export { bookingSourceLabel } from '@/utils/bookingSource';
 
-export const formatBookingAmount = (amount, currency = 'TRY') => new Intl.NumberFormat('tr-TR', {
+export const formatBookingAmount = (amount, currency = cachedTenantCurrency()) => new Intl.NumberFormat('tr-TR', {
   style: 'currency',
-  currency: String(currency || 'TRY').toUpperCase() === 'TL' ? 'TRY' : String(currency).toUpperCase(),
+  currency: String(currency || cachedTenantCurrency()).toUpperCase() === 'TL' ? 'TRY' : String(currency || cachedTenantCurrency()).toUpperCase(),
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 }).format(Number(amount) || 0);
@@ -90,7 +91,7 @@ const BookingRow = memo(({ index, style, data }) => {
             <div>
               <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.tutar')}</div>
               <div className="font-semibold tabular-nums">
-                {formatBookingAmount(booking.total_amount, booking.currency || booking.currency_code || 'TRY')}
+                {formatBookingAmount(booking.total_amount, booking.currency || booking.currency_code || cachedTenantCurrency())}
               </div>
             </div>
 

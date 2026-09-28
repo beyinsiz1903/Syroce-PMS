@@ -34,6 +34,13 @@ describe('ReservationSidebar quick panel', () => {
     });
   });
 
+  it('falls back to the tenant currency when legacy booking data has no currency', () => {
+    localStorage.setItem('user', JSON.stringify({ tenant_id: 'tenant-eur' }));
+    localStorage.setItem('tenant_currency:tenant-eur', JSON.stringify({ code: 'EUR' }));
+
+    expect(reservationQuickPanelSummary({ ...booking, currency: undefined }, null).currency).toBe('EUR');
+  });
+
   it('opens the full workspace without removing quick actions', () => {
     const onOpenWorkspace = vi.fn();
     const onViewFolio = vi.fn();

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import CallButton from '@/components/contact-center/CallButton';
 import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency } from '@/lib/currency';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 
 export const reservationQuickPanelSummary = (booking, folio) => {
@@ -26,7 +27,7 @@ export const reservationQuickPanelSummary = (booking, folio) => {
     total,
     balance: Number.isFinite(folioBalance) ? folioBalance : Number.isFinite(bookingBalance) ? bookingBalance : null,
     guestCount: Number(booking?.adults || 0) + Number(booking?.children || 0) || Number(booking?.guests_count || 0) || 1,
-    currency: String(folio?.currency || booking?.currency || 'TRY').toUpperCase(),
+    currency: String(folio?.currency || booking?.currency || cachedTenantCurrency()).toUpperCase(),
   };
 };
 
