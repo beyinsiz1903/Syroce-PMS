@@ -427,6 +427,7 @@ class FrontdeskService:
                 "message": "Check-out completed successfully",
                 "checked_out_at": checked_out_time.isoformat(),
                 "total_balance": effective_balance,
+                "currency": booking.get("currency") or "TRY",
                 "folios_closed": len(folios) if auto_close_folios else 0,
                 "folio_details": folio_details,
                 "kbs_queued": bool(kbs_job),
@@ -535,6 +536,7 @@ class FrontdeskService:
                 "folio_type": folio.get("folio_type"),
                 "owner_name": owner_name,
                 "balance": round(balance, 2),
+                "currency": folio.get("currency") or "TRY",
                 "status": folio.get("status"),
                 "booking_id": folio.get("booking_id"),
             }
@@ -551,10 +553,18 @@ class FrontdeskService:
             if days_open and days_open > 2 and balance > 0:
                 unbalanced.append({**item, "days_open": days_open})
 
+        total_open_balance_by_currency: dict[str, float] = {}
+        for folio in open_with_balance:
+            currency = str(folio.get("currency") or "TRY").upper()
+            total_open_balance_by_currency[currency] = round(
+                total_open_balance_by_currency.get(currency, 0) + float(folio["balance"]), 2
+            )
+
         summary = {
             "unchecked_in_count": len(unchecked),
             "open_folio_count": len(open_with_balance),
             "total_open_balance": round(sum(f["balance"] for f in open_with_balance), 2),
+            "total_open_balance_by_currency": total_open_balance_by_currency,
             "unbalanced_folio_count": len(unbalanced),
             "overdue_departures_count": len(overdue),
         }

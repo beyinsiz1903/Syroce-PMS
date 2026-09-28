@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, Suspense, memo } fro
 import axios from 'axios';
 import { toast } from 'sonner';
 import { getCheckoutErrorMessage, normalizeCheckoutResponse } from '@/utils/pmsCheckout';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import {
   RESERVATION_EDIT_LOCK_HEADER,
   reservationEditLockManager,
@@ -49,7 +50,6 @@ import GroupRevenueByCompany from '@/components/GroupRevenueByCompany';
 import PickupPaceReport from '@/components/PickupPaceReport';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
-import { cachedTenantCurrency } from '@/lib/currency';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import CompanyDialog from '@/components/pms/CompanyDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
@@ -711,7 +711,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       );
       const result = normalizeCheckoutResponse(response);
       if (result.totalBalance > 0.01) {
-        toast.warning(`Çıkışta açık bakiye: ${result.totalBalance.toFixed(2)} ₺`);
+        toast.warning(`Çıkışta açık bakiye: ${formatCurrency(result.totalBalance, result.currency || cachedTenantCurrency())}`);
       } else {
         toast.success(result.foliosClosed > 0
           ? `${result.message} · ${result.foliosClosed} folyo kapatıldı`

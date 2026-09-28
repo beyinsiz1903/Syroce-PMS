@@ -8,6 +8,7 @@ export function normalizeCheckoutResponse(response) {
       ? data.message.trim()
       : 'Çıkış işlemi tamamlandı',
     totalBalance: Number.isFinite(totalBalance) ? totalBalance : 0,
+    currency: typeof data.currency === 'string' ? data.currency : '',
     foliosClosed: Number.isFinite(foliosClosed) ? foliosClosed : 0,
   };
 }
