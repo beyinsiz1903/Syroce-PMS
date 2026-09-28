@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText, UserPlus, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const MultiProperty = ({ embedded = false }) => {
   const { t } = useTranslation();
@@ -104,7 +105,7 @@ const MultiProperty = ({ embedded = false }) => {
           <Card>
             <CardContent className="pt-6 text-center">
               <DollarSign className="w-10 h-10 text-amber-600 mx-auto mb-2" />
-              <p className="text-3xl font-bold">€{data.summary.total_revenue}</p>
+              <p className="text-3xl font-bold">{formatCurrencyBreakdown(data.summary.total_revenue_by_currency, data.summary.total_revenue)}</p>
               <p className="text-sm text-gray-500">Bugün Gelir</p>
             </CardContent>
           </Card>
@@ -137,11 +138,11 @@ const MultiProperty = ({ embedded = false }) => {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">ADR</p>
-                    <p className="text-lg font-bold">€{property.adr}</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(property.adr_by_currency, property.adr, property.currency)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">{t("finance.revenue")}</p>
-                    <p className="text-lg font-bold">€{property.today_revenue}</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(property.today_revenue_by_currency, property.today_revenue, property.currency)}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t text-xs">

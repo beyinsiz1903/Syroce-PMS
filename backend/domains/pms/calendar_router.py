@@ -14,10 +14,16 @@ from core.database import db
 from core.security import (
     get_current_user,
 )
+from core.tenant_currency import get_tenant_currency
 from models.schemas import CreateRateCodeRequest, GetCalendarTooltipRequest, User
 from modules.pms_core.role_permission_service import require_op  # v74 Bug DJ
 
 logger = logging.getLogger(__name__)
+
+
+def _add_money(total: dict[str, float], currency: str | None, amount: object) -> None:
+    code = str(currency or "TRY").upper()
+    total[code] = round(total.get(code, 0.0) + float(amount or 0), 2)
 
 try:
     from cache_manager import cached
@@ -213,6 +219,7 @@ async def get_availability_heatmap(
     """Generate availability heatmap showing occupancy intensity"""
     start = datetime.fromisoformat(start_date).date()
     end = datetime.fromisoformat(end_date).date()
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Get all rooms
     rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
@@ -351,11 +358,16 @@ async def get_group_bookings(
                 "bookings": [],
                 "room_count": 0,
                 "total_revenue": 0,
+                "total_revenue_by_currency": {},
+                "room_count_by_currency": {},
             }
 
         groups[key]["bookings"].append(booking)
         groups[key]["room_count"] += 1
         groups[key]["total_revenue"] += booking.get("total_amount", 0)
+        currency = str(booking.get("currency") or tenant_currency).upper()
+        _add_money(groups[key]["total_revenue_by_currency"], currency, booking.get("total_amount", 0))
+        groups[key]["room_count_by_currency"][currency] = groups[key]["room_count_by_currency"].get(currency, 0) + 1
 
     # ── Source B: db.group_bookings koleksiyonu (Group Folio sayfasındaki
     # gerçek gruplar — manuel oluşturulmuş, company_id'ye bağımlı değil) ──
@@ -382,7 +394,13 @@ async def get_group_bookings(
             "bookings": gb_bookings,
             "room_count": len(gb_bookings),
             "total_revenue": sum(b.get("total_amount", 0) for b in gb_bookings),
+            "total_revenue_by_currency": {},
+            "room_count_by_currency": {},
         }
+        for booking in gb_bookings:
+            currency = str(booking.get("currency") or tenant_currency).upper()
+            _add_money(groups[key]["total_revenue_by_currency"], currency, booking.get("total_amount", 0))
+            groups[key]["room_count_by_currency"][currency] = groups[key]["room_count_by_currency"].get(currency, 0) + 1
 
     # min_rooms eşiğini uygula
     qualified = [(k, g) for k, g in groups.items() if g["room_count"] >= min_rooms]
@@ -415,6 +433,13 @@ async def get_group_bookings(
                 "check_out": group["check_out"],
                 "room_count": group["room_count"],
                 "total_revenue": round(group["total_revenue"], 2),
+                "total_revenue_by_currency": group["total_revenue_by_currency"],
+                "room_count_by_currency": group["room_count_by_currency"],
+                "avg_rate_by_currency": {
+                    currency: round(amount / group["room_count_by_currency"][currency], 2)
+                    for currency, amount in group["total_revenue_by_currency"].items()
+                    if group["room_count_by_currency"].get(currency)
+                },
                 "avg_rate": round(group["total_revenue"] / group["room_count"], 2) if group["room_count"] else 0,
                 "room_numbers": [b.get("room_number", "TBD") for b in group["bookings"]],
                 "booking_ids": [b["id"] for b in group["bookings"]],
@@ -425,12 +450,18 @@ async def get_group_bookings(
     # Sort by room count descending
     group_bookings.sort(key=lambda x: x["room_count"], reverse=True)
 
+    total_revenue_by_currency: dict[str, float] = {}
+    for group in group_bookings:
+        for currency, amount in group["total_revenue_by_currency"].items():
+            _add_money(total_revenue_by_currency, currency, amount)
+
     return {
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "groups": group_bookings,
         "total_groups": len(group_bookings),
         "total_rooms": sum(g["room_count"] for g in group_bookings),
         "total_revenue": round(sum(g["total_revenue"] for g in group_bookings), 2),
+        "total_revenue_by_currency": total_revenue_by_currency,
     }
 
 

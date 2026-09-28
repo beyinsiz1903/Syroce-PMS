@@ -7,6 +7,16 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
+import { cachedTenantCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+
+const addBreakdown = (target, source, fallbackAmount = 0, fallbackCurrency = 'TRY') => {
+  const entries = Object.entries(source || {});
+  if (entries.length === 0) entries.push([fallbackCurrency, fallbackAmount]);
+  for (const [currency, amount] of entries) {
+    target[currency] = (target[currency] || 0) + Number(amount || 0);
+  }
+};
 
 const GroupRevenueByCompany = () => {
   const [loading, setLoading] = useState(false);
@@ -66,24 +76,33 @@ const GroupRevenueByCompany = () => {
           company_name: g.company_name || 'Unknown',
           room_count: 0,
           total_revenue: 0,
+          total_revenue_by_currency: {},
+          room_count_by_currency: {},
           group_count: 0,
         });
       }
       const acc = map.get(g.company_id);
       acc.room_count += g.room_count || 0;
       acc.total_revenue += g.total_revenue || 0;
+      addBreakdown(acc.total_revenue_by_currency, g.total_revenue_by_currency, g.total_revenue, g.currency || cachedTenantCurrency());
+      for (const [currency, count] of Object.entries(g.room_count_by_currency || {})) {
+        acc.room_count_by_currency[currency] = (acc.room_count_by_currency[currency] || 0) + Number(count || 0);
+      }
       acc.group_count += 1;
     }
-    return Array.from(map.values()).sort((a, b) => b.total_revenue - a.total_revenue);
+    return Array.from(map.values()).sort((a, b) => b.room_count - a.room_count);
   }, [groups, companyFilter]);
 
   const totalSummary = useMemo(() => {
     const total_rooms = aggregated.reduce((s, c) => s + c.room_count, 0);
     const total_revenue = aggregated.reduce((s, c) => s + c.total_revenue, 0);
+    const total_revenue_by_currency = {};
+    aggregated.forEach(company => addBreakdown(total_revenue_by_currency, company.total_revenue_by_currency));
     const total_groups = aggregated.reduce((s, c) => s + c.group_count, 0);
     return {
       total_rooms,
       total_revenue,
+      total_revenue_by_currency,
       total_groups,
     };
   }, [aggregated]);
@@ -135,7 +154,7 @@ const GroupRevenueByCompany = () => {
           <CardContent className="py-3">
             <div className="text-xs text-gray-500">Total Group Revenue</div>
             <div className="text-xl font-bold text-blue-600">
-              ${totalSummary.total_revenue.toFixed(2)}
+              {formatCurrencyBreakdown(totalSummary.total_revenue_by_currency, totalSummary.total_revenue, cachedTenantCurrency())}
             </div>
           </CardContent>
         </Card>
@@ -166,7 +185,12 @@ const GroupRevenueByCompany = () => {
             <div className="px-3 py-2 text-right">Avg Rate</div>
           </div>
           {aggregated.map((row) => {
-            const avgRate = row.room_count > 0 ? row.total_revenue / row.room_count : 0;
+            const avgRateByCurrency = Object.fromEntries(
+              Object.entries(row.total_revenue_by_currency).map(([currency, amount]) => [
+                currency,
+                Number(amount || 0) / Math.max(row.room_count_by_currency[currency] || row.room_count, 1),
+              ]),
+            );
             return (
               <div
                 key={row.company_id}
@@ -189,8 +213,8 @@ const GroupRevenueByCompany = () => {
                 <div className="px-3 py-2 font-medium truncate">{row.company_name}</div>
                 <div className="px-3 py-2 text-right">{row.group_count}</div>
                 <div className="px-3 py-2 text-right">{row.room_count}</div>
-                <div className="px-3 py-2 text-right">${row.total_revenue.toFixed(2)}</div>
-                <div className="px-3 py-2 text-right">${avgRate.toFixed(2)}</div>
+                <div className="px-3 py-2 text-right">{formatCurrencyBreakdown(row.total_revenue_by_currency, row.total_revenue, cachedTenantCurrency())}</div>
+                <div className="px-3 py-2 text-right">{formatCurrencyBreakdown(avgRateByCurrency, 0, cachedTenantCurrency())}</div>
               </div>
             );
           })}

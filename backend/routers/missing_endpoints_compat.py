@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field, field_validator
 from core.atomic_booking import create_booking_atomic
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from modules.pms_core.role_permission_service import require_op
 
@@ -55,8 +56,10 @@ async def upsell_products(
     q: dict[str, Any] = {"tenant_id": current_user.tenant_id, "is_active": {"$ne": False}}
     if category:
         q["category"] = category
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     items: list[dict] = []
     async for p in db.upsell_products.find(q, {"_id": 0}).limit(200):
+        p["currency"] = str(p.get("currency") or tenant_currency).upper()
         items.append(p)
     return {"products": items, "total": len(items)}
 
