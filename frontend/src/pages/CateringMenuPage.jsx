@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/hooks/use-toast";
 import { ChefHat, Plus, RefreshCw, Trash2, Save, Loader2, Leaf, Wheat, AlertTriangle } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 /**
  * Opera #7 — Catering Menu.
@@ -44,6 +45,7 @@ const CATS = [{
 }];
 const catLabel = v => CATS.find(c => c.v === v)?.l || v;
 export default function CateringMenuPage() {
+  const tenantCurrency = cachedTenantCurrency();
   const {
     t
   } = useTranslation();
@@ -59,7 +61,7 @@ export default function CateringMenuPage() {
     name: "",
     category: "lunch",
     price_per_person: "",
-    currency: "TRY",
+    currency: tenantCurrency,
     description: "",
     allergens: "",
     is_vegan: false,
@@ -74,7 +76,7 @@ export default function CateringMenuPage() {
   const [bookingMenus, setBookingMenus] = useState({
     lines: [],
     total: 0,
-    currency: "TRY"
+    currency: tenantCurrency
   });
   const [editLines, setEditLines] = useState([]);
   const [savingBooking, setSavingBooking] = useState(false);
@@ -134,7 +136,7 @@ export default function CateringMenuPage() {
         name: "",
         category: "lunch",
         price_per_person: "",
-        currency: "TRY",
+        currency: tenantCurrency,
         description: "",
         allergens: "",
         is_vegan: false,
@@ -219,7 +221,7 @@ export default function CateringMenuPage() {
       const it = items.find(i => i.id === l.menu_item_id);
       if (it) {
         t += (Number(it.price_per_person) || 0) * (Number(l.headcount) || 0);
-        currencies.add(it.currency || "TRY");
+        currencies.add(it.currency || tenantCurrency);
       }
     }
     return {
@@ -372,7 +374,7 @@ export default function CateringMenuPage() {
                       <TableCell className="font-medium">{it.name}</TableCell>
                       <TableCell><Badge variant="secondary">{catLabel(it.category)}</Badge></TableCell>
                       <TableCell className="text-right">
-                        {Number(it.price_per_person).toFixed(2)} {it.currency}
+                        {formatCurrency(it.price_per_person, it.currency || tenantCurrency)}
                       </TableCell>
                       <TableCell className="text-xs">
                         <div className="flex gap-1 flex-wrap items-center">
@@ -434,7 +436,7 @@ export default function CateringMenuPage() {
                             <SelectTrigger><SelectValue placeholder={t('cm.pages_CateringMenuPage.menu_sec')} /></SelectTrigger>
                             <SelectContent>
                               {items.map(it => <SelectItem key={it.id} value={it.id}>
-                                  {it.name} — {Number(it.price_per_person).toFixed(2)} {it.currency}
+                                  {it.name} — {formatCurrency(it.price_per_person, it.currency || tenantCurrency)}
                                 </SelectItem>)}
                             </SelectContent>
                           </Select>
@@ -462,7 +464,7 @@ export default function CateringMenuPage() {
                     {(() => {
                   const c = calcTotal();
                   return <div className={`text-lg font-semibold ${c.mixed ? "text-red-600" : ""}`}>
-                          {c.mixed ? "Karışık para birimi — kaydetme reddedilecek" : `Tahmini Toplam: ${c.total.toFixed(2)} ${c.currency}`}
+                          {c.mixed ? "Karışık para birimi — kaydetme reddedilecek" : `Tahmini Toplam: ${formatCurrency(c.total, c.currency || tenantCurrency)}`}
                         </div>;
                 })()}
                     <Button onClick={saveBookingMenus} disabled={savingBooking || calcTotal().mixed} data-testid="button-catering-save-booking">
@@ -472,7 +474,7 @@ export default function CateringMenuPage() {
                   </div>
 
                   {bookingMenus.lines?.length > 0 && <div className="text-xs text-muted-foreground">
-                      {t('cm.pages_CateringMenuPage.kayitli_toplam')} {bookingMenus.total} {bookingMenus.currency} ({bookingMenus.lines.length} kalem)
+                      {t('cm.pages_CateringMenuPage.kayitli_toplam')} {formatCurrency(bookingMenus.total, bookingMenus.currency || tenantCurrency)} ({bookingMenus.lines.length} kalem)
                     </div>}
                 </>}
             </CardContent>

@@ -7,7 +7,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
@@ -347,7 +347,7 @@ const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-ba
 const GeneralLedgerModule = () => {
   const businessDate = useBusinessDate();
   const businessDateDefaults = useRef(localIsoDate());
-  const [ledgerCurrency, setLedgerCurrency] = useState('TRY');
+  const [ledgerCurrency, setLedgerCurrency] = useState(() => cachedTenantCurrency());
   const fmtMoney = (value) => formatCurrency(value, ledgerCurrency, { decimals: 2, compactDecimals: false });
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1197,8 +1197,8 @@ const GeneralLedgerModule = () => {
                           <th className="p-2 text-left w-20">Döviz</th>
                           <th className="p-2 text-right w-28">Yabancı Tutar</th>
                           <th className="p-2 text-right w-24">Kur</th>
-                          <th className="p-2 text-right w-32">Borç (₺)</th>
-                          <th className="p-2 text-right w-32">Alacak (₺)</th>
+                          <th className="p-2 text-right w-32">Borç ({ledgerCurrency})</th>
+                          <th className="p-2 text-right w-32">Alacak ({ledgerCurrency})</th>
                         </tr>
                       </thead>
                       <tbody>
