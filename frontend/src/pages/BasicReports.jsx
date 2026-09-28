@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck, Download, Printer } from 'lucide-react';
+import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck, Download, Printer, Search, Scale, FileSpreadsheet } from 'lucide-react';
 import ForecastReportsPage from './ForecastReportsPage';
 import FlashReportContent from '@/components/pms/FlashReportContent';
 import TrialBalancePage from './TrialBalancePage';
@@ -23,6 +23,7 @@ import { NoShowSection, RoomStatusSection, HousekeepingSection, PaymentsSection,
 import { ChannelsSection, SourcesSection } from './reports/ChannelsSection';
 import { OfficialSection, PoliceSection } from './reports/OfficialSection';
 import ManagerDailyReports from './reports/ManagerDailyReports';
+import AccountingStatementsSection from './reports/AccountingStatementsSection';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 const BACKEND_URL = "";
@@ -173,9 +174,29 @@ const REPORT_MENU = [{
   desc: 'Kategoriye göre gider analizi'
 }, {
   id: 'trial_balance',
-  label: 'Mizan Raporu',
+  label: 'Günlük Mutabakat',
   icon: ClipboardCheck,
-  desc: 'Günlük gelir, ödeme ve balans kontrolü'
+  desc: 'Operasyon, gelir ve tahsilat kontrolü'
+}, {
+  id: 'gl_trial_balance',
+  label: 'Genel Muhasebe Mizanı',
+  icon: Scale,
+  desc: 'Hesap bazında borç ve alacak bakiyeleri'
+}, {
+  id: 'income_statement',
+  label: 'Gelir Tablosu',
+  icon: FileSpreadsheet,
+  desc: 'Muhasebeleşmiş gelir, gider ve net sonuç'
+}, {
+  id: 'balance_sheet',
+  label: 'Bilanço',
+  icon: Building2,
+  desc: 'Varlık, yükümlülük ve özkaynak dengesi'
+}, {
+  id: 'journal',
+  label: 'Yevmiye Defteri',
+  icon: FileText,
+  desc: 'Onaylanmış muhasebe fişleri'
 }, {
   type: 'header',
   label: 'RESMİ RAPORLAR'
@@ -206,7 +227,8 @@ const REPORT_MENU = [{
   icon: Utensils,
   desc: 'Yiyecek & içecek'
 }];
-const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official', 'forecast_reports', 'trial_balance']);
+const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official', 'forecast_reports', 'trial_balance', 'gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
+const ACCOUNTING_STATEMENT_SECTIONS = new Set(['gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
 const REPORT_SECTION_IDS = new Set(REPORT_MENU.filter(item => item.id).map(item => item.id));
 const TABLE_EXPORT_SECTIONS = new Set(['guests', 'inhouse', 'front_office', 'noshow', 'housekeeping', 'payments', 'cash_movements', 'rate_control', 'official', 'police']);
 const BasicReports = ({
@@ -241,6 +263,7 @@ const BasicReports = ({
     });
   }, [searchParams, setSearchParams]);
   const [searchGuest, setSearchGuest] = useState('');
+  const [reportQuery, setReportQuery] = useState('');
   const [officialDate, setOfficialDate] = useState(businessDate);
   const officialDateEditedRef = useRef(false);
   const [officialRows, setOfficialRows] = useState([]);
@@ -252,6 +275,7 @@ const BasicReports = ({
     if (!officialDateEditedRef.current && businessDate) setOfficialDate(businessDate);
   }, [businessDate]);
   const needsDashboard = useMemo(() => !SELF_CONTAINED_SECTIONS.has(activeSection), [activeSection]);
+  const showReportControls = needsDashboard || ACCOUNTING_STATEMENT_SECTIONS.has(activeSection);
   const requestSequenceRef = useRef(0);
   const fetchData = useCallback(async () => {
     const requestSequence = ++requestSequenceRef.current;
@@ -523,6 +547,11 @@ const BasicReports = ({
         return <ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />;
       case 'trial_balance':
         return <div data-testid="section-trial-balance"><TrialBalancePage /></div>;
+      case 'gl_trial_balance':
+      case 'income_statement':
+      case 'balance_sheet':
+      case 'journal':
+        return <AccountingStatementsSection type={activeSection} reportDate={reportDate} reportPeriod={reportPeriod} />;
       case 'official':
         return <OfficialSection officialDate={officialDate} setOfficialDate={value => {
           officialDateEditedRef.current = true;
@@ -541,32 +570,41 @@ const BasicReports = ({
     }
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
+  const normalizedReportQuery = reportQuery.trim().toLocaleLowerCase('tr-TR');
+  const visibleMenuItems = normalizedReportQuery
+    ? REPORT_MENU.filter(item => item.id && `${item.label} ${item.desc || ''}`.toLocaleLowerCase('tr-TR').includes(normalizedReportQuery))
+    : REPORT_MENU;
   return <>
-      <div className="flex min-h-[calc(100vh-64px)]">
-        <aside className="w-[260px] bg-white border-r border-gray-200 flex-shrink-0 hidden print:hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
-          <div className="p-4 border-b border-gray-100">
+      <div className="flex min-h-[calc(100vh-64px)] bg-slate-50/70">
+        <aside className="w-[288px] bg-white border-r border-slate-200 flex-shrink-0 hidden print:hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
+          <div className="p-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-sky-600" />
-              <h1 className="text-base font-bold text-gray-900">Rapor Merkezi</h1>
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500 text-white shadow-sm"><BarChart3 className="w-5 h-5" /></div>
+              <div><h1 className="text-base font-bold text-slate-900">Rapor Merkezi</h1><p className="text-[11px] text-slate-500">Operasyon ve finans</p></div>
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">{businessDate || reportDate ? new Date((businessDate || reportDate) + 'T12:00:00').toLocaleDateString('tr-TR', {
+            <p className="mt-3 text-[11px] text-slate-400">PMS tarihi · {businessDate || reportDate ? new Date((businessDate || reportDate) + 'T12:00:00').toLocaleDateString('tr-TR', {
               day: 'numeric',
               month: 'long',
               year: 'numeric'
             }) : 'PMS tarihi yükleniyor'}</p>
+            <label className="relative mt-3 block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input value={reportQuery} onChange={event => setReportQuery(event.target.value)} placeholder="Rapor ara…" className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100" />
+            </label>
           </div>
           <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {REPORT_MENU.map((item, idx) => {
+            {visibleMenuItems.map((item, idx) => {
             if (item.type === 'header') {
               return <p key={idx} className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">{item.label}</p>;
             }
             const Icon = item.icon;
             const isActive = activeSection === item.id;
-            return <button key={item.id} onClick={() => setActiveSection(item.id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all text-[13px] ${isActive ? 'bg-sky-50 text-sky-700 font-semibold border-l-[3px] border-sky-600 pl-[9px]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`} data-testid={`report-nav-${item.id}`}>
-                  <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-sky-600' : 'text-gray-400'}`} />
-                  <span className="truncate">{t(`cm.pages_BasicReports.${item.id}`, item.label)}</span>
+            return <button key={item.id} onClick={() => setActiveSection(item.id)} className={`group w-full rounded-lg px-3 py-2.5 text-left transition-all ${isActive ? 'bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`} data-testid={`report-nav-${item.id}`} title={item.desc}>
+                  <span className="flex items-center gap-2.5"><Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} /><span className="truncate text-[13px] font-medium">{t(`cm.pages_BasicReports.${item.id}`, item.label)}</span></span>
+                  {isActive && <span className="mt-1 block truncate pl-6 text-[10px] font-normal text-blue-600">{item.desc}</span>}
                 </button>;
           })}
+            {normalizedReportQuery && visibleMenuItems.length === 0 && <p className="px-3 py-8 text-center text-xs text-slate-400">Eşleşen rapor bulunamadı.</p>}
           </nav>
           <div className="p-3 border-t border-gray-100">
             <a href="/app/rapor-olusturucu" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-sky-600 hover:bg-sky-50 font-medium transition-colors" data-testid="report-builder-link">
@@ -585,7 +623,7 @@ const BasicReports = ({
             <select value={activeSection} onChange={e => setActiveSection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" data-testid="mobile-report-selector">
               {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id}`, m.label)}</option>)}
             </select>
-            {needsDashboard && <div className="grid grid-cols-2 gap-2 mt-2">
+            {showReportControls && <div className="grid grid-cols-2 gap-2 mt-2">
               <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
                 <option value="monthly">Son 30 Gün</option>
                 <option value="daily">Günlük</option>
@@ -597,15 +635,15 @@ const BasicReports = ({
         </div>
 
         <main className="flex-1 hidden print:block lg:block overflow-y-auto" data-testid="reports-desktop-content">
-          <div className="p-6 max-w-6xl">
-            <div className="flex items-center justify-between mb-5">
+          <div className="mx-auto w-full max-w-[1520px] p-5 xl:p-7">
+            <div className="mb-5 flex min-h-10 items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2 shadow-sm">
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <span>Raporlar</span>
                 <ChevronRight className="w-3 h-3" />
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
                             <div className="flex items-center gap-2">
-                {needsDashboard && activeSection !== 'flash_report' && (
+                {showReportControls && activeSection !== 'flash_report' && (
                 <select 
                   className="border rounded px-2 py-1 text-sm bg-white print:hidden"
                   value={reportPeriod}
@@ -615,7 +653,7 @@ const BasicReports = ({
                   <option value="daily">Günlük (Seçili Tarih)</option>
                 </select>
                 )}
-                {needsDashboard && <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
+                {showReportControls && <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
                   Rapor tarihi
                   <input
                     type="date"

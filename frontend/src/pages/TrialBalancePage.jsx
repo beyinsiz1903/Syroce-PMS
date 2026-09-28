@@ -93,7 +93,7 @@ export default function TrialBalancePage() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="container mx-auto p-6 space-y-4 max-w-7xl">
+    <div className="space-y-4" data-testid="operational-reconciliation-report">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
