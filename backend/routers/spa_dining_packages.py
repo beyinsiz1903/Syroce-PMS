@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from domains.spa.router import _check_conflict as _check_spa_conflict
 from models.schemas import User
@@ -95,7 +96,7 @@ async def _post_package_to_folio(tenant_id: str, booking: dict) -> None:
         "transaction_code": "PKG",
         "description": f"Paket: {booking.get('package_name')}",
         "amount": float(booking.get("total_price", 0)),
-        "currency": "TRY",
+        "currency": str(booking.get("currency") or "TRY").upper(),
         "posting_type": "CHARGE",
         "posted_at": datetime.now(UTC).isoformat(),
         "source": "spa_dining_package_module",
@@ -137,7 +138,9 @@ from core.entitlements.enforcement import require_feature
 @router.get("/packages")
 async def list_packages(current_user: User = Depends(get_current_user), _feat=Depends(require_feature("spa", "cross_department_packages"))) -> dict:
     """Returns available SPA & Dining packages."""
-    return {"packages": DEFAULT_PACKAGES}
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = str(currency or "TRY").upper()
+    return {"packages": [{**package, "currency": currency} for package in DEFAULT_PACKAGES], "currency": currency}
 
 
 @router.get("/bookings")
@@ -154,7 +157,11 @@ async def list_package_bookings(
         q["guest_name"] = guest_name
 
     bookings = await db.spa_dining_package_bookings.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return {"bookings": bookings}
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    tenant_currency = str(tenant_currency or "TRY").upper()
+    for booking in bookings:
+        booking["currency"] = str(booking.get("currency") or tenant_currency).upper()
+    return {"bookings": bookings, "currency": tenant_currency}
 
 
 @router.post("/bookings")
@@ -167,6 +174,8 @@ async def create_package_booking(
     """Atomic cross-booking for SPA & Restoran table package."""
     db = get_system_db()
     tenant_id = current_user.tenant_id
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
+    tenant_currency = str(tenant_currency or "TRY").upper()
 
     # 1. Resolve package
     pkg = next((p for p in DEFAULT_PACKAGES if p["id"] == payload.package_id), None)
@@ -212,7 +221,7 @@ async def create_package_booking(
         "starts_at": spa_start.isoformat(),
         "ends_at": spa_end.isoformat(),
         "price": float(pkg["price"] * 0.6),  # Attribution 60%
-        "currency": "TRY",
+        "currency": tenant_currency,
         "status": "scheduled",
         "reservation_id": payload.reservation_id,
         "charge_to_room": payload.charge_to_room,
@@ -249,6 +258,7 @@ async def create_package_booking(
         "spa_appointment_id": spa_appt_id,
         "dining_reservation_id": dining_res_id,
         "total_price": pkg["price"],
+        "currency": tenant_currency,
         "guest_name": payload.guest_name,
         "guest_phone": payload.guest_phone,
         "reservation_id": payload.reservation_id,

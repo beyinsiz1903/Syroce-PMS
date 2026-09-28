@@ -45,7 +45,7 @@ const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
         axios.get('/spa-dining/bookings')
       ]);
       setPackages(pkgRes.data.packages || []);
-      setBookings(pkgRes.data.bookings || bkRes.data.bookings || []);
+      setBookings(bkRes.data.bookings || []);
       if (pkgRes.data.packages?.length > 0) {
         setFormData(prev => ({ ...prev, package_id: pkgRes.data.packages[0].id }));
       }
@@ -205,6 +205,9 @@ const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
                           <div className="flex items-center gap-2">
                             <Utensils className="w-4 h-4 text-amber-500" /> Restoran: {new Date(booking.dining_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                           </div>
+                        </div>
+                        <div className="mt-3 text-right font-bold text-indigo-700">
+                          {formatCurrency(booking.total_price, booking.currency || currency)}
                         </div>
                       </div>
                     ))}
