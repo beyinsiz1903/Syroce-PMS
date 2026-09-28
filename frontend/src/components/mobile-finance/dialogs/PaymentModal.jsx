@@ -39,7 +39,7 @@ export default function PaymentModal(props) {
               </div>
               <div>
                 <Label>{t('cm.components_mobilefinance_dialogs_PaymentModal.kalan_bakiye')}</Label>
-                <Input value={formatCurrency(selectedFolio.balance)} disabled />
+                <Input value={formatCurrency(selectedFolio.balance, selectedFolio.currency)} disabled />
               </div>
               <div>
                 <Label>{t('cm.components_mobilefinance_dialogs_PaymentModal.tahsilat_tutari')}</Label>
