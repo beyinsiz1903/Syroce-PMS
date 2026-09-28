@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { User, History, Settings, Tag, Star, AlertTriangle, Calendar } from 'lucide-react';
 import CallButton from '@/components/contact-center/CallButton';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const GuestProfileComplete = ({
   guestId
 }) => {
@@ -206,7 +207,7 @@ const GuestProfileComplete = ({
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-lg font-bold">${stay.total_amount}</div>
+                          <div className="text-lg font-bold">{formatCurrency(stay.total_amount, stay.currency || stay.currency_code || cachedTenantCurrency())}</div>
                           <div className="text-xs text-gray-600">Total</div>
                         </div>
                       </div>
