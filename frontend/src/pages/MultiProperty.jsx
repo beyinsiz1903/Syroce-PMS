@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText, UserPlus, Users } from 'lucide-react';
+import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText, UserPlus, Users, LogIn } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { persistEnteredTenantContext } from '@/lib/adminTenantContext';
 
 const MultiProperty = ({ embedded = false }) => {
   const { t } = useTranslation();
@@ -16,6 +18,7 @@ const MultiProperty = ({ embedded = false }) => {
   const [team, setTeam] = useState(null);
   const [teamError, setTeamError] = useState('');
   const [savingUser, setSavingUser] = useState(false);
+  const [switchingPropertyId, setSwitchingPropertyId] = useState('');
   const [userForm, setUserForm] = useState({ property_id: '', name: '', email: '', password: '', role: 'supervisor' });
 
   const loadTeam = () => {
@@ -56,6 +59,20 @@ const MultiProperty = ({ embedded = false }) => {
       setTeamError(requestError?.response?.data?.detail || 'Kullanıcı oluşturulamadı.');
     } finally {
       setSavingUser(false);
+    }
+  };
+
+  const enterPropertyWorkspace = async (property) => {
+    if (!property?.property_id || property.property_id === data?.current_property_id) return;
+    setSwitchingPropertyId(property.property_id);
+    try {
+      const response = await axios.post(`/admin/tenants/${property.property_id}/context`);
+      persistEnteredTenantContext(response.data);
+      toast.success(`${property.property_name || 'Otel'} çalışma alanına geçiliyor`);
+      window.location.assign('/app/dashboard');
+    } catch (requestError) {
+      toast.error(requestError?.response?.data?.detail || 'Otel çalışma alanına geçilemedi.');
+      setSwitchingPropertyId('');
     }
   };
 
@@ -159,6 +176,19 @@ const MultiProperty = ({ embedded = false }) => {
                     </p>
                   </div>
                 </div>
+                <Button
+                  type="button"
+                  className="mt-4 w-full"
+                  variant={property.property_id === data.current_property_id ? 'outline' : 'default'}
+                  disabled={property.property_id === data.current_property_id || Boolean(switchingPropertyId)}
+                  onClick={() => enterPropertyWorkspace(property)}
+                  aria-label={`${property.property_name} çalışma alanına geç`}
+                >
+                  {switchingPropertyId === property.property_id
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <LogIn className="mr-2 h-4 w-4" aria-hidden="true" />}
+                  {property.property_id === data.current_property_id ? 'Şu an bu oteldesiniz' : 'Otel çalışma alanına geç'}
+                </Button>
               </CardContent>
             </Card>
           ))}

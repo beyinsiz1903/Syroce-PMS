@@ -64,6 +64,7 @@ from domains.admin.property_profiles import get_all_property_types, get_hidden_n
 from domains.admin.subscription_models import get_plan_default_modules
 from models.enums import ROLE_PERMISSIONS, Permission, UserRole
 from models.schemas import Tenant, TenantRegister, User
+from modules.pms_core.chain_access import resolve_chain_properties
 
 
 def _has_permission(role: UserRole | str, perm: Permission) -> bool:
@@ -832,13 +833,15 @@ async def enter_tenant_context(
         if not is_admin:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işlem için süperadmin veya otel admin yetkisi gerekir.")
 
-        origin_chain = origin.get("chain_id")
-        target_chain = target.get("chain_id")
+        # Merkez tesis yöneticisi açıkça zincir yetkilisi olmalıdır. Yalnızca
+        # aynı chain_id değerini paylaşmak, her tesis yöneticisine kardeş
+        # otellerde işlem yapma hakkı vermez.
+        own, chain_members = await resolve_chain_properties(current_user, system_db=sys_db)
+        permitted_ids = {member.get("id") or member.get("tenant_id") for member in chain_members}
+        if tenant_id not in permitted_ids:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Otel zincir erişim kapsamınızda değil.")
 
-        if not origin_chain or not target_chain or origin_chain != target_chain:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sadece aynı zincire bağlı oteller arasında geçiş yapabilirsiniz.")
-
-        chain_id = origin_chain
+        chain_id = own.get("chain_id")
 
     access_token, expires_at = create_admin_tenant_context_token(
         current_user.id,

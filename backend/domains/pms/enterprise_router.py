@@ -412,6 +412,7 @@ async def get_multi_property_dashboard(property_id: str | None = None, current_u
     return {
         "chain_id": own.get("chain_id"),
         "is_chain": bool(own.get("chain_id")),
+        "current_property_id": current_user.tenant_id,
         "summary": summary,
         "properties": properties,
         # Backward-compatible fields for the older dashboard component.
