@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  accountingQueueStatusLabel,
   expenseCategoryLabel,
   invoiceTypeLabel,
   inventoryCategoryLabel,
   inventoryUnitLabel,
+  ledgerAccountTypeLabel,
   paymentMethodLabel,
+  receivableTransactionTypeLabel,
 } from '@/lib/accountingLabels';
 
 const translations = {
@@ -14,6 +17,9 @@ const translations = {
   'invoice.inventoryUnits.piece': 'Adet',
   'invoice.salesInvoice': 'Satış Faturası',
   'pms.cash': 'Nakit',
+  'finance.transactionTypes.charge': 'Tahakkuk',
+  'finance.ledgerAccountTypes.asset': 'Varlık',
+  'finance.accountingQueueStatuses.posted': 'Muhasebeleştirildi',
 };
 
 const t = vi.fn((key, fallback) => translations[key] || fallback);
@@ -23,6 +29,9 @@ describe('accounting labels', () => {
     expect(expenseCategoryLabel(t, 'supplies')).toBe('Malzemeler');
     expect(paymentMethodLabel(t, 'cash')).toBe('Nakit');
     expect(invoiceTypeLabel(t, 'sales')).toBe('Satış Faturası');
+    expect(receivableTransactionTypeLabel(t, 'charge')).toBe('Tahakkuk');
+    expect(ledgerAccountTypeLabel(t, 'asset')).toBe('Varlık');
+    expect(accountingQueueStatusLabel(t, 'posted')).toBe('Muhasebeleştirildi');
     expect(inventoryCategoryLabel(t, 'Amenity')).toBe('Misafir İkramı');
     expect(inventoryUnitLabel(t, 'pieces')).toBe('Adet');
   });

@@ -1534,7 +1534,27 @@
     "accountsReceivable": "Alacak Hesapları",
     "accountsPayable": "Borç Hesapları",
     "reconciliation": "Banka Mutabakatı",
-    "aging": "Yaşlandırma Raporu"
+    "aging": "Yaşlandırma Raporu",
+    "transactionTypes": {
+      "charge": "Tahakkuk",
+      "payment": "Tahsilat",
+      "adjustment": "Ayarlama",
+      "refund": "İade"
+    },
+    "ledgerAccountTypes": {
+      "asset": "Varlık",
+      "liability": "Yükümlülük",
+      "equity": "Özkaynak",
+      "revenue": "Gelir",
+      "expense": "Gider"
+    },
+    "accountingQueueStatuses": {
+      "pending": "Bekliyor",
+      "blocked": "Engelli",
+      "posted": "Muhasebeleştirildi",
+      "reversed": "Ters Kayıt Oluşturuldu",
+      "failed": "Başarısız"
+    }
   },
   "sales": {
     "title": "Satış CRM",
