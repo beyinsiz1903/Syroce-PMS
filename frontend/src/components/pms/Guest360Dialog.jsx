@@ -18,6 +18,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { promptDialog } from '@/lib/dialogs';
 import CallButton from '@/components/contact-center/CallButton';
 import { bookingSourceLabel } from '@/utils/bookingSource';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 export const normalizeGuestNotes = (value) => {
   if (value == null || value === '') return [];
@@ -57,11 +58,13 @@ const Guest360Dialog = ({
   const stayHistory = Array.isArray(rawStayHistory) ? rawStayHistory : [];
   const guestNotes = normalizeGuestNotes(guest360Data?.guest?.notes);
   const guestTags = normalizeStringList(guest360Data?.guest?.tags);
-  const formatMoney = (value) => new Intl.NumberFormat('tr-TR', {
-    style: 'currency',
-    currency: 'TRY',
-    maximumFractionDigits: 2,
-  }).format(Number(value) || 0);
+  const statsCurrency = guest360Data?.stats?.currency || cachedTenantCurrency();
+  const formatMoney = (value, currency = statsCurrency) => formatCurrency(value, currency, { decimals: 2 });
+  const formatMoneyBreakdown = (breakdown, fallbackValue) => {
+    const entries = Object.entries(breakdown || {}).filter(([, amount]) => Number.isFinite(Number(amount)));
+    if (!entries.length) return formatMoney(fallbackValue);
+    return entries.map(([currency, amount]) => formatMoney(amount, currency)).join(' • ');
+  };
   const statusLabels = {
     checked_out: 'Çıkış yapıldı',
     checked_in: 'Konaklıyor',
@@ -372,13 +375,13 @@ const Guest360Dialog = ({
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-xl sm:text-2xl font-bold text-indigo-600 break-words">{formatMoney(guest360Data.stats?.lifetime_value)}</div>
+              <div className="text-xl sm:text-2xl font-bold text-indigo-600 break-words">{formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}</div>
               <div className="text-sm text-gray-600">Yaşam Boyu Değer</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-xl sm:text-2xl font-bold text-amber-600 break-words">{formatMoney(guest360Data.stats?.average_adr)}</div>
+              <div className="text-xl sm:text-2xl font-bold text-amber-600 break-words">{formatMoneyBreakdown(guest360Data.stats?.average_adr_by_currency, guest360Data.stats?.average_adr)}</div>
               <div className="text-sm text-gray-600">Ortalama ADR</div>
             </CardContent>
           </Card>
@@ -441,7 +444,7 @@ const Guest360Dialog = ({
               Konaklama Geçmişi
             </CardTitle>
             <CardDescription>
-              {stayHistory.length} rezervasyon kaydı • Toplam değer {formatMoney(guest360Data.stats?.lifetime_value)}
+              {stayHistory.length} rezervasyon kaydı • Toplam değer {formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -487,11 +490,11 @@ const Guest360Dialog = ({
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div>
                             <div className="text-gray-600">Toplam</div>
-                            <div className="font-bold text-green-600">{formatMoney(booking.total_amount)}</div>
+                            <div className="font-bold text-green-600">{formatMoney(booking.total_amount, booking.currency || statsCurrency)}</div>
                           </div>
                           <div>
                             <div className="text-gray-600">ADR</div>
-                            <div className="font-bold">{formatMoney(adr)}</div>
+                            <div className="font-bold">{formatMoney(adr, booking.currency || statsCurrency)}</div>
                           </div>
                           <div>
                             <div className="text-gray-600">Kanal</div>

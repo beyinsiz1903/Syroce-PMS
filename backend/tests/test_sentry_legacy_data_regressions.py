@@ -138,6 +138,58 @@ async def test_guest_360_handles_legacy_dates_source_and_profile_race(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_guest_360_keeps_mixed_currency_value_and_adr_separate(monkeypatch):
+    monkeypatch.setattr("security.encrypted_lookup.decrypt_guest_doc", lambda doc: doc)
+    monkeypatch.setattr(crm_guest, "get_tenant_currency", AsyncMock(return_value=("EUR", "€")))
+    monkeypatch.setattr(
+        crm_guest.db,
+        "guests",
+        SimpleNamespace(find_one=AsyncMock(return_value={"id": "guest-fx", "name": "FX Guest"})),
+    )
+    bookings = MagicMock()
+    bookings.find.return_value = _cursor(
+        [
+            {
+                "status": "checked_out",
+                "check_in": "2026-08-10",
+                "check_out": "2026-08-12",
+                "total_amount": "300",
+                "currency": "EUR",
+            },
+            {
+                "status": "confirmed",
+                "check_in": "2026-09-01",
+                "check_out": "2026-09-02",
+                "total_amount": "200",
+                "currency": "USD",
+            },
+        ]
+    )
+    monkeypatch.setattr(crm_guest.db, "bookings", bookings)
+    monkeypatch.setattr(crm_guest.db, "guest_preferences", SimpleNamespace(find_one=AsyncMock(return_value=None)))
+    monkeypatch.setattr(crm_guest.db, "guest_behavior", SimpleNamespace(find_one=AsyncMock(return_value=None)))
+    monkeypatch.setattr(
+        crm_guest.db,
+        "guest_profiles",
+        SimpleNamespace(find_one=AsyncMock(return_value={"id": "profile-fx"})),
+    )
+    upsells = MagicMock()
+    upsells.find.return_value = _cursor([])
+    monkeypatch.setattr(crm_guest.db, "upsell_offers", upsells)
+
+    result = await crm_guest.get_guest_360(
+        guest_id="guest-fx",
+        current_user=SimpleNamespace(tenant_id="tenant-a"),
+    )
+
+    assert result["stats"]["currency"] == "EUR"
+    assert result["stats"]["lifetime_value"] == 300.0
+    assert result["stats"]["lifetime_value_by_currency"] == {"EUR": 300.0, "USD": 200.0}
+    assert result["stats"]["average_adr_by_currency"] == {"EUR": 150.0, "USD": 200.0}
+    assert [booking["currency"] for booking in result["stay_history"]] == ["EUR", "USD"]
+
+
+@pytest.mark.asyncio
 async def test_guest_360_normalizes_legacy_scalar_notes_and_tags(monkeypatch):
     monkeypatch.setattr("security.encrypted_lookup.decrypt_guest_doc", lambda doc: doc)
     monkeypatch.setattr(
