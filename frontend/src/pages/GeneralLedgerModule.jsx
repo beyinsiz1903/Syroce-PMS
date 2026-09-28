@@ -1005,7 +1005,7 @@ const GeneralLedgerModule = () => {
 
   const requestJournalReversal = (journal) => {
     setReversalReason('');
-    setReversalDate(businessDate);
+    setReversalDate(journal?.date && journal.date > businessDate ? journal.date : businessDate);
     setReversalDialog({ journal });
   };
 
@@ -1903,7 +1903,7 @@ const GeneralLedgerModule = () => {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="gl-reversal-date">Ters kayıt tarihi</label>
-              <Input id="gl-reversal-date" type="date" value={reversalDate} onChange={(event) => setReversalDate(event.target.value)} disabled={Boolean(reversalBusy)} />
+              <Input id="gl-reversal-date" type="date" min={reversalDialog?.journal?.date || undefined} value={reversalDate} onChange={(event) => setReversalDate(event.target.value)} disabled={Boolean(reversalBusy)} />
             </div>
           </div>
           <DialogFooter className="gap-2">

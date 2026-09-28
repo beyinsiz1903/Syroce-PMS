@@ -736,6 +736,34 @@ async def test_reversal_is_single_and_idempotent(_patch):
     assert exc.value.status_code == 409
 
 
+async def test_reversal_date_cannot_precede_source_entry(_patch):
+    await _seed_basic_coa()
+    original = await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}],
+            date="2026-06-15",
+        ),
+        current_user=_user("finance"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.reverse_journal(
+            original["entry"]["id"],
+            gl.JournalReversalIn(
+                date="2026-06-14",
+                reason="Kaynak fişten önce ters kayıt denemesi",
+                idempotency_key="reverse-before-source-date",
+            ),
+            current_user=_user("finance"),
+        )
+
+    assert exc.value.status_code == 400
+    assert "kaynak fiş tarihinden" in exc.value.detail
+    assert await _patch.gl_journal_entries.find_one(
+        {"reverses_entry_id": original["entry"]["id"]}
+    ) is None
+
+
 async def test_reversal_date_must_be_in_open_period(_patch):
     await _seed_basic_coa()
     original = await gl.create_journal(
