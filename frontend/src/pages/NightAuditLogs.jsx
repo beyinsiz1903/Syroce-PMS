@@ -235,7 +235,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                   <div className="flex justify-between">
                     <span>Toplam Charges</span>
                     <span className="font-semibold">
-                      €{stats.total_charges.toFixed ? stats.total_charges.toFixed(2) : stats.total_charges}
+                      {formatCurrency(stats.total_charges, stats.currency || tenant?.currency || cachedTenantCurrency())}
                     </span>
                   </div>
                   <div className="flex justify-between">

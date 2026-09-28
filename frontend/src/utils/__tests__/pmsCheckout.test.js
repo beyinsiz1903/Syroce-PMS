@@ -7,6 +7,7 @@ describe('PMS checkout response guards', () => {
     expect(normalizeCheckoutResponse(undefined)).toEqual({
       message: 'Çıkış işlemi tamamlandı',
       totalBalance: 0,
+      currency: '',
       foliosClosed: 0,
     });
     expect(normalizeCheckoutResponse({ data: { total_balance: '12.5', folios_closed: '2' } }))

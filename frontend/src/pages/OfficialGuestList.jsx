@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Calendar, CheckCircle2, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { reservationLabel } from '@/utils/displayIdentifiers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const BOOL = (v) => v
   ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" aria-label="evet" />
@@ -42,11 +44,15 @@ const OfficialGuestList = ({ user, tenant, onLogout }) => {
 
   const totalGuests = useMemo(
     () => rows.reduce((acc, r) => acc + (r.adults || 0) + (r.children || 0), 0),
-    [rows]
+    [rows, tenant?.currency]
   );
 
-  const totalRevenue = useMemo(
-    () => rows.reduce((acc, r) => acc + (r.total_amount || 0), 0),
+  const totalRevenueByCurrency = useMemo(
+    () => rows.reduce((acc, r) => {
+      const currency = String(r.currency || tenant?.currency || cachedTenantCurrency()).toUpperCase();
+      acc[currency] = (acc[currency] || 0) + Number(r.total_amount || 0);
+      return acc;
+    }, {}),
     [rows]
   );
 
@@ -159,7 +165,7 @@ const OfficialGuestList = ({ user, tenant, onLogout }) => {
               <span className="text-xs text-gray-500 flex gap-4">
                 <span>Toplam kayıt: {rows.length}</span>
                 <span>Toplam kişi: {totalGuests}</span>
-                <span>Toplam tutar: {totalRevenue.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</span>
+                <span>Toplam tutar: {formatCurrencyBreakdown(totalRevenueByCurrency, 0, tenant?.currency || cachedTenantCurrency())}</span>
               </span>
             </CardTitle>
           </CardHeader>
@@ -209,10 +215,7 @@ const OfficialGuestList = ({ user, tenant, onLogout }) => {
                         {r.adults || 0} + {r.children || 0}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {Number(r.total_amount || 0).toLocaleString('tr-TR', {
-                          style: 'currency',
-                          currency: 'TRY',
-                        })}
+                        {formatCurrency(r.total_amount, r.currency || tenant?.currency || cachedTenantCurrency())}
                       </td>
                     </tr>
                   ))}
