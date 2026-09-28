@@ -324,7 +324,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.monthlyExpenses')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-red-600">{money(dashboard.monthly_expenses)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-red-600">{moneyTotals(dashboard.monthly_expenses_by_currency, dashboard.monthly_expenses)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.bankBalance')}</CardTitle></CardHeader>
@@ -467,8 +467,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         {expense.payment_method && <div className="text-xs text-gray-400 capitalize mt-1">{t('invoice.labels.payment')}: {expense.payment_method}</div>}
                       </div>
                       <div className="text-right">
-                        <div className="text-xl font-bold text-red-600">{money(expense.total_amount)}</div>
-                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(expense.vat_amount)}</div>
+                        <div className="text-xl font-bold text-red-600">{money(expense.total_amount, expense.currency)}</div>
+                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(expense.vat_amount, expense.currency)}</div>
                         <span className={`mt-2 inline-block px-2 py-1 rounded text-xs ${expense.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                           {expense.payment_status === 'paid' ? t('invoice.paid') : t('invoice.pending')}
                         </span>
@@ -493,7 +493,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     {supplier.tax_number && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.taxNo')}:</span><span className="font-medium">{supplier.tax_number}</span></div>}
                     {supplier.email && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.email')}:</span><span className="font-medium">{supplier.email}</span></div>}
                     {supplier.phone && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.phone')}:</span><span className="font-medium">{supplier.phone}</span></div>}
-                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.balance')}:</span><span className="font-bold text-red-600">{money(supplier.account_balance)}</span></div>
+                    <div className="flex justify-between gap-3 pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.balance')}:</span><span className="text-right font-bold text-red-600">{moneyTotals(supplier.account_balance_by_currency, supplier.account_balance)}</span></div>
                   </CardContent>
                 </Card>
               ))}
@@ -549,8 +549,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                   <CardContent className="space-y-2 text-sm">
                     {item.sku && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.sku')}:</span><span className="font-medium">{item.sku}</span></div>}
                     <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.qty')}:</span><span className="font-bold">{item.quantity} {item.unit}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.unitPrice')}:</span><span className="font-medium">{money(item.unit_cost)}</span></div>
-                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.totalValue')}:</span><span className="font-bold text-blue-600">{money((item.quantity || 0) * (item.unit_cost || 0))}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.unitPrice')}:</span><span className="font-medium">{money(item.unit_cost, item.currency)}</span></div>
+                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.totalValue')}:</span><span className="font-bold text-blue-600">{money((item.quantity || 0) * (item.unit_cost || 0), item.currency)}</span></div>
                     {item.quantity <= item.reorder_level && <div className="text-xs text-amber-600 font-medium">{t('invoice.labels.lowStock')}</div>}
                   </CardContent>
                 </Card>
