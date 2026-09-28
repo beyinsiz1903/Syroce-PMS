@@ -198,6 +198,62 @@ async def test_enter_context_sets_short_lived_cookie_and_audits():
 
 
 @pytest.mark.asyncio
+async def test_chain_headquarters_admin_can_enter_member_workspace():
+    current_user = User(**_user_doc(role="admin"))
+    response = Response()
+    target = {**_tenant("tenant-target", "Target Hotel"), "chain_id": "chain-1"}
+    origin = {**_tenant("tenant-origin", "HQ Hotel"), "chain_id": "chain-1", "is_chain_headquarters": True}
+    sys_db = AsyncMock()
+    sys_db.tenants.find_one = AsyncMock(side_effect=[target, origin])
+    sys_db.audit_logs.insert_one = AsyncMock()
+
+    with (
+        patch("domains.admin.router.tenants.get_system_db", return_value=sys_db),
+        patch(
+            "domains.admin.router.tenants.resolve_chain_properties",
+            new=AsyncMock(return_value=(origin, [origin, target])),
+        ),
+    ):
+        payload = await enter_tenant_context(
+            tenant_id="tenant-target",
+            response=response,
+            current_user=current_user,
+        )
+
+    claims = jwt.decode(payload["access_token"], JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    assert claims["chain_id"] == "chain-1"
+    assert claims["tenant_id"] == "tenant-target"
+    assert payload["user"]["role"] == "admin"
+    assert payload["user"]["is_impersonating"] is True
+
+
+@pytest.mark.asyncio
+async def test_ordinary_hotel_admin_cannot_enter_sibling_workspace():
+    current_user = User(**_user_doc(role="admin"))
+    response = Response()
+    target = {**_tenant("tenant-target", "Target Hotel"), "chain_id": "chain-1"}
+    origin = {**_tenant("tenant-origin", "Member Hotel"), "chain_id": "chain-1"}
+    sys_db = AsyncMock()
+    sys_db.tenants.find_one = AsyncMock(side_effect=[target, origin])
+
+    with (
+        patch("domains.admin.router.tenants.get_system_db", return_value=sys_db),
+        patch(
+            "domains.admin.router.tenants.resolve_chain_properties",
+            new=AsyncMock(side_effect=HTTPException(status_code=403, detail="Zincir görünümü yalnızca merkez tesis yetkililerine açıktır")),
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await enter_tenant_context(
+                tenant_id="tenant-target",
+                response=response,
+                current_user=current_user,
+            )
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_exit_context_revokes_context_token_and_restores_origin():
     context_token, expires_at = create_admin_tenant_context_token(
         "super-1",
