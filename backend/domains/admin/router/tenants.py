@@ -8,6 +8,7 @@ Auto-split sub-router (shared imports/classes inlined).
 Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import asyncio
 import logging
 import os
 import uuid
@@ -980,8 +981,12 @@ async def list_tenants(
     limit = max(1, min(int(limit), 2000))
 
     cursor = db.tenants.find({}, {"_id": 0}).skip(skip).limit(limit)
-    tenants = await cursor.to_list(limit)
-    total = await db.tenants.count_documents({})
+    # The list and total are independent round trips. Running them serially was
+    # visible as a multi-second pause when super admins opened Hotel Management.
+    tenants, total = await asyncio.gather(
+        cursor.to_list(limit),
+        db.tenants.count_documents({}),
+    )
 
     # Merge defaults for backward compatibility
     for tenant in tenants:

@@ -1,3 +1,5 @@
+import { prefetchAdminManagementRoute } from '@/lib/adminManagementQueries';
+
 const _map = new Map();
 
 export function registerRoutes(routeConfigs) {
@@ -10,6 +12,9 @@ export function registerRoutes(routeConfigs) {
 
 export function preloadRoute(path) {
   if (!path) return;
+  // Super-admin switches between these two datasets frequently. Start the
+  // request when the menu opens/receives hover instead of after navigation.
+  void prefetchAdminManagementRoute(path)?.catch(() => {});
   const C = _map.get(path);
   if (C && typeof C.preload === "function") {
     try { C.preload(); } catch { /* ignore */ }
