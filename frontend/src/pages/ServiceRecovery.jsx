@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AlertTriangle, CheckCircle2, Clock, Home, Plus, Search, ArrowUpCircle, ArrowDownCircle, User, DoorOpen, Calendar, MessageSquare, Trash2, Edit, Zap, History, Wallet, BellRing, FileText } from 'lucide-react';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 const CATEGORIES = [{
   value: 'room',
   label: 'Oda',
@@ -181,6 +183,7 @@ const ServiceRecovery = ({
   onLogout
 }) => {
   const { t, i18n } = useTranslation();
+  const tenantCurrency = String(tenant?.currency || cachedTenantCurrency()).toUpperCase();
   const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [stats, setStats] = useState({});
@@ -218,7 +221,8 @@ const ServiceRecovery = ({
   const [resolveData, setResolveData] = useState({
     resolution_notes: '',
     compensation_offered: 'none',
-    compensation_amount: 0
+    compensation_amount: 0,
+    compensation_currency: tenantCurrency
   });
   const [escalateData, setEscalateData] = useState({
     escalated_to: 'management',
@@ -349,7 +353,7 @@ const ServiceRecovery = ({
       toast.success(resolutionSuccessMessage(res?.data?.guest_email_sent));
       const folio = res?.data?.folio;
       if (folio?.folio_adjusted) {
-        toast.success(`Misafirin folyosuna ${Number(folio.amount_credited).toLocaleString(i18n.language)} TL kredi işlendi (yeni bakiye: ${Number(folio.new_balance).toLocaleString(i18n.language)} TL)`, {
+        toast.success(`Misafirin folyosuna ${formatCurrency(folio.amount_credited, folio.currency || tenantCurrency)} kredi işlendi (yeni bakiye: ${formatCurrency(folio.new_balance, folio.currency || tenantCurrency)})`, {
           duration: 6000
         });
       } else if (folio?.reason && payload.compensation_offered && payload.compensation_amount > 0) {
@@ -363,7 +367,8 @@ const ServiceRecovery = ({
       setResolveData({
         resolution_notes: '',
         compensation_offered: 'none',
-        compensation_amount: 0
+        compensation_amount: 0,
+        compensation_currency: tenantCurrency
       });
       loadData();
     } catch {
@@ -509,7 +514,8 @@ const ServiceRecovery = ({
     setResolveData({
       resolution_notes: '',
       compensation_offered: 'none',
-      compensation_amount: 0
+      compensation_amount: 0,
+      compensation_currency: tenantCurrency
     });
     setShowResolveDialog(true);
   };
@@ -895,7 +901,7 @@ const ServiceRecovery = ({
                     <p className="text-sm text-green-800">{selectedComplaint.resolution_notes}</p>
                     {selectedComplaint.compensation_offered && <p className="text-xs text-green-600">
                         Tazminat: {(COMPENSATIONS.find(c => c.value === selectedComplaint.compensation_offered) || {}).label}
-                        {selectedComplaint.compensation_amount > 0 && ` (${selectedComplaint.compensation_amount} TL)`}
+                        {selectedComplaint.compensation_amount > 0 && ` (${formatCurrency(selectedComplaint.compensation_amount, selectedComplaint.compensation_currency || tenantCurrency)})`}
                       </p>}
                     {selectedComplaint.resolved_at && <p className="text-xs text-green-500">{t('cm.pages_ServiceRecovery.cozum_zamani')} {formatDate(selectedComplaint.resolved_at)}</p>}
                   </div>}
@@ -1081,7 +1087,7 @@ const ServiceRecovery = ({
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.tutar_tl')}</Label>
+                  <Label className="text-sm font-medium">Tutar ({tenantCurrency})</Label>
                   <Input type="number" value={resolveData.compensation_amount} onChange={e => setResolveData(p => ({
                   ...p,
                   compensation_amount: parseFloat(e.target.value) || 0
@@ -1107,7 +1113,7 @@ const ServiceRecovery = ({
               {!compensationReport ? <p className="text-sm text-gray-500 text-center py-6">{t('cm.pages_ServiceRecovery.yukleniyor_4deb0')}</p> : compensationReport.breakdown.length === 0 ? <p className="text-sm text-gray-500 text-center py-6">{t('cm.pages_ServiceRecovery.henuz_verilmis_tazminat_yok')}</p> : <>
                   <div className="bg-blue-50 p-3 rounded text-center">
                     <p className="text-xs text-blue-600">{t('cm.pages_ServiceRecovery.toplam_tazminat')}</p>
-                    <p className="text-2xl font-bold text-blue-900">{compensationReport.totals.amount.toLocaleString(i18n.language)} TL</p>
+                    <p className="text-2xl font-bold text-blue-900">{formatCurrencyBreakdown(compensationReport.totals.amount_by_currency, compensationReport.totals.amount, compensationReport.totals.currency || tenantCurrency, i18n.language)}</p>
                     <p className="text-xs text-blue-500">{compensationReport.totals.count} {t('cm.pages_ServiceRecovery.sikayetten')}</p>
                   </div>
                   <div className="space-y-2">
@@ -1116,7 +1122,7 @@ const ServiceRecovery = ({
                           <p className="text-sm font-medium">{b.label}</p>
                           <p className="text-xs text-gray-500">{b.count} adet</p>
                         </div>
-                        <p className="text-sm font-bold">{(b.total_amount || 0).toLocaleString(i18n.language)} TL</p>
+                        <p className="text-sm font-bold">{formatCurrency(b.total_amount || 0, b.currency || tenantCurrency)}</p>
                       </div>)}
                   </div>
                 </>}

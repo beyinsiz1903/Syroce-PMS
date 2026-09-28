@@ -260,7 +260,7 @@ const Reports = ({ user, tenant, onLogout }) => {
                 <CardDescription>Son 7 gün toplam oda geliri</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900">₺--</div>
+                <div className="text-3xl font-bold text-gray-900">—</div>
                 <p className="mt-1 text-xs text-gray-500">Detaylı kırılımlar ileride eklenebilir.</p>
               </CardContent>
             </Card>
@@ -282,7 +282,7 @@ const Reports = ({ user, tenant, onLogout }) => {
                 <CardDescription>Son 30 gün toplam oda geliri</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900">₺--</div>
+                <div className="text-3xl font-bold text-gray-900">—</div>
                 <p className="mt-1 text-xs text-gray-500">Muhasebe / AR raporları burada gösterilmiyor.</p>
               </CardContent>
             </Card>

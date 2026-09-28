@@ -7,11 +7,12 @@ describe('PMS checkout response guards', () => {
     expect(normalizeCheckoutResponse(undefined)).toEqual({
       message: 'Çıkış işlemi tamamlandı',
       totalBalance: 0,
-      currency: '',
       foliosClosed: 0,
+      currency: '',
     });
-    expect(normalizeCheckoutResponse({ data: { total_balance: '12.5', folios_closed: '2' } }))
-      .toMatchObject({ totalBalance: 12.5, foliosClosed: 2 });
+    expect(normalizeCheckoutResponse({
+      data: { total_balance: '12.5', folios_closed: '2', currency: 'eur' },
+    })).toMatchObject({ totalBalance: 12.5, foliosClosed: 2, currency: 'EUR' });
   });
 
   it('converts structured API details into a render-safe string', () => {
