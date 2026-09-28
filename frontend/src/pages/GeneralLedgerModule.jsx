@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { accountingQueueStatusLabel, ledgerAccountTypeLabel } from '@/lib/accountingLabels';
 import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
@@ -368,6 +370,7 @@ export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
 const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-balance', 'statements', 'periods', 'workspace', 'integrations', 'setup'];
 
 const GeneralLedgerModule = () => {
+  const { t } = useTranslation();
   const businessDate = useBusinessDate();
   const businessDateDefaults = useRef(localIsoDate());
   const [ledgerCurrency, setLedgerCurrency] = useState(() => cachedTenantCurrency());
@@ -1171,7 +1174,7 @@ const GeneralLedgerModule = () => {
                     <tr key={acc.code} className="border-b last:border-0 hover:bg-gray-50">
                       <td className="p-3 font-medium text-blue-600">{acc.code}</td>
                       <td className="p-3 text-gray-800">{acc.name}</td>
-                      <td className="p-3 text-gray-500">{acc.type}</td>
+                      <td className="p-3 text-gray-500">{ledgerAccountTypeLabel(t, acc.type)}</td>
                       <td className="p-3 text-xs text-slate-600">{acc.monetary ? 'Parasal' : acc.normal_balance === 'credit' && acc.type === 'asset' ? 'Ters bakiye' : 'Standart'}</td>
                       <td className="p-3 text-right font-medium">
                         {acc.balance !== 0 ? fmtMoney(Math.abs(acc.balance)) : '-'}
@@ -1259,8 +1262,8 @@ const GeneralLedgerModule = () => {
                       <tfoot className="bg-gray-50 font-bold">
                         <tr>
                           <td colSpan="5" className="p-2 text-right">TOPLAM:</td>
-                          <td className="p-2 text-right text-red-600">{newJournal.lines.reduce((a, b) => a + (parseFloat(b.debit)||0), 0).toFixed(2)}</td>
-                          <td className="p-2 text-right text-green-600">{newJournal.lines.reduce((a, b) => a + (parseFloat(b.credit)||0), 0).toFixed(2)}</td>
+                          <td className="p-2 text-right text-red-600">{fmtMoney(newJournal.lines.reduce((a, b) => a + (parseFloat(b.debit)||0), 0))}</td>
+                          <td className="p-2 text-right text-green-600">{fmtMoney(newJournal.lines.reduce((a, b) => a + (parseFloat(b.credit)||0), 0))}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -1825,7 +1828,7 @@ const GeneralLedgerModule = () => {
                       <div>
                         <p className="font-medium">{item.direction === 'incoming' ? 'Alış' : 'Satış'} · {item.invoice_id}</p>
                         <p className={`text-xs ${item.status === 'blocked' ? 'text-red-700' : item.status === 'posted' || item.status === 'reversed' ? 'text-emerald-700' : 'text-amber-700'}`}>
-                          {item.status}{item.error_detail ? ` · ${item.error_detail}` : ''}
+                          {accountingQueueStatusLabel(t, item.status)}{item.error_detail ? ` · ${item.error_detail}` : ''}
                         </p>
                       </div>
                       {item.operation === 'post' && ['pending', 'blocked'].includes(item.status) && (

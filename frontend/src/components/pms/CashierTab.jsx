@@ -295,23 +295,23 @@ const CashierTab = () => {
     lines.push('');
     lines.push(['TOPLAMLAR'].map(escape).join(','));
     lines.push(['Vardiya sayisi', t.shift_count || 0].map(escape).join(','));
-    lines.push(['Acilis toplam', (t.opening_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Nakit giris', (t.cash_in_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Nakit cikis', (t.cash_out_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Beklenen', (t.expected_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Sayilan kapanis', (t.closing_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Fark', (t.difference_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Acilis toplam (TRY)', (t.opening_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Nakit giris (TRY)', (t.cash_in_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Nakit cikis (TRY)', (t.cash_out_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Beklenen (TRY)', (t.expected_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Sayilan kapanis (TRY)', (t.closing_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Fark (TRY)', (t.difference_total || 0).toFixed(2)].map(escape).join(','));
     lines.push(['Islem sayisi', t.transaction_count || 0].map(escape).join(','));
     lines.push('');
-    lines.push(['YONTEM BAZINDA', 'Giris', 'Cikis', 'Net', 'Adet'].map(escape).join(','));
+    lines.push(['YONTEM BAZINDA', 'Giris (TRY)', 'Cikis (TRY)', 'Net (TRY)', 'Adet'].map(escape).join(','));
     Object.entries(periodData.by_method || {}).forEach(([m, v]) =>
       lines.push([m, (v.in || 0).toFixed(2), (v.out || 0).toFixed(2), (v.net || 0).toFixed(2), v.count || 0].map(escape).join(',')));
     lines.push('');
-    lines.push(['TIP BAZINDA', 'Giris', 'Cikis', 'Adet'].map(escape).join(','));
+    lines.push(['TIP BAZINDA', 'Giris (TRY)', 'Cikis (TRY)', 'Adet'].map(escape).join(','));
     Object.entries(periodData.by_type || {}).forEach(([ty, v]) =>
       lines.push([ty, (v.in || 0).toFixed(2), (v.out || 0).toFixed(2), v.count || 0].map(escape).join(',')));
     lines.push('');
-    lines.push(['KASIYER BAZINDA', 'Vardiya', 'Nakit Giris', 'Nakit Cikis', 'Islem'].map(escape).join(','));
+    lines.push(['KASIYER BAZINDA', 'Vardiya', 'Nakit Giris (TRY)', 'Nakit Cikis (TRY)', 'Islem'].map(escape).join(','));
     Object.entries(periodData.by_cashier || {}).forEach(([k, v]) =>
       lines.push([v.name || k, v.shift_count || 0, (v.cash_in || 0).toFixed(2), (v.cash_out || 0).toFixed(2), v.transaction_count || 0].map(escape).join(',')));
     lines.push('');
@@ -410,7 +410,7 @@ const CashierTab = () => {
 
   const exportTransactionsCsv = () => {
     if (!filteredTransactions.length) { toast.error('Dışa aktarılacak işlem yok'); return; }
-    const header = ['Saat', 'Tip', 'Yon', 'Yontem', 'Aciklama', 'Tutar', 'Kullanici', 'Ref'];
+    const header = ['Saat', 'Tip', 'Yon', 'Yontem', 'Aciklama', 'Tutar', 'Para Birimi', 'Kullanici', 'Ref'];
     const escape = (v) => {
       let s = (v ?? '').toString();
       // Formula injection guard — Excel/Sheets formula triggers
@@ -425,6 +425,7 @@ const CashierTab = () => {
       methodLabel(t.method),
       t.description || '',
       (t.amount || 0).toFixed(2),
+      t.currency || 'TRY',
       t.created_by_name || '',
       t.ref_id || '',
     ].map(escape).join(','));
@@ -714,12 +715,12 @@ const CashierTab = () => {
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-right">
-                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.acilis')} {(s.opening_amount || 0).toFixed(2)}</p>
-                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis')} {(s.closing_amount || 0).toFixed(2)}</p>
+                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.acilis')} {formatTry(s.opening_amount)}</p>
+                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis')} {formatTry(s.closing_amount)}</p>
                       </div>
                       {s.difference != null && (
                         <Badge className={Math.abs(s.difference) < 0.01 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
-                          {Math.abs(s.difference) < 0.01 ? 'Tam' : `Fark: ${s.difference.toFixed(2)}`}
+                          {Math.abs(s.difference) < 0.01 ? 'Tam' : `Fark: ${formatTry(s.difference)}`}
                         </Badge>
                       )}
                       {s.status !== 'open' && (
@@ -884,7 +885,7 @@ const CashierTab = () => {
                 <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
                 <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_32_50')} />
                 {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
-                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi')} <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi')} <strong>{formatTry(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate))}</strong></p>
                 )}
               </div>
             )}
@@ -939,7 +940,7 @@ const CashierTab = () => {
                 <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
                 <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_32_50_1bd02')} />
                 {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
-                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi_a59f8')} <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi_a59f8')} <strong>{formatTry(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate))}</strong></p>
                 )}
               </div>
             )}
@@ -987,19 +988,19 @@ const CashierTab = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
                   <p className="text-[10px] text-emerald-600 uppercase">{t('cm.components_pms_CashierTab.acilis_3245e')}</p>
-                  <p className="text-base font-bold text-emerald-700">{(reportData.opening_amount || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-emerald-700">{formatTry(reportData.opening_amount)}</p>
                 </div>
                 <div className="p-3 rounded bg-blue-50 border border-blue-200">
                   <p className="text-[10px] text-blue-600 uppercase">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
-                  <p className="text-base font-bold text-blue-700">{(reportData.cash_in || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-blue-700">{formatTry(reportData.cash_in)}</p>
                 </div>
                 <div className="p-3 rounded bg-amber-50 border border-amber-200">
                   <p className="text-[10px] text-amber-600 uppercase">{t('cm.components_pms_CashierTab.nakit_cikis_a878e')}</p>
-                  <p className="text-base font-bold text-amber-700">{(reportData.cash_out || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-amber-700">{formatTry(reportData.cash_out)}</p>
                 </div>
                 <div className="p-3 rounded bg-gray-100 border border-gray-300">
                   <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
-                  <p className="text-base font-bold text-gray-800">{(reportData.expected_amount || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-gray-800">{formatTry(reportData.expected_amount)}</p>
                 </div>
               </div>
 
@@ -1007,12 +1008,12 @@ const CashierTab = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
                     <p className="text-[10px] text-indigo-600 uppercase">{t('cm.components_pms_CashierTab.sayilan_kapanis')}</p>
-                    <p className="text-base font-bold text-indigo-700">{(reportData.closing_amount || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-indigo-700">{formatTry(reportData.closing_amount)}</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(reportData.difference || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                     <p className={`text-[10px] uppercase ${Math.abs(reportData.difference || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Fark</p>
                     <p className={`text-base font-bold ${Math.abs(reportData.difference || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {(reportData.difference || 0).toFixed(2)} TL
+                      {formatTry(reportData.difference)}
                     </p>
                   </div>
                 </div>
@@ -1037,9 +1038,9 @@ const CashierTab = () => {
                       ) : Object.entries(reportData.by_method).map(([m, v]) => (
                         <tr key={m} className="border-t">
                           <td className="px-3 py-2">{methodLabel(m)}</td>
-                          <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-medium">{(v.net || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                          <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatTry(v.net)}</td>
                           <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                         </tr>
                       ))}
@@ -1066,8 +1067,8 @@ const CashierTab = () => {
                       ) : Object.entries(reportData.by_type).map(([ty, v]) => (
                         <tr key={ty} className="border-t">
                           <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
-                          <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                          <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
                           <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                         </tr>
                       ))}
@@ -1173,27 +1174,27 @@ const CashierTab = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
                     <p className="text-[10px] text-emerald-600 uppercase">{t('cm.components_pms_CashierTab.acilis_toplam')}</p>
-                    <p className="text-base font-bold text-emerald-700">{(periodData.totals?.opening_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-emerald-700">{formatTry(periodData.totals?.opening_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-blue-50 border border-blue-200">
                     <p className="text-[10px] text-blue-600 uppercase">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
-                    <p className="text-base font-bold text-blue-700">{(periodData.totals?.cash_in_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-blue-700">{formatTry(periodData.totals?.cash_in_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-amber-50 border border-amber-200">
                     <p className="text-[10px] text-amber-600 uppercase">{t('cm.components_pms_CashierTab.nakit_cikis_a878e')}</p>
-                    <p className="text-base font-bold text-amber-700">{(periodData.totals?.cash_out_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-amber-700">{formatTry(periodData.totals?.cash_out_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-gray-100 border border-gray-300">
                     <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
-                    <p className="text-base font-bold text-gray-800">{(periodData.totals?.expected_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-gray-800">{formatTry(periodData.totals?.expected_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
                     <p className="text-[10px] text-indigo-600 uppercase">{t('cm.components_pms_CashierTab.sayilan')}</p>
-                    <p className="text-base font-bold text-indigo-700">{(periodData.totals?.closing_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-indigo-700">{formatTry(periodData.totals?.closing_total)}</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                     <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>{t('cm.components_pms_CashierTab.fark_toplam')}</p>
-                    <p className={`text-base font-bold ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>{(periodData.totals?.difference_total || 0).toFixed(2)} TL</p>
+                    <p className={`text-base font-bold ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>{formatTry(periodData.totals?.difference_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-600 uppercase">{t('cm.components_pms_CashierTab.islem_792e7')}</p>
@@ -1218,9 +1219,9 @@ const CashierTab = () => {
                         ) : Object.entries(periodData.by_method).map(([m, v]) => (
                           <tr key={m} className="border-t">
                             <td className="px-3 py-2">{methodLabel(m)}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right font-medium">{(v.net || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatTry(v.net)}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                           </tr>
                         ))}
@@ -1242,8 +1243,8 @@ const CashierTab = () => {
                         ) : Object.entries(periodData.by_type).map(([ty, v]) => (
                           <tr key={ty} className="border-t">
                             <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                           </tr>
                         ))}
@@ -1266,8 +1267,8 @@ const CashierTab = () => {
                           <tr key={k} className="border-t">
                             <td className="px-3 py-2">{v.name || k}</td>
                             <td className="px-3 py-2 text-right">{v.shift_count || 0}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.cash_in || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.cash_out || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.cash_in)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.cash_out)}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.transaction_count || 0}</td>
                           </tr>
                         ))}
@@ -1289,10 +1290,10 @@ const CashierTab = () => {
                         ) : Object.entries(periodData.by_currency).map(([cur, v]) => (
                           <tr key={cur} className="border-t">
                             <td className="px-3 py-2 font-medium">{cur}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in_try || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.out_try || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-gray-600">{(v.in_original || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-gray-600">{(v.out_original || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in_try)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out_try)}</td>
+                            <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(v.in_original, cur, { decimals: 2 })}</td>
+                            <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(v.out_original, cur, { decimals: 2 })}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                           </tr>
                         ))}

@@ -1484,7 +1484,27 @@
     "accountsReceivable": "Accounts Receivable",
     "accountsPayable": "Accounts Payable",
     "reconciliation": "Bank Reconciliation",
-    "aging": "Aging Report"
+    "aging": "Aging Report",
+    "transactionTypes": {
+      "charge": "Charge",
+      "payment": "Payment",
+      "adjustment": "Adjustment",
+      "refund": "Refund"
+    },
+    "ledgerAccountTypes": {
+      "asset": "Asset",
+      "liability": "Liability",
+      "equity": "Equity",
+      "revenue": "Revenue",
+      "expense": "Expense"
+    },
+    "accountingQueueStatuses": {
+      "pending": "Pending",
+      "blocked": "Blocked",
+      "posted": "Posted",
+      "reversed": "Reversed",
+      "failed": "Failed"
+    }
   },
   "sales": {
     "title": "Sales CRM",

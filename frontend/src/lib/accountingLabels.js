@@ -23,6 +23,29 @@ const INVOICE_TYPE_KEYS = {
   proforma: ['invoice.proforma', 'Proforma'],
 };
 
+const RECEIVABLE_TRANSACTION_TYPE_KEYS = {
+  charge: ['finance.transactionTypes.charge', 'Tahakkuk'],
+  payment: ['finance.transactionTypes.payment', 'Tahsilat'],
+  adjustment: ['finance.transactionTypes.adjustment', 'Ayarlama'],
+  refund: ['finance.transactionTypes.refund', 'İade'],
+};
+
+const LEDGER_ACCOUNT_TYPE_KEYS = {
+  asset: ['finance.ledgerAccountTypes.asset', 'Varlık'],
+  liability: ['finance.ledgerAccountTypes.liability', 'Yükümlülük'],
+  equity: ['finance.ledgerAccountTypes.equity', 'Özkaynak'],
+  revenue: ['finance.ledgerAccountTypes.revenue', 'Gelir'],
+  expense: ['finance.ledgerAccountTypes.expense', 'Gider'],
+};
+
+const ACCOUNTING_QUEUE_STATUS_KEYS = {
+  pending: ['finance.accountingQueueStatuses.pending', 'Bekliyor'],
+  blocked: ['finance.accountingQueueStatuses.blocked', 'Engelli'],
+  posted: ['finance.accountingQueueStatuses.posted', 'Muhasebeleştirildi'],
+  reversed: ['finance.accountingQueueStatuses.reversed', 'Ters Kayıt Oluşturuldu'],
+  failed: ['finance.accountingQueueStatuses.failed', 'Başarısız'],
+};
+
 const INVENTORY_CATEGORY_KEYS = {
   supplies: ['invoice.inventoryCategories.supplies', 'Supplies'],
   amenity: ['invoice.inventoryCategories.amenity', 'Guest Amenity'],
@@ -71,6 +94,9 @@ const translateCode = (t, value, dictionary) => {
 export const expenseCategoryLabel = (t, value) => translateCode(t, value, EXPENSE_CATEGORY_KEYS);
 export const paymentMethodLabel = (t, value) => translateCode(t, value, PAYMENT_METHOD_KEYS);
 export const invoiceTypeLabel = (t, value) => translateCode(t, value, INVOICE_TYPE_KEYS);
+export const receivableTransactionTypeLabel = (t, value) => translateCode(t, value, RECEIVABLE_TRANSACTION_TYPE_KEYS);
+export const ledgerAccountTypeLabel = (t, value) => translateCode(t, value, LEDGER_ACCOUNT_TYPE_KEYS);
+export const accountingQueueStatusLabel = (t, value) => translateCode(t, value, ACCOUNTING_QUEUE_STATUS_KEYS);
 export const inventoryCategoryLabel = (t, value) => translateCode(t, value, INVENTORY_CATEGORY_KEYS);
 export const inventoryUnitLabel = (t, value) => translateCode(t, value, INVENTORY_UNIT_KEYS);
 
