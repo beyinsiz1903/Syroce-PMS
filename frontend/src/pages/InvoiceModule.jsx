@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useCurrency } from '@/context/CurrencyContext';
-import { formatAmount } from '@/lib/currency';
+import { formatCurrency } from '@/lib/currency';
 import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import InvoiceTemplate from '@/components/invoice/InvoiceTemplate';
@@ -22,7 +22,7 @@ import {
 
 const InvoiceModule = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
-  const { amount: fmtMoney } = useCurrency();
+  const { code: tenantCurrency } = useCurrency();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
@@ -284,7 +284,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     );
   }
 
-  const money = (v) => fmtMoney(v || 0, { decimals: 2 });
+  const money = (value, currency) => formatCurrency(
+    value || 0,
+    currency || dashboard?.currency || tenantCurrency,
+    { decimals: 2 },
+  );
+  const moneyTotals = (totals, fallbackValue) => {
+    const entries = Object.entries(totals || {}).filter(([, value]) => Number(value) !== 0);
+    if (!entries.length) return money(fallbackValue);
+    return entries.map(([currency, value]) => money(value, currency)).join(' · ');
+  };
 
   return (
     <>
@@ -303,15 +312,15 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.collected')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-green-600">{money(dashboard.collected_income ?? dashboard.monthly_income)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-green-600">{moneyTotals(dashboard.collected_income_by_currency, dashboard.collected_income ?? dashboard.monthly_income)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.accrued')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-blue-600">{money(dashboard.accrued_revenue ?? 0)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-blue-600">{moneyTotals(dashboard.accrued_revenue_by_currency, dashboard.accrued_revenue ?? 0)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.pendingAmount')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-yellow-600">{money(dashboard.pending_amount ?? 0)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-yellow-600">{moneyTotals(dashboard.pending_amount_by_currency, dashboard.pending_amount ?? 0)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.monthlyExpenses')}</CardTitle></CardHeader>
@@ -319,14 +328,14 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.bankBalance')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold">{money(dashboard.total_bank_balance)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold">{moneyTotals(dashboard.bank_balance_by_currency, dashboard.total_bank_balance)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.overdue')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-red-600">{dashboard.overdue_invoices ?? 0}</div>
                 {(dashboard.overdue_amount ?? 0) > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">{money(dashboard.overdue_amount)}</div>
+                  <div className="text-xs text-gray-500 mt-1">{moneyTotals(dashboard.overdue_amount_by_currency, dashboard.overdue_amount)}</div>
                 )}
               </CardContent>
             </Card>
@@ -414,8 +423,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         })()}
                       </div>
                       <div className="text-right">
-                        <div className="text-2xl font-bold text-blue-600">{money(invoice.total)}</div>
-                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(invoice.total_vat)}</div>
+                        <div className="text-2xl font-bold text-blue-600">{money(invoice.total, invoice.currency)}</div>
+                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(invoice.total_vat, invoice.currency)}</div>
                         <div className="mt-2">
                           <Select value={invoice.status} onValueChange={(v) => updateInvoiceStatus(invoice.id, v)}>
                             <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
@@ -510,7 +519,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                       {account.iban && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.iban')}:</span><span className="font-medium text-xs">{account.iban}</span></div>}
                       <div className="flex justify-between pt-2 border-t">
                         <span className="text-gray-600">{t('invoice.labels.balance')}:</span>
-                        <span className="text-xl font-bold text-green-600">{formatAmount(account.balance || 0, code, { decimals: 2 })}</span>
+                        <span className="text-xl font-bold text-green-600">{money(account.balance, code)}</span>
                       </div>
                       <div className="text-xs text-gray-500">{code}</div>
                     </CardContent>
