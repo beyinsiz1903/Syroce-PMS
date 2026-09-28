@@ -95,6 +95,7 @@ async def get_daily_collections_mobile(
     payment_methods = {}
     totals_by_currency: dict[str, float] = {}
     methods_by_currency: dict[str, dict[str, float]] = {}
+    method_counts: dict[str, int] = {}
 
     business_day = target_date.date().isoformat()
     payment_query = {
@@ -116,6 +117,7 @@ async def get_daily_collections_mobile(
         payment_methods[method] = payment_methods.get(method, 0) + amount
         method_totals = methods_by_currency.setdefault(method, {})
         method_totals[currency] = method_totals.get(currency, 0) + amount
+        method_counts[method] = method_counts.get(method, 0) + 1
 
     return {
         "date": target_date.date().isoformat(),
@@ -128,6 +130,7 @@ async def get_daily_collections_mobile(
             method: {key: round(value, 2) for key, value in totals.items()}
             for method, totals in methods_by_currency.items()
         },
+        "payment_method_counts": method_counts,
     }
 
 
@@ -237,10 +240,15 @@ async def get_cashier_shift_report(
     total_transfer = 0
     total_other = 0
     transaction_count = 0
+    totals_by_currency: dict[str, float] = {}
+    methods_by_currency: dict[str, dict[str, float]] = {}
 
     async for payment in db.payments.find(query):
-        amount = payment.get("amount", 0)
+        amount, currency = _received_payment_amount(payment)
         method = payment.get("payment_method") or payment.get("method") or "cash"
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
+        method_totals = methods_by_currency.setdefault(method, {})
+        method_totals[currency] = method_totals.get(currency, 0) + amount
 
         if method == "cash":
             total_cash += amount
@@ -271,6 +279,11 @@ async def get_cashier_shift_report(
         "variance": variance,
         "transaction_count": transaction_count,
         "average_transaction": total_collected / transaction_count if transaction_count > 0 else 0,
+        "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
+        "payment_methods_by_currency": {
+            method: {key: round(value, 2) for key, value in totals.items()}
+            for method, totals in methods_by_currency.items()
+        },
         "generated_at": datetime.now(UTC).isoformat(),
     }
 
@@ -542,10 +555,14 @@ async def get_cash_flow_summary_mobile(
     today = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
     start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
     end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Today's cash inflow (payments received)
     today_inflow = 0.0
     inflow_count = 0
+    inflow_by_currency: dict[str, float] = {}
     payment_query = {
         "tenant_id": current_user.tenant_id,
         **accounting_day_match(
@@ -556,18 +573,37 @@ async def get_cash_flow_summary_mobile(
         ),
     }
     async for payment in db.payments.find(payment_query):
-        today_inflow += payment.get("amount", 0)
+        amount, currency = _received_payment_amount(payment)
+        today_inflow += amount
+        inflow_by_currency[currency] = inflow_by_currency.get(currency, 0) + amount
         inflow_count += 1
 
     # Today's cash outflow (expenses)
     today_outflow = 0.0
     outflow_count = 0
-    async for expense in db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_of_day, "$lte": end_of_day}, "paid": True}):
-        today_outflow += expense.get("amount", 0)
+    outflow_by_currency: dict[str, float] = {}
+    expense_query = {
+        "tenant_id": current_user.tenant_id,
+        "paid": True,
+        **accounting_day_match(
+            today.isoformat(),
+            {"date": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}},
+            {"expense_date": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}},
+        ),
+    }
+    async for expense in db.expenses.find(expense_query):
+        amount = expense.get("total_amount", expense.get("amount", 0))
+        currency = str(expense.get("currency") or tenant_currency).upper()
+        today_outflow += amount
+        outflow_by_currency[currency] = outflow_by_currency.get(currency, 0) + amount
         outflow_count += 1
 
     # Net cash flow today
     net_flow = today_inflow - today_outflow
+    net_by_currency = {
+        currency: round(inflow_by_currency.get(currency, 0) - outflow_by_currency.get(currency, 0), 2)
+        for currency in set(inflow_by_currency) | set(outflow_by_currency)
+    }
 
     # Weekly collection plan (Tur 3 perf fix: was 7×N+1 queries, now 3 bulk queries)
     weekly_dates = [(today + timedelta(days=d)).isoformat() for d in range(7)]
@@ -619,7 +655,7 @@ async def get_cash_flow_summary_mobile(
     total_bank_balance = sum(b["current_balance"] for b in bank_balances if b["currency"] == "TRY")
 
     return {
-        "today": {"date": today.isoformat(), "cash_inflow": today_inflow, "cash_outflow": today_outflow, "net_flow": net_flow, "inflow_count": inflow_count, "outflow_count": outflow_count},
+        "today": {"date": today.isoformat(), "cash_inflow": today_inflow, "cash_outflow": today_outflow, "net_flow": net_flow, "inflow_count": inflow_count, "outflow_count": outflow_count, "currency": tenant_currency, "inflow_by_currency": {key: round(value, 2) for key, value in inflow_by_currency.items()}, "outflow_by_currency": {key: round(value, 2) for key, value in outflow_by_currency.items()}, "net_by_currency": net_by_currency},
         "weekly_plan": weekly_plan,
         "bank_balances": bank_balances,
         "total_bank_balance_try": total_bank_balance,

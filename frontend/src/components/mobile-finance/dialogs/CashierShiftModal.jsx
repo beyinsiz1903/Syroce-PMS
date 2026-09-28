@@ -16,6 +16,13 @@ import { useTranslation } from 'react-i18next';
 export default function CashierShiftModal(props) {
   const { t } = useTranslation();
   const { cashierShiftModalOpen, formatCurrency, setCashierShiftModalOpen, shiftReportData, user } = props;
+  const formatTotals = (totals, fallback = 0) => {
+    const entries = Object.entries(totals || {}).filter(([, amount]) => Number(amount) !== 0);
+    return entries.length
+      ? entries.map(([currency, amount]) => formatCurrency(amount, currency)).join(' · ')
+      : formatCurrency(fallback, shiftReportData?.currency);
+  };
+  const collections = shiftReportData?.collections || {};
   return (
     <Dialog open={cashierShiftModalOpen} onOpenChange={setCashierShiftModalOpen}>
       <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -73,19 +80,19 @@ export default function CashierShiftModal(props) {
                 <div className="flex justify-between p-3 bg-green-50 rounded">
                   <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.toplam_tahsilat')}</span>
                   <span className="font-bold text-green-700">
-                    {formatCurrency(shiftReportData.total_collected || 0)}
+                    {formatTotals(shiftReportData.totals_by_currency, collections.total)}
                   </span>
                 </div>
                 <div className="flex justify-between p-3 bg-red-50 rounded">
                   <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.odemeler')}</span>
                   <span className="font-bold text-red-700">
-                    -{formatCurrency(shiftReportData.total_paid_out || 0)}
+                    -{formatCurrency(shiftReportData.total_paid_out || 0, shiftReportData.currency)}
                   </span>
                 </div>
                 <div className="flex justify-between p-4 bg-indigo-100 rounded-lg border-2 border-indigo-300">
                   <span className="font-bold text-indigo-900">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.beklenen_bakiye')}</span>
                   <span className="font-bold text-2xl text-indigo-700">
-                    {formatCurrency(shiftReportData.expected_balance || 0)}
+                    {formatCurrency(shiftReportData.expected_closing_balance ?? shiftReportData.expected_balance ?? 0, shiftReportData.currency)}
                   </span>
                 </div>
             
@@ -148,13 +155,13 @@ export default function CashierShiftModal(props) {
             </Card>
 
             {/* Payment Methods Breakdown */}
-            {shiftReportData.payment_methods && (
+            {(shiftReportData.payment_methods_by_currency || shiftReportData.payment_methods) && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.odeme_yontemleri')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {Object.entries(shiftReportData.payment_methods).map(([method, data]) => (
+                  {Object.entries(shiftReportData.payment_methods_by_currency || shiftReportData.payment_methods).map(([method, data]) => (
                     <div key={method} className="p-3 bg-gray-50 rounded border">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -165,11 +172,11 @@ export default function CashierShiftModal(props) {
                              method === 'check' ? 'Çek' : method}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {data.count || 0} {t('cm.components_mobilefinance_dialogs_CashierShiftModal.islem')}
+                            {shiftReportData.payment_method_counts?.[method] ?? data.count ?? 0} {t('cm.components_mobilefinance_dialogs_CashierShiftModal.islem')}
                           </p>
                         </div>
                         <p className="font-bold text-lg text-indigo-700">
-                          {formatCurrency(data.amount || 0)}
+                          {typeof data === 'object' ? formatTotals(data) : formatCurrency(data || 0, shiftReportData.currency)}
                         </p>
                       </div>
                     </div>

@@ -62,7 +62,7 @@ export default function RiskModal(props) {
                         </Badge>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-lg text-red-700">{formatCurrency(account.balance)}</p>
+                        <p className="font-bold text-lg text-red-700">{formatCurrency(account.balance, account.currency)}</p>
                         <Button
                           size="sm"
                           className="mt-2"
@@ -126,11 +126,11 @@ export default function RiskModal(props) {
                         <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
                           <div>
                             <p className="text-gray-600">Limit:</p>
-                            <p className="font-semibold">{formatCurrency(violation.credit_limit)}</p>
+                            <p className="font-semibold">{formatCurrency(violation.credit_limit, violation.currency)}</p>
                           </div>
                           <div>
                             <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.borc')}</p>
-                            <p className="font-semibold text-red-600">{formatCurrency(violation.current_debt)}</p>
+                            <p className="font-semibold text-red-600">{formatCurrency(violation.current_debt, violation.currency)}</p>
                           </div>
                           <div>
                             <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.kullanim')}</p>
@@ -143,7 +143,7 @@ export default function RiskModal(props) {
                         </div>
                         {violation.over_limit_amount > 0 && (
                           <Badge className="mt-2 bg-red-600">
-                            {t('cm.components_mobilefinance_dialogs_RiskModal.limit_asimi')} {formatCurrency(violation.over_limit_amount)}
+                            {t('cm.components_mobilefinance_dialogs_RiskModal.limit_asimi')} {formatCurrency(violation.over_limit_amount, violation.currency)}
                           </Badge>
                         )}
                         {violation.warning && (
@@ -193,7 +193,7 @@ export default function RiskModal(props) {
                         <p className="text-xs text-gray-500">{t('cm.components_mobilefinance_dialogs_RiskModal.odeme_sayisi')} {item.payment_history_count}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-lg text-gray-900">{formatCurrency(item.balance)}</p>
+                        <p className="font-bold text-lg text-gray-900">{formatCurrency(item.balance, item.currency)}</p>
                         <Button
                           size="sm"
                           className="mt-2 bg-gray-900"
@@ -244,7 +244,7 @@ export default function RiskModal(props) {
                         <p className="text-sm text-gray-700">{alert.message}</p>
                         {alert.amount && (
                           <p className="text-sm font-bold text-red-600 mt-1">
-                            {t('cm.components_mobilefinance_dialogs_RiskModal.tutar_64d2c')} {formatCurrency(alert.amount)}
+                            {t('cm.components_mobilefinance_dialogs_RiskModal.tutar_64d2c')} {formatCurrency(alert.amount, alert.currency)}
                           </p>
                         )}
                         {alert.action_required && (
