@@ -11,6 +11,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const COMP_EVENT_TYPES = [
   ['meeting', 'Toplantı'], ['conference', 'Konferans'],
@@ -204,7 +205,7 @@ const BanquetCompetitorTab = () => {
               <thead className="bg-slate-50 border-b text-left">
                 <tr>
                   <th className="p-2">Etkinlik</th>
-                  <th className="p-2">Bizim Ort. (₺/pax)</th>
+                  <th className="p-2">Bizim Ort. ({cachedTenantCurrency()}/pax)</th>
                   <th className="p-2">Rakip Min</th>
                   <th className="p-2">Rakip Ort.</th>
                   <th className="p-2">Rakip Maks</th>
@@ -217,11 +218,11 @@ const BanquetCompetitorTab = () => {
                   <tr key={r.event_type} className="border-b">
                     <td className="p-2 font-medium">{evTypeLabel[r.event_type] || r.event_type}</td>
                     <td className="p-2">{r.our_avg_per_pax
-                      ? `₺${r.our_avg_per_pax.toLocaleString('tr-TR')} (${r.events_count})`
+                      ? `${formatCurrency(r.our_avg_per_pax, r.currency || cachedTenantCurrency())} (${r.events_count})`
                       : '—'}</td>
-                    <td className="p-2">{r.competitor_min ? `₺${r.competitor_min.toLocaleString('tr-TR')}` : '—'}</td>
-                    <td className="p-2">{r.competitor_avg ? `₺${r.competitor_avg.toLocaleString('tr-TR')}` : '—'}</td>
-                    <td className="p-2">{r.competitor_max ? `₺${r.competitor_max.toLocaleString('tr-TR')}` : '—'}</td>
+                    <td className="p-2">{r.competitor_min ? formatCurrency(r.competitor_min, r.currency || cachedTenantCurrency()) : '—'}</td>
+                    <td className="p-2">{r.competitor_avg ? formatCurrency(r.competitor_avg, r.currency || cachedTenantCurrency()) : '—'}</td>
+                    <td className="p-2">{r.competitor_max ? formatCurrency(r.competitor_max, r.currency || cachedTenantCurrency()) : '—'}</td>
                     <td className="p-2 text-xs">{r.competitor_count || 0}</td>
                     <td className="p-2">
                       <Badge className={positionLabel[r.position]?.cls}>
@@ -295,7 +296,7 @@ const BanquetCompetitorTab = () => {
                   {SEASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </Field>
-              <Field label="₺/pax">
+              <Field label={`${cachedTenantCurrency()}/pax`}>
                 <Input type="number" min="0" value={rateForm.per_pax_price}
                        onChange={(e) => setRateForm({ ...rateForm, per_pax_price: e.target.value })}
                        required />
@@ -328,7 +329,7 @@ const BanquetCompetitorTab = () => {
                 <thead className="bg-slate-50 border-b text-left">
                   <tr>
                     <th className="p-2">{t('cm.components_mice_BanquetCompetitorTab.tarih')}</th><th className="p-2">Etkinlik</th>
-                    <th className="p-2">Sezon</th><th className="p-2">₺/pax</th>
+                    <th className="p-2">Sezon</th><th className="p-2">{cachedTenantCurrency()}/pax</th>
                     <th className="p-2">Min/Maks Pax</th><th className="p-2">Kaynak</th>
                     <th className="p-2 text-right">{t('cm.components_mice_BanquetCompetitorTab.islem_792e7')}</th>
                   </tr>
@@ -344,7 +345,7 @@ const BanquetCompetitorTab = () => {
                       <td className="p-2">{evTypeLabel[r.event_type] || r.event_type}</td>
                       <td className="p-2">{r.season}</td>
                       <td className="p-2 font-medium">
-                        ₺{(r.per_pax_price || 0).toLocaleString('tr-TR')}
+                        {formatCurrency(r.per_pax_price, r.currency || cachedTenantCurrency())}
                       </td>
                       <td className="p-2">{r.min_pax || 0} - {r.max_pax || 0}</td>
                       <td className="p-2">{r.source || '—'}</td>

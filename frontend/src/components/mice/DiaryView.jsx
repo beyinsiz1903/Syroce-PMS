@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { CalendarDays } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const STATUS = {
   lead: { label: 'Lead', cls: 'bg-slate-100 text-slate-700' },
@@ -301,7 +302,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                           {(ev.space_bookings || []).map((sb) => spaceById[sb.space_id]?.name).filter(Boolean).join(', ')}
                         </div>
                         <div className="text-[11px] font-semibold mt-0.5">
-                          ₺{(ev.totals?.grand_total || 0).toLocaleString('tr-TR')}
+                          {formatCurrency(ev.totals?.grand_total, ev.currency || cachedTenantCurrency())}
                         </div>
                       </div>
                     ))}
@@ -394,7 +395,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                               key={`${b.ev.id}-${bi}`}
                               type="button"
                               onClick={() => setSelectedBar(isSel ? null : b)}
-                              title={`${b.ev.name} — ${b.ev.client_name || '—'} • ${range} • ${b.ev.expected_pax || 0} pax • ₺${total}`}
+                              title={`${b.ev.name} — ${b.ev.client_name || '—'} • ${range} • ${b.ev.expected_pax || 0} pax • ${formatCurrency(total, b.ev.currency || cachedTenantCurrency())}`}
                               className={`absolute rounded border border-black/10 px-1 overflow-hidden text-left text-[10px] leading-tight transition hover:brightness-95 ${cls} ${isSel ? 'ring-2 ring-indigo-400' : ''}`}
                               style={{
                                 left: `${left}%`,
@@ -432,7 +433,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                   {selectedBar.ev.client_name || '—'} • {selectedBar.ev.expected_pax || 0} pax
                 </div>
                 <div className="text-[11px] font-semibold mt-0.5">
-                  ₺{(selectedBar.ev.totals?.grand_total || 0).toLocaleString('tr-TR')}
+                  {formatCurrency(selectedBar.ev.totals?.grand_total, selectedBar.ev.currency || cachedTenantCurrency())}
                 </div>
               </div>
             )}
@@ -456,7 +457,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                 </div>
                 <Badge className={`${STATUS[ev.status]?.cls || ''} border-0`}>{STATUS[ev.status]?.label}</Badge>
                 <div className="font-semibold text-sm w-28 text-right">
-                  ₺{(ev.totals?.grand_total || 0).toLocaleString('tr-TR')}
+                  {formatCurrency(ev.totals?.grand_total, ev.currency || cachedTenantCurrency())}
                 </div>
               </div>
             ))}

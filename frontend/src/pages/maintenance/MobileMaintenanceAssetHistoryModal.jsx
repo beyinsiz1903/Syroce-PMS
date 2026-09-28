@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -67,7 +68,7 @@ export default function MobileMaintenanceAssetHistoryModal({ assetHistoryModalOp
                       </div>
                       <div className="text-center p-2 bg-indigo-50 rounded">
                         <p className="text-indigo-900 font-bold text-lg">
-                          {assetHistory.avg_cost?.toFixed(0) || 0} ₺
+                          {formatCurrency(assetHistory.avg_cost, assetHistory.currency || cachedTenantCurrency(), { decimals: 0 })}
                         </p>
                         <p className="text-indigo-600">Ort. Maliyet</p>
                       </div>
@@ -90,7 +91,7 @@ export default function MobileMaintenanceAssetHistoryModal({ assetHistoryModalOp
                                 {item.priority || 'normal'}
                               </Badge>
                             </div>
-                            {item.cost && <p className="text-indigo-700 font-bold mt-2">{item.cost} ₺</p>}
+                            {item.cost && <p className="text-indigo-700 font-bold mt-2">{formatCurrency(item.cost, item.currency || assetHistory.currency || cachedTenantCurrency())}</p>}
                           </div>)}
                       </div> : <div className="text-center py-8 text-gray-500">
                         <History className="w-12 h-12 mx-auto mb-2 opacity-30" />

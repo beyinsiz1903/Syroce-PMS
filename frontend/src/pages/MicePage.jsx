@@ -33,6 +33,8 @@ import { CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw, Trash2, File
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 import EmptyState from '@/components/EmptyState';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useEntitlements } from '@/context/EntitlementContext';
@@ -124,6 +126,7 @@ const MicePage = ({
     organizer_user: '',
     event_type: 'meeting',
     status: 'lead',
+    currency: cachedTenantCurrency(),
     expected_pax: 50,
     start_date: '',
     end_date: '',
@@ -153,7 +156,7 @@ const MicePage = ({
     type: 'fb',
     price_per_person: 0,
     flat_price: 0,
-    currency: 'TRY',
+    currency: cachedTenantCurrency(),
     description: '',
     active: true,
     dietary_tags: [],
@@ -269,6 +272,7 @@ const MicePage = ({
       organizer_user: ev.organizer_user || '',
       event_type: ev.event_type,
       status: ev.status,
+      currency: ev.currency || cachedTenantCurrency(),
       expected_pax: ev.expected_pax,
       start_date: ev.start_date,
       end_date: ev.end_date,
@@ -385,7 +389,7 @@ const MicePage = ({
       type: m.type || 'fb',
       price_per_person: m.price_per_person || 0,
       flat_price: m.flat_price || 0,
-      currency: m.currency || 'TRY',
+      currency: m.currency || cachedTenantCurrency(),
       description: m.description || '',
       active: m.active !== false,
       dietary_tags: m.dietary_tags || [],
@@ -610,7 +614,13 @@ const MicePage = ({
   if (loadError) {
     return <ModuleLoadError moduleName="MICE & Banquet" error={loadError} onRetry={load} />;
   }
-  const totalPipeline = Object.values(summary).reduce((a, b) => a + (b.total_value || 0), 0);
+  const totalPipelineByCurrency = Object.values(summary).reduce((totals, bucket) => {
+    Object.entries(bucket.total_value_by_currency || {}).forEach(([currency, amount]) => {
+      totals[currency] = (totals[currency] || 0) + Number(amount || 0);
+    });
+    return totals;
+  }, {});
+  const totalPipeline = Object.values(totalPipelineByCurrency).reduce((sum, amount) => sum + amount, 0);
   const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);
   return <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
@@ -677,7 +687,7 @@ const MicePage = ({
                     <span className={`text-2xl font-bold ${text}`}>{count}</span>
                     <span className={`text-xs font-medium mb-1 ${label}`}>adet</span>
                   </div>
-                  <span className={`text-lg font-semibold mt-1 ${valText} opacity-90`}>₺{totalValue.toLocaleString(i18n.language)}</span>
+                  <span className={`text-lg font-semibold mt-1 ${valText} opacity-90`}>{formatCurrencyBreakdown(summary[k]?.total_value_by_currency, totalValue, cachedTenantCurrency(), i18n.language)}</span>
                 </div>
               </div>
             </div>
@@ -692,7 +702,7 @@ const MicePage = ({
               <Sparkles className="w-3.5 h-3.5" /> {t('cm.pages_MicePage.toplam_pipeline')}
             </span>
             <div className="flex items-end gap-2 mt-1">
-              <span className="text-2xl md:text-3xl font-bold text-violet-950 tracking-tight">₺{totalPipeline.toLocaleString(i18n.language)}</span>
+              <span className="text-2xl md:text-3xl font-bold text-violet-950 tracking-tight">{formatCurrencyBreakdown(totalPipelineByCurrency, totalPipeline, cachedTenantCurrency(), i18n.language)}</span>
             </div>
           </div>
         </div>
@@ -745,7 +755,7 @@ const MicePage = ({
                             {spaceById[sb.space_id]?.name || '?'} • {sb.setup_style}
                           </div>)}
                       </td>
-                      <td className="p-2 font-semibold">₺{(ev.totals?.grand_total || 0).toLocaleString(i18n.language)}</td>
+                      <td className="p-2 font-semibold">{formatCurrency(ev.totals?.grand_total, ev.currency || cachedTenantCurrency())}</td>
                       <td className="p-2">
                         <Badge className={`${st.cls} border-0`}>{st.label}</Badge>
                         {ev.lost_reason && <div className="text-xs text-red-600 mt-1 max-w-[160px]" title={ev.lost_reason}>↳ {ev.lost_reason.slice(0, 30)}…</div>}
@@ -818,8 +828,8 @@ const MicePage = ({
                       </div>)}
                   </div>
                   <div className="text-sm">
-                    <span className="text-gray-500">Saatlik:</span> ₺{s.hourly_rate.toLocaleString(i18n.language)} •{' '}
-                    <span className="text-gray-500">{t('cm.pages_MicePage.gunluk')}</span> ₺{s.daily_rate.toLocaleString(i18n.language)}
+                    <span className="text-gray-500">Saatlik:</span> {formatCurrency(s.hourly_rate, s.currency || cachedTenantCurrency())} •{' '}
+                    <span className="text-gray-500">{t('cm.pages_MicePage.gunluk')}</span> {formatCurrency(s.daily_rate, s.currency || cachedTenantCurrency())}
                   </div>
                 </CardContent>
               </Card>)}
@@ -865,8 +875,8 @@ const MicePage = ({
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {m.price_per_person > 0 ? <div className="text-xl font-bold">₺{m.price_per_person.toLocaleString(i18n.language)}
-                      <span className="text-xs text-gray-500"> {t('cm.pages_MicePage.kisi')}</span></div> : <div className="text-xl font-bold">₺{m.flat_price.toLocaleString(i18n.language)}
+                  {m.price_per_person > 0 ? <div className="text-xl font-bold">{formatCurrency(m.price_per_person, m.currency || cachedTenantCurrency())}
+                      <span className="text-xs text-gray-500"> {t('cm.pages_MicePage.kisi')}</span></div> : <div className="text-xl font-bold">{formatCurrency(m.flat_price, m.currency || cachedTenantCurrency())}
                       <span className="text-xs text-gray-500"> sabit</span></div>}
                   {m.description && <div className="text-xs text-gray-600 mt-1">{m.description}</div>}
                   {m.courses?.length > 0 && <div className="text-xs text-gray-600 mt-2">

@@ -47,6 +47,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import PhotoUploadComponent from '@/components/PhotoUploadComponent';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const MobileHousekeeping = ({ user }) => {
   const { t } = useTranslation();
@@ -1157,7 +1158,7 @@ const MobileHousekeeping = ({ user }) => {
                     </div>
                     <div>
                       <p className="text-gray-600">Birim Fiyat:</p>
-                      <p className="font-bold">₺{item.unit_cost}</p>
+                      <p className="font-bold">{formatCurrency(item.unit_cost, item.currency || cachedTenantCurrency())}</p>
                     </div>
                   </div>
                   {item.is_low_stock && (

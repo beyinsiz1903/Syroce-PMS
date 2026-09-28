@@ -2,6 +2,8 @@ import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -92,7 +94,7 @@ export default function MobileMaintenancePartsInventoryModal({ partsInventoryMod
                               <p className="text-xs text-gray-500 mt-1">{part.location}</p>
                             </div>
                             <div className="text-right">
-                              <p className="font-bold text-lg text-indigo-700">{part.unit_price} ₺</p>
+                              <p className="font-bold text-lg text-indigo-700">{formatCurrency(part.unit_price, part.currency || cachedTenantCurrency())}</p>
                               <p className="text-xs text-gray-500">/{part.unit}</p>
                             </div>
                           </div>
@@ -137,7 +139,11 @@ export default function MobileMaintenancePartsInventoryModal({ partsInventoryMod
                     <p className="text-xs text-indigo-600 mt-1">Tüm malzemeler</p>
                   </div>
                   <p className="text-3xl font-bold text-indigo-700">
-                    {partsInventory.reduce((sum, p) => sum + p.stock * p.unit_price, 0).toLocaleString('tr-TR')} ₺
+                    {formatCurrencyBreakdown(partsInventory.reduce((totals, part) => {
+                      const currency = part.currency || cachedTenantCurrency();
+                      totals[currency] = (totals[currency] || 0) + Number(part.stock || 0) * Number(part.unit_price || 0);
+                      return totals;
+                    }, {}), 0, cachedTenantCurrency())}
                   </p>
                 </div>
               </CardContent>

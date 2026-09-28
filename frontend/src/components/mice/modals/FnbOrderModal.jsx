@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Send, ChefHat, RefreshCw, Check, CheckCheck } from 'lucide-react';
 import { promptDialog } from '@/lib/dialogs';
 import { Info, Modal } from '../_shared';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const SENDABLE_STATUSES = new Set([
   'tentative', 'definite', 'confirmed', 'completed',
@@ -162,7 +163,7 @@ const FnbOrderModal = ({ event, onClose }) => {
                           <span className="text-xs text-gray-500">→ {o.target}</span>
                         </div>
                         <span className="font-semibold">
-                          ₺{(o.total || 0).toLocaleString('tr-TR')}
+                          {formatCurrency(o.total, o.currency || cachedTenantCurrency())}
                         </span>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-xs">

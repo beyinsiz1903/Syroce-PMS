@@ -384,7 +384,7 @@ const MobileOrderTracking = ({ user }) => {
                       <div>
                         <div className="font-medium">{item.item_name}</div>
                         <div className="text-sm text-gray-500">
-                          {item.quantity} x ₺{item.unit_price.toFixed(2)}
+                          {item.quantity} x {formatCurrency(item.unit_price, item.currency || selectedOrder.currency || cachedTenantCurrency())}
                         </div>
                         {item.special_instructions && (
                           <div className="text-xs text-amber-600 mt-1">
@@ -392,7 +392,7 @@ const MobileOrderTracking = ({ user }) => {
                           </div>
                         )}
                       </div>
-                      <div className="font-semibold">₺{item.total_price.toFixed(2)}</div>
+                      <div className="font-semibold">{formatCurrency(item.total_price, item.currency || selectedOrder.currency || cachedTenantCurrency())}</div>
                     </div>
                   ))}
                 </div>

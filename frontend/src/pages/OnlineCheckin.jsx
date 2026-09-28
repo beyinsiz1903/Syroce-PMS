@@ -14,6 +14,7 @@ import {
   MapPin, User, Phone, Mail, CheckCircle2, Sparkles, ScanLine
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 
 const OnlineCheckin = () => {
@@ -522,13 +523,13 @@ const OnlineCheckin = () => {
                       {offer.discounted_price && (
                         <>
                           <div className="text-sm text-gray-400 line-through">
-                            €{offer.original_price}
+                            {formatCurrency(offer.original_price, offer.currency || cachedTenantCurrency())}
                           </div>
                           <div className="text-2xl font-bold text-indigo-600">
-                            €{offer.discounted_price}
+                            {formatCurrency(offer.discounted_price, offer.currency || cachedTenantCurrency())}
                           </div>
                           <div className="text-xs text-green-600 font-semibold">
-                            €{offer.savings} tasarruf!
+                            {formatCurrency(offer.savings, offer.currency || cachedTenantCurrency())} tasarruf!
                           </div>
                         </>
                       )}

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const PKG_TYPES = [{
   key: 'wedding',
   label: 'Düğün'
@@ -34,7 +35,7 @@ const blank = {
   max_pax: 0,
   base_price: 0,
   per_pax_price: 0,
-  currency: 'TRY',
+  currency: cachedTenantCurrency(),
   items: [],
   active: true
 };
@@ -153,7 +154,7 @@ export default function PackagesTab() {
     ...form,
     items: form.items.filter((_, j) => j !== i)
   });
-  const fmt = v => `₺${Number(v || 0).toLocaleString('tr-TR')}`;
+  const fmt = (value, currency = cachedTenantCurrency()) => formatCurrency(value, currency);
   return <div className="space-y-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -190,8 +191,8 @@ export default function PackagesTab() {
                   </td>
                   <td className="p-2"><Badge variant="outline">{PKG_TYPES.find(t => t.key === p.type)?.label || p.type}</Badge></td>
                   <td className="p-2 text-center text-xs">{p.min_pax || 0}–{p.max_pax || '∞'}</td>
-                  <td className="p-2 text-right">{fmt(p.base_price)}</td>
-                  <td className="p-2 text-right">{fmt(p.per_pax_price)}</td>
+                  <td className="p-2 text-right">{fmt(p.base_price, p.currency)}</td>
+                  <td className="p-2 text-right">{fmt(p.per_pax_price, p.currency)}</td>
                   <td className="p-2 text-center">{(p.items || []).length}</td>
                   <td className="p-2">{p.active ? <Badge className="bg-emerald-100 text-emerald-700">{t('cm.components_mice_PackagesTab.aktif')}</Badge> : <Badge className="bg-gray-100 text-gray-600">{t('cm.components_mice_PackagesTab.pasif')}</Badge>}</td>
                   <td className="p-2 text-right whitespace-nowrap">
@@ -257,7 +258,7 @@ export default function PackagesTab() {
             })} />
             </div>
             <div>
-              <Label>Baz Fiyat (₺)</Label>
+              <Label>Baz Fiyat ({form.currency || cachedTenantCurrency()})</Label>
               <Input type="number" value={form.base_price} onChange={e => setForm({
               ...form,
               base_price: e.target.value
@@ -300,7 +301,7 @@ export default function PackagesTab() {
                       <Input className="h-8" type="number" value={it.quantity} onChange={e => updItem(i, 'quantity', e.target.value)} />
                     </div>
                     <div className="col-span-2">
-                      <Label className="text-xs">Birim ₺</Label>
+                      <Label className="text-xs">Birim ({form.currency || cachedTenantCurrency()})</Label>
                       <Input className="h-8" type="number" value={it.unit_price} onChange={e => updItem(i, 'unit_price', e.target.value)} />
                     </div>
                     <div className="col-span-1">
@@ -338,12 +339,12 @@ export default function PackagesTab() {
               <Button onClick={runQuote}>Hesapla</Button>
             </div>
             {quote && <Card><CardContent className="p-3 space-y-1 text-sm">
-                <div className="flex justify-between"><span>Baz fiyat:</span> <span>{fmt(quote.breakdown.base_price)}</span></div>
-                <div className="flex justify-between"><span>Pax × birim ({quote.pax}):</span> <span>{fmt(quote.breakdown.per_pax_total)}</span></div>
-                <div className="flex justify-between"><span>Kalemler:</span> <span>{fmt(quote.breakdown.items_total)}</span></div>
+                <div className="flex justify-between"><span>Baz fiyat:</span> <span>{fmt(quote.breakdown.base_price, quote.currency || quotePkg?.currency)}</span></div>
+                <div className="flex justify-between"><span>Pax × birim ({quote.pax}):</span> <span>{fmt(quote.breakdown.per_pax_total, quote.currency || quotePkg?.currency)}</span></div>
+                <div className="flex justify-between"><span>Kalemler:</span> <span>{fmt(quote.breakdown.items_total, quote.currency || quotePkg?.currency)}</span></div>
                 <div className="flex justify-between border-t pt-1 font-bold">
                   <span>{t('cm.components_mice_PackagesTab.ara_toplam')}</span>
-                  <span className="text-emerald-600">{fmt(quote.subtotal)}</span>
+                  <span className="text-emerald-600">{fmt(quote.subtotal, quote.currency || quotePkg?.currency)}</span>
                 </div>
               </CardContent></Card>}
           </div>

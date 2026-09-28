@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button';
 import PropertySwitcher from '@/components/PropertySwitcher';
 import { ArrowLeft, Users, TrendingUp, Phone, Mail, Building2, RefreshCw, Award, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const SalesCRMMobile = ({ user }) => {
   const { t } = useTranslation();
+  const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency(), { decimals: 0 });
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState([]);
@@ -85,7 +87,7 @@ const SalesCRMMobile = ({ user }) => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold text-green-600">₺{(customer.total_revenue / 1000).toFixed(0)}K</div>
+                  <div className="font-bold text-green-600">{money(customer.total_revenue, customer.currency)}</div>
                   <div className="text-xs text-gray-500">{customer.total_bookings} rezervasyon</div>
                 </div>
               </div>
@@ -117,7 +119,7 @@ const SalesCRMMobile = ({ user }) => {
               </div>
               <div className="text-sm text-gray-700 mb-2">{lead.notes}</div>
               <div className="flex justify-between text-xs">
-                <span>Beklenen: ₺{expectedRevenue.toLocaleString('tr-TR')}</span>
+                <span>Beklenen: {money(expectedRevenue)}</span>
                 <span>{lead.expected_checkin}</span>
               </div>
             </CardContent>
@@ -130,10 +132,10 @@ const SalesCRMMobile = ({ user }) => {
             <CardContent className="p-4">
               <div className="font-semibold mb-3">{ota.room_type}</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-gray-500">Bizim:</span> <span className="font-bold">₺{ota.our_rate}</span></div>
-                <div><span className="text-gray-500">Booking:</span> ₺{ota.booking_com}</div>
-                <div><span className="text-gray-500">Expedia:</span> ₺{ota.expedia}</div>
-                <div><span className="text-gray-500">Agoda:</span> ₺{ota.agoda}</div>
+                <div><span className="text-gray-500">Bizim:</span> <span className="font-bold">{money(ota.our_rate, ota.currency)}</span></div>
+                <div><span className="text-gray-500">Booking:</span> {money(ota.booking_com, ota.currency)}</div>
+                <div><span className="text-gray-500">Expedia:</span> {money(ota.expedia, ota.currency)}</div>
+                <div><span className="text-gray-500">Agoda:</span> {money(ota.agoda, ota.currency)}</div>
               </div>
               <Badge className={`mt-2 ${ota.price_position === 'lowest' ? 'bg-green-500' : 'bg-amber-500'} text-white`}>{ota.price_position}</Badge>
             </CardContent>
@@ -152,7 +154,7 @@ const SalesCRMMobile = ({ user }) => {
                 </div>
                 <Badge variant="destructive">{followUp.days_since_update} gün</Badge>
               </div>
-              <div className="text-sm mt-2">Beklenen: ₺{followUp.expected_revenue.toLocaleString()}</div>
+              <div className="text-sm mt-2">Beklenen: {money(followUp.expected_revenue, followUp.currency)}</div>
             </CardContent>
           </Card>
         )))}

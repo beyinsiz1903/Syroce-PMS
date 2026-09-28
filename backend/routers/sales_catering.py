@@ -325,7 +325,10 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
         {"$match": {"_kind": _NOT_LEAD, "tenant_id": current_user.tenant_id}},
         {
             "$group": {
-                "_id": "$stage",
+                "_id": {
+                    "stage": "$stage",
+                    "currency": {"$toUpper": {"$ifNull": ["$currency", "TRY"]}},
+                },
                 "count": {"$sum": 1},
                 "total_value": {"$sum": {"$ifNull": ["$estimated_value", 0]}},
                 "weighted_value": {
@@ -343,12 +346,23 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
     cursor = db.mice_opportunities.aggregate(pipeline)
     by_stage: dict[str, dict[str, Any]] = {}
     async for row in cursor:
-        by_stage[row.pop("_id") or "unknown"] = {
-            "count": row.get("count", 0),
-            "total_value": round(row.get("total_value", 0), 2),
-            "weighted_value": round(row.get("weighted_value", 0), 2),
-            "total_pax": row.get("total_pax", 0),
-        }
+        group = row.pop("_id") or {}
+        stage = group.get("stage") if isinstance(group, dict) else group
+        currency = (group.get("currency") if isinstance(group, dict) else None) or "TRY"
+        bucket = by_stage.setdefault(stage or "unknown", {
+            "count": 0, "total_value": 0, "weighted_value": 0, "total_pax": 0,
+            "total_value_by_currency": {}, "weighted_value_by_currency": {},
+        })
+        total = round(row.get("total_value", 0), 2)
+        weighted = round(row.get("weighted_value", 0), 2)
+        bucket["count"] += row.get("count", 0)
+        bucket["total_pax"] += row.get("total_pax", 0)
+        bucket["total_value_by_currency"][currency] = total
+        bucket["weighted_value_by_currency"][currency] = weighted
+        # Preserve scalar compatibility only for the base TRY bucket.
+        if currency == "TRY":
+            bucket["total_value"] = total
+            bucket["weighted_value"] = weighted
 
     stages = [
         {
@@ -360,6 +374,8 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
                     "total_value": 0,
                     "weighted_value": 0,
                     "total_pax": 0,
+                    "total_value_by_currency": {},
+                    "weighted_value_by_currency": {},
                 },
             ),
         }
@@ -373,12 +389,27 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
     closed = won_value + lost_value
     win_rate = round((won_value / closed) * 100, 2) if closed > 0 else 0
 
+    def sum_breakdown(field: str, selected: set[str]) -> dict[str, float]:
+        result: dict[str, float] = {}
+        for stage in stages:
+            if stage["stage"] not in selected:
+                continue
+            for currency, amount in stage.get(field, {}).items():
+                result[currency] = round(result.get(currency, 0) + amount, 2)
+        return result
+
+    open_stages = set(STAGES) - {"won", "lost"}
+
     return {
         "stages": stages,
         "open_value": round(open_value, 2),
         "weighted_open_value": round(weighted_open, 2),
         "won_value": round(won_value, 2),
         "lost_value": round(lost_value, 2),
+        "open_value_by_currency": sum_breakdown("total_value_by_currency", open_stages),
+        "weighted_open_value_by_currency": sum_breakdown("weighted_value_by_currency", open_stages),
+        "won_value_by_currency": sum_breakdown("total_value_by_currency", {"won"}),
+        "lost_value_by_currency": sum_breakdown("total_value_by_currency", {"lost"}),
         "win_rate_pct": win_rate,
     }
 

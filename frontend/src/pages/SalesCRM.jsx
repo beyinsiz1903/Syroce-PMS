@@ -16,6 +16,7 @@ import {
 import { Mail, Phone, Trash2, Activity, RefreshCw, Users, Search } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const STAGES = [
   { key: 'new',           label: 'Yeni',       color: 'bg-gray-500' },
@@ -38,13 +39,10 @@ const ACTIVITY_LABEL = Object.fromEntries(
   ACTIVITY_TYPES.map((a) => [a.key, a.label]),
 );
 
-const fmtTL = (v) =>
-  Number(v || 0).toLocaleString('tr-TR', {
-    style: 'currency', currency: 'TRY', maximumFractionDigits: 0,
-  });
-
 const SalesCRM = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const crmCurrency = tenant?.currency || cachedTenantCurrency();
+  const fmtTL = (value, currency = crmCurrency) => formatCurrency(value, currency, { decimals: 0 });
   const [leads, setLeads] = useState([]);
   const [funnel, setFunnel] = useState(null);
   const [loadingList, setLoadingList] = useState(true);
