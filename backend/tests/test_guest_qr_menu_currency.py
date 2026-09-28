@@ -28,7 +28,7 @@ async def test_public_menu_exposes_tenant_currency_and_enriches_legacy_items(mon
             }
         ]
     )
-    monkeypatch.setattr(guest_menu.db, "pos_menu_items", items)
+    monkeypatch.setattr(guest_menu, "db", SimpleNamespace(pos_menu_items=items))
     monkeypatch.setattr(
         guest_menu,
         "get_tenant_currency",
@@ -45,7 +45,7 @@ async def test_public_menu_exposes_tenant_currency_and_enriches_legacy_items(mon
 async def test_empty_public_menu_still_exposes_tenant_currency(monkeypatch):
     items = MagicMock()
     items.find.return_value = _cursor([])
-    monkeypatch.setattr(guest_menu.db, "pos_menu_items", items)
+    monkeypatch.setattr(guest_menu, "db", SimpleNamespace(pos_menu_items=items))
     monkeypatch.setattr(
         guest_menu,
         "get_tenant_currency",
@@ -66,7 +66,7 @@ async def test_guest_order_rejects_mixed_currency_cart(monkeypatch):
             {"id": "tea", "item_name": "Çay", "unit_price": 5, "currency": "USD"},
         ]
     )
-    monkeypatch.setattr(guest_menu.db, "pos_menu_items", items)
+    monkeypatch.setattr(guest_menu, "db", SimpleNamespace(pos_menu_items=items))
     monkeypatch.setattr(
         guest_menu,
         "get_tenant_currency",
