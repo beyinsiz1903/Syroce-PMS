@@ -22,6 +22,7 @@ except ImportError:
 from core.database import db
 from core.sanitize import sanitize_plaintext
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from domains.accounting.models_legacy import AccountingInvoice, AccountingInvoiceItem, AdditionalTax
 from models.enums import PaymentStatus
 from models.schemas import (
@@ -58,6 +59,26 @@ logger = logging.getLogger(__name__)
 ACCOMMODATION_VAT_RATE = 10.0
 FOOD_SERVICE_VAT_RATE = 10.0
 GENERAL_VAT_RATE = 20.0
+SUPPORTED_ACCOUNTING_CURRENCIES = {"TRY", "EUR", "USD", "GBP"}
+
+
+def _accounting_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback).strip().upper()
+    if code == "TL":
+        code = "TRY"
+    if code not in SUPPORTED_ACCOUNTING_CURRENCIES:
+        raise ValueError(f"Unsupported currency: {code}")
+    return code
+
+
+def _currency_totals(records, amount_field: str, fallback_currency: str, predicate=None) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for record in records:
+        if predicate is not None and not predicate(record):
+            continue
+        currency = _accounting_currency(record.get("currency"), fallback_currency)
+        totals[currency] = totals.get(currency, 0) + float(record.get(amount_field, 0) or 0)
+    return {currency: round(amount, 2) for currency, amount in totals.items()}
 
 
 def _charge_vat_rate(charge: dict[str, Any]) -> float:
@@ -154,6 +175,7 @@ class Supplier(BaseModel):
     phone: str | None = None
     address: str | None = None
     account_balance: float = 0.0
+    account_balance_by_currency: dict[str, float] = Field(default_factory=dict)
     category: str = "general"
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -185,6 +207,7 @@ class Expense(BaseModel):
     vat_rate: float = 20.0
     vat_amount: float = 0.0
     total_amount: float
+    currency: str = "TRY"
     date: datetime
     payment_status: PaymentStatus = PaymentStatus.PENDING
     payment_method: str | None = None
@@ -204,6 +227,7 @@ class InventoryItem(BaseModel):
     unit: str
     quantity: float = 0.0
     unit_cost: float = 0.0
+    currency: str = "TRY"
     reorder_level: float = 0.0
     supplier_id: str | None = None
     location: str | None = None
@@ -288,6 +312,12 @@ class ExpenseCreateRequest(BaseModel):
     payment_method: str | None = None
     receipt_url: str | None = None
     notes: str | None = None
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value):
+        return _accounting_currency(value) if value else None
 
 
 class InventoryItemCreateRequest(BaseModel):
@@ -301,6 +331,12 @@ class InventoryItemCreateRequest(BaseModel):
     supplier_id: str | None = None
     location: str | None = None
     notes: str | None = None
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value):
+        return _accounting_currency(value) if value else None
 
 
 def _norm(v):
@@ -412,6 +448,8 @@ async def create_expense(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _accounting_currency(payload.currency, tenant_currency)
     count = await db.expenses.count_documents({"tenant_id": current_user.tenant_id})
     expense_number = f"EXP-{count + 1:05d}"
 
@@ -430,6 +468,7 @@ async def create_expense(
         vat_rate=payload.vat_rate,
         vat_amount=vat_amount,
         total_amount=total_amount,
+        currency=currency,
         date=datetime.fromisoformat(payload.date),
         payment_method=_norm(payload.payment_method),
         receipt_url=_norm(payload.receipt_url),
@@ -441,9 +480,23 @@ async def create_expense(
     await db.expenses.insert_one(expense_dict)
 
     if supplier_id:
+        supplier = await db.suppliers.find_one(
+            {"id": supplier_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "account_balance": 1, "account_balance_by_currency": 1},
+        )
+        if supplier and not supplier.get("account_balance_by_currency") and float(supplier.get("account_balance", 0) or 0) != 0:
+            await db.suppliers.update_one(
+                {"id": supplier_id, "tenant_id": current_user.tenant_id},
+                {"$set": {f"account_balance_by_currency.{tenant_currency}": float(supplier["account_balance"])}},
+            )
+        balance_updates = {f"account_balance_by_currency.{currency}": total_amount}
+        # Preserve the legacy scalar only for the hotel's accounting currency;
+        # foreign nominal amounts must never be added to it.
+        if currency == tenant_currency:
+            balance_updates["account_balance"] = total_amount
         await db.suppliers.update_one(
             {"id": supplier_id, "tenant_id": current_user.tenant_id},
-            {"$inc": {"account_balance": total_amount}},
+            {"$inc": balance_updates},
         )
 
     cash_flow = CashFlow(
@@ -451,6 +504,7 @@ async def create_expense(
         transaction_type="expense",
         category=payload.category,
         amount=total_amount,
+        currency=currency,
         description=expense.description,
         reference_id=expense.id,
         reference_type="expense",
@@ -508,6 +562,8 @@ async def create_inventory_item(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _accounting_currency(payload.currency, tenant_currency)
     item = InventoryItem(
         tenant_id=current_user.tenant_id,
         name=sanitize_plaintext(payload.name, max_length=200),
@@ -516,6 +572,7 @@ async def create_inventory_item(
         unit=payload.unit,
         quantity=payload.quantity,
         unit_cost=payload.unit_cost,
+        currency=currency,
         reorder_level=payload.reorder_level,
         supplier_id=_norm(payload.supplier_id),
         location=sanitize_plaintext(payload.location, max_length=200) if payload.location else None,
@@ -532,10 +589,23 @@ async def create_inventory_item(
 async def get_inventory(current_user: User = Depends(get_current_user)):
     items = await db.inventory_items.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
 
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    valued_items = [
+        {**item, "inventory_value": float(item.get("quantity", 0) or 0) * float(item.get("unit_cost", 0) or 0)}
+        for item in items
+    ]
+    total_value_by_currency = _currency_totals(valued_items, "inventory_value", tenant_currency)
+
     # Get low stock items
     low_stock = [item for item in items if item["quantity"] <= item["reorder_level"]]
 
-    return {"items": items, "low_stock_count": len(low_stock), "total_value": sum(item["quantity"] * item["unit_cost"] for item in items)}
+    return {
+        "items": items,
+        "low_stock_count": len(low_stock),
+        "total_value": round(total_value_by_currency.get(tenant_currency, 0), 2),
+        "total_value_by_currency": {code: round(value, 2) for code, value in total_value_by_currency.items()},
+        "currency": tenant_currency,
+    }
 
 
 @router.post("/accounting/inventory/movement")
@@ -1414,12 +1484,36 @@ async def get_cash_flow(start_date: str | None = None, end_date: str | None = No
         query["transaction_type"] = transaction_type
 
     flows = await db.cash_flow.find(query, {"_id": 0}).sort("date", -1).to_list(1000)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    income_by_currency: dict[str, float] = {}
+    expense_by_currency: dict[str, float] = {}
+    for flow in flows:
+        currency = _accounting_currency(flow.get("currency"), tenant_currency)
+        flow["currency"] = currency
+        amount = float(flow.get("amount", 0) or 0)
+        target = income_by_currency if flow.get("transaction_type") == "income" else expense_by_currency
+        target[currency] = target.get(currency, 0) + amount
 
-    total_income = sum(f["amount"] for f in flows if f["transaction_type"] == "income")
-    total_expense = sum(f["amount"] for f in flows if f["transaction_type"] == "expense")
-    net_cash_flow = total_income - total_expense
+    currencies = set(income_by_currency) | set(expense_by_currency)
+    net_by_currency = {
+        code: round(income_by_currency.get(code, 0) - expense_by_currency.get(code, 0), 2)
+        for code in currencies
+    }
+    income_by_currency = {code: round(value, 2) for code, value in income_by_currency.items()}
+    expense_by_currency = {code: round(value, 2) for code, value in expense_by_currency.items()}
 
-    return {"transactions": flows, "total_income": total_income, "total_expense": total_expense, "net_cash_flow": net_cash_flow}
+    return {
+        "transactions": flows,
+        # Legacy scalars now describe only the tenant currency, not an invalid
+        # sum of unrelated nominal currencies.
+        "total_income": income_by_currency.get(tenant_currency, 0),
+        "total_expense": expense_by_currency.get(tenant_currency, 0),
+        "net_cash_flow": net_by_currency.get(tenant_currency, 0),
+        "total_income_by_currency": income_by_currency,
+        "total_expense_by_currency": expense_by_currency,
+        "net_cash_flow_by_currency": net_by_currency,
+        "currency": tenant_currency,
+    }
 
 
 @router.get("/accounting/reports/profit-loss")
@@ -1710,36 +1804,30 @@ async def get_accounting_dashboard(
     # Never combine nominal amounts from different currencies.  Keep the legacy
     # scalar fields for older clients, and expose currency-safe breakdowns for
     # current clients.
-    from core.tenant_currency import get_tenant_currency
-
     cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
 
-    def totals_by_currency(records, amount_field, predicate=lambda _record: True):
-        totals = {}
-        for record in records:
-            if not predicate(record):
-                continue
-            currency = str(record.get("currency") or cur_code).upper()
-            totals[currency] = totals.get(currency, 0) + float(record.get(amount_field, 0) or 0)
-        return {currency: round(amount, 2) for currency, amount in totals.items()}
+    collected_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") == "paid")
+    accrued_by_currency = _currency_totals(invoices, "total", cur_code)
+    pending_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") in ("pending", "partial"))
+    overdue_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") == "overdue")
+    expenses_by_currency = _currency_totals(expenses, "total_amount", cur_code)
 
-    collected_by_currency = totals_by_currency(invoices, "total", lambda inv: inv.get("status") == "paid")
-    accrued_by_currency = totals_by_currency(invoices, "total")
-    pending_by_currency = totals_by_currency(invoices, "total", lambda inv: inv.get("status") in ("pending", "partial"))
-    overdue_by_currency = totals_by_currency(invoices, "total", lambda inv: inv.get("status") == "overdue")
-
-    collected_income = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "paid")
-    accrued_revenue = sum(inv.get("total", 0) for inv in invoices)
-    pending_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") in ("pending", "partial"))
-    overdue_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "overdue")
-    total_expenses = sum(exp.get("amount", 0) for exp in expenses)
+    collected_income = collected_by_currency.get(cur_code, 0)
+    accrued_revenue = accrued_by_currency.get(cur_code, 0)
+    pending_amount = pending_by_currency.get(cur_code, 0)
+    overdue_amount = overdue_by_currency.get(cur_code, 0)
+    total_expenses = expenses_by_currency.get(cur_code, 0)
+    net_income_by_currency = {
+        code: round(collected_by_currency.get(code, 0) - expenses_by_currency.get(code, 0), 2)
+        for code in set(collected_by_currency) | set(expenses_by_currency)
+    }
     pending_invoices = len([inv for inv in invoices if inv.get("status") == "pending"])
     overdue_invoices = len([inv for inv in invoices if inv.get("status") == "overdue"])
 
     # Get bank balances
     bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
     total_bank_balance = sum(acc["balance"] for acc in bank_accounts)
-    bank_balance_by_currency = totals_by_currency(bank_accounts, "balance")
+    bank_balance_by_currency = _currency_totals(bank_accounts, "balance", cur_code)
 
     return {
         # Backward-compat field (paid invoices only).
@@ -1758,6 +1846,8 @@ async def get_accounting_dashboard(
         "accrued_revenue_by_currency": accrued_by_currency,
         "pending_amount_by_currency": pending_by_currency,
         "overdue_amount_by_currency": overdue_by_currency,
+        "monthly_expenses_by_currency": expenses_by_currency,
+        "net_income_by_currency": net_income_by_currency,
         "bank_balance_by_currency": bank_balance_by_currency,
         "currency": cur_code,
         "currency_symbol": cur_symbol,
