@@ -1004,17 +1004,23 @@ async def public_post_thread_message(
     room_id: str,
     payload: GuestThreadMessage,
     request: Request,
-    t: str = Query(...),
+    x_guest_session: str = Header(None),
 ):
     """Misafir mevcut thread'ine yanıt yazar (iki yönlü)."""
-    # Rate limit BEFORE token verify (submit ile aynı DoS-sentinel deseni).
+    # Rate limit BEFORE session verify (submit ile aynı DoS-sentinel deseni).
     client_ip = _client_ip(request)
-    if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}"):
+    if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:message"):
         raise HTTPException(status_code=429, detail="Çok fazla mesaj — lütfen sonra deneyin")
 
-    salt = await _get_qr_salt(tenant_id)
-    if not _verify_token(tenant_id, room_id, t, salt):
-        raise HTTPException(status_code=403, detail="Geçersiz QR token")
+    # Thread GET ve ilk talep gönderimiyle aynı booking-scoped oturum
+    # sözleşmesini kullan. Statik QR'ın `t` parametresi yalnızca kısa ömürlü
+    # misafir oturumunu oluşturmak içindir; konuşma sırasında tekrar
+    # istenmemelidir.
+    booking, guest_session = await _verify_guest_session(
+        tenant_id,
+        room_id,
+        x_guest_session,
+    )
 
     text = (payload.body or "").strip()
     if not text:
@@ -1026,17 +1032,14 @@ async def public_post_thread_message(
 
     from domains.guest.messaging import guest_requests as _gr
 
-    booking = await _find_active_booking(tenant_id, room_id)
-    if not booking:
-        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-
     property_id = _resolve_property_id(tenant_id, room, booking)
-    if not property_id:
+    session_property_id = guest_session.get("property_id")
+    if not property_id or not session_property_id or property_id != session_property_id:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
     booking = {**booking, "property_id": property_id}
-    booking_id = booking.get("id") if booking else None
-    sender_name = (booking.get("guest_name") if booking else None) or "Misafir"
+    booking_id = booking.get("id")
+    sender_name = booking.get("guest_name") or booking.get("primary_guest_name") or "Misafir"
 
     doc = await _gr.add_guest_message(
         tenant_id=tenant_id,
