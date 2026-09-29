@@ -90,6 +90,7 @@ class CrossPropertySearchReq(BaseModel):
 class TransferReservationReq(BaseModel):
     booking_id: str
     target_property_id: str
+    target_room_type: str | None = None
     reason: str | None = None
 
 
@@ -332,7 +333,13 @@ async def api_transfer_reservation(
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Transfer reservation to another property."""
-    result = await crs.transfer_reservation(current_user, req.booking_id, req.target_property_id, req.reason)
+    result = await crs.transfer_reservation(
+        current_user,
+        req.booking_id,
+        req.target_property_id,
+        req.reason,
+        req.target_room_type,
+    )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result

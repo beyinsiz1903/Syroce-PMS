@@ -110,6 +110,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [stayEditorOpen, setStayEditorOpen] = useState(false);
   const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '', nights: 1 });
   const [staySaving, setStaySaving] = useState(false);
+  const [propertyTransferOpen, setPropertyTransferOpen] = useState(false);
+  const [propertyTransferLoading, setPropertyTransferLoading] = useState(false);
+  const [propertyTransferSaving, setPropertyTransferSaving] = useState(false);
+  const [propertyTransferOptions, setPropertyTransferOptions] = useState([]);
+  const [propertyTransferForm, setPropertyTransferForm] = useState({ targetPropertyId: '', roomType: '', reason: '' });
   const loadGenerationRef = useRef(0);
   const tabsListRef = useRef(null);
   const openedAtRef = useRef(Date.now());
@@ -369,6 +374,66 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       nights: Math.max(1, nightsBetweenDates(checkIn, checkOut)),
     });
     setStayEditorOpen(true);
+  };
+
+  const openPropertyTransfer = async () => {
+    setPropertyTransferOpen(true);
+    setPropertyTransferLoading(true);
+    setPropertyTransferOptions([]);
+    setPropertyTransferForm({ targetPropertyId: '', roomType: '', reason: '' });
+    try {
+      const response = await axios.post('/platform/multi-property/search-availability', {
+        check_in: dateInputValue(booking?.check_in),
+        check_out: dateInputValue(booking?.check_out),
+        guests: guestCount,
+      });
+      const properties = response.data?.properties || [];
+      setPropertyTransferOptions(properties);
+      if (properties.length > 0) {
+        const first = properties[0];
+        const currentRoomType = booking?.room_type || room?.room_type;
+        const preferredRoomType = first.room_types?.includes(currentRoomType)
+          ? currentRoomType
+          : (first.room_types?.[0] || '');
+        setPropertyTransferForm({ targetPropertyId: first.property_id, roomType: preferredRoomType, reason: '' });
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Zincir otellerinin müsaitliği alınamadı');
+    } finally {
+      setPropertyTransferLoading(false);
+    }
+  };
+
+  const savePropertyTransfer = async () => {
+    if (!propertyTransferForm.targetPropertyId || !propertyTransferForm.roomType) {
+      toast.error('Hedef tesis ve oda tipi seçilmelidir');
+      return;
+    }
+    if (propertyTransferForm.reason.trim().length < 3) {
+      toast.error('Tesis değişikliği nedeni yazılmalıdır');
+      return;
+    }
+    setPropertyTransferSaving(true);
+    try {
+      const response = await axios.post('/platform/multi-property/transfer-reservation', {
+        booking_id: booking.id,
+        target_property_id: propertyTransferForm.targetPropertyId,
+        target_room_type: propertyTransferForm.roomType,
+        reason: propertyTransferForm.reason.trim(),
+      });
+      const targetName = response.data?.target_property_name || 'hedef tesis';
+      const roomNumber = response.data?.target_room_number;
+      toast.success(`Rezervasyon ${targetName}${roomNumber ? ` · Oda ${roomNumber}` : ''} tesisine aktarıldı`);
+      setPropertyTransferOpen(false);
+      if (typeof onOperationComplete === 'function') {
+        await onOperationComplete({ bookingId: booking.id, operation: 'property_transferred' });
+      }
+      handleClose();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Tesis değişikliği tamamlanamadı');
+    } finally {
+      setPropertyTransferSaving(false);
+    }
   };
 
   const saveStayDates = async () => {
@@ -1012,6 +1077,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   {!readOnly && (
                     <div className="flex flex-wrap gap-2" aria-label="Hızlı işlemler">
                       <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: odayı değiştir" onClick={() => setActiveTab('room_change')} data-testid="workspace-room-change"><ArrowLeftRight className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Odayı Değiştir</Button>
+                      {canCancel && <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: tesisi değiştir" onClick={openPropertyTransfer} data-testid="workspace-property-transfer"><Globe className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Tesisi Değiştir</Button>}
                       {canEditStayDates && <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: tarihleri düzenle" onClick={openStayEditor} data-testid="workspace-stay-edit"><Pencil className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Tarihleri Düzenle</Button>}
                       <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: ödeme ve folyo" onClick={() => setActiveTab('folios')} data-testid="workspace-folios"><CreditCard className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Ödeme / Folyo</Button>
                       <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: ek ücret" onClick={() => setActiveTab('extras')} data-testid="workspace-extras"><Plus className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Ek Ücret Ekle</Button>
@@ -1123,6 +1189,83 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             <Button type="button" variant="outline" onClick={() => setStayEditorOpen(false)} disabled={staySaving}>Vazgeç</Button>
             <Button type="button" onClick={saveStayDates} disabled={staySaving} data-testid="save-stay-dates">
               {staySaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={propertyTransferOpen} onOpenChange={(open) => { if (!propertyTransferSaving) setPropertyTransferOpen(open); }}>
+        <DialogContent className="z-[80] sm:max-w-lg" overlayClassName="z-[70]" data-testid="property-transfer-dialog">
+          <DialogHeader>
+            <DialogTitle>Rezervasyonu zincirdeki başka tesise aktar</DialogTitle>
+            <DialogDescription>
+              Hedef tesiste yeni rezervasyon ve oda kilidi güvenli biçimde oluşturulur. Kaynak rezervasyon transfer kaydıyla kapatılır.
+            </DialogDescription>
+          </DialogHeader>
+          {propertyTransferLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Zincir müsaitliği kontrol ediliyor</div>
+          ) : propertyTransferOptions.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-slate-500">
+              Bu tarihlerde aktarım yapılabilecek zincir oteli bulunamadı.
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-target">Hedef tesis</Label>
+                <select
+                  id="property-transfer-target"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={propertyTransferForm.targetPropertyId}
+                  disabled={propertyTransferSaving}
+                  onChange={(event) => {
+                    const property = propertyTransferOptions.find((item) => item.property_id === event.target.value);
+                    const currentRoomType = booking?.room_type || room?.room_type;
+                    const roomType = property?.room_types?.includes(currentRoomType)
+                      ? currentRoomType
+                      : (property?.room_types?.[0] || '');
+                    setPropertyTransferForm((current) => ({ ...current, targetPropertyId: event.target.value, roomType }));
+                  }}
+                >
+                  {propertyTransferOptions.map((property) => (
+                    <option key={property.property_id} value={property.property_id}>
+                      {property.property_name} · {property.available_rooms} müsait oda
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-room-type">Oda tipi</Label>
+                <select
+                  id="property-transfer-room-type"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={propertyTransferForm.roomType}
+                  disabled={propertyTransferSaving}
+                  onChange={(event) => setPropertyTransferForm((current) => ({ ...current, roomType: event.target.value }))}
+                >
+                  {(propertyTransferOptions.find((item) => item.property_id === propertyTransferForm.targetPropertyId)?.room_types || []).map((roomType) => (
+                    <option key={roomType} value={roomType}>{roomType}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-reason">Değişiklik nedeni</Label>
+                <Input
+                  id="property-transfer-reason"
+                  value={propertyTransferForm.reason}
+                  disabled={propertyTransferSaving}
+                  placeholder="Örn. misafir talebi veya tesis operasyonu"
+                  onChange={(event) => setPropertyTransferForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </div>
+              <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                Bu doğrudan zincir içi işlemdir; karşı otelden ayrıca pazar ilanı veya onay beklenmez.
+              </p>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setPropertyTransferOpen(false)} disabled={propertyTransferSaving}>Vazgeç</Button>
+            <Button type="button" onClick={savePropertyTransfer} disabled={propertyTransferSaving || propertyTransferLoading || propertyTransferOptions.length === 0} data-testid="confirm-property-transfer">
+              {propertyTransferSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Tesise aktar
             </Button>
           </DialogFooter>
         </DialogContent>
