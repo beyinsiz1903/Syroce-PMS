@@ -7,9 +7,11 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
+from security.encrypted_lookup import decrypt_booking_doc
 
 # Every query in this module is first constrained by ``resolve_chain_properties``
 # and then carries an explicit tenant id from that verified set.  A request-
@@ -22,6 +24,21 @@ db = get_system_db()
 async def _properties_for_central_user(current_user: User) -> tuple[str, list[dict]]:
     """Resolve a chain once; legacy ``parent_tenant_id`` is never authority."""
     own, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    tenant_id = tenant_id_from_document(own)
+    if not tenant_id:  # pragma: no cover - resolver guarantees an identifier
+        raise ValueError("Tenant document has no identifier")
+    return tenant_id, properties
+
+
+async def _properties_for_transfer_user(current_user: User) -> tuple[str, list[dict]]:
+    """Resolve verified siblings for an operational chain transfer.
+
+    A reservation transfer is a front-desk operation rather than a central
+    reporting action.  Any authorised hotel user may therefore see sibling
+    availability, while the shared resolver still prevents access outside the
+    caller's persisted ``chain_id``.
+    """
+    own, properties = await resolve_chain_properties(current_user, require_headquarters=False)
     tenant_id = tenant_id_from_document(own)
     if not tenant_id:  # pragma: no cover - resolver guarantees an identifier
         raise ValueError("Tenant document has no identifier")
@@ -112,12 +129,12 @@ class CentralReservationService:
 
     async def search_availability_cross_property(self, current_user: User, check_in: str, check_out: str, room_type: str | None = None, guests: int = 2) -> dict[str, Any]:
         """Search availability across all properties in the portfolio."""
-        _, properties = await _properties_for_central_user(current_user)
+        source_tenant_id, properties = await _properties_for_transfer_user(current_user)
 
         results = []
         for prop in properties:
             pid = tenant_id_from_document(prop)
-            if not pid:
+            if not pid or pid == source_tenant_id:
                 continue
             room_query = {
                 "tenant_id": pid,
@@ -151,7 +168,7 @@ class CentralReservationService:
                         "property_id": pid,
                         "property_name": prop.get("property_name") or prop.get("hotel_name") or prop.get("name", pid),
                         "available_rooms": len(available_rooms),
-                        "room_types": list({r.get("room_type", "Standard") for r in available_rooms}),
+                        "room_types": sorted({r.get("room_type", "Standard") for r in available_rooms}),
                         "min_rate": min(r.get("base_price", 0) for r in available_rooms) if available_rooms else 0,
                         "max_rate": max(r.get("base_price", 0) for r in available_rooms) if available_rooms else 0,
                     }
@@ -166,44 +183,157 @@ class CentralReservationService:
             "properties": results,
         }
 
-    async def transfer_reservation(self, current_user: User, booking_id: str, target_property_id: str, reason: str | None = None) -> dict[str, Any]:
-        """Transfer a reservation between properties."""
-        tenant_id, properties = await _properties_for_central_user(current_user)
+    async def transfer_reservation(
+        self,
+        current_user: User,
+        booking_id: str,
+        target_property_id: str,
+        reason: str | None = None,
+        target_room_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Move a future reservation to a verified sibling property safely.
+
+        The old implementation only changed ``bookings.tenant_id``.  That left
+        the source room-night locks behind and pointed the booking at a room id
+        that did not exist in the target hotel.  The safe flow first creates a
+        new target booking through the atomic inventory guard, then closes the
+        source booking and releases only its own locks.
+        """
+        tenant_id, properties = await _properties_for_transfer_user(current_user)
         allowed_tenants = {tenant_id_from_document(prop) for prop in properties}
         if target_property_id not in allowed_tenants:
-            return {"success": False, "error": "Target property is outside the active chain"}
+            return {"success": False, "error": "Hedef tesis aktif zincirin dışında"}
         if target_property_id == tenant_id:
-            return {"success": False, "error": "Source and target properties must differ"}
+            return {"success": False, "error": "Kaynak ve hedef tesis farklı olmalıdır"}
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
-            return {"success": False, "error": "Booking not found"}
+            return {"success": False, "error": "Rezervasyon bulunamadı"}
+        booking = decrypt_booking_doc(booking)
+        if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed"}:
+            return {"success": False, "error": "Yalnız giriş yapılmamış aktif rezervasyonlar başka tesise aktarılabilir"}
+
+        folios = await db.folios.find(
+            {"tenant_id": tenant_id, "booking_id": booking_id},
+            {"_id": 0, "id": 1},
+        ).to_list(100)
+        folio_ids = [folio.get("id") for folio in folios if folio.get("id")]
+        financial_scope: list[dict[str, Any]] = [{"booking_id": booking_id}]
+        if folio_ids:
+            financial_scope.append({"folio_id": {"$in": folio_ids}})
+        financial_activity = 0
+        for collection_name in ("payments", "folio_charges", "extra_charges"):
+            financial_activity += await getattr(db, collection_name).count_documents({
+                "tenant_id": tenant_id,
+                "$or": financial_scope,
+                "voided": {"$ne": True},
+                "status": {"$nin": ["cancelled", "voided"]},
+            })
+        if financial_activity:
+            return {
+                "success": False,
+                "error": "Bu rezervasyonda finansal hareket var. Tesis değişikliğinden önce folyo ve ödemeleri kaynak tesiste kapatın veya iade edin.",
+            }
+
+        requested_room_type = str(target_room_type or booking.get("room_type") or "").strip()
+        room_query: dict[str, Any] = {
+            "tenant_id": target_property_id,
+            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            "status": {"$nin": ["maintenance", "out_of_order", "blocked"]},
+        }
+        if requested_room_type:
+            room_query["room_type"] = requested_room_type
+        rooms = await db.rooms.find(room_query, {"_id": 0}).to_list(1000)
+        guest_count = max(1, int(booking.get("adults") or 0) + int(booking.get("children") or 0))
+        rooms = [room for room in rooms if int(room.get("max_occupancy") or 2) >= guest_count]
+        if not rooms:
+            return {"success": False, "error": "Hedef tesiste seçilen oda tipinde aktif oda bulunamadı"}
+
+        transfer_id = str(uuid.uuid4())
+        target_booking_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        target_booking = None
+        last_conflict: Exception | None = None
+        excluded_fields = {
+            "_id", "id", "tenant_id", "room_id", "room_number", "guest_id", "company_id",
+            "folio_id", "cancelled_at", "cancelled_by", "cancellation_reason", "transfer_id",
+            "transferred_from", "transferred_to_tenant_id", "transferred_to_booking_id",
+        }
+        booking_payload = {key: value for key, value in booking.items() if key not in excluded_fields}
+        for room in rooms:
+            candidate = {
+                **booking_payload,
+                "id": target_booking_id,
+                "tenant_id": target_property_id,
+                "room_id": room.get("id"),
+                "room_number": room.get("room_number"),
+                "room_type": room.get("room_type") or requested_room_type,
+                "status": booking.get("status") or "confirmed",
+                "source_booking_id": booking_id,
+                "source_tenant_id": tenant_id,
+                "property_transfer_status": "received",
+                "transfer_id": transfer_id,
+                "transfer_reason": (reason or "").strip(),
+                "created_at": now,
+                "updated_at": now,
+            }
+            try:
+                target_booking = await create_booking_atomic(tenant_id=target_property_id, booking_doc=candidate)
+                break
+            except BookingConflictError as exc:
+                last_conflict = exc
+        if not target_booking:
+            return {"success": False, "error": f"Hedef tesiste uygun oda kalmadı: {last_conflict or 'müsaitlik değişti'}"}
 
         transfer_record = {
-            "id": str(uuid.uuid4()),
+            "id": transfer_id,
             "booking_id": booking_id,
+            "source_booking_id": booking_id,
+            "target_booking_id": target_booking_id,
             "source_property": tenant_id,
             "target_property": target_property_id,
-            "reason": reason,
+            "reason": (reason or "").strip(),
+            "status": "completed",
+            "transfer_type": "chain_direct",
             "transferred_by": current_user.id,
-            "transferred_at": datetime.now(UTC).isoformat(),
+            "transferred_at": now,
             "original_booking": {k: v for k, v in booking.items() if k != "_id"},
         }
-        await db.reservation_transfers.insert_one(transfer_record)
-
-        # Update booking tenant_id
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tenant_id},
+        source_update = await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tenant_id, "status": {"$in": ["pending", "confirmed", "guaranteed"]}},
             {
                 "$set": {
-                    "tenant_id": target_property_id,
-                    "transferred_from": tenant_id,
-                    "transfer_id": transfer_record["id"],
-                    "updated_at": datetime.now(UTC).isoformat(),
+                    "status": "cancelled",
+                    "property_transfer_status": "completed",
+                    "transferred_to_tenant_id": target_property_id,
+                    "transferred_to_booking_id": target_booking_id,
+                    "transfer_id": transfer_id,
+                    "cancellation_reason": "Zincir içi tesis değişikliği",
+                    "cancelled_at": now,
+                    "cancelled_by": current_user.id,
+                    "updated_at": now,
                 }
             },
         )
+        if source_update.modified_count != 1:
+            await db.bookings.delete_one({"id": target_booking_id, "tenant_id": target_property_id})
+            await db.room_night_locks.delete_many({"booking_id": target_booking_id, "tenant_id": target_property_id})
+            return {"success": False, "error": "Rezervasyon bu sırada değişti; tesis aktarımı uygulanmadı"}
 
-        return {"success": True, "transfer_id": transfer_record["id"], "source": tenant_id, "target": target_property_id}
+        await db.room_night_locks.delete_many({"booking_id": booking_id, "tenant_id": tenant_id})
+        await db.reservation_transfers.insert_one(transfer_record)
+
+        target_property = next((prop for prop in properties if tenant_id_from_document(prop) == target_property_id), {})
+        return {
+            "success": True,
+            "transfer_id": transfer_id,
+            "source": tenant_id,
+            "target": target_property_id,
+            "target_property_name": target_property.get("property_name") or target_property.get("hotel_name") or target_property.get("name"),
+            "source_booking_id": booking_id,
+            "target_booking_id": target_booking_id,
+            "target_room_id": target_booking.get("room_id"),
+            "target_room_number": target_booking.get("room_number"),
+        }
 
 
 class CentralRevenueManagement:

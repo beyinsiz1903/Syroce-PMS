@@ -109,6 +109,45 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(await screen.findByTestId('folios-tab')).toBeInTheDocument();
   });
 
+  it('transfers an eligible reservation directly to an available sibling property', async () => {
+    post.mockImplementation((url) => {
+      if (url === '/platform/multi-property/search-availability') {
+        return Promise.resolve({ data: { properties: [{
+          property_id: 'hotel-fethiye',
+          property_name: 'Fethiye Oteli',
+          available_rooms: 4,
+          room_types: ['Standard', 'Deluxe'],
+        }] } });
+      }
+      if (url === '/platform/multi-property/transfer-reservation') {
+        return Promise.resolve({ data: {
+          success: true,
+          target_property_name: 'Fethiye Oteli',
+          target_room_number: '204',
+        } });
+      }
+      return Promise.resolve({ data: { success: true } });
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('workspace-property-transfer'));
+    expect(await screen.findByTestId('property-transfer-dialog')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /Fethiye Oteli/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Değişiklik nedeni'), { target: { value: 'Misafir talebi' } });
+    fireEvent.click(screen.getByTestId('confirm-property-transfer'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/platform/multi-property/transfer-reservation',
+      {
+        booking_id: 'booking-test',
+        target_property_id: 'hotel-fethiye',
+        target_room_type: 'Standard',
+        reason: 'Misafir talebi',
+      },
+    ));
+  });
+
   it('sends no-show to the single /api-prefixed axios base path', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
