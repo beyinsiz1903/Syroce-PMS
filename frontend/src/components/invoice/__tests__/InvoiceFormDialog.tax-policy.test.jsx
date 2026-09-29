@@ -19,4 +19,9 @@ describe('invoice item tax policy', () => {
     expect(INVOICE_ITEM_CATEGORIES.alcoholic_beverage.vatRate).toBe(20);
     expect(createInvoiceItem('other').vat_rate).toBe(20);
   });
+
+  it('accepts the hotel-specific accommodation VAT default', () => {
+    expect(createInvoiceItem('accommodation', 8).vat_rate).toBe(8);
+    expect(createInvoiceItem('other', 8).vat_rate).toBe(20);
+  });
 });

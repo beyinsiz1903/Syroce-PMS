@@ -7,7 +7,7 @@ import html as _html
 import re as _re
 from datetime import UTC, datetime, timedelta
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 def _e(value) -> str:
@@ -188,6 +188,7 @@ class HotelSettingsUpdate(BaseModel):
     invoice_notes: str | None = None
     currency: str | None = None
     currency_symbol: str | None = None
+    default_accommodation_vat_rate: float | None = Field(default=None, ge=0, le=100)
 
 
 class GroupFolioMerge(BaseModel):

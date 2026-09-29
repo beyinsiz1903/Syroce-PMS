@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -28,12 +28,14 @@ export const INVOICE_ITEM_CATEGORIES = {
 
 export const SUPPORTED_INVOICE_CURRENCIES = ['TRY', 'EUR', 'USD', 'GBP'];
 
-export const createInvoiceItem = (category = 'accommodation') => ({
+export const createInvoiceItem = (category = 'accommodation', accommodationVatRate = 10) => ({
   category,
   description: category === 'accommodation' ? 'Konaklama Bedeli' : '',
   quantity: 1,
   unit_price: 0,
-  vat_rate: INVOICE_ITEM_CATEGORIES[category]?.vatRate ?? 20,
+  vat_rate: category === 'accommodation'
+    ? Number(accommodationVatRate)
+    : INVOICE_ITEM_CATEGORIES[category]?.vatRate ?? 20,
   vat_amount: 0,
   total: 0,
   additional_taxes: [],
@@ -48,6 +50,7 @@ const InvoiceFormDialog = ({
     t
   } = useTranslation();
   const { code: tenantCurrency } = useCurrency();
+  const [accommodationVatRate, setAccommodationVatRate] = useState(10);
   const [newInvoice, setNewInvoice] = useState({
     invoice_type: 'sales',
     customer_name: '',
@@ -71,11 +74,37 @@ const InvoiceFormDialog = ({
     is_percentage: true,
     withholding_rate: null
   });
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let active = true;
+    axios.get('/pms/hotel-settings').then(({ data }) => {
+      if (!active) return;
+      const configuredRate = Number(data?.default_accommodation_vat_rate);
+      if (!Number.isFinite(configuredRate) || configuredRate < 0 || configuredRate > 100) return;
+      setAccommodationVatRate(configuredRate);
+      setNewInvoice(current => ({
+        ...current,
+        items: current.items.map(item => {
+          if (item.category !== 'accommodation' || Number(item.unit_price) !== 0) return item;
+          return { ...item, vat_rate: configuredRate, vat_amount: 0, total: 0 };
+        }),
+      }));
+    }).catch(() => {
+      // The statutory fallback remains 10% when settings are unavailable.
+    });
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
   const calculateInvoiceItem = (index, field, value) => {
     const items = [...newInvoice.items];
     items[index][field] = value;
     if (field === 'category') {
-      items[index].vat_rate = INVOICE_ITEM_CATEGORIES[value]?.vatRate ?? 20;
+      items[index].vat_rate = value === 'accommodation'
+        ? accommodationVatRate
+        : INVOICE_ITEM_CATEGORIES[value]?.vatRate ?? 20;
       if (!items[index].description || items[index].description === 'Konaklama Bedeli') {
         items[index].description = value === 'accommodation' ? 'Konaklama Bedeli' : '';
       }

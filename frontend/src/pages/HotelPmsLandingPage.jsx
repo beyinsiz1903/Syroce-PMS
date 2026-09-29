@@ -41,7 +41,7 @@ export default function HotelPmsLandingPage() {
     <header className="border-b border-white/10 bg-[#07111e]/95">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <a href="/" className="flex items-center gap-2 text-lg font-bold"><img src="/syroce-circle-256.webp" width="36" height="36" alt="" className="rounded-full" />Syroce</a>
-        <div className="flex items-center gap-3 text-sm"><a href="/auth" className="hidden text-slate-300 hover:text-white sm:inline">Giriş Yap</a><a href="#demo" className="rounded-full bg-cyan-400 px-4 py-2 font-semibold text-[#07111e]">Demo Talep Et</a></div>
+        <div className="flex items-center gap-3 text-sm"><a href="/acente-girisi" className="hidden text-slate-300 hover:text-white md:inline">Acente Girişi</a><a href="/auth" className="hidden text-slate-300 hover:text-white sm:inline">Otel Girişi</a><a href="#demo" className="rounded-full bg-cyan-400 px-4 py-2 font-semibold text-[#07111e]">Demo Talep Et</a></div>
       </div>
     </header>
 

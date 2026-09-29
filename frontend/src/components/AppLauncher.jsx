@@ -40,8 +40,8 @@ export default function AppLauncher({ user }) {
       name: 'Syroce Agency',
       description: 'Acente Otomasyon Sistemi',
       icon: Globe,
-      url: 'https://agency.syroce.com/admin',
-      active: false,
+      url: '/acente-girisi',
+      active: true,
     }
   ];
 
