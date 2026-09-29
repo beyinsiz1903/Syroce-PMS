@@ -8,8 +8,8 @@ import pytest
 
 os.environ.setdefault("JWT_SECRET", "unit-test-secret-key-at-least-32-chars!!")
 
-from routers.finance.accounting import folio_charge_to_invoice_items
 from routers.finance import konaklama_vergisi_core as tax_core
+from routers.finance.accounting import folio_charge_to_invoice_items
 
 
 class _AsyncCursor:
@@ -63,6 +63,12 @@ def test_folio_invoice_lines_keep_accommodation_tax_outside_vat_base():
 )
 def test_folio_invoice_lines_apply_service_specific_vat(charge, expected_rate):
     assert folio_charge_to_invoice_items(charge)[0]["vat_rate"] == expected_rate
+
+
+def test_folio_invoice_lines_use_configured_accommodation_vat():
+    charge = {"charge_category": "room", "description": "Konaklama", "amount": 100}
+
+    assert folio_charge_to_invoice_items(charge, accommodation_vat_rate=8)[0]["vat_rate"] == 8.0
 
 
 @pytest.mark.asyncio

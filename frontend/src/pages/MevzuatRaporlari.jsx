@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Award, BarChart3, CheckCircle2, ClipboardCheck, Download, ExternalLink, FileText, Loader2, RefreshCw, ScrollText, Save, Send, Settings, ShieldCheck, UserX, Wifi, WifiOff } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
@@ -64,7 +64,9 @@ export default function MevzuatRaporlari({
 }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const [tab, setTab] = useState("tuik");
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [tab, setTab] = useState(() => TABS.some(item => item.key === requestedTab) ? requestedTab : "tuik");
   const canEditTenantSettings = canEditTenantLegalSettings(user);
 
   // ── TÜİK

@@ -264,6 +264,7 @@ const LandingPage = () => {
     };
   }, []);
   const goLogin = () => navigate('/auth');
+  const goAgency = () => navigate('/acente-girisi');
   const goSupplier = () => navigate('/tedarikci/giris');
   const demoHref = `/otel-programi${window.location.search}#demo`;
   return <div id="top" className="relative min-h-screen overflow-x-hidden bg-[#05070f] text-slate-100 antialiased">
@@ -298,6 +299,8 @@ const LandingPage = () => {
             <a href={demoHref} className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-3.5 py-1.5 text-[13px] font-semibold text-[#05070f] hover:bg-cyan-300">Demo Talep Et <ArrowRight className="h-3.5 w-3.5" /></a>
             <button onClick={goLogin} className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.03] px-3.5 py-1.5 text-[13px] font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white">
               <LogIn className="h-3.5 w-3.5" />{t("cm.pages_LandingPage.giri\u015F_yap")}</button>
+            <button onClick={goAgency} className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.03] px-3.5 py-1.5 text-[13px] font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white">
+              <Users className="h-3.5 w-3.5" />Acente</button>
             <button onClick={goSupplier} className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-cyan-300/40 bg-gradient-to-r from-cyan-400/15 via-teal-300/10 to-indigo-400/15 px-3.5 py-1.5 text-[13px] font-semibold text-cyan-100 shadow-[0_0_22px_-6px_rgba(34,211,238,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-cyan-200/70 hover:text-white hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.85),inset_0_1px_0_rgba(255,255,255,0.12)]">
               <span aria-hidden className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
               <Users className="relative h-3.5 w-3.5" />
@@ -320,6 +323,7 @@ const LandingPage = () => {
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <a href={demoHref} onClick={() => setMobileOpen(false)} className="flex-1 rounded-full bg-cyan-400 px-4 py-2 text-center text-sm font-semibold text-[#05070f]">Demo Talep Et</a>
                 <button onClick={goLogin} className="flex-1 rounded-full border border-white/15 px-4 py-2 text-sm text-white">{t("cm.pages_LandingPage.giri\u015F_yap")}</button>
+                <button onClick={goAgency} className="flex-1 rounded-full border border-white/15 px-4 py-2 text-sm text-white">Acente Girişi</button>
                 <button onClick={goSupplier} className="flex-1 rounded-full border border-white/15 px-4 py-2 text-sm text-white">{t("cm.pages_LandingPage.tedarik\xE7i_giri\u015Fi")}</button>
               </div>
             </div>
@@ -1327,6 +1331,9 @@ const LandingPage = () => {
           }, {
             label: 'Müşteri Girişi',
             href: '/auth'
+          }, {
+            label: 'Acente Girişi',
+            href: '/acente-girisi'
           }, {
             label: 'Tedarikçi Girişi',
             href: '/tedarikci/giris'

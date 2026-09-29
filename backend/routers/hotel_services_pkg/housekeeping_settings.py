@@ -188,6 +188,7 @@ async def get_hotel_settings(
             "invoice_notes": "",
             "currency": "TRY",
             "currency_symbol": "₺",
+            "default_accommodation_vat_rate": float(tenant.get("vat_rate", 10.0)) if tenant else 10.0,
         }
 
     return settings

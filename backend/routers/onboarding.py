@@ -11,9 +11,10 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from cache_manager import cache as cache_manager
 from cache_manager import cached
@@ -36,6 +37,24 @@ ADMIN_ROLES = {"super_admin", "platform_admin", "admin", "owner"}
 # P1 #8 telefon validation — E.164 (uluslararası) + Türkiye yerel formatı.
 _PHONE_RE = re.compile(r"^\+?[0-9 ()\-]{7,20}$")
 _TR_PHONE_NORMALIZE = re.compile(r"[^0-9+]")
+_TAX_NUMBER_RE = re.compile(r"^(?:\d{10}|\d{11})$")
+_MERSIS_RE = re.compile(r"^\d{16}$")
+
+_PROPERTY_TYPE_ALIASES = {
+    "hotel": "city_hotel",
+    "boutique": "boutique_hotel",
+    "butik": "boutique_hotel",
+    "apart": "apart_hotel",
+    "resort": "resort_summer",
+    "pansiyon": "pension",
+}
+_PROPERTY_TYPES = {
+    "pension", "villa", "hostel", "motel", "apart_hotel",
+    "boutique_hotel", "camping", "city_hotel", "business_hotel",
+    "resort_summer", "resort_winter", "resort_thermal",
+    "hotel_3star", "hotel_4star", "hotel_5star",
+}
+_CURRENCY_SYMBOLS = {"TRY": "₺", "USD": "$", "EUR": "€", "GBP": "£", "RUB": "₽", "JPY": "¥"}
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
@@ -178,7 +197,7 @@ class HotelInfoIn(BaseModel):
     """P1 #6/#7/#8 genişletilmiş kurulum modeli.
 
     Yeni alanlar: property_type, currency, timezone, default_language,
-    star_rating, opening_year, tax_number, mersis_no, tga_code, vat_rate,
+    star_rating, opening_year, tax_number, mersis_no, vat_rate,
     accommodation_tax_exempt + yapılandırılmış adres (city, district,
     neighborhood, street, building_no, postal_code).
     """
@@ -189,7 +208,7 @@ class HotelInfoIn(BaseModel):
     opening_year: int | None = Field(default=None, ge=1900, le=2100)
 
     contact_phone: str | None = Field(default=None, max_length=50)
-    contact_email: str | None = Field(default=None, max_length=200)
+    contact_email: EmailStr | None = None
 
     address: str | None = Field(default=None, max_length=500)
     location: str | None = Field(default=None, max_length=200)
@@ -209,8 +228,9 @@ class HotelInfoIn(BaseModel):
 
     # Türkiye'ye özel
     tax_number: str | None = Field(default=None, max_length=20)  # VKN/TCKN
+    tax_office: str | None = Field(default=None, max_length=120)
+    country: str | None = Field(default="TR", min_length=2, max_length=2)
     mersis_no: str | None = Field(default=None, max_length=20)
-    tga_code: str | None = Field(default=None, max_length=20)
     vat_rate: float | None = Field(default=None, ge=0, le=100)
     accommodation_tax_exempt: bool | None = None
 
@@ -241,6 +261,43 @@ class HotelInfoIn(BaseModel):
             raise ValueError("Para birimi TRY/USD/EUR/GBP/RUB/JPY olmalı")
         return v
 
+    @field_validator("timezone")
+    @classmethod
+    def _tz(cls, v):
+        if v is None:
+            return v
+        value = v.strip()
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("Geçersiz IANA zaman dilimi") from exc
+        return value
+
+    @field_validator("tax_number")
+    @classmethod
+    def _tax_number(cls, v):
+        if v is None or not v.strip():
+            return None
+        value = v.strip()
+        if not _TAX_NUMBER_RE.fullmatch(value):
+            raise ValueError("VKN 10, TCKN 11 haneli olmalıdır")
+        return value
+
+    @field_validator("mersis_no")
+    @classmethod
+    def _mersis(cls, v):
+        if v is None or not v.strip():
+            return None
+        value = v.strip()
+        if not _MERSIS_RE.fullmatch(value):
+            raise ValueError("MERSİS numarası 16 haneli olmalıdır")
+        return value
+
+    @field_validator("country")
+    @classmethod
+    def _country(cls, v):
+        return v.strip().upper() if v else v
+
     @field_validator("default_language")
     @classmethod
     def _lang(cls, v):
@@ -256,10 +313,110 @@ class HotelInfoIn(BaseModel):
     def _pt(cls, v):
         if v is None:
             return v
-        v = v.strip().lower()
-        if v not in {"hotel", "boutique", "apart", "hostel", "resort", "villa", "pansiyon", "butik"}:
+        v = _PROPERTY_TYPE_ALIASES.get(v.strip().lower(), v.strip().lower())
+        if v not in _PROPERTY_TYPES:
             raise ValueError("Mülk tipi geçersiz")
         return v
+
+
+def _compose_address(doc: dict) -> str:
+    """Create the canonical printable/legal address from structured fields."""
+    street_line = " ".join(
+        part for part in [doc.get("street"), doc.get("building_no")] if str(part or "").strip()
+    ).strip()
+    locality = " / ".join(
+        part for part in [doc.get("neighborhood"), doc.get("district"), doc.get("city")] if str(part or "").strip()
+    )
+    pieces = [part for part in [street_line, locality, doc.get("postal_code")] if str(part or "").strip()]
+    return ", ".join(str(part).strip() for part in pieces)
+
+
+async def _sync_hotel_info_dependencies(tenant_id: str, tenant: dict, supplied_fields: set[str]) -> list[str]:
+    """Keep canonical settings stores aligned with the onboarding profile."""
+    db = _db()
+    synced: list[str] = []
+
+    structured_address_fields = {"city", "district", "neighborhood", "street", "building_no", "postal_code"}
+    composed_address = _compose_address(tenant)
+    address = (
+        composed_address
+        if supplied_fields & structured_address_fields and composed_address
+        else (tenant.get("address") or "").strip() or composed_address
+    )
+    tenant_aliases: dict = {}
+    if address and address != tenant.get("address"):
+        tenant_aliases["address"] = address
+    if tenant.get("tax_number"):
+        tenant_aliases["tax_no"] = tenant["tax_number"]
+    if tenant_aliases:
+        await db.tenants.update_one({"id": tenant_id}, {"$set": tenant_aliases})
+
+    hotel_settings = {
+        "tenant_id": tenant_id,
+        "hotel_name": tenant.get("property_name") or "",
+        "hotel_address": address,
+        "hotel_phone": tenant.get("contact_phone") or "",
+        "hotel_email": str(tenant.get("contact_email") or ""),
+        "tax_id": tenant.get("tax_number") or "",
+        "tax_office": tenant.get("tax_office") or "",
+        "currency": tenant.get("currency") or "TRY",
+        "currency_symbol": _CURRENCY_SYMBOLS.get(tenant.get("currency") or "TRY", tenant.get("currency") or "TRY"),
+        "default_accommodation_vat_rate": float(tenant.get("vat_rate", 10.0)),
+        "updated_at": _now_iso(),
+    }
+    await db.hotel_settings.update_one({"tenant_id": tenant_id}, {"$set": hotel_settings}, upsert=True)
+    synced.append("hotel_settings")
+
+    tenant_settings = {
+        "tenant_id": tenant_id,
+        "timezone": tenant.get("timezone") or "Europe/Istanbul",
+        "default_language": tenant.get("default_language") or "tr",
+        "updated_at": _now_iso(),
+    }
+    await db.tenant_settings.update_one({"tenant_id": tenant_id}, {"$set": tenant_settings}, upsert=True)
+    synced.append("tenant_settings")
+
+    if "accommodation_tax_exempt" in supplied_fields:
+        await db.city_tax_rules.update_one(
+            {"tenant_id": tenant_id},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "active": not bool(tenant.get("accommodation_tax_exempt")),
+                    "updated_at": _now_iso(),
+                },
+                "$setOnInsert": {"rate_percent": 2.0, "auto_post": False, "exempt_segments": []},
+            },
+            upsert=True,
+        )
+        synced.append("accommodation_tax")
+
+    # Prefill the fiscal seller profile only when every mandatory Nilvera
+    # identity field is known. API credentials and enablement remain an
+    # explicit integration step.
+    seller = {
+        "vkn": tenant.get("tax_number"),
+        "name": tenant.get("property_name"),
+        "tax_office": tenant.get("tax_office"),
+        "address": address,
+        "city": tenant.get("city"),
+        "country": tenant.get("country") or "TR",
+    }
+    if all(str(value or "").strip() for value in seller.values()):
+        await db.tenant_settings.update_one(
+            {"tenant_id": tenant_id},
+            {"$set": {"nilvera.seller": seller}},
+            upsert=True,
+        )
+        synced.append("nilvera_seller")
+
+    try:
+        from core.tenant_currency import invalidate_tenant_currency
+
+        invalidate_tenant_currency(tenant_id)
+    except Exception:
+        logger.warning("tenant currency cache invalidation failed tenant=%s", tenant_id)
+    return synced
 
 
 @router.patch("/hotel-info")
@@ -322,10 +479,14 @@ async def update_hotel_info(
             "star_rating": 1,
             "opening_year": 1,
             "tax_number": 1,
+            "tax_office": 1,
+            "country": 1,
             "mersis_no": 1,
-            "tga_code": 1,
             "vat_rate": 1,
             "accommodation_tax_exempt": 1,
         },
     )
-    return {"ok": True, "tenant": tenant, "updated_fields": list(update.keys())}
+    synced = await _sync_hotel_info_dependencies(tenant_id, tenant or {}, set(update) - {"updated_at"})
+    if tenant is not None and not tenant.get("address"):
+        tenant["address"] = _compose_address(tenant)
+    return {"ok": True, "tenant": tenant, "updated_fields": list(update.keys()), "synced_targets": synced}

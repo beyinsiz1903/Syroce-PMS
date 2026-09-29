@@ -29,13 +29,21 @@ const STEP_DEFS = [
 ];
 
 const PROPERTY_TYPES = [
-  { v: "hotel", l: "Otel" },
-  { v: "boutique", l: "Butik Otel" },
-  { v: "resort", l: "Tatil Köyü" },
-  { v: "apart", l: "Apart" },
+  { v: "city_hotel", l: "Şehir Oteli" },
+  { v: "business_hotel", l: "İş Oteli" },
+  { v: "boutique_hotel", l: "Butik Otel" },
+  { v: "resort_summer", l: "Yaz Tatil Oteli" },
+  { v: "resort_winter", l: "Kış Oteli" },
+  { v: "resort_thermal", l: "Termal Otel" },
+  { v: "apart_hotel", l: "Apart Otel" },
   { v: "hostel", l: "Hostel" },
   { v: "villa", l: "Villa" },
-  { v: "pansiyon", l: "Pansiyon" },
+  { v: "pension", l: "Pansiyon" },
+  { v: "motel", l: "Motel" },
+  { v: "camping", l: "Kamp / Glamping" },
+  { v: "hotel_3star", l: "3 Yıldızlı Otel" },
+  { v: "hotel_4star", l: "4 Yıldızlı Otel" },
+  { v: "hotel_5star", l: "5 Yıldızlı Otel" },
 ];
 
 const CURRENCIES = ["TRY", "USD", "EUR", "GBP", "RUB"];
@@ -64,7 +72,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
 
   const [hotelForm, setHotelForm] = useState({
     property_name: tenant?.property_name || "",
-    property_type: tenant?.property_type || "hotel",
+    property_type: tenant?.property_type || "city_hotel",
     star_rating: tenant?.star_rating || "",
     opening_year: tenant?.opening_year || "",
     contact_phone: tenant?.contact_phone || "",
@@ -82,8 +90,9 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
     timezone: tenant?.timezone || "Europe/Istanbul",
     default_language: tenant?.default_language || "tr",
     tax_number: tenant?.tax_number || "",
+    tax_office: tenant?.tax_office || "",
+    country: tenant?.country || "TR",
     mersis_no: tenant?.mersis_no || "",
-    tga_code: tenant?.tga_code || "",
     vat_rate: tenant?.vat_rate ?? 10,
     accommodation_tax_exempt: tenant?.accommodation_tax_exempt || false,
   });
@@ -147,6 +156,14 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
       toast.error("Telefon formatı geçersiz (örn. +905551234567)");
       return false;
     }
+    if (hotelForm.tax_number && !/^(?:\d{10}|\d{11})$/.test(hotelForm.tax_number.trim())) {
+      toast.error("VKN 10, TCKN 11 haneli olmalıdır");
+      return false;
+    }
+    if (hotelForm.mersis_no && !/^\d{16}$/.test(hotelForm.mersis_no.trim())) {
+      toast.error("MERSİS numarası 16 haneli olmalıdır");
+      return false;
+    }
     return true;
   };
 
@@ -166,8 +183,9 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
       Object.keys(payload).forEach(k => {
         if (payload[k] === "" || payload[k] === null) delete payload[k];
       });
-      await axios.patch("/onboarding/hotel-info", payload);
-      toast.success("Otel bilgileri kaydedildi");
+      const { data } = await axios.patch("/onboarding/hotel-info", payload);
+      const syncedCount = data?.synced_targets?.length || 0;
+      toast.success(syncedCount ? `Otel bilgileri ${syncedCount} bağlı ayara uygulandı` : "Otel bilgileri kaydedildi");
       await refresh();
       setStepIdx(1);
     } catch (e) {
@@ -386,9 +404,9 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
               </div>
             </div>
 
-            {/* Yapılandırılmış adres (KBS / e-fatura için gerekli) */}
+            {/* Yapılandırılmış resmi adres */}
             <div>
-              <div className="text-sm font-semibold text-slate-700 mb-2">Adres (KBS / e-fatura için)</div>
+              <div className="text-sm font-semibold text-slate-700 mb-2">Resmi belge ve fatura adresi</div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <Label htmlFor="city">İl</Label>
@@ -431,21 +449,21 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
             {/* TR yasal kodlar */}
             <div>
               <div className="text-sm font-semibold text-slate-700 mb-2">Yasal Kodlar (Türkiye)</div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
                   <Label htmlFor="tax_number">VKN / TCKN</Label>
                   <Input id="tax_number" value={hotelForm.tax_number}
                     onChange={e => setHotelForm(f => ({ ...f, tax_number: e.target.value }))} />
                 </div>
                 <div>
+                  <Label htmlFor="tax_office">Vergi Dairesi</Label>
+                  <Input id="tax_office" value={hotelForm.tax_office}
+                    onChange={e => setHotelForm(f => ({ ...f, tax_office: e.target.value }))} />
+                </div>
+                <div>
                   <Label htmlFor="mersis_no">MERSİS No</Label>
                   <Input id="mersis_no" value={hotelForm.mersis_no}
                     onChange={e => setHotelForm(f => ({ ...f, mersis_no: e.target.value }))} />
-                </div>
-                <div>
-                  <Label htmlFor="tga_code">TGA Tesis Kodu</Label>
-                  <Input id="tga_code" value={hotelForm.tga_code}
-                    onChange={e => setHotelForm(f => ({ ...f, tga_code: e.target.value }))} />
                 </div>
                 <div className="flex items-end gap-2 pb-1">
                   <input id="acc_tax_exempt" type="checkbox" className="w-4 h-4"
@@ -454,6 +472,18 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
                   <Label htmlFor="acc_tax_exempt" className="text-xs">Konaklama vergisi muafiyeti</Label>
                 </div>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-blue-900 dark:text-blue-100">TGA bağlantısı ayrı doğrulama gerektirir</div>
+                <p className="mt-1 text-xs leading-5 text-blue-800">
+                  Tesis UUID, X-API-Key, resmi il/ilçe kodları ve belgeli kapasiteyi girip test bağlantısını doğrulayın.
+                </p>
+              </div>
+              <Button type="button" variant="outline" className="shrink-0 bg-white" onClick={() => navigate("/app/mevzuat-raporlari?tab=tga")}>
+                TGA ayarlarını aç <ArrowRight className="ml-1 h-4 w-4" />
+              </Button>
             </div>
 
             {!isTenantAdmin && (

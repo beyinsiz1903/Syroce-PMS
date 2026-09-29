@@ -16,6 +16,7 @@ export function publicRoutes({ pa }) {
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
     { path: "/pms-lite", type: "public", component: PmsLiteLanding },
     { path: "/agency-portal", type: "public", component: AgencyPortalDashboard },
+    { path: "/acente-girisi", type: "public", component: AgencyPortalDashboard },
     { path: "/agency-widget", type: "public", component: AgencyBookingWidget },
     // Public URL namespace, but admin-protected docs route (intentional —
     // mirrors original behavior; URL grouping rather than auth grouping).

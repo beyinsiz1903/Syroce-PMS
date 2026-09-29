@@ -103,7 +103,7 @@ def _currency_totals(records, amount_field: str, fallback_currency: str, predica
     return {currency: round(amount, 2) for currency, amount in totals.items()}
 
 
-def _charge_vat_rate(charge: dict[str, Any]) -> float:
+def _charge_vat_rate(charge: dict[str, Any], accommodation_vat_rate: float = ACCOMMODATION_VAT_RATE) -> float:
     """Resolve VAT without treating accommodation tax as VAT.
 
     Turkish PMS folios can contain both VAT and the separate accommodation
@@ -114,7 +114,7 @@ def _charge_vat_rate(charge: dict[str, Any]) -> float:
     if category == "city_tax" or charge.get("konaklama_vergisi"):
         return 0.0
     if category == "room":
-        return ACCOMMODATION_VAT_RATE
+        return float(accommodation_vat_rate)
 
     explicit = charge.get("vat_rate")
     if explicit is not None:
@@ -127,12 +127,15 @@ def _charge_vat_rate(charge: dict[str, Any]) -> float:
     return float(charge.get("tax_rate") or GENERAL_VAT_RATE)
 
 
-def folio_charge_to_invoice_items(charge: dict[str, Any]) -> list[dict[str, Any]]:
+def folio_charge_to_invoice_items(
+    charge: dict[str, Any],
+    accommodation_vat_rate: float = ACCOMMODATION_VAT_RATE,
+) -> list[dict[str, Any]]:
     """Convert one folio charge to fiscal lines while preserving its total."""
     category = str(charge.get("charge_category") or "other").lower()
     description = charge.get("description") or "Otel hizmeti"
     amount = round(float(charge.get("amount") or charge.get("unit_price") or 0.0), 2)
-    vat_rate = _charge_vat_rate(charge)
+    vat_rate = _charge_vat_rate(charge, accommodation_vat_rate)
     item = {
         "description": description,
         "category": category,
@@ -2109,9 +2112,16 @@ async def generate_invoice_from_folio(
         )
 
     # Convert charges to invoice items
+    hotel_settings = await db.hotel_settings.find_one(
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0, "default_accommodation_vat_rate": 1},
+    ) or {}
+    accommodation_vat_rate = float(
+        hotel_settings.get("default_accommodation_vat_rate", ACCOMMODATION_VAT_RATE)
+    )
     invoice_items = []
     for charge in charges:
-        invoice_items.extend(folio_charge_to_invoice_items(charge))
+        invoice_items.extend(folio_charge_to_invoice_items(charge, accommodation_vat_rate))
 
     # Resolve customer info. Walk-in / check-in store the guest's name on the
     # GUEST document (booking carries only guest_id), so fall back through
