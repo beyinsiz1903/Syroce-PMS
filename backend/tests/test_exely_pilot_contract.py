@@ -186,10 +186,10 @@ def test_litellm_security_override_declares_and_verifies_settings_dependency():
     post_install = POST_INSTALL.read_text()
 
     assert "pydantic-settings==2.14.2" in requirements
-    assert "litellm==1.84.10" in requirements
+    assert "litellm==1.96.2" in requirements
     assert "openai==2.20.0" in requirements
     assert '"litellm>=1.84.0" --no-deps' not in post_install
-    assert "Version(version('litellm')) >= Version('1.84.10')" in post_install
+    assert "Version(version('litellm')) >= Version('1.96.2')" in post_install
     assert "import litellm, openai, pydantic_settings" in post_install
     for dockerfile in (API_DOCKERFILE, WORKER_DOCKERFILE):
         assert '"litellm>=1.84.0" --no-deps' not in dockerfile.read_text()
