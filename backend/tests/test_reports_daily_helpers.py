@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from core.night_audit_hardened import _money_breakdown
 from routers.reports_pkg.dashboard_lists import (
     _booking_occupied_on,
+    _complimentary_night_info,
     _currency_breakdown,
     _date_part,
     _guest_identity,
@@ -160,6 +161,36 @@ def test_nightly_rate_prefers_date_specific_reservation_rate():
     }
     assert _nightly_booking_rate(booking, "2026-09-23", {"rate": 175}) == 175
     assert _nightly_booking_rate(booking, "2026-09-23") == 100
+
+
+def test_comp_night_info_marks_full_stay_and_exposes_reason():
+    result = _complimentary_night_info(
+        {
+            "is_complimentary": True,
+            "complimentary_mode": "entire_stay",
+            "complimentary_reason": "Yönetim ikramı",
+        },
+        "2026-09-23",
+        {"rate": 5000},
+    )
+
+    assert result == {
+        "is_complimentary_night": True,
+        "complimentary_reason": "Yönetim ikramı",
+        "complimentary_mode": "entire_stay",
+    }
+
+
+def test_comp_night_info_marks_only_the_adjusted_closed_date():
+    booking = {
+        "is_partially_complimentary": True,
+        "complimentary_mode": "closed_nights_adjustment",
+        "complimentary_reason": "Hizmet telafisi",
+    }
+    payments = [{"payment_type": "comp_adjustment", "comp_dates": ["2026-09-22"]}]
+
+    assert _complimentary_night_info(booking, "2026-09-22", payments=payments)["is_complimentary_night"] is True
+    assert _complimentary_night_info(booking, "2026-09-23", payments=payments)["is_complimentary_night"] is False
 
 
 def test_date_part_accepts_date_only_and_datetime_values():

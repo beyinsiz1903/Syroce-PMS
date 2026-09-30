@@ -50,7 +50,8 @@ describe('GuestTable in-house pricing', () => {
       />,
     );
 
-    expect(screen.getByRole('columnheader', { name: 'Gece Ücreti' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Ücretlendirme' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Misafire Yansıtılan' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Tahsilat' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Konaklama Toplamı' })).toBeInTheDocument();
     expect(screen.getByText(/2\.500.*€/)).toBeInTheDocument();
@@ -95,5 +96,33 @@ describe('GuestTable in-house pricing', () => {
     expect(screen.getByText('Seçili gün çıkış')).toBeInTheDocument();
     expect(screen.getByText('Seçili tarihte otelde')).toBeInTheDocument();
     expect(screen.getByText('Filtrelenen kayıtların toplamı')).toBeInTheDocument();
+  });
+
+  it('labels a complimentary night, shows its reason and never presents the reference value as a guest charge', () => {
+    render(
+      <GuestTable
+        guests={[{
+          ...guests[0],
+          currency: 'TRY',
+          nightly_rate: 5000,
+          guest_nightly_charge: 0,
+          reference_nightly_rate: 5000,
+          total_amount: 0,
+          is_complimentary_night: true,
+          complimentary_mode: 'entire_stay',
+          complimentary_reason: 'Yönetim ikramı',
+        }]}
+        title="Otelde Konaklayanlar"
+        showNightlyRate
+        searchGuest=""
+        setSearchGuest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Comp')).toBeInTheDocument();
+    expect(screen.getByText('Tüm konaklama')).toBeInTheDocument();
+    expect(screen.getByText('Neden: Yönetim ikramı')).toBeInTheDocument();
+    expect(screen.getByText('Emsal değer:', { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Misafire Yansıtılan' })).toBeInTheDocument();
   });
 });
