@@ -81,7 +81,7 @@ const MobileOrderTracking = ({ user }) => {
     try {
       await axios.put(`/pos/mobile/order/${orderId}/status`, {
         status: newStatus,
-        notes: `Status updated to ${newStatus}`
+        notes: `Sipariş durumu ${getStatusLabel(newStatus)} olarak güncellendi`
       });
       
       toast.success(`Sipariş durumu: ${getStatusLabel(newStatus)}`);
@@ -93,7 +93,7 @@ const MobileOrderTracking = ({ user }) => {
       }
     } catch (error) {
       console.error('Failed to update status:', error);
-      toast.error('Durum güncellenemedi');
+      toast.error(error?.response?.data?.detail || 'Durum güncellenemedi');
     }
   };
 

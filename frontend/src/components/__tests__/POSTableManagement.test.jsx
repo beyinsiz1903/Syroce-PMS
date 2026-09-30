@@ -79,4 +79,42 @@ describe('POSTableManagement', () => {
       { params: { from_table: '1', to_table: '2', outlet_id: 'outlet-1', transfer_all: true } },
     ));
   });
+
+  it('creates a table reservation and advances a confirmed reservation to seated', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/reservations') {
+        return Promise.resolve({ data: [{ id: 'res-1', table_id: 'table-1', guest_name: 'Ayşe Yılmaz', pax: 3, res_date: '2026-10-02', res_time: '19:30', status: 'confirmed' }] });
+      }
+      return Promise.resolve({
+        data: {
+          available: 1,
+          occupied: 0,
+          reserved: 0,
+          tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'available' }],
+        },
+      });
+    });
+
+    render(<POSTableManagement outletId="outlet-1" />);
+
+    expect(await screen.findByText(/Ayşe Yılmaz/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Masaya Al' }));
+    await waitFor(() => expect(axiosPut).toHaveBeenCalledWith(
+      '/pos/reservations/res-1/status',
+      null,
+      { params: { status: 'seated' } },
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rezervasyon Ekle' }));
+    fireEvent.change(screen.getByLabelText('Misafir adı'), { target: { value: 'Mehmet Demir' } });
+    fireEvent.change(screen.getByLabelText('Rezervasyon masası'), { target: { value: 'table-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/reservations', expect.objectContaining({
+      outlet_id: 'outlet-1',
+      table_id: 'table-1',
+      guest_name: 'Mehmet Demir',
+      pax: 2,
+    })));
+  });
 });

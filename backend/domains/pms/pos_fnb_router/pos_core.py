@@ -1335,7 +1335,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                     {"table_number": {"$in": table_numbers}},
                 ],
             },
-            {"_id": 0, "id": 1, "table_number": 1, "total_amount": 1, "guests": 1},
+            {"_id": 0, "id": 1, "table_number": 1, "total_amount": 1, "guests": 1, "opened_at": 1, "created_at": 1},
         ):
             txns_by_id[tx["id"]] = tx
             if tx.get("table_number") is not None:
@@ -1358,7 +1358,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                 "server_assigned": table.get("server_assigned"),
                 "current_bill": round(transaction.get("total_amount", 0), 2) if transaction else 0,
                 "guest_count": transaction.get("guests", 0) if transaction else 0,
-                "duration_minutes": calculate_table_duration(table) if effective_status == "occupied" else 0,
+                "duration_minutes": calculate_table_duration(transaction.get("opened_at") or transaction.get("created_at")) if transaction else 0,
             }
         )
 
@@ -1371,7 +1371,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
             }
         )
         if not outlet:
-            raise HTTPException(status_code=404, detail="Outlet bulunamadi")
+            raise HTTPException(status_code=404, detail="Satış noktası bulunamadı")
         default_tables = create_default_table_layout(current_user.tenant_id, outlet_id)
         for table_data in default_tables:
             await db.table_layouts.insert_one(table_data)

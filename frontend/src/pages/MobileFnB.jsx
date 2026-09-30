@@ -31,6 +31,7 @@ import {
   Home
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { normalizePOSMenuItems } from '@/utils/posMenu';
 
 const MobileFnB = ({ user }) => {
   const { t } = useTranslation();
@@ -90,7 +91,7 @@ const MobileFnB = ({ user }) => {
       }
       if (menuRes.status === 'fulfilled') {
         const menuData = menuRes.value.data;
-        const menuList = Array.isArray(menuData) ? menuData : (menuData?.menu_items || []);
+        const menuList = normalizePOSMenuItems(Array.isArray(menuData) ? menuData : menuData?.menu_items);
         setMenuItems(menuList);
         setTopItems(menuList.slice(0, 5));
       } else {
@@ -287,7 +288,7 @@ const MobileFnB = ({ user }) => {
                 aria-label="Ana Sayfa"
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/app/dashboard')}
                 className="text-white hover:bg-white/20 p-2"
                 title="Ana Sayfa"
               >

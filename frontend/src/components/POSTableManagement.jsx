@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Users, RefreshCw, CheckCircle, Clock, ArrowRightLeft, ReceiptText } from 'lucide-react';
+import { Users, RefreshCw, CheckCircle, Clock, ArrowRightLeft, ReceiptText, CalendarDays, Plus, XCircle } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
@@ -22,6 +22,17 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
   const [updating, setUpdating] = useState(null);
   const [notProvisioned, setNotProvisioned] = useState(false);
   const [transferTargets, setTransferTargets] = useState({});
+  const [reservations, setReservations] = useState([]);
+  const [reservationFormOpen, setReservationFormOpen] = useState(false);
+  const [savingReservation, setSavingReservation] = useState(false);
+  const [reservationForm, setReservationForm] = useState({
+    guest_name: '',
+    pax: 2,
+    res_date: new Date().toLocaleDateString('sv-SE'),
+    res_time: '19:00',
+    table_id: '',
+    notes: '',
+  });
 
   const loadTables = useCallback(async () => {
     try {
@@ -51,7 +62,63 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
     }
   }, [outletId]);
 
-  useEffect(() => { loadTables(); }, [loadTables]);
+  const loadReservations = useCallback(async () => {
+    try {
+      const response = await axios.get('/pos/reservations', { params: { outlet_id: outletId } });
+      setReservations(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      if (![403, 404].includes(error?.response?.status)) {
+        console.error('Masa rezervasyonları yüklenemedi:', error);
+        toast.error('Masa rezervasyonları yüklenemedi');
+      }
+      setReservations([]);
+    }
+  }, [outletId]);
+
+  useEffect(() => {
+    loadTables();
+    loadReservations();
+  }, [loadReservations, loadTables]);
+
+  const createReservation = async () => {
+    if (!reservationForm.guest_name.trim() || !reservationForm.table_id || !reservationForm.res_date || !reservationForm.res_time) {
+      toast.error('Misafir, masa, tarih ve saat bilgilerini tamamlayın');
+      return;
+    }
+    try {
+      setSavingReservation(true);
+      await axios.post('/pos/reservations', {
+        outlet_id: outletId,
+        table_id: reservationForm.table_id,
+        guest_name: reservationForm.guest_name.trim(),
+        pax: Math.max(1, Number(reservationForm.pax) || 1),
+        res_date: reservationForm.res_date,
+        res_time: reservationForm.res_time,
+        notes: reservationForm.notes.trim() || null,
+      });
+      toast.success('Masa rezervasyonu oluşturuldu');
+      setReservationForm(current => ({ ...current, guest_name: '', table_id: '', notes: '' }));
+      setReservationFormOpen(false);
+      await loadReservations();
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Masa rezervasyonu oluşturulamadı');
+    } finally {
+      setSavingReservation(false);
+    }
+  };
+
+  const updateReservationStatus = async (reservation, status) => {
+    try {
+      setUpdating(reservation.id);
+      await axios.put(`/pos/reservations/${reservation.id}/status`, null, { params: { status } });
+      toast.success(status === 'seated' ? 'Misafir masaya alındı' : status === 'completed' ? 'Rezervasyon tamamlandı' : 'Rezervasyon iptal edildi');
+      await Promise.all([loadReservations(), loadTables()]);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Rezervasyon durumu güncellenemedi');
+    } finally {
+      setUpdating(null);
+    }
+  };
 
   const updateTableStatus = async (table, newStatus) => {
     if (newStatus === 'available' && table.status !== 'available') {
@@ -160,6 +227,58 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
         </div>
       </CardHeader>
       <CardContent>
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="flex items-center gap-2 font-semibold text-blue-900">
+                <CalendarDays className="h-4 w-4" /> Yaklaşan Masa Rezervasyonları
+              </h3>
+              <p className="mt-1 text-xs text-blue-700">Onaylı rezervasyonu masaya alın, servis bitince tamamlayın.</p>
+            </div>
+            <Button size="sm" onClick={() => setReservationFormOpen(current => !current)}>
+              {reservationFormOpen ? <XCircle className="mr-1 h-4 w-4" /> : <Plus className="mr-1 h-4 w-4" />}
+              {reservationFormOpen ? 'Vazgeç' : 'Rezervasyon Ekle'}
+            </Button>
+          </div>
+
+          {reservationFormOpen && (
+            <div className="mt-4 grid gap-2 rounded-lg border border-blue-200 bg-white p-3 md:grid-cols-6">
+              <input aria-label="Misafir adı" className="h-9 rounded-md border px-3 text-sm md:col-span-2" placeholder="Misafir adı" value={reservationForm.guest_name} onChange={event => setReservationForm(current => ({ ...current, guest_name: event.target.value }))} />
+              <select aria-label="Rezervasyon masası" className="h-9 rounded-md border bg-white px-2 text-sm" value={reservationForm.table_id} onChange={event => setReservationForm(current => ({ ...current, table_id: event.target.value }))}>
+                <option value="">Masa seçin</option>
+                {tables.map(table => <option key={table.id} value={table.id}>Masa {table.table_number}</option>)}
+              </select>
+              <input aria-label="Kişi sayısı" className="h-9 rounded-md border px-3 text-sm" type="number" min="1" value={reservationForm.pax} onChange={event => setReservationForm(current => ({ ...current, pax: event.target.value }))} />
+              <input aria-label="Rezervasyon tarihi" className="h-9 rounded-md border px-3 text-sm" type="date" value={reservationForm.res_date} onChange={event => setReservationForm(current => ({ ...current, res_date: event.target.value }))} />
+              <input aria-label="Rezervasyon saati" className="h-9 rounded-md border px-3 text-sm" type="time" value={reservationForm.res_time} onChange={event => setReservationForm(current => ({ ...current, res_time: event.target.value }))} />
+              <input aria-label="Rezervasyon notu" className="h-9 rounded-md border px-3 text-sm md:col-span-5" placeholder="Not (isteğe bağlı)" value={reservationForm.notes} onChange={event => setReservationForm(current => ({ ...current, notes: event.target.value }))} />
+              <Button size="sm" className="h-9" onClick={createReservation} disabled={savingReservation}>{savingReservation ? 'Kaydediliyor…' : 'Kaydet'}</Button>
+            </div>
+          )}
+
+          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+            {reservations.filter(item => ['confirmed', 'seated'].includes(item.status)).slice(0, 8).map(reservation => {
+              const table = tables.find(item => item.id === reservation.table_id);
+              return (
+                <div key={reservation.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-100 bg-white p-3 text-sm">
+                  <div>
+                    <p className="font-semibold text-gray-900">{reservation.guest_name} · {reservation.pax} kişi</p>
+                    <p className="text-xs text-gray-600">{reservation.res_date} {reservation.res_time} · Masa {table?.table_number || reservation.table_id}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    {reservation.status === 'confirmed' && <Button size="sm" variant="outline" onClick={() => updateReservationStatus(reservation, 'seated')} disabled={updating === reservation.id}>Masaya Al</Button>}
+                    {reservation.status === 'seated' && <Button size="sm" variant="outline" onClick={() => updateReservationStatus(reservation, 'completed')} disabled={updating === reservation.id}>Tamamla</Button>}
+                    <Button size="sm" variant="ghost" className="text-red-600" onClick={() => updateReservationStatus(reservation, 'cancelled')} disabled={updating === reservation.id}>İptal</Button>
+                  </div>
+                </div>
+              );
+            })}
+            {reservations.filter(item => ['confirmed', 'seated'].includes(item.status)).length === 0 && (
+              <p className="py-2 text-sm text-blue-700">Aktif masa rezervasyonu bulunmuyor.</p>
+            )}
+          </div>
+        </div>
+
         {/* Status Summary */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
