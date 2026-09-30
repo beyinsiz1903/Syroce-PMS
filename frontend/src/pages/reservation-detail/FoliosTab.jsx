@@ -309,6 +309,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
 
   const itemKind = (item) => {
     if (item._type === 'payment') {
+      if (String(item.method || '').toLowerCase() === 'discount') return 'Finansal düzeltme / indirim';
       return String(item.payment_type || '').toLowerCase() === 'prepayment' ? 'Ön ödeme' : 'Tahsilat';
     }
     const category = String(item.category || item.charge_category || '').toLowerCase();

@@ -617,6 +617,118 @@ async def test_mark_full_comp_zeroes_open_extras_and_preserves_original_values(m
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode,expected_total,expected_zeroed,expected_adjustment",
+    [
+        ("entire_stay", 0, ["2099-01-02"], 1200),
+        ("open_nights", 1200, ["2099-01-02"], 0),
+        ("closed_nights_adjustment", 2400, [], 1200),
+    ],
+)
+async def test_comp_plan_separates_open_rates_from_closed_finance(
+    monkeypatch,
+    mode,
+    expected_total,
+    expected_zeroed,
+    expected_adjustment,
+):
+    daily_rates = SimpleNamespace(
+        find=lambda *_args, **_kwargs: AsyncRows(
+            [
+                {"id": "closed-rate", "date": "2099-01-01", "rate": 1200},
+                {"id": "open-rate", "date": "2099-01-02", "rate": 1200},
+            ]
+        ),
+        update_one=AsyncMock(),
+    )
+    payment_result = SimpleNamespace(upserted_id="payment-a")
+    payments = SimpleNamespace(
+        find_one=AsyncMock(return_value=None),
+        update_one=AsyncMock(return_value=payment_result),
+    )
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "check_in": "2099-01-01",
+                    "check_out": "2099-01-03",
+                    "total_amount": 2400,
+                    "currency": "TRY",
+                }
+            ),
+            update_one=AsyncMock(),
+        ),
+        folios=SimpleNamespace(
+            find=lambda *_args, **_kwargs: AsyncRows(
+                [{"id": "folio-a", "status": "open", "currency": "TRY"}]
+            )
+        ),
+        folio_charges=SimpleNamespace(
+            find=lambda *_args, **_kwargs: AsyncRows(
+                [
+                    {
+                        "id": "room-charge-a",
+                        "booking_id": "booking-a",
+                        "folio_id": "folio-a",
+                        "charge_category": "room",
+                        "business_date": "2099-01-01",
+                        "total": 1200,
+                        "voided": False,
+                    }
+                ]
+            )
+        ),
+        payments=payments,
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        daily_rates=daily_rates,
+        client=SimpleNamespace(start_session=AsyncMock(return_value=FakeSession())),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2099-01-02"}),
+    )
+    monkeypatch.setattr(
+        reservation_detail,
+        "stamp_open_business_date",
+        AsyncMock(side_effect=lambda _db, _tid, document: document.setdefault("business_date", "2099-01-02")),
+    )
+    monkeypatch.setattr(reservation_detail, "_run_post_commit_hook", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+
+    result = await reservation_detail.apply_reservation_complimentary_plan(
+        "booking-a",
+        reservation_detail.ComplimentaryPlanRequest(reason="Yönetim ikramı", mode=mode),
+        current_user=SimpleNamespace(
+            id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
+        ),
+        _perm=None,
+    )
+
+    assert result["new_total"] == expected_total
+    assert result["zeroed_dates"] == expected_zeroed
+    assert result["adjustment_amount"] == expected_adjustment
+    assert daily_rates.update_one.await_count == len(expected_zeroed)
+    if expected_adjustment:
+        payment = payments.update_one.await_args.args[1]["$setOnInsert"]
+        assert payment["method"] == "discount"
+        assert payment["payment_type"] == "comp_adjustment"
+        assert payment["amount"] == expected_adjustment
+        assert payment["comp_dates"] == ["2099-01-01"]
+    else:
+        payments.update_one.assert_not_awaited()
+    booking_update = database.bookings.update_one.await_args.args[1]["$set"]
+    assert booking_update["total_amount"] == expected_total
+    assert booking_update["is_complimentary"] is (mode == "entire_stay")
+
+
+@pytest.mark.asyncio
 async def test_comp_blocks_a_charge_linked_only_to_its_folio(monkeypatch):
     """Legacy folio-only revenue must not be bypassed by the comp guard."""
     charge_lookup = AsyncMock(return_value={"id": "charge-a"})

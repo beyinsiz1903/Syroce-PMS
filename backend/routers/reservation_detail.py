@@ -829,6 +829,13 @@ class ComplimentaryReservationRequest(BaseModel):
     scope: Literal["accommodation_only", "full"] = "accommodation_only"
 
 
+class ComplimentaryPlanRequest(BaseModel):
+    """Explicit comp treatment for active stays with open and closed nights."""
+
+    reason: str = Field(..., min_length=3, max_length=500)
+    mode: Literal["entire_stay", "open_nights", "closed_nights_adjustment"]
+
+
 class CariAccountCreate(BaseModel):
     name: str
     account_type: str = "company"  # company, agency, individual
@@ -3235,6 +3242,296 @@ async def void_reservation_extra_charge(
     except Exception:
         logger.exception("audit log for reservation extra-charge void failed")
     return {"success": True, "voided": True, "charge_id": charge_id}
+
+
+@router.post("/reservations/{booking_id}/apply-complimentary-plan")
+async def apply_reservation_complimentary_plan(
+    booking_id: str,
+    data: ComplimentaryPlanRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Apply an explicit comp treatment without rewriting closed business days.
+
+    Open nights are changed at the rate-plan level because Night Audit has not
+    consumed them yet. Closed nights are immutable; when selected, their
+    already-posted room revenue is offset with an auditable folio discount.
+    """
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli bir konaklama aralığı yok")
+
+    business_state = await ensure_business_date_initialized(db, tid)
+    business_date = str(business_state["business_date"])[:10]
+    stay_dates = [
+        (check_in + timedelta(days=offset)).isoformat()
+        for offset in range((check_out - check_in).days)
+    ]
+    closed_dates = [rate_date for rate_date in stay_dates if rate_date < business_date]
+    open_dates = [rate_date for rate_date in stay_dates if rate_date >= business_date]
+    if data.mode == "open_nights" and not open_dates:
+        raise HTTPException(status_code=409, detail="Comp yapılabilecek açık veya kalan gece bulunmuyor")
+    if data.mode == "closed_nights_adjustment" and not closed_dates:
+        raise HTTPException(status_code=409, detail="Finansal düzeltme gerektiren kapanmış gece bulunmuyor")
+
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+        )
+    ]
+    folio_ids = [folio["id"] for folio in folios if folio.get("id")]
+    financial_query = _booking_or_folio_scope_query(tid, booking_id, folio_ids)
+
+    existing_rows = [
+        row
+        async for row in db.daily_rates.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "date": 1, "rate": 1},
+        )
+    ]
+    existing_by_date: dict[str, dict] = {}
+    for row in existing_rows:
+        parsed = _reservation_calendar_date(row.get("date"))
+        if parsed is None:
+            raise HTTPException(status_code=409, detail="Geçersiz tarihli mevcut günlük fiyat kaydı bulundu; düzeltme gerekir")
+        date_key = parsed.isoformat()
+        if date_key in existing_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için yinelenen günlük fiyat kaydı bulundu; düzeltme gerekir")
+        existing_by_date[date_key] = row
+
+    original_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    total_cents = _money_cents(original_total)
+    per_night_cents, remainder = divmod(total_cents, len(stay_dates))
+    rates_by_date: dict[str, float] = {}
+    original_daily_rates: list[dict] = []
+    for index, rate_date in enumerate(stay_dates):
+        fallback = (per_night_cents + (1 if index < remainder else 0)) / 100
+        rate = round(float(existing_by_date.get(rate_date, {}).get("rate", fallback) or 0), 2)
+        rates_by_date[rate_date] = rate
+        original_daily_rates.append({"date": rate_date, "rate": rate})
+
+    room_charges = [
+        charge
+        async for charge in db.folio_charges.find(
+            {
+                "tenant_id": tid,
+                "voided": {"$ne": True},
+                "$and": [
+                    {"$or": financial_query["$or"]},
+                    {"$or": [{"charge_category": "room"}, {"charge_type": "room_charge"}]},
+                ],
+            },
+            {"_id": 0},
+        )
+    ]
+    # Ownership scope and category alternatives live in separate $and arms so
+    # one $or can never overwrite the other in a Python dictionary.
+    correction_dates = closed_dates if data.mode in {"entire_stay", "closed_nights_adjustment"} else []
+    correction_date_set = set(correction_dates)
+    correction_charges = []
+    for charge in room_charges:
+        charge_date = _reservation_calendar_date(
+            charge.get("business_date") or charge.get("night_audit_date") or charge.get("date")
+        )
+        if charge_date and charge_date.isoformat() in correction_date_set:
+            correction_charges.append(charge)
+    correction_amount = round(
+        sum(max(0.0, float(charge.get("total", charge.get("amount", 0)) or 0)) for charge in correction_charges),
+        2,
+    )
+    if data.mode == "closed_nights_adjustment" and correction_amount <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Kapanmış gecelere ait aktif oda tahakkuku bulunamadı; otomatik finansal düzeltme oluşturulamaz",
+        )
+
+    if correction_amount > 0:
+        invoice_query = {
+            "tenant_id": tid,
+            "status": {"$nin": ["draft", "cancelled", "voided"]},
+            "$or": [{"booking_id": booking_id}],
+        }
+        if folio_ids:
+            invoice_query["$or"].append({"folio_id": {"$in": folio_ids}})
+        if await db.invoices.find_one(invoice_query, {"_id": 0, "id": 1}):
+            raise HTTPException(
+                status_code=409,
+                detail="Kapanmış geceler faturalanmış; folyo indirimi yerine fatura iade/düzeltme belgesi oluşturulmalıdır",
+            )
+
+    zero_dates = set(open_dates if data.mode in {"entire_stay", "open_nights"} else [])
+    resulting_rates = {
+        rate_date: (0.0 if rate_date in zero_dates else rate)
+        for rate_date, rate in rates_by_date.items()
+    }
+    new_total = 0.0 if data.mode == "entire_stay" else round(sum(resulting_rates.values()), 2)
+    now = datetime.now(UTC).isoformat()
+    adjustment_reference = None
+    adjustment_created = False
+    affected_folio_id = None
+    existing_adjustment = None
+    if correction_amount > 0:
+        adjustment_reference = "COMP-" + uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{tid}:{booking_id}:{','.join(correction_dates)}",
+        ).hex
+        existing_adjustment = await db.payments.find_one(
+            {
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "reference": adjustment_reference,
+                "voided": False,
+            },
+            {"_id": 0},
+        )
+        if existing_adjustment and (
+            existing_adjustment.get("method") != "discount"
+            or existing_adjustment.get("payment_type") != "comp_adjustment"
+            or _money_cents(existing_adjustment.get("amount")) != _money_cents(correction_amount)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Aynı geceler için farklı tutarlı bir Comp düzeltmesi zaten mevcut; finans ekibiyle mutabakat gerekir",
+            )
+
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            for rate_date in zero_dates:
+                existing = existing_by_date.get(rate_date, {})
+                try:
+                    await db.daily_rates.update_one(
+                        {
+                            "booking_id": booking_id,
+                            "tenant_id": tid,
+                            "date": existing.get("date", rate_date),
+                        },
+                        {
+                            "$set": {
+                                "date": rate_date,
+                                "rate": 0.0,
+                                "daily_rate_key": f"{booking_id}:{rate_date}",
+                                "is_complimentary": True,
+                                "complimentary_reason": data.reason.strip(),
+                                "updated_by": current_user.name,
+                                "updated_at": now,
+                            }
+                        },
+                        upsert=True,
+                        session=session,
+                    )
+                except DuplicateKeyError as exc:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"{rate_date} için eşzamanlı Comp işlemi tespit edildi; ekranı yenileyip tekrar deneyin",
+                    ) from exc
+
+            if correction_amount > 0:
+                open_folio = next((folio for folio in folios if folio.get("status") == "open"), None)
+                folio = open_folio or (folios[0] if folios else None)
+                if folio is None:
+                    folio = await _ensure_reservation_folio(tid, booking, session=session)
+                affected_folio_id = folio["id"]
+                payment = {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tid,
+                    "folio_id": affected_folio_id,
+                    "booking_id": booking_id,
+                    "amount": correction_amount,
+                    "currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(),
+                    "received_currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(),
+                    "received_amount": correction_amount,
+                    "exchange_rate": 1.0,
+                    "method": "discount",
+                    "payment_type": "comp_adjustment",
+                    "status": "paid",
+                    "reference": adjustment_reference,
+                    "description": "Comp finansal düzeltmesi",
+                    "notes": f"Comp finansal düzeltmesi: {data.reason.strip()}",
+                    "processed_by": current_user.name,
+                    "processed_at": now,
+                    "voided": False,
+                    "comp_dates": correction_dates,
+                    "comp_mode": data.mode,
+                }
+                await stamp_open_business_date(db, tid, payment)
+                upsert_result = await db.payments.update_one(
+                    {
+                        "tenant_id": tid,
+                        "booking_id": booking_id,
+                        "reference": adjustment_reference,
+                        "voided": False,
+                    },
+                    {"$setOnInsert": payment},
+                    upsert=True,
+                    session=session,
+                )
+                adjustment_created = upsert_result.upserted_id is not None
+
+            booking_fields = {
+                "total_amount": new_total,
+                "complimentary_mode": data.mode,
+                "complimentary_reason": data.reason.strip(),
+                "complimentary_by": current_user.name,
+                "complimentary_at": now,
+                "complimentary_original_total": booking.get("complimentary_original_total", original_total),
+                "is_complimentary": data.mode == "entire_stay",
+                "is_partially_complimentary": data.mode != "entire_stay",
+            }
+            await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid},
+                {"$set": booking_fields},
+                session=session,
+            )
+
+    if affected_folio_id:
+        await _run_post_commit_hook(
+            lambda: _refresh_cached_folio_balance(tid, affected_folio_id),
+            operation="complimentary_financial_adjustment_balance_refresh",
+        )
+
+    await _log_activity(
+        tid,
+        booking_id,
+        "complimentary_plan_applied",
+        current_user.name,
+        {
+            "mode": data.mode,
+            "reason": data.reason.strip(),
+            "business_date": business_date,
+            "original_total": original_total,
+            "new_total": new_total,
+            "original_daily_rates": original_daily_rates,
+            "zeroed_dates": sorted(zero_dates),
+            "adjustment_dates": correction_dates,
+            "adjustment_amount": correction_amount,
+            "adjustment_reference": adjustment_reference,
+            "adjustment_created": adjustment_created,
+        },
+    )
+
+    return {
+        "success": True,
+        "booking_id": booking_id,
+        "mode": data.mode,
+        "new_total": new_total,
+        "zeroed_dates": sorted(zero_dates),
+        "adjustment_dates": correction_dates,
+        "adjustment_amount": correction_amount,
+        "adjustment_reference": adjustment_reference,
+        "adjustment_created": adjustment_created,
+    }
 
 
 @router.post("/reservations/{booking_id}/mark-complimentary")
