@@ -7,14 +7,21 @@ from domains.pms.pos_fnb_router import pos_core
 
 
 class _Tables:
-    def __init__(self, matched=1):
+    def __init__(self, matched=1, doc=None):
         self.matched = matched
+        self.doc = doc if doc is not None else ({"id": "table-1"} if matched else None)
         self.calls = []
 
-    async def find_one(self, query):
+    async def find_one(self, query, _projection=None):
         if not self.matched:
             return None
-        return {"id": query["id"], "tenant_id": query["tenant_id"], "outlet_id": "outlet-1", "table_number": "1"}
+        return {
+            "id": query["id"],
+            "tenant_id": query["tenant_id"],
+            "outlet_id": "outlet-1",
+            "table_number": "1",
+            **(self.doc or {}),
+        }
 
     async def update_one(self, query, update):
         self.calls.append((query, update))

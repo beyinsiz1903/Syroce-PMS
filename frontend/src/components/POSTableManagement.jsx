@@ -138,6 +138,8 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
         toast.error(detail);
       } else if (error?.response?.status === 404) {
         toast.error('POS masa modülü henüz aktif değil');
+      } else if (error?.response?.status === 409) {
+        toast.error(error.response.data?.detail || 'Açık adisyon bulunan masa müsait yapılamaz');
       } else {
         toast.error('Masa durumu güncellenemedi');
       }

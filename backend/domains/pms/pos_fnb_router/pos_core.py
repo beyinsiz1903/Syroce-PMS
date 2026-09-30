@@ -1340,9 +1340,19 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
             txns_by_id[tx["id"]] = tx
             if tx.get("table_number") is not None:
                 txns_by_number[str(tx["table_number"])] = tx
+    order_ids = [t.get("current_order_id") for t in raw_tables if t.get("current_order_id")]
+    orders_by_id: dict = {}
+    if order_ids:
+        async for order in db.pos_orders.find(
+            {"id": {"$in": order_ids}, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "id": 1, "grand_total": 1, "guest_name": 1, "created_at": 1},
+        ):
+            orders_by_id[order["id"]] = order
     for table in raw_tables:
         transaction = txns_by_id.get(table.get("current_transaction_id")) or txns_by_number.get(str(table.get("table_number")))
-        effective_status = "occupied" if transaction else table.get("status")
+        order = orders_by_id.get(table.get("current_order_id"))
+        active_bill = transaction or order
+        effective_status = "occupied" if active_bill else table.get("status")
 
         tables.append(
             {
@@ -1356,9 +1366,15 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                 "status": effective_status,
                 "current_transaction_id": transaction.get("id") if transaction else None,
                 "server_assigned": table.get("server_assigned"),
-                "current_bill": round(transaction.get("total_amount", 0), 2) if transaction else 0,
+                "current_order_id": order.get("id") if order else None,
+                "current_bill": round(active_bill.get("total_amount", active_bill.get("grand_total", 0)), 2) if active_bill else 0,
                 "guest_count": transaction.get("guests", 0) if transaction else 0,
-                "duration_minutes": calculate_table_duration(transaction.get("opened_at") or transaction.get("created_at")) if transaction else 0,
+                "duration_minutes": calculate_table_duration(
+                    (transaction or {}).get("opened_at")
+                    or table.get("opened_at")
+                    or (order or {}).get("created_at")
+                    or (transaction or {}).get("created_at")
+                ) if active_bill else 0,
             }
         )
 
@@ -1440,21 +1456,30 @@ async def update_pos_table_status(
     allowed = {"available", "occupied", "reserved", "dirty"}
     if new_status not in allowed:
         raise HTTPException(status_code=422, detail="Geçersiz masa durumu")
-    table = await db.table_layouts.find_one({"id": table_id, "tenant_id": current_user.tenant_id})
+    table = await db.table_layouts.find_one(
+        {"id": table_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "outlet_id": 1, "table_number": 1, "current_order_id": 1, "current_transaction_id": 1},
+    )
     if not table:
         raise HTTPException(status_code=404, detail="Masa bulunamadı")
     if new_status == "available":
-        open_check = await db.pos_transactions.find_one(
-            {
-                "tenant_id": current_user.tenant_id,
-                "outlet_id": table.get("outlet_id"),
-                "table_number": table.get("table_number"),
-                "status": "open",
-            },
-            {"_id": 0, "id": 1},
-        )
-        if open_check:
-            raise HTTPException(status_code=409, detail="Açık adisyon bulunan masa müsait yapılamaz")
+        linked_check = table.get("current_order_id") or table.get("current_transaction_id")
+        open_check = None
+        if not linked_check:
+            open_check = await db.pos_transactions.find_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "outlet_id": table.get("outlet_id"),
+                    "table_number": table.get("table_number"),
+                    "status": "open",
+                },
+                {"_id": 0, "id": 1},
+            )
+        if linked_check or open_check:
+            raise HTTPException(
+                status_code=409,
+                detail="Açık adisyon bulunan masa müsait yapılamaz; önce adisyonu kapatın veya aktarın",
+            )
     result = await db.table_layouts.update_one(
         {"id": table_id, "tenant_id": current_user.tenant_id},
         {"$set": {"status": new_status, "updated_at": datetime.now(UTC).isoformat()}},

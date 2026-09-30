@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from domains.pms.enterprise_router import _chain_scope, _safe_decimal
+from domains.pms.enterprise_router import _chain_property_metrics, _chain_scope, _safe_decimal
 from modules.pms_core.chain_access import resolve_chain_properties
 
 
@@ -112,3 +112,65 @@ async def test_chain_scope_rejects_non_management_role():
 def test_safe_decimal_does_not_propagate_invalid_stored_values():
     assert _safe_decimal("12.50") == Decimal("12.50")
     assert _safe_decimal("not-a-number") == Decimal("0")
+
+
+class _MetricCollection:
+    def __init__(self, docs=None, count=None, one=None):
+        self.docs = docs or []
+        self.count = count
+        self.one = one
+
+    async def count_documents(self, query):
+        return self.count(query) if callable(self.count) else int(self.count or 0)
+
+    def find(self, _query, _projection):
+        return _Cursor(self.docs)
+
+    async def find_one(self, _query, _projection):
+        return self.one
+
+
+@pytest.mark.asyncio
+async def test_chain_property_metrics_preserve_currency_and_operational_sources():
+    def booking_count(query):
+        if "created_at" in query:
+            return 3
+        if "check_in" in query:
+            return 2
+        if "check_out" in query:
+            return 1
+        return 0
+
+    def room_count(query):
+        return 1 if any("status" in clause and isinstance(clause["status"], dict) for clause in query.get("$or", [])) else 4
+
+    database = SimpleNamespace(
+        rooms=_MetricCollection(count=room_count),
+        guests=_MetricCollection(count=50),
+        bookings=_MetricCollection(count=booking_count),
+        housekeeping_tasks=_MetricCollection(count=2),
+        folios=_MetricCollection(docs=[{"balance": 125, "currency": "EUR"}]),
+        payments=_MetricCollection(docs=[{"amount": 500, "currency": "EUR"}]),
+        folio_charges=_MetricCollection(docs=[{"total": 300, "currency": "EUR"}]),
+        hotel_settings=_MetricCollection(one={"currency": "EUR"}),
+        provider_connections=_MetricCollection(one=None),
+        tenant_settings=_MetricCollection(one={"nilvera": {"enabled": True, "api_key_enc": "set"}}),
+    )
+
+    result = await _chain_property_metrics(
+        database,
+        {"id": "hotel-a", "property_name": "A", "total_rooms": 10},
+        "2026-09-30T00:00:00+00:00",
+        "2026-10-01T00:00:00+00:00",
+    )
+
+    assert result["occupancy_pct"] == 40.0
+    assert result["arrivals_today"] == 2
+    assert result["departures_today"] == 1
+    assert result["pickup_7d"] == 3
+    assert result["housekeeping_pending"] == 2
+    assert result["out_of_order_rooms"] == 1
+    assert result["outstanding_by_currency"] == {"EUR": 125.0}
+    assert result["today_revenue_by_currency"] == {"EUR": 500.0}
+    assert result["room_revenue_by_currency"] == {"EUR": 300.0}
+    assert result["adr_by_currency"] == {"EUR": 75.0}

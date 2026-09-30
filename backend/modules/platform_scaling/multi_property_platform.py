@@ -396,7 +396,7 @@ class CentralRevenueManagement:
             portfolio_revenue.append(
                 {
                     "property_id": pid,
-                    "property_name": prop.get("hotel_name") or prop.get("name", pid),
+                    "property_name": prop.get("property_name") or prop.get("hotel_name") or prop.get("name", pid),
                     "total_revenue": round(total_rev, 2),
                     "room_revenue": round(room_rev, 2),
                     "fnb_revenue": round(fnb_rev, 2),
@@ -513,7 +513,7 @@ class GlobalAlertSystem:
 
         for prop in properties:
             pid = tenant_id_from_document(prop) or tenant_id
-            prop_name = prop.get("hotel_name") or prop.get("name", pid)
+            prop_name = prop.get("property_name") or prop.get("hotel_name") or prop.get("name", pid)
             total_rooms = a_rooms_map.get(pid, 0)
             booked = a_booked_map.get(pid, 0)
             occ = round((booked / max(total_rooms, 1)) * 100, 1)
