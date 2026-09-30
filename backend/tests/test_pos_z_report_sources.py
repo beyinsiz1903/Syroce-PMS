@@ -95,6 +95,7 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
         ),
     )
     monkeypatch.setattr(pos_core, "db", fake_db)
+    monkeypatch.setattr(pos_core, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
 
     report = await pos_core.get_z_report(
         date=None,
@@ -103,6 +104,7 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
     )
 
     assert report["report_date"] == "2026-09-03"
+    assert report["currency"] == "TRY"
     assert report["gross_sales"] == 182
     assert report["net_sales"] == 182
     assert report["tax_total"] == 21

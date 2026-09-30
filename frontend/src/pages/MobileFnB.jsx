@@ -32,10 +32,21 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { normalizePOSMenuItems } from '@/utils/posMenu';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
+
+export const normalizeMobilePOSOutlets = (list = []) => list
+  .filter((outlet) => !['inactive', 'deleted'].includes(outlet.status))
+  .map((outlet) => ({
+    ...outlet,
+    name: outlet.outlet_name || outlet.name || '',
+    type: outlet.outlet_type || outlet.type || 'restaurant',
+    operating_hours: outlet.opening_hours || outlet.operating_hours || '',
+  }));
 
 const MobileFnB = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const businessDate = useBusinessDate();
   const [loading, setLoading] = useState(true);
   const [dailySummary, setDailySummary] = useState(null);
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -65,7 +76,7 @@ const MobileFnB = ({ user }) => {
   const loadData = useCallback(async (outletId = activeOutlet?.id) => {
     try {
       setLoading(true);
-      const today = new Date().toISOString().split('T')[0];
+      const today = businessDate;
 
       const outletQuery = outletId ? `&outlet_id=${encodeURIComponent(outletId)}` : '';
       const [summaryRes, transactionsRes, outletsRes, menuRes] = await Promise.allSettled([
@@ -83,7 +94,9 @@ const MobileFnB = ({ user }) => {
       } else setRecentTransactions([]);
       if (outletsRes.status === 'fulfilled') {
         const outletData = outletsRes.value.data;
-        const outletList = Array.isArray(outletData) ? outletData : (outletData?.outlets || []);
+        const outletList = normalizeMobilePOSOutlets(
+          Array.isArray(outletData) ? outletData : (outletData?.outlets || []),
+        );
         setOutlets(outletList);
         if (!activeOutlet && outletList.length > 0) {
           setActiveOutlet(outletList.find(o => o.status === 'active') || outletList[0]);
@@ -109,7 +122,7 @@ const MobileFnB = ({ user }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeOutlet]);
+  }, [activeOutlet, businessDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -230,8 +243,10 @@ const MobileFnB = ({ user }) => {
 
   const loadZReport = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await axios.get(`/pos/z-report?date=${today}`);
+      const today = businessDate;
+      const res = await axios.get('/pos/z-report', {
+        params: { date: today, ...(activeOutlet?.id ? { outlet_id: activeOutlet.id } : {}) },
+      });
       setZReportData(res.data);
       setZReportModalOpen(true);
     } catch (error) {
@@ -241,8 +256,14 @@ const MobileFnB = ({ user }) => {
 
   const loadVoidReport = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await axios.get(`/pos/void-transactions?start_date=${today}&end_date=${today}`);
+      const today = businessDate;
+      const res = await axios.get('/pos/void-transactions', {
+        params: {
+          start_date: today,
+          end_date: today,
+          ...(activeOutlet?.id ? { outlet_id: activeOutlet.id } : {}),
+        },
+      });
       setVoidTransactions(res.data.void_transactions || []);
       setVoidReportModalOpen(true);
     } catch (error) {
@@ -379,7 +400,7 @@ const MobileFnB = ({ user }) => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-amber-600 font-medium">OUTLET SAYISI</p>
+                  <p className="text-xs text-amber-600 font-medium">SATIŞ NOKTASI</p>
                   <p className="text-3xl font-bold text-amber-700">
                     {outlets.length}
                   </p>

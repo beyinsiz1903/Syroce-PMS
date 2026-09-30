@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -30,8 +30,12 @@ const MobileOrderTracking = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState(null);
+  const updatingOrderRef = useRef(null);
   const [activeOrders, setActiveOrders] = useState([]);
+  const [outlets, setOutlets] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
@@ -42,14 +46,10 @@ const MobileOrderTracking = ({ user }) => {
   const [outletFilter, setOutletFilter] = useState('all');
   const [orderHistory, setOrderHistory] = useState([]);
 
-  useEffect(() => {
-    loadActiveOrders();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [statusFilter, outletFilter]);
-
-  const loadActiveOrders = async () => {
+  const loadActiveOrders = useCallback(async ({ background = true } = {}) => {
     try {
-      setLoading(true);
+      if (!background) setLoading(true);
+      setLoadError('');
       
       const params = {};
       if (statusFilter !== 'all') params.status = statusFilter;
@@ -59,12 +59,31 @@ const MobileOrderTracking = ({ user }) => {
       setActiveOrders(response.data.orders || []);
     } catch (error) {
       console.error('Failed to load orders:', error);
+      setLoadError('Siparişler yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.');
       toast.error('Siparişler yüklenemedi');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [statusFilter, outletFilter]);
+
+  const loadOutlets = useCallback(async () => {
+    try {
+      const response = await axios.get('/pos/outlets');
+      const list = Array.isArray(response.data) ? response.data : (response.data?.outlets || []);
+      setOutlets(list.filter((outlet) => !['inactive', 'deleted'].includes(outlet.status)));
+    } catch (error) {
+      console.error('Failed to load outlets:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadActiveOrders();
+  }, [loadActiveOrders]);
+
+  useEffect(() => {
+    loadOutlets();
+  }, [loadOutlets]);
 
   const loadOrderDetails = async (orderId) => {
     try {
@@ -78,22 +97,28 @@ const MobileOrderTracking = ({ user }) => {
   };
 
   const updateOrderStatus = async (orderId, newStatus) => {
+    if (updatingOrderRef.current) return;
     try {
+      updatingOrderRef.current = orderId;
+      setUpdatingOrderId(orderId);
       await axios.put(`/pos/mobile/order/${orderId}/status`, {
         status: newStatus,
         notes: `Sipariş durumu ${getStatusLabel(newStatus)} olarak güncellendi`
       });
       
       toast.success(`Sipariş durumu: ${getStatusLabel(newStatus)}`);
-      loadActiveOrders();
+      await loadActiveOrders({ background: true });
       
       // Reload details if modal is open
       if (detailModalOpen && selectedOrder?.id === orderId) {
-        loadOrderDetails(orderId);
+        await loadOrderDetails(orderId);
       }
     } catch (error) {
       console.error('Failed to update status:', error);
       toast.error(error?.response?.data?.detail || 'Durum güncellenemedi');
+    } finally {
+      updatingOrderRef.current = null;
+      setUpdatingOrderId(null);
     }
   };
 
@@ -120,7 +145,7 @@ const MobileOrderTracking = ({ user }) => {
 
   const handleRefresh = () => {
     setRefreshing(true);
-    loadActiveOrders();
+    loadActiveOrders({ background: true });
   };
 
   const getStatusBadge = (status) => {
@@ -128,7 +153,9 @@ const MobileOrderTracking = ({ user }) => {
       pending: { label: 'Bekliyor', color: 'bg-yellow-500', icon: Clock },
       preparing: { label: 'Hazırlanıyor', color: 'bg-blue-500', icon: ChefHat },
       ready: { label: 'Hazır', color: 'bg-green-500', icon: CheckCircle },
-      served: { label: 'Servis Edildi', color: 'bg-gray-500', icon: UtensilsCrossed }
+      served: { label: 'Servis Edildi', color: 'bg-gray-500', icon: UtensilsCrossed },
+      cancelled: { label: 'İptal Edildi', color: 'bg-red-500', icon: AlertTriangle },
+      voided: { label: 'Geçersiz Kılındı', color: 'bg-red-500', icon: AlertTriangle },
     };
     
     const config = statusConfig[status] || statusConfig.pending;
@@ -147,7 +174,9 @@ const MobileOrderTracking = ({ user }) => {
       pending: 'Bekliyor',
       preparing: 'Hazırlanıyor',
       ready: 'Hazır',
-      served: 'Servis Edildi'
+      served: 'Servis Edildi',
+      cancelled: 'İptal Edildi',
+      voided: 'Geçersiz Kılındı',
     };
     return labels[status] || status;
   };
@@ -197,7 +226,7 @@ const MobileOrderTracking = ({ user }) => {
             </button>
             <div>
               <h1 className="text-xl font-bold">Sipariş Takibi</h1>
-              <p className="text-amber-100 text-sm">F&B Mobil</p>
+              <p className="text-amber-100 text-sm">Restoran ve servis siparişleri</p>
             </div>
           </div>
           
@@ -255,7 +284,18 @@ const MobileOrderTracking = ({ user }) => {
 
       {/* Orders List */}
       <div className="p-4 space-y-3">
-        {activeOrders.length === 0 ? (
+        {loadError ? (
+          <Card role="alert">
+            <CardContent className="pt-6 text-center">
+              <AlertTriangle className="h-12 w-12 text-red-400 mx-auto mb-3" />
+              <p className="font-medium text-gray-800">Sipariş listesine ulaşılamadı</p>
+              <p className="text-sm text-gray-500 mt-1">{loadError}</p>
+              <Button onClick={() => loadActiveOrders()} variant="outline" className="mt-4">
+                <RefreshCw className="h-4 w-4 mr-2" /> Yeniden dene
+              </Button>
+            </CardContent>
+          </Card>
+        ) : activeOrders.length === 0 ? (
           <Card>
             <CardContent className="pt-6 text-center">
               <UtensilsCrossed className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -327,9 +367,10 @@ const MobileOrderTracking = ({ user }) => {
                         e.stopPropagation();
                         updateOrderStatus(order.id, getNextStatus(order.status));
                       }}
+                      disabled={updatingOrderId === order.id}
                       className="bg-amber-600 hover:bg-amber-700"
                     >
-                      {getNextStatusLabel(order.status)}
+                      {updatingOrderId === order.id ? 'Güncelleniyor…' : getNextStatusLabel(order.status)}
                     </Button>
                   )}
                 </div>
@@ -429,8 +470,9 @@ const MobileOrderTracking = ({ user }) => {
                   onClick={() => {
                     updateOrderStatus(selectedOrder.id, getNextStatus(selectedOrder.status));
                   }}
+                  disabled={updatingOrderId === selectedOrder.id}
                 >
-                  {getNextStatusLabel(selectedOrder.status)}
+                  {updatingOrderId === selectedOrder.id ? 'Güncelleniyor…' : getNextStatusLabel(selectedOrder.status)}
                 </Button>
               )}
             </div>
@@ -449,6 +491,7 @@ const MobileOrderTracking = ({ user }) => {
             <div>
               <label className="block text-sm font-medium mb-2">Durum</label>
               <select
+                aria-label="Sipariş durumu"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full p-2 border rounded"
@@ -457,6 +500,23 @@ const MobileOrderTracking = ({ user }) => {
                 <option value="pending">Bekliyor</option>
                 <option value="preparing">Hazırlanıyor</option>
                 <option value="ready">Hazır</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Satış noktası</label>
+              <select
+                aria-label="Satış noktası"
+                value={outletFilter}
+                onChange={(e) => setOutletFilter(e.target.value)}
+                className="w-full p-2 border rounded"
+              >
+                <option value="all">Tüm satış noktaları</option>
+                {outlets.map((outlet) => (
+                  <option key={outlet.id} value={outlet.id}>
+                    {outlet.outlet_name || outlet.name || 'Adsız satış noktası'}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -474,7 +534,6 @@ const MobileOrderTracking = ({ user }) => {
               <Button
                 onClick={() => {
                   setFilterModalOpen(false);
-                  loadActiveOrders();
                 }}
                 className="flex-1 bg-amber-600 hover:bg-amber-700"
               >
@@ -525,7 +584,10 @@ const MobileOrderTracking = ({ user }) => {
       </div>
 
       {/* Property Switcher */}
-      <PropertySwitcher onPropertyChange={() => loadActiveOrders()} />
+      <PropertySwitcher onPropertyChange={() => {
+        loadOutlets();
+        loadActiveOrders();
+      }} />
     </div>
   );
 };

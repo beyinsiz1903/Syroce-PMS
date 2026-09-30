@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 
 # ============= POS / F&B ENDPOINTS =============
@@ -381,6 +382,7 @@ async def get_z_report(
     Sahte oranlar yerine gercek odeme/kategori dagilimi.
     """
     try:
+        tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
         if date:
             report_date = date
         else:
@@ -441,6 +443,7 @@ async def get_z_report(
         return {
             "report_date": report_date,
             "report_number": f"Z-{report_date.replace('-', '')}",
+            "currency": tenant_currency,
             "gross_sales": round(gross_sales, 2),
             "net_sales": round(net_sales, 2),
             "tax_total": round(tax_total, 2),
