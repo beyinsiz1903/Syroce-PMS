@@ -19,7 +19,7 @@ const initialDraft = {
   status: 'confirmed', apply_occupancy_pricing: false,
 };
 
-const DialogHarness = () => {
+const DialogHarness = ({ canRecordPrepayment = true }) => {
   const [draft, setDraft] = useState(initialDraft);
   return (
     <NewBookingDialog
@@ -31,12 +31,20 @@ const DialogHarness = () => {
       guests={[]}
       rooms={[room]}
       minDate="2026-09-01"
+      canRecordPrepayment={canRecordPrepayment}
       onSubmit={(event) => event.preventDefault()}
     />
   );
 };
 
 describe('NewBookingDialog pricing and prepayment', () => {
+  it('does not offer a payment promise to users without payment permission', () => {
+    render(<DialogHarness canRecordPrepayment={false} />);
+
+    expect(screen.getByTestId('new-booking-prepayment-toggle')).toBeDisabled();
+    expect(screen.getByText(/Ödeme al.*yetkisi gerekir/)).toBeInTheDocument();
+  });
+
   it('allows a zero-valued nightly field to be cleared and typed again', () => {
     render(<DialogHarness />);
     const price = screen.getByTestId('new-booking-price-input');

@@ -18,6 +18,7 @@ export const NewBookingDialog = ({
   open, onOpenChange, newBooking, setNewBooking,
   selectedRoom, guests, rooms, onSubmit, minDate,
   occupancyPricingRules = {},
+  canRecordPrepayment = false,
 }) => {
   const { t } = useTranslation();
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
@@ -551,13 +552,17 @@ export const NewBookingDialog = ({
               type="checkbox"
               checked={Boolean(newBooking.prepayment_enabled)}
               onChange={(e) => setNewBooking({ ...newBooking, prepayment_enabled: e.target.checked })}
-              disabled={Boolean(newBooking.is_complimentary)}
+              disabled={Boolean(newBooking.is_complimentary) || !canRecordPrepayment}
               data-testid="new-booking-prepayment-toggle"
             />
             Ön ödeme alındı
           </label>
           <p className="mt-1 text-xs text-slate-500">
-            {newBooking.is_complimentary ? 'Komp rezervasyonda ön ödeme alınmaz.' : 'Kaydedildiğinde rezervasyonun folyosuna ön ödeme olarak işlenir.'}
+            {newBooking.is_complimentary
+              ? 'Komp rezervasyonda ön ödeme alınmaz.'
+              : !canRecordPrepayment
+                ? 'Ön ödeme kaydı için “Ödeme al” yetkisi gerekir.'
+                : 'Kaydedildiğinde rezervasyonun folyosuna ön ödeme olarak işlenir.'}
           </p>
           {newBooking.prepayment_enabled && (
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
