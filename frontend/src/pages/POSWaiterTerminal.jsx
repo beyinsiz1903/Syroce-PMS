@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
-import { UtensilsCrossed, ArrowLeft, Store, LayoutGrid, ShoppingCart, Plus, Minus, Check, CreditCard, Banknote, BedDouble, Eraser, Calendar, Loader2, Send, ArrowRightLeft, XCircle } from 'lucide-react';
+import { UtensilsCrossed, ArrowLeft, Store, LayoutGrid, ShoppingCart, Plus, Minus, Check, CreditCard, Banknote, BedDouble, Eraser, Calendar, Loader2, Send, ArrowRightLeft, XCircle, Trash2, Split, RotateCcw } from 'lucide-react';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
@@ -53,6 +53,10 @@ const POSWaiterTerminal = () => {
   const [lastOrder, setLastOrder] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
   const [transferTarget, setTransferTarget] = useState('');
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitCount, setSplitCount] = useState(2);
+  const [splitMethods, setSplitMethods] = useState(['cash', 'card']);
+  const [tipAmount, setTipAmount] = useState('0');
   const pendingKeyRef = useRef(null);
 
   // Signature pad (canvas) — captured for room charges as proof of authorization.
@@ -296,7 +300,7 @@ const POSWaiterTerminal = () => {
       setLoading(false);
     }
   };
-  const submitOrder = async paymentMethod => {
+  const submitOrder = async (paymentMethod, payments = null) => {
     if (cart.length === 0 && !activeOrder) {
       alertDialog({
         message: 'Adisyonda ürün bulunmuyor.'
@@ -329,6 +333,8 @@ const POSWaiterTerminal = () => {
           post_to_folio: paymentMethod === 'room_charge',
           guest_signature: signature,
           idempotency_key: closeKey,
+          tip_amount: Number(tipAmount || 0),
+          payments,
       });
       if (res.status >= 200 && res.status < 300) {
         const data = res.data || {};
@@ -345,6 +351,8 @@ const POSWaiterTerminal = () => {
           });
         }
         resetForNext();
+        setSplitOpen(false);
+        setTipAmount('0');
         if (outlet) await loadTables(outlet.id);
         setTable(null);
         setStep(STEPS.TABLE);
@@ -359,6 +367,61 @@ const POSWaiterTerminal = () => {
           ? detail
           : 'Sipariş oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.'
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+  const submitSplitPayment = async () => {
+    const count = Math.max(2, Math.min(8, Number(splitCount) || 2));
+    const payableCents = Math.round((total + Number(tipAmount || 0)) * 100);
+    const base = Math.floor(payableCents / count);
+    const remainder = payableCents - base * count;
+    const payments = Array.from({ length: count }, (_, index) => ({
+      method: splitMethods[index] || 'cash',
+      amount: (base + (index === count - 1 ? remainder : 0)) / 100,
+    }));
+    await submitOrder('mixed', payments);
+  };
+  const changeSplitCount = value => {
+    const count = Math.max(2, Math.min(8, Number(value) || 2));
+    setSplitCount(count);
+    setSplitMethods(previous => Array.from({ length: count }, (_, index) => previous[index] || (index % 2 ? 'card' : 'cash')));
+  };
+  const voidOrderItem = async index => {
+    if (!activeOrder?.id) return;
+    const item = activeOrder.order_items?.[index];
+    const confirmed = await confirmDialog({ message: `${item?.item_name || 'Bu kalem'} adisyondan ve mutfak kuyruğundan iptal edilsin mi?` });
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      await axios.post(`/pos/v2/orders/${activeOrder.id}/items/void`, {
+        line_index: index,
+        reason: 'Garson terminalinden kalem iptali',
+      });
+      await refreshActiveOrder(activeOrder.id);
+      toast.success('Kalem iptal edildi; mutfak ekranı güncellendi');
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Kalem iptal edilemedi');
+    } finally {
+      setLoading(false);
+    }
+  };
+  const refundLastOrder = async () => {
+    if (!lastOrder?.id) return;
+    const confirmed = await confirmDialog({ message: 'Son adisyonun tamamı iade edilsin mi? Bu işlem kayıt altına alınır.' });
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      await axios.post(`/pos/v2/orders/${lastOrder.id}/refund`, {
+        reason: 'Garson terminalinden tam iade',
+        idempotency_key: globalThis.crypto?.randomUUID?.() || `pos-refund-${Date.now()}`,
+      });
+      setLastOrder(previous => ({ ...previous, refunded: true }));
+      toast.success('İade kaydedildi');
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'İade kaydedilemedi');
     } finally {
       setLoading(false);
     }
@@ -537,9 +600,10 @@ const POSWaiterTerminal = () => {
                       <span className="font-bold text-emerald-700">{money(activeTotal)}</span>
                     </div>
                     <div className="mt-3 space-y-1 border-t border-emerald-200 pt-2">
-                      {(activeOrder.order_items || []).map((item, index) => <div key={`${item.item_id || item.item_name}-${index}`} className="flex justify-between gap-2 text-xs">
+                      {(activeOrder.order_items || []).map((item, index) => <div key={`${item.line_id || item.item_id || item.item_name}-${index}`} className="flex items-center justify-between gap-2 text-xs">
                           <span className="truncate">{item.quantity} × {item.item_name || item.name}</span>
-                          <span className="shrink-0 font-medium">{money(item.total ?? item.unit_price * item.quantity)}</span>
+                          <span className="ml-auto shrink-0 font-medium">{money(item.total ?? item.unit_price * item.quantity)}</span>
+                          <button type="button" aria-label={`${item.item_name || 'Kalem'} iptal et`} className="rounded p-1 text-red-600 hover:bg-red-100" disabled={loading} onClick={() => voidOrderItem(index)} data-testid={`void-order-item-${index}`}><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>)}
                     </div>
                     <div className="mt-3 flex gap-2">
@@ -594,6 +658,33 @@ const POSWaiterTerminal = () => {
                     <Button variant="outline" disabled={loading} onClick={() => submitOrder('card')} data-testid="pay-card">
                       <CreditCard className="w-4 h-4 mr-2" />{t("cm.pages_POSWaiterTerminal.kart")}</Button>
                   </div>
+                  <Button variant="outline" className="w-full" disabled={loading} onClick={() => setSplitOpen(value => !value)} data-testid="toggle-split-payment">
+                    <Split className="w-4 h-4 mr-2" />Hesabı Böl / Karma Öde
+                  </Button>
+                  {splitOpen && <div className="rounded-lg border bg-gray-50 p-3 space-y-3" data-testid="split-payment-panel">
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-xs font-medium text-gray-700">Kişi / ödeme sayısı
+                        <Input type="number" min="2" max="8" value={splitCount} onChange={event => changeSplitCount(event.target.value)} />
+                      </label>
+                      <label className="text-xs font-medium text-gray-700">Bahşiş
+                        <Input type="number" min="0" step="0.01" value={tipAmount} onChange={event => setTipAmount(event.target.value)} />
+                      </label>
+                    </div>
+                    <div className="space-y-2">
+                      {Array.from({ length: splitCount }, (_, index) => {
+                        const cents = Math.round((total + Number(tipAmount || 0)) * 100);
+                        const base = Math.floor(cents / splitCount);
+                        const amount = (base + (index === splitCount - 1 ? cents - base * splitCount : 0)) / 100;
+                        return <div key={index} className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5 text-sm">
+                          <span>{index + 1}. ödeme · <strong>{money(amount)}</strong></span>
+                          <select aria-label={`${index + 1}. ödeme yöntemi`} className="h-8 rounded border px-2" value={splitMethods[index] || 'cash'} onChange={event => setSplitMethods(previous => previous.map((method, methodIndex) => methodIndex === index ? event.target.value : method))}>
+                            <option value="cash">Nakit</option><option value="card">Kart</option>
+                          </select>
+                        </div>;
+                      })}
+                    </div>
+                    <Button className="w-full" disabled={loading} onClick={submitSplitPayment} data-testid="submit-split-payment">Bölünmüş Ödemeyi Tamamla</Button>
+                  </div>}
 
                   {/* Room charge */}
                   <div className="border-t pt-3 space-y-2">
@@ -657,7 +748,10 @@ const POSWaiterTerminal = () => {
                   {lastOrder.total_amount != null && <div className="flex justify-between">
                       <span>{t("cm.pages_POSWaiterTerminal.toplam")}</span>
                       <span>{formatCurrency(lastOrder.total_amount, lastOrder.currency || currency)}</span>
-                    </div>}
+                  </div>}
+                  <Button variant="outline" className="w-full mt-2 border-red-200 text-red-700 hover:bg-red-50" disabled={loading || lastOrder.refunded} onClick={refundLastOrder} data-testid="refund-last-order">
+                    <RotateCcw className="w-4 h-4 mr-2" />{lastOrder.refunded ? 'İade edildi' : 'Tam iade yap'}
+                  </Button>
                 </CardContent>
               </Card>}
           </div>

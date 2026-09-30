@@ -183,9 +183,28 @@ async def post_direct_pos_to_gl(
         return {"status": "skipped", "reason": "no_activity"}
     if total <= 0 or tax < 0 or tax > total:
         raise OperationalGLBridgeError("POS total/tax values are not postable")
-    settlement_account = _payment_account(mapping, str(transaction.get("payment_method") or "cash"))
+    breakdown = transaction.get("payment_breakdown") or []
+    if breakdown:
+        settlement_lines = [
+            {
+                "account_code": _payment_account(mapping, str(part.get("method") or "cash")),
+                "debit": float(part.get("amount") or 0),
+                "memo": f"POS {str(part.get('method') or 'tahsilat').lower()} tahsilatı",
+            }
+            for part in breakdown
+            if float(part.get("amount") or 0) > 0
+        ]
+        breakdown_total = sum(_minor(line["debit"]) for line in settlement_lines)
+        if breakdown_total != total:
+            raise OperationalGLBridgeError("POS payment breakdown does not match transaction total")
+    else:
+        settlement_lines = [{
+            "account_code": _payment_account(mapping, str(transaction.get("payment_method") or "cash")),
+            "debit": _amount(total),
+            "memo": "POS tahsilatı",
+        }]
     lines = [
-        {"account_code": settlement_account, "debit": _amount(total), "memo": "POS tahsilatı"},
+        *settlement_lines,
         {"account_code": mapping["revenue_account_code"], "credit": _amount(total - tax), "memo": "POS geliri"},
     ]
     if tax:
@@ -206,6 +225,74 @@ async def post_direct_pos_to_gl(
         raise OperationalGLBridgeError(str(exc)) from exc
     await db.pos_transactions.update_one(
         {"tenant_id": tenant_id, "id": transaction["id"]},
+        {"$set": {"gl_bridge_status": "posted", "gl_journal_entry_id": entry["id"], "gl_entry_no": entry.get("entry_no")}},
+    )
+    return {"status": "posted", "entry": entry}
+
+
+async def post_direct_pos_refund_to_gl(
+    db,
+    tenant_id: str,
+    *,
+    refund: dict,
+    original_transaction: dict,
+    order: dict,
+    actor: str,
+) -> dict:
+    """Reverse the proportional settlement, revenue and tax for a POS refund."""
+    mapping = await get_operational_mapping(db, tenant_id)
+    if not mapping["enabled"] or not mapping["auto_pos"]:
+        await db.pos_transactions.update_one(
+            {"tenant_id": tenant_id, "id": refund["id"]},
+            {"$set": {"gl_bridge_status": "not_configured"}},
+        )
+        return {"status": "skipped", "reason": "not_configured"}
+    paid = _minor(original_transaction.get("total_amount"))
+    refunded = abs(_minor(refund.get("total_amount")))
+    if paid <= 0 or refunded <= 0 or refunded > paid:
+        raise OperationalGLBridgeError("POS refund values are not postable")
+    original_tax = _minor(order.get("tax_amount"))
+    refund_tax = int((Decimal(original_tax) * Decimal(refunded) / Decimal(paid)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    breakdown = original_transaction.get("payment_breakdown") or []
+    settlement_lines = []
+    allocated = 0
+    if breakdown:
+        for index, part in enumerate(breakdown):
+            if index == len(breakdown) - 1:
+                part_refund = refunded - allocated
+            else:
+                part_paid = _minor(part.get("amount"))
+                part_refund = int((Decimal(refunded) * Decimal(part_paid) / Decimal(paid)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                allocated += part_refund
+            if part_refund > 0:
+                settlement_lines.append({
+                    "account_code": _payment_account(mapping, str(part.get("method") or "cash")),
+                    "credit": _amount(part_refund),
+                    "memo": "POS iade tahsilat ters kaydı",
+                })
+    else:
+        settlement_lines.append({
+            "account_code": _payment_account(mapping, str(original_transaction.get("payment_method") or "cash")),
+            "credit": _amount(refunded),
+            "memo": "POS iade tahsilat ters kaydı",
+        })
+    lines = [
+        {"account_code": mapping["revenue_account_code"], "debit": _amount(refunded - refund_tax), "memo": "POS satış iadesi"},
+    ]
+    if refund_tax:
+        lines.append({"account_code": mapping["tax_account_code"], "debit": _amount(refund_tax), "memo": "POS iade vergi ters kaydı"})
+    lines.extend(settlement_lines)
+    try:
+        entry = await post_journal_entry(
+            db, tenant_id, date=refund["transaction_date"], memo=f"POS iade {refund['order_id']}",
+            lines=lines, source="pos_refund", source_ref=refund["id"], actor=actor,
+            idempotency_key=f"pos-refund:{refund['id']}",
+        )
+    except GLPostingError as exc:
+        raise OperationalGLBridgeError(str(exc)) from exc
+    await db.pos_transactions.update_one(
+        {"tenant_id": tenant_id, "id": refund["id"]},
         {"$set": {"gl_bridge_status": "posted", "gl_journal_entry_id": entry["id"], "gl_entry_no": entry.get("entry_no")}},
     )
     return {"status": "posted", "entry": entry}

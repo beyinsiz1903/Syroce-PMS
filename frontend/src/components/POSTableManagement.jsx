@@ -44,6 +44,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
         available: response.data.available || 0,
         occupied: response.data.occupied || 0,
         reserved: response.data.reserved || 0,
+        dirty: response.data.dirty || 0,
       });
     } catch (error) {
       // POS masa yönetimi backend'de henüz provizyonlanmamış olabilir
@@ -160,14 +161,20 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
     if (!confirmed) return;
     try {
       setUpdating(table.id);
-      await axios.post('/pos/transfer-table', null, {
-        params: {
-          from_table: String(table.table_number),
-          to_table: String(target),
-          outlet_id: outletId,
-          transfer_all: true,
-        },
-      });
+      if (table.current_order_id) {
+        await axios.post(`/pos/v2/orders/${table.current_order_id}/transfer-table`, {
+          to_table_number: String(target),
+        });
+      } else {
+        await axios.post('/pos/transfer-table', null, {
+          params: {
+            from_table: String(table.table_number),
+            to_table: String(target),
+            outlet_id: outletId,
+            transfer_all: true,
+          },
+        });
+      }
       setTransferTargets(current => ({ ...current, [table.id]: '' }));
       toast.success(`Adisyon Masa ${target} üzerine aktarıldı`);
       await loadTables();
@@ -282,7 +289,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
         </div>
 
         {/* Status Summary */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-2 gap-3 mb-6 lg:grid-cols-4">
           <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
             <p className="text-2xl font-bold text-green-700">{statusCounts.available || 0}</p>
             <p className="text-xs text-green-600">Müsait</p>
@@ -294,6 +301,10 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
           <div className="text-center p-3 bg-yellow-50 rounded-lg border border-yellow-200">
             <p className="text-2xl font-bold text-yellow-700">{statusCounts.reserved || 0}</p>
             <p className="text-xs text-yellow-600">Rezerve</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center">
+            <p className="text-2xl font-bold text-gray-700">{statusCounts.dirty || 0}</p>
+            <p className="text-xs text-gray-600">Temizlenecek</p>
           </div>
         </div>
 
@@ -319,7 +330,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                     <Users className="w-3 h-3 inline mr-1" />
                     {table.seats ?? table.capacity ?? 0} kişilik
                   </p>
-                  {(table.current_bill > 0 || table.current_transaction_id) && (
+                  {(table.current_bill > 0 || table.current_transaction_id || table.current_order_id) && (
                     <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-left text-xs text-amber-900">
                       <div className="flex items-center justify-between gap-2 font-semibold">
                         <span className="flex items-center gap-1"><ReceiptText className="h-3.5 w-3.5" /> Açık adisyon</span>
@@ -345,7 +356,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                         Müsait Yap
                       </Button>
                     )}
-                    {(table.current_transaction_id || table.current_bill > 0) && (
+                    {(table.current_transaction_id || table.current_order_id || table.current_bill > 0) && (
                       <div className="space-y-1.5 border-t pt-2">
                         <select
                           aria-label={`Masa ${table.table_number} hedef masa`}
@@ -356,7 +367,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                         >
                           <option value="">Hedef masa seçin</option>
                           {tables
-                            .filter(candidate => candidate.id !== table.id && candidate.status === 'available' && !candidate.current_transaction_id)
+                            .filter(candidate => candidate.id !== table.id && candidate.status === 'available' && !candidate.current_transaction_id && !candidate.current_order_id)
                             .map(candidate => (
                               <option key={candidate.id} value={candidate.table_number}>Masa {candidate.table_number}</option>
                             ))}
@@ -392,6 +403,16 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                         >
                           <Clock className="w-3 h-3 mr-1" />
                           Rezerve Et
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-xs"
+                          onClick={() => updateTableStatus(table, 'dirty')}
+                          disabled={updating === table.id}
+                        >
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                          Temizlik Bekliyor
                         </Button>
                       </>
                     )}
