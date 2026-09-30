@@ -369,6 +369,13 @@ def _build_financial_summary(
         and str(payment.get("payment_type") or "").lower() == "prepayment"
     )
     total_discounts = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") == "discount")
+    complimentary_adjustment_total = sum(
+        payment.get("amount", 0)
+        for payment in payments
+        if not payment.get("voided")
+        and payment.get("method") == "discount"
+        and str(payment.get("payment_type") or "").lower() == "comp_adjustment"
+    )
     total_extra = sum(_extra_charge_total(charge) for charge in extra_charges if not charge.get("voided"))
     total_deposits = sum(
         max(
@@ -439,7 +446,17 @@ def _build_financial_summary(
         if parsed is not None
     }
     room_plan_fully_posted = bool(expected_dates) and posted_room_dates == expected_dates
-    raw_pricing_difference = float(reservation_price_component_total or 0) - booking_total
+    # A historical Comp operation cannot rewrite room revenue already sealed
+    # by Night Audit.  It therefore creates a dedicated, audited discount for
+    # exactly those closed-night charges.  Compare the booking header against
+    # the *net* accommodation position; otherwise a correctly offset Comp stay
+    # is falsely flagged as a price/tahakkuk mismatch and checkout is blocked.
+    reconciled_reservation_price_component_total = max(
+        0.0,
+        float(reservation_price_component_total or 0)
+        - float(complimentary_adjustment_total or 0),
+    )
+    raw_pricing_difference = reconciled_reservation_price_component_total - booking_total
     # A higher booking header is only a mismatch once every stay night is
     # posted; before then it is simply the unposted remainder of an active stay.
     pricing_reconciliation_difference = round(
@@ -459,6 +476,7 @@ def _build_financial_summary(
         "prepayment_total": round(prepayment_total, 2),
         "other_payments_total": round(total_payments - prepayment_total, 2),
         "total_discounts": round(total_discounts, 2),
+        "complimentary_adjustment_total": round(complimentary_adjustment_total, 2),
         "total_extra": round(total_extra, 2),
         "accommodation_total": round(accommodation_total, 2),
         "additional_charge_total": round(additional_charge_total, 2),
@@ -473,7 +491,7 @@ def _build_financial_summary(
         "pricing_reconciliation_difference": pricing_reconciliation_difference,
         "pricing_reconciliation_direction": pricing_reconciliation_direction,
         "room_plan_fully_posted": room_plan_fully_posted,
-        "pricing_reconciliation_target_total": round(float(reservation_price_component_total or 0), 2),
+        "pricing_reconciliation_target_total": round(reconciled_reservation_price_component_total, 2),
         "paid_amount": booking.get("paid_amount", 0),
     }
 
