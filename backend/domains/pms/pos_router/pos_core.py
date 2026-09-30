@@ -271,15 +271,46 @@ router = APIRouter(prefix="/api", tags=["pos-fnb"])
 
 # ── GET /pos/daily-summary ──
 @router.get("/pos/daily-summary")
-async def get_pos_daily_summary(date: str = None, current_user: User = Depends(get_current_user)):
-    """Get daily POS summary"""
-    try:
-        transactions = await db.transactions.find({"tenant_id": current_user.tenant_id, "type": {"$in": ["fnb_charge", "room_charge"]}}, {"_id": 0}).to_list(1000)
+async def get_pos_daily_summary(
+    date: str | None = None,
+    outlet_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the selected business day's canonical POS summary.
 
-        total_sales = sum(t.get("amount", 0) for t in transactions)
-        return {"total_sales": total_sales, "transaction_count": len(transactions), "average_transaction": total_sales / len(transactions) if transactions else 0}
-    except Exception:
-        return {"total_sales": 0, "transaction_count": 0, "average_transaction": 0}
+    The previous implementation ignored ``date`` and read every historical
+    legacy transaction, so the mobile screen labelled the lifetime total as
+    "today".  Keep this endpoint aligned with Z reports and transaction lists
+    by using their shared canonical query and optional outlet filter.
+    """
+    if not date:
+        settings = await db.tenant_settings.find_one(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0, "business_date": 1},
+        )
+        date = str((settings or {}).get("business_date") or datetime.now(UTC).date().isoformat())
+
+    transactions = await _query_pos_transactions(
+        current_user.tenant_id,
+        limit=5000,
+        outlet_id=outlet_id,
+        date=date,
+    )
+    void_statuses = {"void", "voided", "cancelled", "canceled"}
+    open_statuses = {"pending", "preparing", "ready", "open", "draft"}
+    completed = [
+        row for row in transactions
+        if str(row.get("status") or "").lower() not in void_statuses | open_statuses
+    ]
+    total_sales = round(sum(float(row.get("total_amount", 0) or 0) for row in completed), 2)
+    count = len(completed)
+    return {
+        "date": date,
+        "outlet_id": outlet_id,
+        "total_sales": total_sales,
+        "transaction_count": count,
+        "average_transaction": round(total_sales / count, 2) if count else 0,
+    }
 
 
 # ── GET /pos/transactions ──
@@ -367,7 +398,11 @@ async def get_z_report(
         )
 
         void_statuses = {"void", "voided", "cancelled", "canceled"}
-        valid_tx = [t for t in all_tx if str(t.get("status") or "").lower() not in void_statuses]
+        open_statuses = {"pending", "preparing", "ready", "open", "draft"}
+        valid_tx = [
+            t for t in all_tx
+            if str(t.get("status") or "").lower() not in void_statuses | open_statuses
+        ]
         void_tx = [t for t in all_tx if str(t.get("status") or "").lower() in void_statuses]
 
         gross_sales = sum(float(t.get("total_amount", 0) or 0) for t in valid_tx)

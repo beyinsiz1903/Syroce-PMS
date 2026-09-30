@@ -18,8 +18,6 @@ Backend is NOT relaxed — these follow the FakeColl pattern of
 """
 from types import SimpleNamespace
 
-import pytest
-
 from domains.pms.mobile_router import pos as mobile_pos
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
 
@@ -185,7 +183,7 @@ def _seeded_db():
             {"id": "out1", "tenant_id": "t1", "name": "Lobby Bar"},
         ]),
         pos_menu_items=InMemoryCollection([
-            {"id": "m1", "tenant_id": "t1", "name": "Burger", "price": 100.0},
+            {"id": "m1", "tenant_id": "t1", "outlet_id": "out1", "name": "Burger", "price": 100.0},
         ]),
     )
 
