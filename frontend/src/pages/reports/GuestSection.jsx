@@ -61,6 +61,36 @@ const ReceivedPaymentsCell = ({ payments = [] }) => {
   </div>;
 };
 
+const COMP_MODE_LABELS = {
+  entire_stay: 'Tüm konaklama',
+  full: 'Tüm konaklama',
+  open_nights: 'Açık/kalan gece',
+  closed_nights_adjustment: 'Finansal düzeltme',
+};
+
+const PricingTreatmentCell = ({ guest }) => {
+  if (guest.is_primary === false) return '-';
+  if (!guest.is_complimentary_night) return <span className="text-xs text-slate-500">Ücretli</span>;
+  return <div className="max-w-[220px] space-y-1 text-left">
+    <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Comp</Badge>
+    <div className="text-[11px] font-medium text-amber-800">{COMP_MODE_LABELS[guest.complimentary_mode] || 'Misafire ücretsiz'}</div>
+    <div className="whitespace-normal text-[11px] leading-snug text-slate-600">Neden: {guest.complimentary_reason || 'Belirtilmedi'}</div>
+  </div>;
+};
+
+const GuestNightChargeCell = ({ guest, exchangeRates }) => {
+  if (guest.is_primary === false) return '-';
+  if (!guest.is_complimentary_night) {
+    return <MoneyCell amount={guest.guest_nightly_charge ?? guest.nightly_rate} currency={guest.currency} exchangeRates={exchangeRates} />;
+  }
+  return <div className="leading-tight">
+    <div className="font-bold text-emerald-700"><MoneyCell amount={0} currency={guest.currency} exchangeRates={exchangeRates} /></div>
+    {Number(guest.reference_nightly_rate) > 0 && <div className="mt-1 text-[10px] font-normal text-slate-500">
+      Emsal değer: <MoneyCell amount={guest.reference_nightly_rate} currency={guest.currency} exchangeRates={exchangeRates} />
+    </div>}
+  </div>;
+};
+
 const sumByCurrency = entries => entries.reduce((totals, entry) => {
   const currency = String(entry.currency || 'TRY').toUpperCase();
   totals[currency] = (totals[currency] || 0) + Number(entry.amount || 0);
@@ -127,7 +157,7 @@ const GuestTable = ({
     <Card>
       <CardContent className="p-0">
         <div className="overflow-x-auto" role="region" aria-label={`${title} tablosu`} tabIndex={0}>
-          <table className={`w-full text-sm ${showNightlyRate ? 'min-w-[1080px]' : 'min-w-[820px]'}`} data-testid="guest-table">
+          <table className={`w-full text-sm ${showNightlyRate ? 'min-w-[1240px]' : 'min-w-[820px]'}`} data-testid="guest-table">
           <thead><tr className="border-b bg-gray-50">
             <th className="min-w-[190px] text-left py-2.5 px-3 font-semibold text-gray-600">Misafir</th>
             <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Oda</th>
@@ -135,7 +165,8 @@ const GuestTable = ({
             <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Giriş</th>
             <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Çıkış</th>
             <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Durum</th>
-            {showNightlyRate && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">Gece Ücreti</th>}
+            {showNightlyRate && <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Ücretlendirme</th>}
+            {showNightlyRate && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">Misafire Yansıtılan</th>}
             {showNightlyRate && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">Tahsilat</th>}
             <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">{showNightlyRate ? 'Konaklama Toplamı' : 'Tutar'}</th>
           </tr></thead>
@@ -152,15 +183,16 @@ const GuestTable = ({
                 <td className="whitespace-nowrap py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="whitespace-nowrap py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td>
                 <td className="whitespace-nowrap py-2 px-3"><span className={`inline-flex whitespace-nowrap text-xs px-2 py-0.5 rounded-full font-medium ${status.className}`}>{status.label}</span></td>
-                {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700"><MoneyCell amount={g.nightly_rate} currency={g.currency} exchangeRates={exchangeRates} /></td>}
+                {showNightlyRate && <td className="py-2 px-3"><PricingTreatmentCell guest={g} /></td>}
+                {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700"><GuestNightChargeCell guest={g} exchangeRates={exchangeRates} /></td>}
                 {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right tabular-nums"><ReceivedPaymentsCell payments={g.received_payments} /></td>}
                 <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : <MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} />}</td>
               </tr>;
-            }) : <tr><td colSpan={6 + (showId ? 1 : 0) + (showNightlyRate ? 2 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
+            }) : <tr><td colSpan={6 + (showId ? 1 : 0) + (showNightlyRate ? 3 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
           </tbody>
           {showNightlyRate && primaryRows.length > 0 && <tfoot>
             <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-800">
-              <td colSpan={showId ? 6 : 5} className="px-3 py-3 text-right">Filtrelenen kayıtların toplamı</td>
+              <td colSpan={showId ? 7 : 6} className="px-3 py-3 text-right">Filtrelenen kayıtların toplamı</td>
               <td className="px-3 py-3 text-right">—</td>
               <td className="px-3 py-3 text-right text-emerald-700"><CurrencyBreakdown totals={paymentTotals} /></td>
               <td className="px-3 py-3 text-right"><CurrencyBreakdown totals={accommodationTotals} /></td>

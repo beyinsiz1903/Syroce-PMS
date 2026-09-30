@@ -253,6 +253,42 @@ def _nightly_booking_rate(booking: dict, target_day: str, daily_rate: dict | Non
     return round(float(booking.get("total_amount") or 0) / nights, 2)
 
 
+def _complimentary_night_info(
+    booking: dict,
+    target_day: str,
+    daily_rate: dict | None = None,
+    payments: list[dict] | None = None,
+) -> dict:
+    """Describe whether the selected room-night is complimentary.
+
+    A whole-stay Comp applies to every night. Partial Comp applies either to a
+    zeroed open-night rate or to an immutable closed night named by the
+    financial adjustment. Keeping this decision server-side makes the screen,
+    print view and CSV export use the same accounting meaning.
+    """
+    daily_rate = daily_rate or {}
+    payments = payments or []
+    adjusted_closed_night = any(
+        payment.get("payment_type") == "comp_adjustment"
+        and target_day in {str(value)[:10] for value in (payment.get("comp_dates") or [])}
+        for payment in payments
+    )
+    is_comp = bool(
+        booking.get("is_complimentary")
+        or daily_rate.get("is_complimentary")
+        or adjusted_closed_night
+    )
+    return {
+        "is_complimentary_night": is_comp,
+        "complimentary_reason": (
+            daily_rate.get("complimentary_reason")
+            or booking.get("complimentary_reason")
+            or None
+        ) if is_comp else None,
+        "complimentary_mode": booking.get("complimentary_mode") if is_comp else None,
+    }
+
+
 def _guest_link_active_on(link: dict, target_date: str) -> bool:
     checkout_date = _date_part(link.get("checkout_date"))
     return not checkout_date or checkout_date > target_date
@@ -622,6 +658,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "adults": 1,
                 "children": 1,
                 "base_rate": 1,
+                "is_complimentary": 1,
+                "is_partially_complimentary": 1,
+                "complimentary_mode": 1,
+                "complimentary_scope": 1,
+                "complimentary_reason": 1,
+                "complimentary_original_total": 1,
             },
         ).to_list(10000),
         db.bookings.count_documents(
@@ -747,7 +789,14 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "booking_id": {"$in": booking_ids},
                 "date": target_day,
             },
-            {"_id": 0, "booking_id": 1, "date": 1, "rate": 1},
+            {
+                "_id": 0,
+                "booking_id": 1,
+                "date": 1,
+                "rate": 1,
+                "is_complimentary": 1,
+                "complimentary_reason": 1,
+            },
         ).to_list(10000)
         if booking_ids
         else []
@@ -760,12 +809,27 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "booking_id": {"$in": booking_ids},
                 "voided": {"$ne": True},
             },
-            {"_id": 0, "booking_id": 1, "amount": 1, "currency": 1, "notes": 1},
+            {
+                "_id": 0,
+                "booking_id": 1,
+                "amount": 1,
+                "currency": 1,
+                "received_amount": 1,
+                "received_currency": 1,
+                "notes": 1,
+                "method": 1,
+                "payment_method": 1,
+                "payment_type": 1,
+                "status": 1,
+                "voided": 1,
+                "comp_dates": 1,
+            },
         ).to_list(20000)
         if booking_ids
         else []
     )
     received_payments_by_booking: dict[str, list[dict]] = {}
+    payments_by_booking: dict[str, list[dict]] = {}
     booking_currency_by_id = {
         str(booking.get("id")): str(booking.get("currency") or "TRY").upper()
         for booking in all_bk
@@ -773,6 +837,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     }
     for payment in booking_payment_rows:
         booking_id = str(payment.get("booking_id") or "")
+        payments_by_booking.setdefault(booking_id, []).append(payment)
+        if not _payment_is_collection(payment):
+            continue
         received = _received_payment_amount(payment, booking_currency_by_id.get(booking_id, "TRY"))
         if received["amount"] > 0:
             received_payments_by_booking.setdefault(booking_id, []).append(received)
@@ -926,10 +993,14 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             )
         guest_ids = list(dict.fromkeys(guest_ids))
         occupants = [(guest_id, guests_by_id.get(guest_id)) for guest_id in guest_ids] or [(None, None)]
-        nightly_rate = _nightly_booking_rate(
+        booking_id = str(booking.get("id"))
+        daily_rate = daily_rates_by_booking.get(booking_id)
+        nightly_rate = _nightly_booking_rate(booking, target_day, daily_rate)
+        comp_info = _complimentary_night_info(
             booking,
             target_day,
-            daily_rates_by_booking.get(str(booking.get("id"))),
+            daily_rate,
+            payments_by_booking.get(booking_id),
         )
         rows = []
         for index, (guest_id, guest) in enumerate(occupants):
@@ -954,6 +1025,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     # Keep it on the primary row so multi-guest rooms do not look
                     # like they generated the same revenue more than once.
                     "nightly_rate": nightly_rate if index == 0 else None,
+                    "guest_nightly_charge": (0.0 if comp_info["is_complimentary_night"] else nightly_rate) if index == 0 else None,
+                    "reference_nightly_rate": nightly_rate if comp_info["is_complimentary_night"] and index == 0 else None,
+                    **comp_info,
                     "received_payments": received_payments_by_booking.get(str(booking.get("id")), []) if index == 0 else [],
                     "status": booking.get("status"),
                     "nationality": (guest or {}).get("nationality") or (guest or {}).get("country") or booking.get("nationality"),
