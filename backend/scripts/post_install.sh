@@ -12,7 +12,7 @@ import litellm, openai, pydantic_settings
 from importlib.metadata import version
 from packaging.version import Version
 
-assert Version(version('litellm')) >= Version('1.84.10')
+assert Version(version('litellm')) >= Version('1.96.2')
 assert Version(openai.__version__) >= Version('2.20.0')
 print(f'litellm: OK')
 print(f'openai: {openai.__version__}')
