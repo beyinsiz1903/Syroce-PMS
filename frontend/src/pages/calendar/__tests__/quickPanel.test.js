@@ -14,7 +14,7 @@ describe('calendar quick panel detail', () => {
     const detail = {
       booking: { id: 'booking-1', status: 'confirmed', currency: 'TRY' },
       guest: { name: 'Yadigar Öztürk', email: 'guest@example.com', phone: '905551112233' },
-      summary: { reservation_total_due: 3695 },
+      summary: { reservation_total_due: 3695, pricing_reconciliation_required: true },
       folios: [{ id: 'folio-1', balance: 3695, currency: 'TRY' }],
     };
 
@@ -25,6 +25,7 @@ describe('calendar quick panel detail', () => {
       guest_email: 'guest@example.com',
       guest_phone: '905551112233',
       remaining_balance: 3695,
+      pricing_reconciliation_required: true,
     }));
     expect(primaryQuickPanelFolio(detail)).toEqual(detail.folios[0]);
   });

@@ -20,7 +20,11 @@ const initialDraft = {
   status: 'confirmed', apply_occupancy_pricing: false,
 };
 
-const DialogHarness = ({ initial = initialDraft, occupancyPricingRules = {} }) => {
+const DialogHarness = ({
+  initial = initialDraft,
+  occupancyPricingRules = {},
+  canRecordPrepayment = true,
+}) => {
   const [draft, setDraft] = useState(initial);
   return (
     <>
@@ -34,6 +38,7 @@ const DialogHarness = ({ initial = initialDraft, occupancyPricingRules = {} }) =
         rooms={[room]}
         minDate="2026-09-01"
         occupancyPricingRules={occupancyPricingRules}
+        canRecordPrepayment={canRecordPrepayment}
         onSubmit={(event) => event.preventDefault()}
       />
       <output data-testid="booking-draft">{JSON.stringify(draft)}</output>
@@ -54,6 +59,13 @@ const percentageRule = {
 };
 
 describe('NewBookingDialog pricing and prepayment', () => {
+  it('does not offer a payment promise to users without payment permission', () => {
+    render(<DialogHarness canRecordPrepayment={false} />);
+
+    expect(screen.getByTestId('new-booking-prepayment-toggle')).toBeDisabled();
+    expect(screen.getByText(/Ödeme al.*yetkisi gerekir/)).toBeInTheDocument();
+  });
+
   it('allows a zero-valued nightly field to be cleared and typed again', () => {
     render(<DialogHarness />);
     const price = screen.getByTestId('new-booking-price-input');

@@ -50,6 +50,8 @@ import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
 import { bookingDragGrip, bookingDropCheckIn } from './calendar/bookingDragPlacement';
 import { mergeQuickPanelDetail, primaryQuickPanelFolio } from './calendar/quickPanel';
+import { recordInitialPrepayment } from './calendar/prepayment';
+import { hasRole } from '@/utils/authRoles';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import { cachedTenantCurrency } from '@/lib/currency';
 import {
@@ -218,6 +220,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const effectivePermissions = user?.effective_permissions || [];
   const canCreateBooking = effectivePermissions.includes('create_booking');
+  const canRecordPrepayment = hasRole(user, 'admin')
+    || effectivePermissions.includes('post_payment')
+    || (user?.granted_permissions || []).includes('post_payment');
   const canManageRooms = effectivePermissions.includes('update_room_status');
   const canSyncChannels = effectivePermissions.includes('manage_system_settings');
   const navigate = useNavigate();
@@ -877,6 +882,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       toast.error('Ön ödeme tutarı sıfırdan büyük olmalı');
       return;
     }
+    if (newBooking.prepayment_enabled && !canRecordPrepayment) {
+      toast.error('Ön ödeme kaydetmek için “Ödeme al” yetkisi gerekir');
+      return;
+    }
     if (prepaymentAmount > totalAmount) {
       toast.error('Ön ödeme, konaklama toplamından büyük olamaz');
       return;
@@ -925,12 +934,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       let prepaymentError = null;
       if (prepaymentAmount > 0) {
         try {
-          await axios.post(`/pms/reservations/${response.data.id}/record-payment`, {
+          await recordInitialPrepayment({
+            client: axios,
+            bookingId: response.data.id,
             amount: prepaymentAmount,
             method: newBooking.prepayment_method,
-            payment_type: 'prepayment',
-            reference: newBooking.prepayment_reference.trim() || `reservation-prepayment:${response.data.id}:${idempotencyKey}`,
-            notes: 'Rezervasyon oluşturulurken alınan ön ödeme',
+            reference: newBooking.prepayment_reference,
+            currency: response.data.currency || bookingPayload.currency || cachedTenantCurrency(),
+            idempotencyKey,
           });
         } catch (paymentError) {
           prepaymentError = paymentError;
@@ -940,7 +951,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       loadCalendarData();
       if (prepaymentError) {
         const detail = prepaymentError.response?.data?.detail;
-        toast.warning(`Rezervasyon oluşturuldu; ön ödeme kaydedilemedi. ${typeof detail === 'string' ? detail : 'Folyodan Ödeme Al ile tekrar kaydedin.'}`);
+        setDetailModalBookingId(response.data.id);
+        setShowDetailModal(true);
+        toast.error(
+          `Rezervasyon oluşturuldu ancak ön ödeme kaydedilemedi. ${typeof detail === 'string' ? detail : prepaymentError.message || 'Ödeme / Folyo ekranından tekrar kaydedin.'}`,
+          { duration: 15000 },
+        );
       } else {
         toast.success(
           isComplimentary
@@ -1724,6 +1740,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         guests={guests}
         rooms={rooms}
         occupancyPricingRules={occupancyPricingRules}
+        canRecordPrepayment={canRecordPrepayment}
         onSubmit={handleCreateBooking}
         minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate < t ? hotelBusinessDate : t; })()}
       />
