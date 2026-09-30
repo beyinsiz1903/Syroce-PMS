@@ -549,7 +549,7 @@ const BasicReports = ({
       case 'daily_analysis':
         return <ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />;
       case 'trial_balance':
-        return <div data-testid="section-trial-balance"><TrialBalancePage /></div>;
+        return <div data-testid="section-trial-balance"><TrialBalancePage reportDate={reportDate} /></div>;
       case 'gl_trial_balance':
       case 'income_statement':
       case 'balance_sheet':

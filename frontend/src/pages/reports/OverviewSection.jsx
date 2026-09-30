@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { DollarSign, BedDouble, Users, Hotel, Utensils, TrendingUp, AlertTriangle, BarChart3, ArrowUpRight, ArrowDownRight, Calendar, BookOpen, LayoutDashboard } from 'lucide-react';
+import { ReceiptText, BedDouble, Users, Hotel, Utensils, TrendingUp, AlertTriangle, BarChart3, ArrowUpRight, ArrowDownRight, Calendar, BookOpen, LayoutDashboard } from 'lucide-react';
 import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, formatPercent, KPICard, CustomTooltip, SectionHeader, EmptyState, StatBox, ROOM_STATUS_COLORS, ROOM_STATUS_LABELS } from './ReportHelpers';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
@@ -23,17 +23,25 @@ const OverviewSection = ({
   const prevLabelSuffix = isDaily ? 'Önceki gün: ' : 'Önceki 30 gün: ';
   const metrics = periodMetrics || s;
   const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
+  const hasMultipleCurrencies = [
+    pc.month_revenue_by_currency,
+    metrics.adr_by_currency,
+    metrics.revpar_by_currency,
+  ].some((breakdown) => Object.keys(breakdown || {}).filter((code) => Number(breakdown[code]) !== 0).length > 1);
 
   return <div className="space-y-6" data-testid="section-overview">
     <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Seçili rapor dönemi ile güncel operasyon durumunun özeti" icon={LayoutDashboard} actions={<StatusBadge intent="info">Seçili dönem</StatusBadge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      <KPICard title={`Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} currencyBreakdown={pc.month_revenue_by_currency} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrencyBreakdown(pc.prev_month_revenue_by_currency, pc.prev_month_revenue)} icon={DollarSign} color="success" />
-      <KPICard title={`Satılan Oda Başına Ortalama Fiyat ${labelSuffix}`} value={metrics.adr} currencyBreakdown={metrics.adr_by_currency} prevValue={pc.prev_month_adr} prevLabel={prevLabelSuffix + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
+      <KPICard title={`Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} currencyBreakdown={pc.month_revenue_by_currency} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrencyBreakdown(pc.prev_month_revenue_by_currency, pc.prev_month_revenue)} icon={ReceiptText} color="success" />
+      <KPICard title={`Satılan Oda Başına Ortalama Fiyat ${labelSuffix}`} value={metrics.adr} currencyBreakdown={metrics.adr_by_currency} prevValue={pc.prev_month_adr} prevLabel={hasMultipleCurrencies ? 'Her para birimi kendi oda geliri içinde hesaplanır' : prevLabelSuffix + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
       <KPICard title={`Satılabilir Oda Başına Gelir ${labelSuffix}`} value={metrics.revpar} currencyBreakdown={metrics.revpar_by_currency} icon={BarChart3} color="warning" />
       <KPICard title={`Doluluk Oranı ${labelSuffix}`} value={formatPercent(metrics.occupancy_percentage)} icon={Hotel} color="info" />
       <KPICard title={`Toplam Rezervasyon ${labelSuffix}`} value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={prevLabelSuffix + (pc.prev_month_bookings || 0)} icon={BookOpen} color="info" />
       <KPICard title="Yiyecek ve İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="warning" />
     </div>
+    {hasMultipleCurrencies && <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+      Tutarlar birbirine eklenmez ve otomatik olarak TL'ye çevrilmez. Her para birimi, rezervasyonun kayıtlı olduğu özgün tutarıyla ayrı gösterilir.
+    </div>}
 
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Günlük Hareket Özeti</CardTitle></CardHeader>
