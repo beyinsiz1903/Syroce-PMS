@@ -207,6 +207,9 @@ const newBookingDraft = (overrides = {}) => ({
   room_id: '', check_in: '', check_out: '',
   guests_count: 2, adults: 2, children: 0, children_ages: [],
   total_amount: 0, base_rate: 0, price_input_mode: 'nightly',
+  // Calendar and manually entered prices are final guest-facing prices.
+  // Occupancy pricing is opt-in so an already quoted rate is never increased again.
+  manual_price_override: true,
   prepayment_enabled: false, prepayment_amount: '', prepayment_method: 'cash', prepayment_reference: '',
   is_complimentary: false, complimentary_scope: 'accommodation_only', complimentary_reason: '',
   apply_occupancy_pricing: false, status: 'confirmed',
@@ -914,6 +917,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         prepayment_amount: _prepaymentAmount,
         prepayment_method: _prepaymentMethod,
         prepayment_reference: _prepaymentReference,
+        manual_price_override: _manualPriceOverride,
         ...bookingFields
       } = newBooking;
       const bookingPayload = {

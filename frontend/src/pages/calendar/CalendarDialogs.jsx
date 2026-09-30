@@ -51,7 +51,8 @@ export const NewBookingDialog = ({
     ]);
 
   const recalculateNightlyTotal = useCallback((draft) => {
-    if ((draft.price_input_mode || 'nightly') === 'total' || occupancyRule?.pricing_type === 'per_person') {
+    if ((draft.price_input_mode || 'nightly') === 'total'
+      || (occupancyRule?.pricing_type === 'per_person' && !draft.manual_price_override)) {
       return draft;
     }
     const rate = Number(draft.base_rate);
@@ -64,7 +65,7 @@ export const NewBookingDialog = ({
 
   useEffect(() => {
     setNewBooking(prev => {
-      if (!occupancyQuote) {
+      if (!occupancyQuote || prev.manual_price_override) {
         if (!prev.apply_occupancy_pricing) return prev;
         return { ...prev, apply_occupancy_pricing: false, pricing_rule_version: null };
       }
@@ -207,6 +208,9 @@ export const NewBookingDialog = ({
                     room_id: e.target.value,
                     base_rate: baseRate,
                     total_amount: baseRate * Math.max(1, nightsBetween(current.check_in, current.check_out)),
+                    manual_price_override: true,
+                    apply_occupancy_pricing: false,
+                    pricing_rule_version: null,
                   }));
                 }}
                 data-testid="new-booking-room-select"
@@ -421,7 +425,9 @@ export const NewBookingDialog = ({
                   const next = {
                     ...prev,
                     price_input_mode: nextMode,
-                    apply_occupancy_pricing: nextMode !== 'total' && occupancyRule?.pricing_type === 'per_person',
+                    manual_price_override: nextMode !== 'total',
+                    apply_occupancy_pricing: false,
+                    pricing_rule_version: null,
                   };
                   return nextMode === 'nightly' ? recalculateNightlyTotal(next) : next;
                 });
@@ -433,7 +439,11 @@ export const NewBookingDialog = ({
             </select>
           </div>
           <div>
-            <Label>{priceInputMode === 'total' ? 'Konaklama toplamı' : 'Gecelik taban fiyat'}</Label>
+            <Label>
+              {priceInputMode === 'total'
+                ? 'Konaklama toplamı'
+                : newBooking.manual_price_override ? 'Gecelik nihai fiyat' : 'Gecelik taban fiyat'}
+            </Label>
             <Input
               type="number"
               min="0"
@@ -449,7 +459,13 @@ export const NewBookingDialog = ({
                       apply_occupancy_pricing: false,
                     };
                   }
-                  return recalculateNightlyTotal({ ...prev, base_rate: input });
+                  return recalculateNightlyTotal({
+                    ...prev,
+                    base_rate: input,
+                    manual_price_override: true,
+                    apply_occupancy_pricing: false,
+                    pricing_rule_version: null,
+                  });
                 });
               }}
               data-testid="new-booking-price-input"
@@ -478,10 +494,36 @@ export const NewBookingDialog = ({
         )}
         {occupancyQuote && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900" data-testid="occupancy-price-breakdown">
-            <div className="font-semibold">Kişi bazlı fiyat özeti</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-semibold">
+                {newBooking.manual_price_override ? 'Kişi bazlı fiyat kuralı' : 'Kişi bazlı fiyat özeti'}
+              </div>
+              {newBooking.manual_price_override && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-blue-300 bg-white px-2 text-xs text-blue-800 hover:bg-blue-100"
+                  onClick={() => setNewBooking(prev => ({
+                    ...prev,
+                    manual_price_override: false,
+                    apply_occupancy_pricing: true,
+                    total_amount: occupancyQuote.totalAmount,
+                    pricing_rule_version: occupancyQuote.rule.pricing_version,
+                  }))}
+                  data-testid="apply-occupancy-price-rule"
+                >
+                  Kural fiyatını uygula
+                </Button>
+              )}
+            </div>
             <div className="mt-1">
               {occupancyQuote.rule.base_occupancy} yetişkin dahil
-              {occupancyQuote.extraAdults > 0 && ` · ${occupancyQuote.extraAdults} ek yetişkin × ${formatCurrency(occupancyQuote.rule.extra_adult_rate, currency)}`}
+              {occupancyQuote.extraAdults > 0 && (
+                occupancyQuote.rule.extra_adult_rate_type === 'percentage'
+                  ? ` · ${occupancyQuote.extraAdults} ek yetişkin × %${occupancyQuote.rule.extra_adult_rate} (${formatCurrency(occupancyQuote.adultSupplement / occupancyQuote.extraAdults, currency)})`
+                  : ` · ${occupancyQuote.extraAdults} ek yetişkin × ${formatCurrency(occupancyQuote.rule.extra_adult_rate, currency)}`
+              )}
               {occupancyQuote.childBreakdown?.map((child, index) => (
                 <span key={`${child.age}-${index}`}>
                   {` · ${child.age} yaş ${child.rate > 0 ? formatCurrency(child.rate, currency) : 'ücretsiz'}`}
@@ -489,8 +531,15 @@ export const NewBookingDialog = ({
               ))}
             </div>
             <div className="mt-1 font-medium">
-              Gecelik {formatCurrency(occupancyQuote.nightlyTotal, currency)} · {occupancyQuote.nights} gece toplam {formatCurrency(occupancyQuote.totalAmount, currency)}
+              {newBooking.manual_price_override
+                ? `Elle girilen gecelik ${formatCurrency(newBooking.base_rate, currency)} · Kural önerisi ${formatCurrency(occupancyQuote.nightlyTotal, currency)}`
+                : `Gecelik ${formatCurrency(occupancyQuote.nightlyTotal, currency)} · ${occupancyQuote.nights} gece toplam ${formatCurrency(occupancyQuote.totalAmount, currency)}`}
             </div>
+            {newBooking.manual_price_override && (
+              <div className="mt-1 text-xs text-blue-700">
+                Elle girilen fiyat nihai fiyat olarak kaydedilir; kişi zammı ikinci kez eklenmez.
+              </div>
+            )}
           </div>
         )}
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="new-booking-complimentary">
