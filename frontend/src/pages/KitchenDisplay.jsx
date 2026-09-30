@@ -64,9 +64,13 @@ const statusLabel = {
   ready:      { text: 'Hazır',      bg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
 };
 
+const humanizeStation = (value) => String(value || '')
+  .replace(/[_-]+/g, ' ')
+  .replace(/\b\p{L}/gu, letter => letter.toLocaleUpperCase('tr-TR'));
+
 /* ─── sub-components ─────────────────────────────────────────────── */
 
-function OrderCard({ order, onReady, onServed, onStart }) {
+function OrderCard({ order, onReady, onServed, onStart, isUpdating }) {
   const elapsed  = getElapsed(order.ordered_at);
   const isUrgent = elapsed > 15 || order.priority === 'urgent';
   const status   = order.status || 'pending';
@@ -139,7 +143,7 @@ function OrderCard({ order, onReady, onServed, onStart }) {
             </div>
             {item.station && (
               <span className="shrink-0 text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-md self-start">
-                {item.station}
+                {humanizeStation(item.station)}
               </span>
             )}
           </div>
@@ -153,7 +157,8 @@ function OrderCard({ order, onReady, onServed, onStart }) {
         {status === 'pending' && (
           <button
             onClick={() => onStart(order.id)}
-            className="w-full h-11 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-500 text-white transition-colors flex items-center justify-center gap-2"
+            disabled={isUpdating}
+            className="w-full h-11 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-500 text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
           >
             <ChefHat className="w-4 h-4" /> Hazırlamaya Başla
           </button>
@@ -161,17 +166,19 @@ function OrderCard({ order, onReady, onServed, onStart }) {
         {status === 'preparing' && (
           <button
             onClick={() => onReady(order.id)}
-            className="w-full h-12 rounded-xl font-bold text-base bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center justify-center gap-2 shadow-md shadow-emerald-900/40"
+            disabled={isUpdating}
+            className="w-full h-12 rounded-xl font-bold text-base bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center justify-center gap-2 shadow-md shadow-emerald-900/40 disabled:opacity-60"
           >
-            <CheckCircle className="w-5 h-5" /> SİPARİŞ HAZIR
+            <CheckCircle className="w-5 h-5" /> {isUpdating ? 'Güncelleniyor…' : 'Sipariş Hazır'}
           </button>
         )}
         {status === 'ready' && (
           <button
             onClick={() => onServed(order.id)}
-            className="w-full h-12 rounded-xl font-bold text-base bg-gray-600 hover:bg-gray-500 text-white transition-colors flex items-center justify-center gap-2"
+            disabled={isUpdating}
+            className="w-full h-12 rounded-xl font-bold text-base bg-gray-600 hover:bg-gray-500 text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
           >
-            <ArrowRight className="w-5 h-5" /> SERVİS EDİLDİ
+            <ArrowRight className="w-5 h-5" /> {isUpdating ? 'Güncelleniyor…' : 'Servis Edildi'}
           </button>
         )}
       </div>
@@ -190,6 +197,8 @@ const KitchenDisplay = () => {
   const [statusFilter, setStatusFilter]   = useState('active');
   const [lastUpdate, setLastUpdate]       = useState(null);
   const [clock, setClock]                 = useState(new Date());
+  const [loadError, setLoadError]         = useState(false);
+  const [updating, setUpdating]           = useState(() => new Set());
   const notifiedRef = useRef(new Set());
   const { isConnected } = useWebSocket('kitchen');
 
@@ -216,8 +225,9 @@ const KitchenDisplay = () => {
       const res = await axios.get('/fnb/kitchen-display');
       setOrders(res.data.orders || []);
       setLastUpdate(new Date().toISOString());
+      setLoadError(false);
     } catch {
-      /* silent — toast only on user action */
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -233,18 +243,24 @@ const KitchenDisplay = () => {
 
   /* order actions */
   const updateStatus = async (orderId, status) => {
+    if (updating.has(orderId)) return;
+    setUpdating(current => new Set(current).add(orderId));
     try {
       await axios.put(`/fnb/kitchen-order/${orderId}/status`, null, { params: { status } });
-      toast.success(status === 'preparing' ? 'Hazırlanmaya başlandı' : `Durum: ${status}`);
-      loadOrders();
-    } catch { toast.error('Durum güncellenemedi'); }
+      toast.success(status === 'preparing' ? 'Sipariş hazırlanmaya alındı.' : 'Sipariş servis edildi.');
+      await loadOrders();
+    } catch { toast.error('Sipariş durumu güncellenemedi. Tekrar deneyin.'); }
+    finally { setUpdating(current => { const next = new Set(current); next.delete(orderId); return next; }); }
   };
   const completeOrder = async (orderId) => {
+    if (updating.has(orderId)) return;
+    setUpdating(current => new Set(current).add(orderId));
     try {
       await axios.post(`/fnb/kitchen-order/${orderId}/complete`);
-      toast.success('Sipariş hazır! 🍽️');
-      loadOrders();
-    } catch { toast.error('Güncelleme başarısız'); }
+      toast.success('Sipariş hazır olarak işaretlendi.');
+      await loadOrders();
+    } catch { toast.error('Sipariş hazır olarak işaretlenemedi. Tekrar deneyin.'); }
+    finally { setUpdating(current => { const next = new Set(current); next.delete(orderId); return next; }); }
   };
   const serveOrder = (id) => updateStatus(id, 'served');
   const startOrder = (id) => updateStatus(id, 'preparing');
@@ -283,11 +299,6 @@ const KitchenDisplay = () => {
   }), [orders]);
 
   /* browser notifications */
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
   useEffect(() => {
     urgentOrders.forEach(order => {
       if (!order?.id || notifiedRef.current.has(order.id)) return;
@@ -362,7 +373,7 @@ const KitchenDisplay = () => {
             }`}>
               {isConnected
                 ? <><Wifi className="w-3.5 h-3.5" /> Canlı</>
-                : <><WifiOff className="w-3.5 h-3.5" /> Polling</>}
+                : <><WifiOff className="w-3.5 h-3.5" /> Yedek bağlantı</>}
             </div>
 
             {/* Refresh */}
@@ -416,7 +427,7 @@ const KitchenDisplay = () => {
                 </StationBtn>
                 {stationOptions.map(s => (
                   <StationBtn key={s} active={stationFilter === s} onClick={() => setStationFilter(s)}>
-                    {s}
+                    {humanizeStation(s)}
                   </StationBtn>
                 ))}
               </div>
@@ -456,7 +467,18 @@ const KitchenDisplay = () => {
 
       {/* ── Orders Grid ── */}
       <main className="flex-1 p-6">
-        {filteredOrders.length === 0 ? (
+        {loadError && orders.length === 0 ? (
+          <div className="min-h-[50vh] flex flex-col items-center justify-center text-center gap-3">
+            <AlertTriangle className="w-10 h-10 text-amber-400" />
+            <div>
+              <p className="font-semibold text-white">Siparişler alınamadı</p>
+              <p className="text-sm text-gray-400 mt-1">Bağlantınızı kontrol edip yeniden deneyin.</p>
+            </div>
+            <button onClick={loadOrders} className="px-4 py-2 rounded-xl bg-white text-gray-900 font-semibold text-sm">
+              Yeniden Dene
+            </button>
+          </div>
+        ) : filteredOrders.length === 0 ? (
           <EmptyState statusFilter={statusFilter} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -467,6 +489,7 @@ const KitchenDisplay = () => {
                 onReady={completeOrder}
                 onServed={serveOrder}
                 onStart={startOrder}
+                isUpdating={updating.has(order.id)}
               />
             ))}
           </div>

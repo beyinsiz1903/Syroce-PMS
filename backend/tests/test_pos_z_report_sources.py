@@ -50,6 +50,15 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
                 "tax_amount": 2,
                 "created_at": "2026-09-08T18:20:00+00:00",
             },
+            {
+                "id": "open-1",
+                "business_date": "2026-09-03",
+                "status": "pending",
+                "payment_method": None,
+                "total_amount": 75,
+                "tax_amount": 7,
+                "created_at": "2026-09-08T18:25:00+00:00",
+            },
         ]
     )
     menu_transactions = _Collection(
@@ -115,3 +124,36 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
     )
     assert voids["count"] == 1
     assert voids["void_transactions"][0]["id"] == "void-1"
+
+
+@pytest.mark.asyncio
+async def test_daily_summary_uses_selected_date_outlet_and_excludes_voids(monkeypatch):
+    query = AsyncMock(
+        return_value=[
+            {"id": "paid-1", "status": "completed", "total_amount": 120.50},
+            {"id": "paid-2", "status": "closed", "total_amount": 79.50},
+            {"id": "void-1", "status": "cancelled", "total_amount": 50},
+            {"id": "open-1", "status": "pending", "total_amount": 80},
+        ]
+    )
+    monkeypatch.setattr(pos_core, "_query_pos_transactions", query)
+
+    result = await pos_core.get_pos_daily_summary(
+        date="2026-09-27",
+        outlet_id="outlet-a",
+        current_user=SimpleNamespace(tenant_id="tenant-a"),
+    )
+
+    query.assert_awaited_once_with(
+        "tenant-a",
+        limit=5000,
+        outlet_id="outlet-a",
+        date="2026-09-27",
+    )
+    assert result == {
+        "date": "2026-09-27",
+        "outlet_id": "outlet-a",
+        "total_sales": 200.0,
+        "transaction_count": 2,
+        "average_transaction": 100.0,
+    }

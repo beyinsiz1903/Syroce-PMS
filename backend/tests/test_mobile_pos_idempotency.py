@@ -86,8 +86,8 @@ def _patch(monkeypatch):
         {"id": "O1", "tenant_id": "tenant-A", "name": "Lobby Bar"}
     )
     fake_db.pos_menu_items.docs.extend([
-        {"id": "m1", "tenant_id": "tenant-A", "name": "Burger", "price": 100.0},
-        {"id": "m2", "tenant_id": "tenant-A", "name": "Cola", "price": 50.0},
+        {"id": "m1", "tenant_id": "tenant-A", "outlet_id": "O1", "name": "Burger", "price": 100.0},
+        {"id": "m2", "tenant_id": "tenant-A", "outlet_id": "O1", "name": "Cola", "price": 50.0},
     ])
 
     monkeypatch.setattr(mobile_pos, "db", fake_db)
@@ -167,3 +167,30 @@ async def test_idempotency_key_too_long_is_400(_patch):
             request=_req([("m1", 1)], idem="x" * 129), credentials=None, _perm=None
         )
     assert exc.value.status_code == 400
+
+
+async def test_quick_order_uses_each_menu_items_tax_rate(_patch):
+    _patch.pos_menu_items.docs[0]["tax_rate"] = 0.10
+    _patch.pos_menu_items.docs[1]["tax_rate"] = 0.20
+
+    result = await mobile_pos.create_quick_order_mobile(
+        request=_req([("m1", 1), ("m2", 2)]), credentials=None, _perm=None
+    )
+
+    stored = await _patch.pos_orders.find_one({"id": result["order_id"]})
+    assert stored["subtotal"] == 200.0
+    assert stored["tax_amount"] == 30.0
+    assert stored["grand_total"] == 230.0
+    assert [line["tax_rate"] for line in stored["items"]] == [0.10, 0.20]
+
+
+async def test_quick_order_rejects_item_from_another_outlet(_patch):
+    from fastapi import HTTPException
+
+    _patch.pos_menu_items.docs[0]["outlet_id"] = "O2"
+    with pytest.raises(HTTPException) as exc:
+        await mobile_pos.create_quick_order_mobile(
+            request=_req([("m1", 1)]), credentials=None, _perm=None
+        )
+    assert exc.value.status_code == 400
+    assert _patch.pos_orders.insert_calls == 0

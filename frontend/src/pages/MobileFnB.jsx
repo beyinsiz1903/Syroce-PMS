@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -15,7 +15,6 @@ import {
   DollarSign, 
   TrendingUp,
   Clock,
-  Users,
   RefreshCw,
   ShoppingBag,
   BarChart3,
@@ -33,7 +32,6 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { promptDialog } from '@/lib/dialogs';
 const MobileFnB = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -59,57 +57,71 @@ const MobileFnB = ({ user }) => {
   const [voidTransactions, setVoidTransactions] = useState([]);
   const [outletSelectorOpen, setOutletSelectorOpen] = useState(false);
   const [activeOutlet, setActiveOutlet] = useState(null);
+  const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [savingMenuItem, setSavingMenuItem] = useState(false);
+  const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'food' });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    // Set first active outlet as default
-    if (outlets.length > 0 && !activeOutlet) {
-      const firstActive = outlets.find(o => o.status === 'active') || outlets[0];
-      setActiveOutlet(firstActive);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [outlets]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async (outletId = activeOutlet?.id) => {
     try {
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
-      
-      const [summaryRes, transactionsRes, outletsRes, menuRes] = await Promise.all([
-        axios.get(`/pos/daily-summary?date=${today}`),
-        axios.get('/pos/transactions?limit=10'),
+
+      const outletQuery = outletId ? `&outlet_id=${encodeURIComponent(outletId)}` : '';
+      const [summaryRes, transactionsRes, outletsRes, menuRes] = await Promise.allSettled([
+        axios.get(`/pos/daily-summary?date=${today}${outletQuery}`),
+        axios.get(`/pos/transactions?limit=10${outletQuery}`),
         axios.get('/pos/outlets'),
-        axios.get('/pos/menu-items')
+        axios.get(`/pos/menu-items?${outletId ? `outlet_id=${encodeURIComponent(outletId)}` : ''}`)
       ]);
 
-      setDailySummary(summaryRes.data);
-      const txData = transactionsRes.data;
-      setRecentTransactions(
-        Array.isArray(txData) ? txData : (txData?.transactions || txData?.orders || [])
-      );
-      const outletData = outletsRes.data;
-      setOutlets(
-        Array.isArray(outletData) ? outletData : (outletData?.outlets || [])
-      );
-      const menuData = menuRes.data;
-      const menuList = Array.isArray(menuData) ? menuData : (menuData?.menu_items || []);
-      setMenuItems(menuList);
-      setTopItems(menuList.slice(0, 5));
+      if (summaryRes.status === 'fulfilled') setDailySummary(summaryRes.value.data);
+      else setDailySummary(null);
+      if (transactionsRes.status === 'fulfilled') {
+        const txData = transactionsRes.value.data;
+        setRecentTransactions(Array.isArray(txData) ? txData : (txData?.transactions || txData?.orders || []));
+      } else setRecentTransactions([]);
+      if (outletsRes.status === 'fulfilled') {
+        const outletData = outletsRes.value.data;
+        const outletList = Array.isArray(outletData) ? outletData : (outletData?.outlets || []);
+        setOutlets(outletList);
+        if (!activeOutlet && outletList.length > 0) {
+          setActiveOutlet(outletList.find(o => o.status === 'active') || outletList[0]);
+        }
+      }
+      if (menuRes.status === 'fulfilled') {
+        const menuData = menuRes.value.data;
+        const menuList = Array.isArray(menuData) ? menuData : (menuData?.menu_items || []);
+        setMenuItems(menuList);
+        setTopItems(menuList.slice(0, 5));
+      } else {
+        setMenuItems([]);
+        setTopItems([]);
+      }
+
+      const failures = [summaryRes, transactionsRes, outletsRes, menuRes].filter(result => result.status === 'rejected').length;
+      if (failures === 4) toast.error('F&B verileri yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.');
+      else if (failures > 0) toast.warning('Bazı F&B bilgileri alınamadı; kullanılabilen veriler gösteriliyor.');
     } catch (error) {
       console.error('Failed to load F&B data:', error);
-      toast.error('Yükleme');
+      toast.error('F&B verileri yüklenemedi.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [activeOutlet]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
+  };
+
+  const selectOutlet = (outlet) => {
+    if (!outlet) return;
+    setActiveOutlet(outlet);
+    setSelectedOutlet(outlet.id);
+    setOrderItems([]);
   };
 
   const handleAddItem = (item) => {
@@ -139,9 +151,10 @@ const MobileFnB = ({ user }) => {
   };
 
   const handleSubmitOrder = async () => {
+    if (submittingOrder) return;
     try {
       if (!selectedOutlet) {
-        toast.error('Outlet seçin');
+        toast.error('Satış noktası seçin.');
         return;
       }
       if (orderItems.length === 0) {
@@ -156,6 +169,7 @@ const MobileFnB = ({ user }) => {
           globalThis.crypto?.randomUUID?.() || `pos-order-${Date.now()}-${Math.random()}`;
       }
 
+      setSubmittingOrder(true);
       const res = await axios.post('/pos/mobile/quick-order', {
         outlet_id: selectedOutlet,
         table_number: tableNumber,
@@ -169,7 +183,7 @@ const MobileFnB = ({ user }) => {
       if (res?.data?.idempotent_replay) {
         toast.success('Sipariş zaten oluşturulmuştu — çift hesap kesilmedi');
       } else {
-        toast.success('Sipariş');
+        toast.success(`Sipariş oluşturuldu${res?.data?.order_id ? ` · #${String(res.data.order_id).slice(0, 8)}` : ''}`);
       }
       setOrderModalOpen(false);
       setOrderItems([]);
@@ -177,7 +191,37 @@ const MobileFnB = ({ user }) => {
       loadData();
     } catch (error) {
       // Hata → anahtar korunur; retry aynı anahtarı kullanır.
-      toast.error('Sipariş');
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Sipariş oluşturulamadı. Tekrar deneyebilirsiniz.');
+    } finally {
+      setSubmittingOrder(false);
+    }
+  };
+
+  const handleCreateMenuItem = async () => {
+    if (savingMenuItem) return;
+    const name = newMenuItem.name.trim();
+    const price = Number(String(newMenuItem.price).replace(',', '.'));
+    if (!activeOutlet?.id) return toast.error('Önce bir satış noktası seçin.');
+    if (!name) return toast.error('Ürün adını girin.');
+    if (!Number.isFinite(price) || price <= 0) return toast.error('Geçerli bir fiyat girin.');
+    setSavingMenuItem(true);
+    try {
+      const res = await axios.post('/pos/menu-item', {
+        name,
+        price,
+        category: newMenuItem.category,
+        outlet_id: activeOutlet.id,
+        available: true,
+      });
+      toast.success(`“${res.data?.name || name}” menüye eklendi.`);
+      setNewMenuItem({ name: '', price: '', category: 'food' });
+      await loadData(activeOutlet.id);
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Ürün eklenemedi.');
+    } finally {
+      setSavingMenuItem(false);
     }
   };
 
@@ -190,7 +234,7 @@ const MobileFnB = ({ user }) => {
       setZReportData(res.data);
       setZReportModalOpen(true);
     } catch (error) {
-      toast.error('Z Raporu');
+      toast.error('Z raporu alınamadı. Tekrar deneyin.');
     }
   };
 
@@ -201,7 +245,7 @@ const MobileFnB = ({ user }) => {
       setVoidTransactions(res.data.void_transactions || []);
       setVoidReportModalOpen(true);
     } catch (error) {
-      toast.error('İptal Raporu');
+      toast.error('İptal raporu alınamadı. Tekrar deneyin.');
     }
   };
 
@@ -235,7 +279,7 @@ const MobileFnB = ({ user }) => {
               </Button>
               <div>
                 <h1 className="text-xl font-bold">F&B Yönetimi</h1>
-                <p className="text-xs text-amber-100">Food & Beverage Dashboard</p>
+                <p className="text-xs text-amber-100">Yiyecek ve içecek operasyonları</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
@@ -275,8 +319,8 @@ const MobileFnB = ({ user }) => {
               <div className="flex items-center space-x-2">
                 <Store className="w-4 h-4" />
                 <div className="text-left">
-                  <p className="text-xs font-normal opacity-80">Seçili Outlet</p>
-                  <p className="text-sm font-bold">{activeOutlet?.name || 'Outlet Seçin'}</p>
+                  <p className="text-xs font-normal opacity-80">Seçili satış noktası</p>
+                  <p className="text-sm font-bold">{activeOutlet?.name || 'Satış noktası seçin'}</p>
                 </div>
               </div>
               <ChevronDown className="w-4 h-4" />
@@ -350,12 +394,12 @@ const MobileFnB = ({ user }) => {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center">
               <UtensilsCrossed className="w-5 h-5 mr-2 text-amber-600" />
-              Outlet'ler ({outlets.length})
+              Satış Noktaları ({outlets.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {outlets.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">Outlet bulunamadı</p>
+              <p className="text-gray-500 text-center py-4">Satış noktası bulunamadı</p>
             ) : (
               outlets.map((outlet) => (
                 <div key={outlet.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
@@ -394,10 +438,10 @@ const MobileFnB = ({ user }) => {
                 <div key={transaction.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <div className="flex-1">
                     <p className="font-bold text-gray-900">
-                      {transaction.outlet_name || 'Outlet'}
+                      {transaction.outlet_name || 'Satış noktası'}
                     </p>
                     <p className="text-sm text-gray-600">
-                      Masa {transaction.table_number || 'N/A'}
+                      {transaction.table_number ? `Masa ${transaction.table_number}` : 'Masa belirtilmedi'}
                     </p>
                     <p className="text-xs text-gray-500">
                       {new Date(transaction.created_at).toLocaleTimeString('tr-TR')}
@@ -406,7 +450,7 @@ const MobileFnB = ({ user }) => {
                   <div className="text-right">
                     <p className="font-bold text-green-700">{formatCurrency(transaction.total_amount)}</p>
                     <Badge variant="outline" className="mt-1">
-                      {transaction.payment_method || 'Cash'}
+                      {transaction.payment_method === 'cash' ? 'Nakit' : transaction.payment_method === 'card' ? 'Kredi Kartı' : (transaction.payment_method || 'Ödeme bekliyor')}
                     </Badge>
                   </div>
                 </div>
@@ -419,7 +463,10 @@ const MobileFnB = ({ user }) => {
         <div className="grid grid-cols-2 gap-3">
           <Button
             className="h-20 flex flex-col items-center justify-center bg-amber-600 hover:bg-amber-700"
-            onClick={() => setOrderModalOpen(true)}
+            onClick={() => {
+              setSelectedOutlet(activeOutlet?.id || null);
+              setOrderModalOpen(true);
+            }}
           >
             <ShoppingBag className="w-6 h-6 mb-1" />
             <span className="text-xs">Yeni Sipariş</span>
@@ -448,6 +495,15 @@ const MobileFnB = ({ user }) => {
             <MenuIcon className="w-6 h-6 mb-1" />
             <span className="text-xs">Menü Yönetimi</span>
           </Button>
+
+          <Button
+            variant="outline"
+            className="h-16 col-span-2 flex items-center justify-center border-blue-200 text-blue-700 hover:bg-blue-50"
+            onClick={() => setReportsModalOpen(true)}
+          >
+            <BarChart3 className="w-5 h-5 mr-2" />
+            Günlük Satış Özetini Gör
+          </Button>
         </div>
       </div>
 
@@ -459,11 +515,15 @@ const MobileFnB = ({ user }) => {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Outlet Seçin</Label>
+              <Label>Satış Noktası</Label>
               <select 
                 className="w-full p-2 border rounded mt-1"
                 value={selectedOutlet || ''}
-                onChange={(e) => setSelectedOutlet(e.target.value)}
+                onChange={(e) => {
+                  const outlet = outlets.find(item => item.id === e.target.value);
+                  setSelectedOutlet(e.target.value || null);
+                  if (outlet) selectOutlet(outlet);
+                }}
               >
                 <option value="">Seçin...</option>
                 {outlets.filter(o => o.status === 'active').map(outlet => (
@@ -530,9 +590,9 @@ const MobileFnB = ({ user }) => {
             <Button 
               className="w-full bg-amber-600 hover:bg-amber-700"
               onClick={handleSubmitOrder}
-              disabled={!selectedOutlet || orderItems.length === 0}
+              disabled={!selectedOutlet || orderItems.length === 0 || submittingOrder}
             >
-              Sipariş Oluştur
+              {submittingOrder ? 'Sipariş oluşturuluyor…' : 'Sipariş Oluştur'}
             </Button>
           </div>
         </DialogContent>
@@ -685,10 +745,10 @@ const MobileFnB = ({ user }) => {
 
               <Button 
                 className="w-full bg-green-600 hover:bg-green-700"
-                onClick={() => toast.success('Z raporu indirildi!')}
+                onClick={() => window.print()}
               >
                 <Download className="w-4 h-4 mr-2" />
-                Raporu İndir (PDF)
+                Yazdır veya PDF Olarak Kaydet
               </Button>
             </div>
           ) : (
@@ -749,10 +809,10 @@ const MobileFnB = ({ user }) => {
                             İşlem #{transaction.transaction_id || transaction.id}
                           </p>
                           <p className="text-sm text-gray-600 mt-1">
-                            Outlet: {transaction.outlet_name || 'N/A'}
+                            Satış Noktası: {transaction.outlet_name || 'Belirtilmedi'}
                           </p>
                           <p className="text-sm text-gray-600">
-                            Masa: {transaction.table_number || 'N/A'}
+                            Masa: {transaction.table_number || 'Belirtilmedi'}
                           </p>
                           <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
                             <p className="text-xs text-yellow-800 font-medium">İptal Nedeni:</p>
@@ -857,32 +917,60 @@ const MobileFnB = ({ user }) => {
               );
             })}
 
-            <Button 
-              className="w-full bg-indigo-600 hover:bg-indigo-700"
-              onClick={async () => {
-                const name = await promptDialog({ message: 'Ürün adı:' })?.trim();
-                if (!name) return;
-                const priceStr = await promptDialog({ message: `Fiyat (${cachedTenantCurrency()}):` })?.trim();
-                const price = parseFloat((priceStr || '').replace(',', '.'));
-                if (!price || price <= 0) {
-                  toast.error('Geçerli bir fiyat girin');
-                  return;
-                }
-                const category = (await promptDialog({ message: 'Kategori (food/drink/dessert/appetizer/alcohol):', defaultValue: 'food' }) || 'food').trim().toLowerCase();
-                try {
-                  const res = await axios.post('/pos/menu-item', {
-                    name, price, category, available: true
-                  });
-                  toast.success(`"${res.data?.name || name}" eklendi`);
-                  loadData?.();
-                } catch (err) {
-                  toast.error(err?.response?.data?.detail || 'Ürün eklenemedi');
-                }
-              }}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Yeni Ürün Ekle
-            </Button>
+            <Card className="border-indigo-200 bg-indigo-50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Yeni Menü Ürünü</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label htmlFor="mobile-menu-name">Ürün adı</Label>
+                  <Input
+                    id="mobile-menu-name"
+                    value={newMenuItem.name}
+                    onChange={(event) => setNewMenuItem(current => ({ ...current, name: event.target.value }))}
+                    placeholder="Örn. Izgara somon"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="mobile-menu-price">Fiyat ({cachedTenantCurrency()})</Label>
+                    <Input
+                      id="mobile-menu-price"
+                      inputMode="decimal"
+                      value={newMenuItem.price}
+                      onChange={(event) => setNewMenuItem(current => ({ ...current, price: event.target.value }))}
+                      placeholder="0,00"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="mobile-menu-category">Kategori</Label>
+                    <select
+                      id="mobile-menu-category"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={newMenuItem.category}
+                      onChange={(event) => setNewMenuItem(current => ({ ...current, category: event.target.value }))}
+                    >
+                      <option value="food">Yemek</option>
+                      <option value="appetizer">Başlangıç / Meze</option>
+                      <option value="beverage">İçecek</option>
+                      <option value="dessert">Tatlı</option>
+                      <option value="alcohol">Alkollü İçecek</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Ürün, {activeOutlet?.name || 'seçili satış noktası'} menüsüne eklenir.
+                </p>
+                <Button
+                  className="w-full bg-indigo-600 hover:bg-indigo-700"
+                  onClick={handleCreateMenuItem}
+                  disabled={savingMenuItem || !activeOutlet?.id}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  {savingMenuItem ? 'Kaydediliyor…' : 'Menüye Ekle'}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         </DialogContent>
       </Dialog>
@@ -893,7 +981,7 @@ const MobileFnB = ({ user }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
               <Store className="w-5 h-5 text-amber-600" />
-              <span>Outlet Seçimi</span>
+              <span>Satış Noktası Seçimi</span>
             </DialogTitle>
           </DialogHeader>
           
@@ -918,7 +1006,7 @@ const MobileFnB = ({ user }) => {
 
             {/* Outlet List */}
             <div className="space-y-2">
-              <p className="text-sm font-medium text-gray-700 mb-2">Tüm Outlet'ler:</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">Tüm Satış Noktaları:</p>
               {outlets.map((outlet) => (
                 <Button
                   key={outlet.id}
@@ -929,10 +1017,9 @@ const MobileFnB = ({ user }) => {
                       : 'bg-white hover:bg-gray-50'
                   }`}
                   onClick={() => {
-                    setActiveOutlet(outlet);
+                    selectOutlet(outlet);
                     setOutletSelectorOpen(false);
-                    toast.success(`${outlet.name} outlet'ine geçildi!`);
-                    loadData(); // Reload data for new outlet
+                    toast.success(`${outlet.name} seçildi.`);
                   }}
                 >
                   <div className="flex items-center space-x-3 w-full">
@@ -991,7 +1078,7 @@ const MobileFnB = ({ user }) => {
                 <p className="text-sm font-bold text-gray-900 mb-2">F&B Özeti</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="text-center p-2 bg-white rounded">
-                    <p className="text-xs text-gray-600">Toplam Outlet</p>
+                    <p className="text-xs text-gray-600">Toplam Satış Noktası</p>
                     <p className="text-2xl font-bold text-blue-700">{outlets.length}</p>
                   </div>
                   <div className="text-center p-2 bg-white rounded">
