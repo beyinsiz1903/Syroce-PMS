@@ -3,16 +3,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const axiosGet = vi.fn();
 const axiosPut = vi.fn();
+const axiosPost = vi.fn();
 
 vi.mock('axios', () => ({
   default: {
     get: (...args) => axiosGet(...args),
     put: (...args) => axiosPut(...args),
+    post: (...args) => axiosPost(...args),
   },
 }));
 
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
+}));
+
+vi.mock('@/lib/dialogs', () => ({
+  confirmDialog: vi.fn().mockResolvedValue(true),
 }));
 
 import POSTableManagement from '@/components/POSTableManagement';
@@ -21,6 +27,7 @@ describe('POSTableManagement', () => {
   beforeEach(() => {
     axiosGet.mockReset();
     axiosPut.mockReset();
+    axiosPost.mockReset();
     axiosGet.mockResolvedValue({
       data: {
         available: 1,
@@ -30,6 +37,7 @@ describe('POSTableManagement', () => {
       },
     });
     axiosPut.mockResolvedValue({ data: { success: true } });
+    axiosPost.mockResolvedValue({ data: { success: true } });
   });
 
   it('uses the persisted table-layout API and can change table status', async () => {
@@ -43,6 +51,32 @@ describe('POSTableManagement', () => {
       '/pos/tables/table-1/status',
       null,
       { params: { new_status: 'occupied' } },
+    ));
+  });
+
+  it('shows the live check and transfers it to an available table', async () => {
+    axiosGet.mockResolvedValue({
+      data: {
+        available: 1,
+        occupied: 1,
+        reserved: 0,
+        tables: [
+          { id: 'table-1', table_number: '1', seats: 4, status: 'occupied', current_transaction_id: 'check-1', current_bill: 250, guest_count: 2, duration_minutes: 18 },
+          { id: 'table-2', table_number: '2', seats: 4, status: 'available' },
+        ],
+      },
+    });
+
+    render(<POSTableManagement outletId="outlet-1" />);
+
+    expect(await screen.findByText('Açık adisyon')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Masa 1 hedef masa'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: /Adisyonu Aktar/i }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pos/transfer-table',
+      null,
+      { params: { from_table: '1', to_table: '2', outlet_id: 'outlet-1', transfer_all: true } },
     ));
   });
 });
