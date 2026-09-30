@@ -4,7 +4,7 @@ import {
   AdminVendors, QuickIdSettings, RoomQrCodes, RoomRequests, ModuleReport,
   AdminLeads, GovernancePanel, UserRoleManager, TenantUsers, HousekeepingDashboard,
   POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
-  ModuleDiscovery, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
+  ModuleDiscovery, AdminModuleControlCenter, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
   RnlAutoResolveRuns, RnlDuplicates, SiteContentEditor, VoiceNumberMapping,
   AutonomousCollectionJobs, PhysicalSecurityDashboard, ContactCenterDashboard,
 } from "./lazyPages";
@@ -53,6 +53,7 @@ export function securityAdminRoutes({ p, pa, pm }) {
     { path: "/admin/webhook-outbox", ...pa(WebhookOutboxAdmin), wrapLayout: true, layoutModule: "webhook-outbox-admin" },
     { path: "/admin/early-warning", ...pa(EarlyWarningDashboard), wrapLayout: true, layoutModule: "early_warning_dashboard" },
     { path: "/admin/module-discovery", ...pa(ModuleDiscovery), wrapLayout: true, layoutModule: "module-discovery" },
+    { path: "/admin/module-control", ...pa(AdminModuleControlCenter), wrapLayout: true, layoutModule: "module-control" },
     { path: "/admin/integration-credentials", ...pa(IntegrationCredentials), wrapLayout: true, layoutModule: "integration-credentials" },
     { path: "/admin/integrations-overview", ...pa(IntegrationsOverview), wrapLayout: true, layoutModule: "integrations_overview" },
     { path: "/admin/capx-integration", ...pa(CapXIntegration), wrapLayout: true, layoutModule: "capx-integration" },

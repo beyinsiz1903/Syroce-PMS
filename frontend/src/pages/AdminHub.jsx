@@ -23,6 +23,7 @@ import {
   History,
   AlertTriangle,
   Wallet,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -57,6 +58,7 @@ const SECTIONS = [
     descKey: 'adminHub.sections.modules.desc',
     descFallback: 'Özellik bayrakları, keşif, raporlar',
     items: [
+      { to: '/admin/module-control',   icon: SlidersHorizontal, labelKey: 'adminHub.items.moduleControl',    labelFallback: 'Modül Kontrol Merkezi' },
       { to: '/admin/features',         icon: Sparkles,      labelKey: 'adminHub.items.features',         labelFallback: 'Özellik Vitrini' },
       { to: '/admin/module-discovery', icon: Compass,       labelKey: 'adminHub.items.moduleDiscovery',  labelFallback: 'Modül Keşfi' },
       { to: '/admin/module-report',    icon: FileBarChart,  labelKey: 'adminHub.items.moduleReport',     labelFallback: 'Modül Raporu' },
