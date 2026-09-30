@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeftRight, BarChart3, BedDouble, DollarSign } from 'lucide-react';
+import { ArrowLeftRight, Banknote, BarChart3, BedDouble, CreditCard, HandCoins, ReceiptText } from 'lucide-react';
 import { EmptyState, KPICard, SectionHeader, formatCurrency } from './ReportHelpers';
 
 const formatDateTime = value => value ? new Date(value).toLocaleString('tr-TR') : '-';
@@ -11,20 +11,39 @@ const CurrencyBreakdown = ({ totals = {}, fallback }) => {
     : <>{fallback == null ? '-' : formatCurrency(fallback)}</>;
 };
 
+const BalanceEffect = ({ totals = {}, fallback }) => {
+  const entries = Object.entries(totals);
+  const values = entries.length ? entries : [[undefined, Number(fallback || 0)]];
+  return <div className="space-y-1">{values.map(([code, rawAmount]) => {
+    const amount = Number(rawAmount || 0);
+    const label = amount < 0
+      ? 'Önceki bakiyeden tahsilat'
+      : amount > 0
+        ? 'Gün içinde oluşan açık bakiye'
+        : 'Günlük folyo ve tahsilat dengeli';
+    return <div key={code || 'fallback'}>
+      <p className={`font-bold text-lg ${amount < 0 ? 'text-emerald-700' : amount > 0 ? 'text-amber-700' : ''}`}>
+        {formatCurrency(Math.abs(amount), code)}
+      </p>
+      <p className="text-xs text-gray-500">{label}</p>
+    </div>;
+  })}</div>;
+};
+
 const FrontCashierReport = ({ summary, payments, reportDate }) => (
   <div className="space-y-5" data-testid="section-front-cashier">
     <SectionHeader title="Ön Kasa Raporu" description={`${reportDate} tarihli folyo ve tahsilat özeti`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Folyo İşlem Tutarı" value={<CurrencyBreakdown totals={summary.charge_total_by_currency} fallback={summary.charge_total} />} icon={DollarSign} color="amber" />
-      <KPICard title="Toplam Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_currency} />} icon={DollarSign} color="green" />
-      <KPICard title="Nakit Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_method_currency?.cash} />} icon={DollarSign} color="blue" />
-      <KPICard title="Kart / Havale Tahsilatı" value={<CurrencyBreakdown totals={Object.entries(payments.totals_by_method_currency || {}).filter(([method]) => method !== 'cash').reduce((result, [, totals]) => { Object.entries(totals).forEach(([code, amount]) => { result[code] = (result[code] || 0) + amount; }); return result; }, {})} />} icon={DollarSign} color="purple" />
+      <KPICard title="Folyo İşlem Tutarı" value={<CurrencyBreakdown totals={summary.charge_total_by_currency} fallback={summary.charge_total} />} icon={ReceiptText} color="amber" />
+      <KPICard title="Toplam Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_currency} />} icon={HandCoins} color="green" />
+      <KPICard title="Nakit Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_method_currency?.cash} />} icon={Banknote} color="blue" />
+      <KPICard title="Kart / Havale Tahsilatı" value={<CurrencyBreakdown totals={Object.entries(payments.totals_by_method_currency || {}).filter(([method]) => method !== 'cash').reduce((result, [, totals]) => { Object.entries(totals).forEach(([code, amount]) => { result[code] = (result[code] || 0) + amount; }); return result; }, {})} />} icon={CreditCard} color="purple" />
     </div>
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
       <div><p className="text-gray-500">Folyo hareketi</p><p className="font-bold text-lg">{summary.charge_count || 0}</p></div>
       <div><p className="text-gray-500">Ödeme hareketi</p><p className="font-bold text-lg">{summary.payment_count || 0}</p></div>
       <div><p className="text-gray-500">Net nakit tahsilatı</p><p className="font-bold text-lg"><CurrencyBreakdown totals={summary.net_cash_movement_by_currency} fallback={summary.net_cash_movement} /></p></div>
-      <div><p className="text-gray-500">Günlük bakiye değişimi</p><p className="font-bold text-lg"><CurrencyBreakdown totals={summary.daily_balance_change_by_currency} fallback={summary.daily_balance_change} /></p><p className="text-xs text-gray-400">Folyo işlemleri − tahsilatlar</p></div>
+      <div><p className="text-gray-500">Günlük bakiye etkisi</p><BalanceEffect totals={summary.daily_balance_change_by_currency} fallback={summary.daily_balance_change} /></div>
       <div><p className="text-gray-500">Tahsil edilmemiş yeni tutar</p><p className="font-bold text-lg"><CurrencyBreakdown totals={summary.uncollected_charges_by_currency} fallback={summary.uncollected_charges} /></p></div>
       <div><p className="text-gray-500">Rapor tarihi</p><p className="font-bold text-lg">{reportDate}</p></div>
     </CardContent></Card>
@@ -71,7 +90,7 @@ const DailyAnalysisReport = ({ analysis }) => (
     <SectionHeader title="Günlük Analiz Raporu" description={`${analysis.date || ''} tarihli operasyon ve finans özeti`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Doluluk" value={`${analysis.occupancy_percentage || 0}%`} icon={BedDouble} color="blue" />
-      <KPICard title={analysis.revenue_source === 'accrued' ? 'Tahakkuk Eden Oda Geliri' : 'İşlenen Oda Geliri'} value={analysis.room_revenue || 0} icon={DollarSign} color="green" />
+      <KPICard title={analysis.revenue_source === 'accrued' ? 'Tahakkuk Eden Oda Geliri' : 'İşlenen Oda Geliri'} value={analysis.room_revenue || 0} icon={ReceiptText} color="green" />
       <KPICard title="Satılan Oda Başına Ortalama Fiyat" value={analysis.adr || 0} icon={BarChart3} color="purple" />
       <KPICard title="Satılabilir Oda Başına Gelir" value={analysis.revpar || 0} icon={BarChart3} color="cyan" />
     </div>
