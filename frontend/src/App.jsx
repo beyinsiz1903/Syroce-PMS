@@ -35,6 +35,7 @@ import {
   ADMIN_TENANT_SESSION_EVENT,
   reconcileAdminTenantContext,
 } from "@/lib/adminTenantContext";
+import { resolvePostLoginDestination } from "@/lib/postLoginWorkspace";
 
 // Sesli softphone (Contact Center Faz 2) — yalnızca personel için, lazy.
 // Twilio Voice SDK + mikrofon izni operatör "Aktifleştir"e basınca yüklenir.
@@ -301,25 +302,16 @@ function App() {
     // the cached identity and rewire its socket subscription + unread fetch.
     notifyAuthChanged();
 
-    // ── Auto-redirect to Onboarding Wizard ───────────────────────
-    // For tenant admins on a fresh setup (not dismissed, fewer than
-    // 3 steps complete), land them on the wizard instead of the
-    // dashboard. A deep-link in postLoginRedirect always wins.
-    const ADMIN_ROLES = new Set([
-      "super_admin", "platform_admin", "admin", "owner",
-    ]);
-    const role = (canonicalUser?.role || "").toLowerCase();
-    const isTenantAdmin = ADMIN_ROLES.has(role) && !!canonicalUser?.tenant_id;
-    const hasDeepLink = !!sessionStorage.getItem("postLoginRedirect");
-    if (isTenantAdmin && !hasDeepLink) {
-      try {
-        const r = await axios.get("/onboarding/progress");
-        const d = r?.data || {};
-        if (d.dismissed === false && (d.completed ?? 0) < 3) {
-          sessionStorage.setItem("postLoginRedirect", "/app/onboarding");
-        }
-      } catch { /* non-fatal */ }
-    }
+    // ── Post-login workspace routing ──────────────────────────────
+    // A central chain manager chooses the hotel workspace before entering PMS.
+    // The backend endpoint only returns siblings after verifying chain scope.
+    // An explicit deep-link always wins over this default landing page.
+    const resolvedLanding = await resolvePostLoginDestination({
+      api: axios,
+      user: canonicalUser,
+      existingRedirect: sessionStorage.getItem("postLoginRedirect"),
+    });
+    if (resolvedLanding) sessionStorage.setItem("postLoginRedirect", resolvedLanding);
 
     const redirectAfterLogin = sessionStorage.getItem("postLoginRedirect");
     if (redirectAfterLogin) {

@@ -41,15 +41,18 @@ describe('MultiProperty workspace switching', () => {
     });
   });
 
-  it('keeps the current hotel disabled and exposes sibling hotel switching', async () => {
+  it('opens the current hotel and exposes sibling hotel switching', async () => {
     axiosMock.post.mockRejectedValue({ response: { data: { detail: 'Geçiş reddedildi' } } });
     render(<MemoryRouter><MultiProperty /></MemoryRouter>);
 
     const current = await screen.findByRole('button', { name: 'Denizli Oteli çalışma alanına geç' });
     const sibling = screen.getByRole('button', { name: 'Fethiye Oteli çalışma alanına geç' });
 
-    expect(current).toBeDisabled();
+    expect(current).toBeEnabled();
     expect(sibling).toBeEnabled();
+
+    fireEvent.click(current);
+    expect(axiosMock.post).not.toHaveBeenCalled();
 
     fireEvent.click(sibling);
     await waitFor(() => expect(axiosMock.post).toHaveBeenCalledWith('/admin/tenants/hotel-fethiye/context'));

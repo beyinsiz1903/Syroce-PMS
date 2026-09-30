@@ -63,7 +63,11 @@ const MultiProperty = ({ embedded = false }) => {
   };
 
   const enterPropertyWorkspace = async (property) => {
-    if (!property?.property_id || property.property_id === data?.current_property_id) return;
+    if (!property?.property_id) return;
+    if (property.property_id === data?.current_property_id) {
+      navigate('/app/dashboard');
+      return;
+    }
     setSwitchingPropertyId(property.property_id);
     try {
       const response = await axios.post(`/admin/tenants/${property.property_id}/context`);
@@ -180,14 +184,14 @@ const MultiProperty = ({ embedded = false }) => {
                   type="button"
                   className="mt-4 w-full"
                   variant={property.property_id === data.current_property_id ? 'outline' : 'default'}
-                  disabled={property.property_id === data.current_property_id || Boolean(switchingPropertyId)}
+                  disabled={Boolean(switchingPropertyId)}
                   onClick={() => enterPropertyWorkspace(property)}
                   aria-label={`${property.property_name} çalışma alanına geç`}
                 >
                   {switchingPropertyId === property.property_id
                     ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                     : <LogIn className="mr-2 h-4 w-4" aria-hidden="true" />}
-                  {property.property_id === data.current_property_id ? 'Şu an bu oteldesiniz' : 'Otel çalışma alanına geç'}
+                  {property.property_id === data.current_property_id ? 'Bu otele gir' : 'Otel çalışma alanına geç'}
                 </Button>
               </CardContent>
             </Card>
