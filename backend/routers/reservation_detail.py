@@ -950,6 +950,72 @@ def _reservation_calendar_date(value) -> date | None:
             return None
 
 
+def _daily_rate_cents(value) -> int:
+    """Convert a persisted monetary value to integer cents without float drift."""
+    try:
+        return int((Decimal(str(value or 0)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (ArithmeticError, ValueError):
+        return 0
+
+
+def _complete_daily_rates_for_stay(daily_rates: list[dict], booking: dict) -> list[dict]:
+    """Return exactly one rate row for every chargeable night in a stay.
+
+    Provider imports and older reservations can contain only part of a stay's
+    daily-rate plan.  Keep every existing night intact (closed business dates
+    may be immutable) and allocate the reservation total still unaccounted for
+    across only the missing nights.
+    """
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        return daily_rates
+
+    expected_dates: list[date] = []
+    current = check_in
+    while current < check_out:
+        expected_dates.append(current)
+        current += timedelta(days=1)
+
+    rows_by_date: dict[date, dict] = {}
+    for row in daily_rates:
+        row_date = _reservation_calendar_date(row.get("date"))
+        if row_date in expected_dates and row_date not in rows_by_date:
+            rows_by_date[row_date] = row
+
+    missing_dates = [night for night in expected_dates if night not in rows_by_date]
+    if not missing_dates:
+        return [rows_by_date[night] for night in expected_dates]
+
+    target_cents = _daily_rate_cents(booking.get("total_amount"))
+    known_cents = sum(_daily_rate_cents(row.get("rate")) for row in rows_by_date.values())
+    remaining_cents = target_cents - known_cents
+    is_complimentary = bool(booking.get("is_complimentary"))
+
+    minimum_total = 0 if is_complimentary else len(missing_dates)
+    if remaining_cents >= minimum_total:
+        distributable_cents = remaining_cents
+    else:
+        fallback_cents = _daily_rate_cents(booking.get("base_rate"))
+        if fallback_cents <= 0 and rows_by_date:
+            fallback_cents = round(known_cents / len(rows_by_date))
+        if fallback_cents <= 0 and expected_dates:
+            fallback_cents = round(target_cents / len(expected_dates))
+        distributable_cents = max(fallback_cents, 0 if is_complimentary else 1) * len(missing_dates)
+
+    cents_per_night, remainder = divmod(distributable_cents, len(missing_dates))
+    for index, night in enumerate(missing_dates):
+        cents = cents_per_night + (1 if index < remainder else 0)
+        rows_by_date[night] = {
+            "date": night.isoformat(),
+            "rate": cents / 100,
+            "generated": True,
+            "generated_reason": "missing_daily_rate",
+        }
+
+    return [rows_by_date[night] for night in expected_dates]
+
+
 async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str, details: dict = None):
     """Log an activity for a reservation."""
     log_entry = {
@@ -1110,23 +1176,9 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
             ):
                 daily_rates.append(dr)
 
-        # If no daily rates exist, generate from booking
-        if not daily_rates and booking.get("check_in") and booking.get("check_out"):
-            ci = _reservation_calendar_date(booking["check_in"])
-            co = _reservation_calendar_date(booking["check_out"])
-            if ci is not None and co is not None:
-                nights = max((co - ci).days, 1)
-                nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
-                current = ci
-                for _ in range(nights):
-                    daily_rates.append(
-                        {
-                            "date": current.isoformat(),
-                            "rate": nightly_rate,
-                            "generated": True,
-                        }
-                    )
-                    current = current + timedelta(days=1)
+        # Imported and legacy reservations may have a partially populated rate
+        # plan. Complete missing stay nights without changing persisted rows.
+        daily_rates = _complete_daily_rates_for_stay(daily_rates, booking)
 
         # Guests associated with this booking
         guests_list = []
