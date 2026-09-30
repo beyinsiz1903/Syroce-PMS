@@ -35,10 +35,14 @@ describe('POSTableManagement', () => {
   it('uses the persisted table-layout API and can change table status', async () => {
     render(<POSTableManagement outletId="outlet-1" />);
 
-    expect(await screen.findByText('4 seats')).toBeInTheDocument();
+    expect(await screen.findByText('4 kişilik')).toBeInTheDocument();
     expect(axiosGet).toHaveBeenCalledWith('/pos/table-layout/outlet-1');
 
-    fireEvent.click(screen.getByRole('button', { name: /Occupy/i }));
-    await waitFor(() => expect(axiosPut).toHaveBeenCalledWith('/pos/tables/table-1/status?new_status=occupied'));
+    fireEvent.click(screen.getByRole('button', { name: /Dolu Yap/i }));
+    await waitFor(() => expect(axiosPut).toHaveBeenCalledWith(
+      '/pos/tables/table-1/status',
+      null,
+      { params: { new_status: 'occupied' } },
+    ));
   });
 });

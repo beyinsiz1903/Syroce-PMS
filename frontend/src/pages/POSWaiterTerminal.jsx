@@ -7,13 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
-import { UtensilsCrossed, ArrowLeft, Store, LayoutGrid, ShoppingCart, Plus, Minus, Check, CreditCard, Banknote, BedDouble, Eraser, Calendar } from 'lucide-react';
+import { UtensilsCrossed, ArrowLeft, Store, LayoutGrid, ShoppingCart, Plus, Minus, Check, CreditCard, Banknote, BedDouble, Eraser, Calendar, Loader2 } from 'lucide-react';
 import { alertDialog } from '@/lib/dialogs';
-import { formatAmount } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 // Touch-first waiter terminal: outlet -> table -> menu/cart -> pay / charge-room.
-// Currency is single-currency TRY shown as "tr-TR + ' TL'". Order creation goes
-// through the idempotent /api/pos/create-order which also fires the KDS + KOT.
+// Order creation goes through the idempotent /api/pos/create-order which also
+// fires the KDS + KOT. Display currency follows the outlet/tenant contract.
 
 const STEPS = {
   OUTLET: 'outlet',
@@ -47,6 +47,10 @@ const POSWaiterTerminal = () => {
   const [roomBooking, setRoomBooking] = useState(null);
   const [guestSearch, setGuestSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingOutlets, setLoadingOutlets] = useState(true);
+  const [loadingTables, setLoadingTables] = useState(false);
+  const [loadingMenu, setLoadingMenu] = useState(false);
+  const [loadingInhouse, setLoadingInhouse] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
   const pendingKeyRef = useRef(null);
 
@@ -56,11 +60,15 @@ const POSWaiterTerminal = () => {
   const hasSignatureRef = useRef(false);
   const loadOutlets = useCallback(async () => {
     try {
+      setLoadingOutlets(true);
       const res = await axios.get('/pos/outlets');
       const list = Array.isArray(res.data) ? res.data : res.data.outlets || [];
       setOutlets(list.filter(o => !['inactive', 'deleted'].includes(o.status)));
     } catch (err) {
-      console.error('Outlets yuklenemedi:', err); toast.error('Outlets yuklenemedi');
+      console.error('Satış noktaları yüklenemedi:', err);
+      toast.error('Satış noktaları yüklenemedi');
+    } finally {
+      setLoadingOutlets(false);
     }
   }, []);
   useEffect(() => {
@@ -68,15 +76,19 @@ const POSWaiterTerminal = () => {
   }, [loadOutlets]);
   const loadTables = useCallback(async outletId => {
     try {
+      setLoadingTables(true);
       const res = await axios.get(`/pos/table-layout/${outletId}`);
       setTables(res.data.tables || []);
     } catch (err) {
-      console.error('Masalar yuklenemedi:', err); toast.error('Masalar yuklenemedi');
+      console.error('Masalar yüklenemedi:', err); toast.error('Masalar yüklenemedi');
       setTables([]);
+    } finally {
+      setLoadingTables(false);
     }
   }, []);
   const loadMenu = useCallback(async outletId => {
     try {
+      setLoadingMenu(true);
       const res = await axios.get('/pos/menu-items', {
         params: {
           outlet_id: outletId
@@ -85,17 +97,23 @@ const POSWaiterTerminal = () => {
       const list = Array.isArray(res.data) ? res.data : res.data.menu_items || [];
       setMenuItems(normalizeWaiterMenuItems(list));
     } catch (err) {
-      console.error('Menu yuklenemedi:', err); toast.error('Menu yuklenemedi');
+      console.error('Menü yüklenemedi:', err); toast.error('Menü yüklenemedi');
       setMenuItems([]);
+    } finally {
+      setLoadingMenu(false);
     }
   }, []);
   const loadInhouse = useCallback(async () => {
     try {
+      setLoadingInhouse(true);
       const res = await axios.get('/frontdesk/inhouse');
       setInhouse(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.error('Konaklayan misafirler yuklenemedi:', err); toast.error('Misafirler yuklenemedi');
+      console.error('Konaklayan misafirler yüklenemedi:', err);
+      toast.error('Konaklayan misafirler yüklenemedi');
       setInhouse([]);
+    } finally {
+      setLoadingInhouse(false);
     }
   }, []);
   const pickOutlet = o => {
@@ -143,6 +161,8 @@ const POSWaiterTerminal = () => {
   const subtotal = cart.reduce((s, c) => s + c.unit_price * c.quantity, 0);
   const tax = cart.reduce((s, c) => s + c.unit_price * c.quantity * c.tax_rate, 0);
   const total = subtotal + tax;
+  const currency = String(outlet?.currency || cachedTenantCurrency()).toUpperCase();
+  const money = amount => formatCurrency(amount, currency);
   const categories = ['all', ...Array.from(new Set(menuItems.map(item => item.category).filter(Boolean)))];
   const categoryLabels = {
     all: 'Tümü', food: 'Ana Yemek', beverage: 'İçecek', alcohol: 'Alkollü',
@@ -206,20 +226,20 @@ const POSWaiterTerminal = () => {
   const submitOrder = async paymentMethod => {
     if (cart.length === 0) {
       alertDialog({
-        message: 'Sepet bos'
+        message: 'Adisyonda ürün bulunmuyor.'
       });
       return;
     }
     if (paymentMethod === 'room_charge') {
       if (!roomBooking) {
         alertDialog({
-          message: 'Odaya yazmak icin konaklayan misafir secin'
+          message: 'Odaya yazmak için konaklayan bir misafir seçin.'
         });
         return;
       }
       if (!hasSignatureRef.current) {
         alertDialog({
-          message: 'Odaya yazmak icin misafir imzasi gerekli'
+          message: 'Odaya yazma işlemi için misafir imzası gereklidir.'
         });
         return;
       }
@@ -230,13 +250,7 @@ const POSWaiterTerminal = () => {
         pendingKeyRef.current = globalThis.crypto?.randomUUID?.() || `pos-term-${Date.now()}-${Math.random()}`;
       }
       const signature = paymentMethod === 'room_charge' && hasSignatureRef.current ? canvasRef.current.toDataURL('image/png') : null;
-      const res = await fetch('/api/pos/create-order', {
-        credentials: "include",
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      const res = await axios.post('/pos/create-order', {
           outlet_id: outlet?.id || null,
           table_number: table?.table_number != null ? String(table.table_number) : null,
           booking_id: paymentMethod === 'room_charge' ? roomBooking?.id || null : null,
@@ -246,34 +260,33 @@ const POSWaiterTerminal = () => {
             item_id: c.item_id,
             quantity: c.quantity
           })),
-          idempotency_key: pendingKeyRef.current
-        })
+          idempotency_key: pendingKeyRef.current,
       });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
+      if (res.status >= 200 && res.status < 300) {
+        const data = res.data || {};
         pendingKeyRef.current = null;
         setLastOrder(data.order || null);
         if (data.idempotent_replay) {
           alertDialog({
-            message: 'Bu siparis zaten olusturulmustu — cift hesap kesilmedi.'
+            message: 'Bu sipariş daha önce oluşturulmuş; ikinci kez hesap kesilmedi.'
           });
         } else {
           alertDialog({
-            message: 'Siparis olusturuldu, mutfak fisi yazdirildi.'
+            message: 'Sipariş oluşturuldu ve mutfak fişi gönderildi.'
           });
         }
         resetForNext();
         if (outlet) loadTables(outlet.id);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alertDialog({
-          message: err.detail || 'Siparis olusturulamadi'
-        });
       }
     } catch (err) {
-      console.error('Siparis hatasi:', err);
+      console.error('Sipariş hatası:', err);
+      const status = err?.response?.status;
+      if (status && status < 500) pendingKeyRef.current = null;
+      const detail = err?.response?.data?.detail;
       alertDialog({
-        message: 'Siparis olusturulurken hata olustu'
+        message: typeof detail === 'string'
+          ? detail
+          : 'Sipariş oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.'
       });
     } finally {
       setLoading(false);
@@ -285,6 +298,13 @@ const POSWaiterTerminal = () => {
     reserved: 'bg-amber-100 text-amber-800 border-amber-300',
     dirty: 'bg-gray-100 text-gray-700 border-gray-300'
   })[s] || 'bg-gray-100 text-gray-700 border-gray-300';
+  const statusLabel = s => ({
+    available: 'Müsait', occupied: 'Dolu', reserved: 'Rezerve', dirty: 'Temizlenecek',
+  })[s] || 'Durum bilinmiyor';
+  const outletTypeLabel = type => ({
+    restaurant: 'Restoran', bar: 'Bar', cafe: 'Kafe', room_service: 'Oda Servisi',
+    banquet: 'Banket', spa: 'SPA',
+  })[type] || type;
   const filteredInhouse = inhouse.filter(b => {
     if (!guestSearch.trim()) return true;
     const q = guestSearch.toLowerCase();
@@ -299,7 +319,7 @@ const POSWaiterTerminal = () => {
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
             <UtensilsCrossed className="w-7 h-7 text-amber-600" />{t("cm.pages_POSWaiterTerminal.garson_terminali")}</h1>
           <p className="text-gray-600 mt-1 text-sm">
-            {outlet ? outlet.outlet_name || outlet.name : 'Satis noktasi secin'}
+            {outlet ? outlet.outlet_name || outlet.name : 'Satış noktası seçin'}
             {table ? ` • Masa ${table.table_number}` : ''}
           </p>
         </div>
@@ -311,7 +331,11 @@ const POSWaiterTerminal = () => {
       {step === STEPS.OUTLET && <div>
           <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
             <Store className="w-5 h-5 text-amber-600" />{t("cm.pages_POSWaiterTerminal.satis_noktasi")}</h2>
-          {outlets.length === 0 ? (
+          {loadingOutlets ? (
+            <Card><CardContent className="p-12 flex items-center justify-center gap-3 text-gray-500">
+              <Loader2 className="w-5 h-5 animate-spin" /> Satış noktaları yükleniyor…
+            </CardContent></Card>
+          ) : outlets.length === 0 ? (
             <Card className="border-dashed border-2 bg-gray-50">
               <CardContent className="p-12 text-center flex flex-col items-center justify-center">
                 <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
@@ -332,7 +356,7 @@ const POSWaiterTerminal = () => {
                   <CardContent className="p-5 text-center">
                     <Store className="w-8 h-8 mx-auto mb-2 text-amber-600" />
                     <div className="font-semibold">{o.outlet_name || o.name}</div>
-                    {o.outlet_type && <Badge variant="outline" className="mt-2">{o.outlet_type}</Badge>}
+                    {o.outlet_type && <Badge variant="outline" className="mt-2">{outletTypeLabel(o.outlet_type)}</Badge>}
                   </CardContent>
                 </Card>)}
             </div>}
@@ -346,10 +370,11 @@ const POSWaiterTerminal = () => {
             <Button variant="ghost" size="sm" onClick={() => setStep(STEPS.OUTLET)}>
               <ArrowLeft className="w-4 h-4 mr-1" />{t("cm.pages_POSWaiterTerminal.satis_noktasi")}</Button>
           </div>
-          {tables.length === 0 ? <Card><CardContent className="p-8 text-center text-gray-500">{t("cm.pages_POSWaiterTerminal.bu_satis_noktasinda_masa_bulun")}</CardContent></Card> : <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+          {loadingTables ? <Card><CardContent className="p-8 flex items-center justify-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Masalar yükleniyor…</CardContent></Card> : tables.length === 0 ? <Card><CardContent className="p-8 text-center text-gray-500">{t("cm.pages_POSWaiterTerminal.bu_satis_noktasinda_masa_bulun")}</CardContent></Card> : <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
               {tables.map(tbl => <button key={tbl.id} onClick={() => pickTable(tbl)} data-testid={`table-${tbl.table_number}`} className={`rounded-lg border-2 p-4 text-center transition-shadow hover:shadow-md ${statusColor(tbl.status)}`}>
                   <div className="text-xl font-bold">{tbl.table_number}</div>
                   <div className="text-xs mt-1">{tbl.seats} {t("cm.pages_POSWaiterTerminal.kisi")}</div>
+                  <div className="text-[11px] mt-1 font-medium">{statusLabel(tbl.status)}</div>
                 </button>)}
             </div>}
         </div>}
@@ -367,7 +392,7 @@ const POSWaiterTerminal = () => {
                   </Button>)}
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {loadingMenu ? <div className="py-16 flex items-center justify-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Menü yükleniyor…</div> : <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {visibleItems.map(item => <Card key={item.id}
                 aria-disabled={item.available === false}
                 className={item.available === false
@@ -379,13 +404,13 @@ const POSWaiterTerminal = () => {
                       <div className="font-semibold text-sm leading-tight">{item.item_name}</div>
                       {item.available === false && <Badge variant="destructive">Tükendi</Badge>}
                     </div>
-                    <Badge variant="outline" className="mt-1 text-xs">{item.category}</Badge>
+                    <Badge variant="outline" className="mt-1 text-xs">{categoryLabels[item.category] || item.category}</Badge>
                     <div className="mt-2 font-bold text-amber-700">
-                      {formatAmount(item.unit_price)}{t("cm.pages_POSWaiterTerminal.tl")}</div>
+                      {money(item.unit_price)}</div>
                   </CardContent>
                 </Card>)}
               {visibleItems.length === 0 && <div className="col-span-full text-center text-gray-500 py-8">{t("cm.pages_POSWaiterTerminal.bu_kategoride_urun_yok")}</div>}
-            </div>
+            </div>}
           </div>
 
           {/* Cart */}
@@ -401,7 +426,7 @@ const POSWaiterTerminal = () => {
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{c.item_name}</div>
                           <div className="text-xs text-gray-600">
-                            {formatAmount(c.unit_price)}{t("cm.pages_POSWaiterTerminal.tl_adet")}</div>
+                            {money(c.unit_price)} / adet</div>
                         </div>
                         <div className="flex items-center gap-1">
                           <Button size="sm" variant="outline" onClick={() => changeQty(c.item_id, -1)} data-testid={`cart-minus-${c.item_id}`}>
@@ -417,14 +442,14 @@ const POSWaiterTerminal = () => {
 
                 {cart.length > 0 && <div className="border-t pt-3 space-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span>{t("cm.pages_POSWaiterTerminal.ara_toplam")}</span><span>{formatAmount(subtotal)}{t("cm.pages_POSWaiterTerminal.tl")}</span>
+                      <span>{t("cm.pages_POSWaiterTerminal.ara_toplam")}</span><span>{money(subtotal)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>KDV</span><span>{formatAmount(tax)}{t("cm.pages_POSWaiterTerminal.tl")}</span>
+                      <span>KDV</span><span>{money(tax)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-base border-t pt-1">
                       <span>{t("cm.pages_POSWaiterTerminal.toplam")}</span>
-                      <span className="text-amber-700">{formatAmount(total)}{t("cm.pages_POSWaiterTerminal.tl")}</span>
+                      <span className="text-amber-700">{money(total)}</span>
                     </div>
                   </div>}
               </CardContent>
@@ -455,6 +480,8 @@ const POSWaiterTerminal = () => {
                               </span>
                               {(b.room?.room_number || b.room_number) && <span className="text-gray-500">{t("cm.pages_POSWaiterTerminal._oda")}{b.room?.room_number || b.room_number}</span>}
                             </button>)}
+                          {loadingInhouse && <div className="text-xs text-gray-500 p-2 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Konaklayan misafirler yükleniyor…</div>}
+                          {!loadingInhouse && inhouse.length === 0 && guestSearch && <div className="text-xs text-gray-500 p-2">Konaklayan misafir bulunamadı.</div>}
                           {inhouse.length > 0 && filteredInhouse.length === 0 && <div className="text-xs text-gray-500 p-2">{t("cm.pages_POSWaiterTerminal.eslesme_yok")}</div>}
                         </div>
                       </> : <div className="flex items-center justify-between p-2 rounded bg-amber-50 text-sm">
@@ -476,7 +503,7 @@ const POSWaiterTerminal = () => {
                         <canvas ref={canvasRef} width={320} height={120} className="w-full h-28 border rounded bg-white touch-none" data-testid="signature-pad" onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={endDraw} onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw} />
                         <Button className="w-full" disabled={loading} onClick={() => submitOrder('room_charge')} data-testid="pay-room">
                           <Check className="w-4 h-4 mr-2" />
-                          {loading ? 'Gonderiliyor...' : 'Odaya Yaz ve Onayla'}
+                          {loading ? 'Gönderiliyor…' : 'Odaya Yaz ve Onayla'}
                         </Button>
                       </div>}
                   </div>
@@ -499,7 +526,7 @@ const POSWaiterTerminal = () => {
                     </div>}
                   {lastOrder.total_amount != null && <div className="flex justify-between">
                       <span>{t("cm.pages_POSWaiterTerminal.toplam")}</span>
-                      <span>{formatAmount(lastOrder.total_amount)}{t("cm.pages_POSWaiterTerminal.tl")}</span>
+                      <span>{formatCurrency(lastOrder.total_amount, lastOrder.currency || currency)}</span>
                     </div>}
                 </CardContent>
               </Card>}

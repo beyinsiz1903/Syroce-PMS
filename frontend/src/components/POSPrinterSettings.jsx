@@ -10,6 +10,7 @@ import {
 } from './ui/select';
 import { Printer, Plus, Trash2, RefreshCw, Send } from 'lucide-react';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
+import { toast } from 'sonner';
 
 // Operators register network (ESC/POS over TCP) or simulator printers and map
 // each kitchen station to one — optionally per outlet. KOT auto-print resolves
@@ -29,13 +30,27 @@ const EMPTY = {
 };
 
 const STATIONS = ['', 'hot_kitchen', 'cold_kitchen', 'bar', 'dessert'];
+const STATION_LABELS = {
+  hot_kitchen: 'Sıcak Mutfak',
+  cold_kitchen: 'Soğuk Mutfak',
+  bar: 'Bar',
+  dessert: 'Tatlı İstasyonu',
+};
+const DRIVER_LABELS = {
+  simulator: 'Simülatör',
+  escpos_tcp: 'Ağ Yazıcısı',
+};
+const JOB_STATUS_LABELS = {
+  sent: 'Gönderildi', pending: 'Kuyrukta', failed: 'Başarısız',
+  cancelled: 'İptal Edildi', unknown: 'Bilinmiyor',
+};
 
 // Single-byte code pages. Turkish printers need cp857 (PC857) or cp1254
 // (Windows-1254); UTF-8 prints Turkish characters as garbage.
 const CODEPAGES = [
-  { value: 'cp857', label: 'CP857 (PC857 Turkce)' },
-  { value: 'cp1254', label: 'CP1254 (Windows Turkce)' },
-  { value: 'cp850', label: 'CP850 (Cok dilli)' },
+  { value: 'cp857', label: 'CP857 (PC857 Türkçe)' },
+  { value: 'cp1254', label: 'CP1254 (Windows Türkçe)' },
+  { value: 'cp850', label: 'CP850 (Çok dilli)' },
   { value: 'cp437', label: 'CP437 (Standart)' },
 ];
 
@@ -43,10 +58,10 @@ const CODEPAGES = [
 // Red = offline / paper-end / cover-open / error / failed dispatch;
 // amber = paper running low; green = last print sent OK; gray = pending / unknown.
 const CONDITION_LABELS = {
-  paper_end: 'Kagit bitti',
-  paper_near_end: 'Kagit azaldi',
-  cover_open: 'Kapak acik',
-  error: 'Yazici hatasi',
+  paper_end: 'Kâğıt bitti',
+  paper_near_end: 'Kâğıt azaldı',
+  cover_open: 'Kapak açık',
+  error: 'Yazıcı hatası',
 };
 
 const statusBadge = (st) => {
@@ -59,19 +74,19 @@ const statusBadge = (st) => {
     return { label, className: 'bg-red-100 text-red-700 border border-red-200' };
   }
   if (st.blocking || st.job_status === 'failed') {
-    return { label: 'Cevrimdisi', className: 'bg-red-100 text-red-700 border border-red-200' };
+    return { label: 'Çevrim dışı', className: 'bg-red-100 text-red-700 border border-red-200' };
   }
   if (conditions.includes('paper_near_end')) {
     return { label: CONDITION_LABELS.paper_near_end, className: 'bg-amber-100 text-amber-700 border border-amber-200' };
   }
   if (st.job_status === 'sent') {
-    return { label: 'Hazir', className: 'bg-green-100 text-green-700 border border-green-200' };
+    return { label: 'Hazır', className: 'bg-green-100 text-green-700 border border-green-200' };
   }
   if (st.job_status === 'pending') {
     return { label: 'Kuyrukta', className: 'bg-blue-100 text-blue-700 border border-blue-200' };
   }
   if (st.job_status === 'cancelled') {
-    return { label: 'Iptal', className: 'bg-gray-100 text-gray-500 border border-gray-200' };
+    return { label: 'İptal', className: 'bg-gray-100 text-gray-500 border border-gray-200' };
   }
   return { label: st.job_status, className: 'bg-gray-100 text-gray-600 border border-gray-200' };
 };
@@ -84,24 +99,27 @@ const POSPrinterSettings = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   const loadStatuses = useCallback(async () => {
     try {
       const res = await axios.get('/pos/ext/print/printers/status');
       setStatuses(res.data?.statuses || {});
     } catch (err) {
-      console.error('Yazici durumlari yuklenemedi:', err);
+      console.error('Yazıcı durumları yüklenemedi:', err);
     }
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      setLoadError('');
       const res = await axios.get('/pos/ext/print/printers');
       setPrinters(res.data.printers || []);
       await loadStatuses();
     } catch (err) {
-      console.error('Yazicilar yuklenemedi:', err);
+      console.error('Yazıcılar yüklenemedi:', err);
+      setLoadError('Yazıcılar yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.');
     } finally {
       setLoading(false);
     }
@@ -112,7 +130,7 @@ const POSPrinterSettings = () => {
       const res = await axios.get('/pos/outlets');
       setOutlets(res.data?.outlets || []);
     } catch (err) {
-      console.error('Outletler yuklenemedi:', err);
+      console.error('Satış noktaları yüklenemedi:', err);
     }
   }, []);
 
@@ -137,18 +155,23 @@ const POSPrinterSettings = () => {
 
   const save = async () => {
     if (!form.printer_id.trim() || !form.name.trim()) {
-      alertDialog({ message: 'Yazici kimligi ve adi zorunludur' });
+      alertDialog({ message: 'Yazıcı kimliği ve adı zorunludur.' });
       return;
     }
     if (form.driver === 'escpos_tcp' && !form.host.trim()) {
-      alertDialog({ message: 'Ag yazicisi (escpos_tcp) icin host (IP) zorunludur' });
+      alertDialog({ message: 'Ağ yazıcısı için IP adresi zorunludur.' });
+      return;
+    }
+    const port = Number(form.port);
+    if (form.driver === 'escpos_tcp' && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+      alertDialog({ message: 'Port 1 ile 65535 arasında geçerli bir sayı olmalıdır.' });
       return;
     }
     setSaving(true);
     try {
       await axios.post('/pos/ext/print/printers', {
         ...form,
-        port: Number(form.port) || 9100,
+        port: port || 9100,
         station: form.station || null,
         outlet_id: form.outlet_id || null,
         host: form.host || null,
@@ -156,21 +179,23 @@ const POSPrinterSettings = () => {
       });
       setForm(EMPTY);
       await load();
+      toast.success('Yazıcı kaydedildi');
     } catch (err) {
-      alertDialog({ message: err.response?.data?.detail || 'Yazici kaydedilemedi' });
+      alertDialog({ message: err.response?.data?.detail || 'Yazıcı kaydedilemedi.' });
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async (printerId) => {
-    const ok = await confirmDialog({ message: `"${printerId}" yazicisini silmek istiyor musunuz?` });
+    const ok = await confirmDialog({ message: `“${printerId}” yazıcısını silmek istiyor musunuz?` });
     if (!ok) return;
     try {
       await axios.delete(`/pos/ext/print/printers/${printerId}`);
       await load();
+      toast.success('Yazıcı silindi');
     } catch (err) {
-      alertDialog({ message: err.response?.data?.detail || 'Yazici silinemedi' });
+      alertDialog({ message: err.response?.data?.detail || 'Yazıcı silinemedi.' });
     }
   };
 
@@ -183,11 +208,11 @@ const POSPrinterSettings = () => {
       const reason = result.reason || result.error || '';
       alertDialog({
         message: status === 'sent'
-          ? 'Test fisi gonderildi.'
-          : `Test sonucu: ${status}. ${reason}`,
+          ? 'Test fişi yazıcıya gönderildi.'
+          : `Test sonucu: ${JOB_STATUS_LABELS[status] || status}.${reason ? ` ${reason}` : ''}`,
       });
     } catch (err) {
-      alertDialog({ message: err.response?.data?.detail || 'Test gonderilemedi' });
+      alertDialog({ message: err.response?.data?.detail || 'Test gönderilemedi.' });
     } finally {
       setTestingId(null);
       loadStatuses();
@@ -200,38 +225,38 @@ const POSPrinterSettings = () => {
       <Card className="lg:col-span-1">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Plus className="w-4 h-4" /> Yazici Ekle
+            <Plus className="w-4 h-4" /> Yazıcı Ekle
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <Label>Yazici Kimligi</Label>
+            <Label>Yazıcı Kimliği</Label>
             <Input value={form.printer_id}
               onChange={(e) => setField('printer_id', e.target.value)}
-              placeholder="orn. hot_kitchen"
+              placeholder="Örn. sicak_mutfak"
               data-testid="printer-id" />
           </div>
           <div>
             <Label>Ad</Label>
             <Input value={form.name}
               onChange={(e) => setField('name', e.target.value)}
-              placeholder="orn. Sicak Mutfak Yazicisi"
+              placeholder="Örn. Sıcak Mutfak Yazıcısı"
               data-testid="printer-name" />
           </div>
           <div>
-            <Label>Surucu</Label>
+            <Label>Bağlantı Türü</Label>
             <Select value={form.driver} onValueChange={(v) => setField('driver', v)}>
               <SelectTrigger data-testid="printer-driver"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="simulator">Simulator (test)</SelectItem>
-                <SelectItem value="escpos_tcp">Ag yazicisi (ESC/POS TCP)</SelectItem>
+                <SelectItem value="simulator">Simülatör (test)</SelectItem>
+                <SelectItem value="escpos_tcp">Ağ yazıcısı (ESC/POS TCP)</SelectItem>
               </SelectContent>
             </Select>
           </div>
           {form.driver === 'escpos_tcp' && (
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
-                <Label>Host (IP)</Label>
+                <Label>IP Adresi</Label>
                 <Input value={form.host}
                   onChange={(e) => setField('host', e.target.value)}
                   placeholder="192.168.1.50"
@@ -246,7 +271,7 @@ const POSPrinterSettings = () => {
             </div>
           )}
           <div>
-            <Label>Kod Sayfasi (Turkce karakter)</Label>
+            <Label>Karakter Seti (Türkçe desteği)</Label>
             <Select value={form.codepage || 'cp857'}
               onValueChange={(v) => setField('codepage', v)}>
               <SelectTrigger data-testid="printer-codepage"><SelectValue /></SelectTrigger>
@@ -258,33 +283,33 @@ const POSPrinterSettings = () => {
             </Select>
           </div>
           <div>
-            <Label>Istasyon (KOT yonlendirme)</Label>
+            <Label>Mutfak İstasyonu</Label>
             <Select value={form.station || '_none'}
               onValueChange={(v) => setField('station', v === '_none' ? '' : v)}>
-              <SelectTrigger data-testid="printer-station"><SelectValue placeholder="Secin" /></SelectTrigger>
+              <SelectTrigger data-testid="printer-station"><SelectValue placeholder="Seçin" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="_none">Yok</SelectItem>
                 {STATIONS.filter(Boolean).map(s => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                  <SelectItem key={s} value={s}>{STATION_LABELS[s] || s}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Outlet (satis noktasi)</Label>
+            <Label>Satış Noktası</Label>
             <Select value={form.outlet_id || '_all'}
               onValueChange={(v) => setField('outlet_id', v === '_all' ? '' : v)}>
-              <SelectTrigger data-testid="printer-outlet"><SelectValue placeholder="Secin" /></SelectTrigger>
+              <SelectTrigger data-testid="printer-outlet"><SelectValue placeholder="Seçin" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">Tum outletler (varsayilan)</SelectItem>
+                <SelectItem value="_all">Tüm satış noktaları (varsayılan)</SelectItem>
                 {outlets.map(o => (
                   <SelectItem key={o.id} value={o.id}>{o.outlet_name || o.name || o.id}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-xs text-gray-500 mt-1">
-              Bir outlet secerseniz, KOT yalnizca o outlet icin bu yaziciya gider.
-              Bos birakirsaniz tum outletler icin paylasilan istasyon yazicisi olur.
+              Bir satış noktası seçerseniz mutfak fişleri yalnızca o noktadan bu yazıcıya gider.
+              Seçim yapmazsanız yazıcı tüm satış noktaları tarafından paylaşılır.
             </p>
           </div>
           <Button className="w-full" onClick={save} disabled={saving} data-testid="printer-save">
@@ -299,7 +324,7 @@ const POSPrinterSettings = () => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Printer className="w-4 h-4" /> Kayitli Yazicilar
+              <Printer className="w-4 h-4" /> Kayıtlı Yazıcılar
             </CardTitle>
             <Button variant="outline" size="sm" onClick={load} data-testid="printer-refresh">
               <RefreshCw className="w-4 h-4 mr-2" /> Yenile
@@ -308,10 +333,15 @@ const POSPrinterSettings = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8 text-gray-500">Yukleniyor...</div>
+            <div className="text-center py-8 text-gray-500">Yükleniyor…</div>
+          ) : loadError ? (
+            <div className="text-center py-8 text-red-600" role="alert">
+              <p>{loadError}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={load}>Yeniden dene</Button>
+            </div>
           ) : printers.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              Henuz yazici kaydi yok. Soldan ekleyin.
+              Henüz yazıcı kaydı yok. Formu kullanarak ilk yazıcıyı ekleyin.
             </div>
           ) : (
             <div className="space-y-2">
@@ -331,12 +361,12 @@ const POSPrinterSettings = () => {
                           </Badge>
                         );
                       })()}
-                      <Badge variant="outline" className="text-xs">{p.driver}</Badge>
+                      <Badge variant="outline" className="text-xs">{DRIVER_LABELS[p.driver] || p.driver}</Badge>
                       {p.station && (
-                        <Badge variant="secondary" className="text-xs">{p.station}</Badge>
+                        <Badge variant="secondary" className="text-xs">{STATION_LABELS[p.station] || p.station}</Badge>
                       )}
                       <Badge variant="outline" className="text-xs">
-                        {p.outlet_id ? outletName(p.outlet_id) : 'tum outletler'}
+                        {p.outlet_id ? outletName(p.outlet_id) : 'tüm satış noktaları'}
                       </Badge>
                       {p.enabled === false && (
                         <Badge className="bg-gray-300 text-gray-700 text-xs">pasif</Badge>
@@ -358,6 +388,7 @@ const POSPrinterSettings = () => {
                     </Button>
                     <Button variant="ghost" size="sm"
                       onClick={() => remove(p.printer_id)}
+                      aria-label={`${p.name} yazıcısını sil`}
                       data-testid={`printer-delete-${p.printer_id}`}>
                       <Trash2 className="w-3.5 h-3.5 text-red-600" />
                     </Button>
