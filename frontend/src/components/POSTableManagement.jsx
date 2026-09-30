@@ -66,6 +66,8 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
     } catch (error) {
       if (error?.response?.status === 404) {
         toast.error('POS masa modülü henüz aktif değil');
+      } else if (error?.response?.status === 409) {
+        toast.error(error.response.data?.detail || 'Açık adisyon bulunan masa müsait yapılamaz');
       } else {
         toast.error('Masa durumu güncellenemedi');
       }
@@ -163,6 +165,14 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                     <Users className="w-3 h-3 inline mr-1" />
                     {table.seats ?? table.capacity ?? 0} kişilik
                   </p>
+                  {Number(table.current_bill || 0) > 0 && (
+                    <p className="mb-3 text-sm font-semibold text-gray-900">
+                      Açık hesap: {Number(table.current_bill).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  {Number(table.duration_minutes || 0) > 0 && (
+                    <p className="mb-3 text-xs text-gray-500">{table.duration_minutes} dakikadır açık</p>
+                  )}
 
                   {/* Quick Actions */}
                   <div className="space-y-1">
