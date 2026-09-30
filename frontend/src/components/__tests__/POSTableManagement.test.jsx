@@ -80,6 +80,31 @@ describe('POSTableManagement', () => {
     ));
   });
 
+  it('transfers a waiter-terminal order through the v2 order endpoint', async () => {
+    axiosGet.mockResolvedValue({
+      data: {
+        available: 1,
+        occupied: 1,
+        reserved: 0,
+        tables: [
+          { id: 'table-1', table_number: '1', seats: 4, status: 'occupied', current_order_id: 'order-1', current_bill: 180 },
+          { id: 'table-2', table_number: '2', seats: 4, status: 'available' },
+        ],
+      },
+    });
+
+    render(<POSTableManagement outletId="outlet-1" />);
+
+    expect(await screen.findByText('Açık adisyon')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Masa 1 hedef masa'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: /Adisyonu Aktar/i }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pos/v2/orders/order-1/transfer-table',
+      { to_table_number: '2' },
+    ));
+  });
+
   it('creates a table reservation and advances a confirmed reservation to seated', async () => {
     axiosGet.mockImplementation((url) => {
       if (url === '/pos/reservations') {

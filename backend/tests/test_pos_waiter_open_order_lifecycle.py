@@ -138,6 +138,32 @@ async def test_waiter_transfers_open_order_and_releases_source_table(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_waiter_does_not_transfer_onto_a_legacy_open_check(monkeypatch):
+    orders = MemoryCollection([{
+        "id": "order-1", "tenant_id": "tenant-1", "outlet_id": "outlet-1",
+        "table_number": "4", "status": "pending", "payment_status": "unpaid",
+    }])
+    tables = MemoryCollection([
+        {"id": "t4", "tenant_id": "tenant-1", "outlet_id": "outlet-1", "table_number": "4", "status": "occupied", "current_order_id": "order-1"},
+        {"id": "t8", "tenant_id": "tenant-1", "outlet_id": "outlet-1", "table_number": "8", "status": "available", "current_transaction_id": "legacy-check-1"},
+    ])
+    service = PosFnbServiceV2()
+    service._db = SimpleNamespace(
+        pos_orders=orders,
+        table_layouts=tables,
+        kitchen_orders=MemoryCollection(),
+    )
+    monkeypatch.setattr(service, "_broadcast_kitchen_queue", lambda _tenant_id: _async_none())
+
+    method = PosFnbServiceV2.transfer_order_table.__wrapped__
+    result = await method(service, ctx(), "order-1", "8")
+
+    assert result.ok is False
+    assert result.code == "TABLE_UNAVAILABLE"
+    assert orders.docs[0]["table_number"] == "4"
+
+
+@pytest.mark.asyncio
 async def test_kitchen_terminal_state_cannot_regress(monkeypatch):
     collection = MemoryCollection([{"id": "k1", "tenant_id": "tenant-1", "status": "served"}])
     monkeypatch.setattr(kitchen, "db", SimpleNamespace(kitchen_orders=collection))

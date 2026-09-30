@@ -156,12 +156,14 @@ class TestAtomicClaim:
             batch_size=1,
             processing_timeout=120,
             tenant_id=tenant_id,
+            database=db,
         )
         worker2 = OutboxWorker(
             poll_interval=0,
             batch_size=1,
             processing_timeout=120,
             tenant_id=tenant_id,
+            database=db,
         )
 
         # Race: both try to claim at the same time

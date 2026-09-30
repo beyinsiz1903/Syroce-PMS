@@ -1414,6 +1414,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
         "available": sum(1 for t in tables if t["status"] == "available"),
         "occupied": sum(1 for t in tables if t["status"] == "occupied"),
         "reserved": sum(1 for t in tables if t["status"] == "reserved"),
+        "dirty": sum(1 for t in tables if t["status"] == "dirty"),
         "tables": tables,
     }
 

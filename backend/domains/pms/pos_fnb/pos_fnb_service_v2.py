@@ -659,7 +659,11 @@ class PosFnbServiceV2:
         )
         if not target:
             return ServiceResult.fail("Target table not found", "NOT_FOUND")
-        if target.get("status") != "available" or target.get("current_order_id"):
+        if (
+            target.get("status") != "available"
+            or target.get("current_order_id")
+            or target.get("current_transaction_id")
+        ):
             return ServiceResult.fail("Target table is unavailable", "TABLE_UNAVAILABLE")
 
         now = datetime.now(UTC).isoformat()
@@ -669,6 +673,8 @@ class PosFnbServiceV2:
                 "outlet_id": outlet_id,
                 "table_number": target_number,
                 "status": "available",
+                "current_order_id": {"$in": [None]},
+                "current_transaction_id": {"$in": [None]},
             },
             {"$set": {"status": "occupied", "current_order_id": order_id, "opened_at": order.get("created_at") or now}},
         )
