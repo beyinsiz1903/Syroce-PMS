@@ -64,4 +64,32 @@ describe('POS waiter menu regressions', () => {
     expect(await screen.findByTestId('active-order-summary')).toHaveTextContent('ORD-1');
     expect(screen.getByTestId('pay-cash')).toBeEnabled();
   });
+
+  it('closes an open check with a cent-exact mixed payment', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'occupied', current_order_id: 'order-1' }] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
+      if (url === '/pos/v2/orders/order-1') return Promise.resolve({ data: { order: {
+        id: 'order-1', order_number: 'ORD-1', status: 'pending', payment_status: 'unpaid',
+        grand_total: 118.01, order_items: [
+          { line_id: 'line-1', item_id: 'burger', item_name: 'Burger', quantity: 1, unit_price: 100, total: 100, tax_rate: .1801 },
+          { line_id: 'line-2', item_id: 'water', item_name: 'Su', quantity: 1, unit_price: 18.01, total: 18.01, tax_rate: 0 },
+        ],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockResolvedValue({ status: 200, data: { amount_paid: 118.01, payment_method: 'mixed' } });
+
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.click(await screen.findByTestId('toggle-split-payment'));
+    fireEvent.click(screen.getByTestId('submit-split-payment'));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders/close', expect.objectContaining({
+      order_id: 'order-1', payment_method: 'mixed',
+      payments: [{ method: 'cash', amount: 59 }, { method: 'card', amount: 59.01 }],
+    })));
+  });
 });

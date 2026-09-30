@@ -107,6 +107,7 @@ class PosFnbServiceV2:
             tax_amount += round(item_total * tax_rate, 2)
             order_items.append(
                 {
+                    "line_id": str(uuid.uuid4()),
                     "item_id": item.get("item_id", str(uuid.uuid4())),
                     "item_name": item.get("name", "Unknown"),
                     "quantity": qty,
@@ -161,6 +162,7 @@ class PosFnbServiceV2:
                     "outlet_id": outlet_id,
                     "table_number": table_number,
                     "item_name": si["item_name"],
+                    "line_id": si["line_id"],
                     "quantity": si["quantity"],
                     "special_instructions": si.get("special_instructions"),
                     "station": station,
@@ -203,6 +205,7 @@ class PosFnbServiceV2:
         tip_amount: float = 0.0,
         idempotency_key: str | None = None,
         guest_signature: str | None = None,
+        payments: list[dict] | None = None,
     ) -> ServiceResult:
         # Idempotency
         if idempotency_key:
@@ -227,6 +230,21 @@ class PosFnbServiceV2:
         now = datetime.now(UTC)
         grand_total = order.get("grand_total", 0)
         total_with_tip = round(grand_total + tip_amount, 2)
+
+        payment_breakdown = None
+        if payments:
+            allowed_methods = {"cash", "card"}
+            payment_breakdown = []
+            for part in payments:
+                method = str(part.get("method") or "").strip().lower()
+                amount = round(float(part.get("amount") or 0), 2)
+                if method not in allowed_methods or amount <= 0:
+                    return ServiceResult.fail("Karma ödeme yalnızca pozitif nakit veya kart satırları içerebilir", "VALIDATION_ERROR")
+                payment_breakdown.append({"method": method, "amount": amount})
+            if round(sum(part["amount"] for part in payment_breakdown), 2) != total_with_tip:
+                return ServiceResult.fail("Ödeme dağılımı adisyon toplamına eşit olmalıdır", "PAYMENT_MISMATCH")
+            payment_method = payment_breakdown[0]["method"] if len(payment_breakdown) == 1 else "mixed"
+            post_to_folio = False
 
         # Create POS transaction
         # SECURITY/INVARIANT: snapshot `order_items` into the txn so split-check
@@ -253,6 +271,8 @@ class PosFnbServiceV2:
             "order_items": order.get("order_items", []),
             "created_at": now.isoformat(),
         }
+        if payment_breakdown:
+            txn_doc["payment_breakdown"] = payment_breakdown
         if guest_signature:
             txn_doc["guest_signature"] = guest_signature
         # Task #389 — Outbox/Compensation. Resolve the target folio (if any)
@@ -315,6 +335,7 @@ class PosFnbServiceV2:
                     "closed_at": now.isoformat(),
                     "closed_by": ctx.actor_id,
                     "guest_signature": guest_signature,
+                    "payment_breakdown": payment_breakdown,
                 }
             },
         )
@@ -369,6 +390,7 @@ class PosFnbServiceV2:
                 "transaction_id": txn_id,
                 "amount_paid": total_with_tip,
                 "payment_method": payment_method,
+                "payment_breakdown": payment_breakdown,
                 "folio_charge_id": folio_charge_id,
                 "posted_to_folio": post_to_folio and folio_charge_id is not None,
             }
@@ -425,6 +447,7 @@ class PosFnbServiceV2:
             tax_delta += round(line_total * tax_rate, 2)
             normalized.append(
                 {
+                    "line_id": str(uuid.uuid4()),
                     "item_id": item.get("item_id") or str(uuid.uuid4()),
                     "item_name": item.get("name") or "Ürün",
                     "quantity": qty,
@@ -464,6 +487,7 @@ class PosFnbServiceV2:
                     "outlet_id": order.get("outlet_id"),
                     "table_number": order.get("table_number"),
                     "items": [item],
+                    "line_id": item["line_id"],
                     "station": item.get("station"),
                     "status": "pending",
                     "priority": "normal",
@@ -484,6 +508,130 @@ class PosFnbServiceV2:
             await self._db.pos_order_item_batches.insert_one(dict(batch))
         await self._broadcast_kitchen_queue(ctx.tenant_id)
         return ServiceResult.success(batch)
+
+    @audited("pos.void_order_item", "pos_order", severity=SEVERITY_WARNING, require_reason=True, capture_before=True)
+    async def void_order_item(
+        self,
+        ctx: OperationContext,
+        order_id: str,
+        line_index: int,
+        reason: str,
+    ) -> ServiceResult:
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "supervisor", "super_admin", "fnb_manager"):
+            return ServiceResult.fail("Kalem iptali için yönetici yetkisi gerekir", "FORBIDDEN")
+        if not reason.strip():
+            return ServiceResult.fail("İptal nedeni gereklidir", "VALIDATION_ERROR")
+        order = await self._db.pos_orders.find_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
+        if not order:
+            return ServiceResult.fail("Order not found", "NOT_FOUND")
+        if order.get("status") not in {"pending", "preparing", "ready"} or order.get("payment_status") == "paid":
+            return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
+        items = list(order.get("order_items") or [])
+        if line_index < 0 or line_index >= len(items):
+            return ServiceResult.fail("Adisyon kalemi bulunamadı", "NOT_FOUND")
+        removed = dict(items.pop(line_index))
+        if not items:
+            return ServiceResult.fail("Son kalem buradan silinemez; adisyonu iptal edin", "VALIDATION_ERROR")
+        subtotal = round(sum(float(item.get("total") or 0) for item in items), 2)
+        tax = round(sum(float(item.get("total") or 0) * float(item.get("tax_rate") or 0) for item in items), 2)
+        grand_total = round(subtotal + tax, 2)
+        now = datetime.now(UTC).isoformat()
+        await self._db.pos_orders.update_one(
+            {"id": order_id, "tenant_id": ctx.tenant_id, "payment_status": {"$ne": "paid"}},
+            {"$set": {"order_items": items, "total_amount": subtotal, "tax_amount": tax, "grand_total": grand_total, "updated_at": now}},
+        )
+        kitchen_query = {"tenant_id": ctx.tenant_id, "order_id": order_id, "status": {"$nin": ["served", "cancelled"]}}
+        if removed.get("line_id"):
+            kitchen_query["$or"] = [{"line_id": removed["line_id"]}, {"items.line_id": removed["line_id"]}]
+        else:
+            kitchen_query["item_name"] = removed.get("item_name")
+        await self._db.kitchen_orders.update_many(
+            kitchen_query,
+            {"$set": {"status": "cancelled", "cancelled_at": now, "cancelled_by": ctx.actor_id, "cancel_reason": reason.strip()}},
+        )
+        await self._db.pos_order_item_voids.insert_one({
+            "id": str(uuid.uuid4()), "tenant_id": ctx.tenant_id, "order_id": order_id,
+            "line": removed, "reason": reason.strip(), "voided_at": now, "voided_by": ctx.actor_id,
+        })
+        await self._broadcast_kitchen_queue(ctx.tenant_id)
+        return ServiceResult.success({"order_id": order_id, "removed_item": removed, "grand_total": grand_total})
+
+    @audited("pos.refund_order", "pos_order", severity=SEVERITY_CRITICAL, require_reason=True, capture_before=True)
+    async def refund_order(
+        self,
+        ctx: OperationContext,
+        order_id: str,
+        amount: float | None,
+        reason: str,
+        idempotency_key: str | None = None,
+    ) -> ServiceResult:
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "supervisor", "super_admin", "fnb_manager"):
+            return ServiceResult.fail("İade için yönetici yetkisi gerekir", "FORBIDDEN")
+        if not reason.strip():
+            return ServiceResult.fail("İade nedeni gereklidir", "VALIDATION_ERROR")
+        if idempotency_key:
+            prior = await self._db.pos_transactions.find_one({"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key}, {"_id": 0})
+            if prior:
+                return ServiceResult.success({"refund_id": prior.get("id"), "idempotent": True})
+        order = await self._db.pos_orders.find_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
+        if not order:
+            return ServiceResult.fail("Order not found", "NOT_FOUND")
+        if order.get("status") != "closed" or order.get("payment_status") not in {"paid", "partially_refunded"}:
+            return ServiceResult.fail("Yalnızca kapatılmış bir adisyon iade edilebilir", "ORDER_NOT_CLOSED")
+        sale = await self._db.pos_transactions.find_one({"tenant_id": ctx.tenant_id, "order_id": order_id, "status": "completed"}, {"_id": 0})
+        if not sale:
+            return ServiceResult.fail("Satış işlemi bulunamadı", "NOT_FOUND")
+        paid = round(float(sale.get("total_amount") or sale.get("amount") or 0), 2)
+        refunded = round(float(sale.get("refunded_amount") or 0), 2)
+        refund_amount = round(float(amount if amount is not None else paid - refunded), 2)
+        if refund_amount <= 0 or refund_amount > round(paid - refunded, 2):
+            return ServiceResult.fail("İade tutarı kalan iade edilebilir tutarı aşamaz", "REFUND_LIMIT")
+        if sale.get("payment_method") == "room_charge" and refund_amount != round(paid - refunded, 2):
+            return ServiceResult.fail("Oda hesabı işlemleri yalnızca tamamen iade edilebilir", "REFUND_LIMIT")
+        now = datetime.now(UTC)
+        refund_id = str(uuid.uuid4())
+        refund_doc = {
+            "id": refund_id, "tenant_id": ctx.tenant_id, "order_id": order_id,
+            "original_transaction_id": sale.get("id"), "outlet_id": order.get("outlet_id"),
+            "transaction_date": now.date().isoformat(), "transaction_time": now.time().isoformat(),
+            "amount": -refund_amount, "total_amount": -refund_amount, "payment_method": sale.get("payment_method"),
+            "payment_type": "refund", "status": "refunded", "reason": reason.strip(),
+            "processed_by": ctx.actor_id, "idempotency_key": idempotency_key, "created_at": now.isoformat(),
+        }
+        await self._db.pos_transactions.insert_one(refund_doc)
+        new_refunded = round(refunded + refund_amount, 2)
+        await self._db.pos_transactions.update_one(
+            {"tenant_id": ctx.tenant_id, "id": sale["id"]},
+            {"$set": {"refunded_amount": new_refunded, "refund_status": "full" if new_refunded == paid else "partial"}},
+        )
+        full_refund = new_refunded == paid
+        await self._db.pos_orders.update_one(
+            {"tenant_id": ctx.tenant_id, "id": order_id},
+            {"$set": {"payment_status": "refunded" if full_refund else "partially_refunded", "refunded_amount": new_refunded}},
+        )
+        if sale.get("payment_method") == "room_charge" and full_refund:
+            folio = await self._db.folios.find_one({"booking_id": order.get("booking_id"), "folio_type": "guest", "tenant_id": ctx.tenant_id}, {"_id": 0, "id": 1})
+            await self._publish_charge_reversal(ctx.tenant_id, order_id, folio.get("id") if folio else None, reason.strip())
+        elif sale.get("payment_method") != "room_charge":
+            try:
+                from core.integrations.operational_gl_bridge import post_direct_pos_refund_to_gl
+
+                await post_direct_pos_refund_to_gl(
+                    self._db, ctx.tenant_id, refund=refund_doc,
+                    original_transaction=sale, order=order, actor=ctx.actor_id,
+                )
+            except Exception as exc:  # noqa: BLE001 — refund record remains authoritative
+                logger.exception("POS refund GL bridge failed for order=%s tenant=%s", order_id, ctx.tenant_id)
+                await self._db.pos_transactions.update_one(
+                    {"tenant_id": ctx.tenant_id, "id": refund_id},
+                    {"$set": {"gl_bridge_status": "failed", "gl_bridge_error": str(exc)[:500]}},
+                )
+        if full_refund:
+            try:
+                await self._restore_recipe_stock(ctx, order_id)
+            except Exception:
+                logger.exception("Recipe stock restore failed for refunded order %s", order_id)
+        return ServiceResult.success({"order_id": order_id, "refund_id": refund_id, "refund_amount": refund_amount, "full_refund": full_refund})
 
     @audited("pos.transfer_order_table", "pos_order", severity=SEVERITY_INFO, capture_before=True)
     async def transfer_order_table(

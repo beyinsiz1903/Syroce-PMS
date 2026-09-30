@@ -234,32 +234,55 @@ function LoyaltyTab() {
     </>;
 }
 function ShiftsTab() {
-  const [outlet, setOutlet] = useState("MAIN");
+  const [outlet, setOutlet] = useState("");
   const [opening, setOpening] = useState("500");
+  const [counted, setCounted] = useState("");
   const [shifts, setShifts] = useState([]);
+  const [outlets, setOutlets] = useState([]);
+  const [message, setMessage] = useState("");
   const load = async () => {
-    const r = await apiFetch("/api/pos/ext/shifts?limit=20");
-    if (r.ok) setShifts(r.body.shifts || []);
+    const [shiftResponse, outletResponse] = await Promise.all([
+      apiFetch("/api/pos/ext/shifts?limit=20"), apiFetch("/api/pos/outlets"),
+    ]);
+    if (shiftResponse.ok) setShifts(shiftResponse.body.shifts || []);
+    if (outletResponse.ok) {
+      const rows = Array.isArray(outletResponse.body) ? outletResponse.body : outletResponse.body?.outlets || [];
+      setOutlets(rows);
+      setOutlet(current => current || rows[0]?.id || "");
+    }
   };
   useEffect(() => {
     load();
   }, []);
   return <>
       <Section title={t("cm.pages_POSExtensions.vardiya_a\xE7")}>
-        <Input label={t("cm.pages_POSExtensions.outlet_id")} value={outlet} onChange={setOutlet} />
+        <label className="block mb-2"><span className="block text-xs font-medium text-gray-700 mb-1">Satış noktası</span>
+          <select className="w-full border border-gray-300 rounded px-3 py-2 text-sm" value={outlet} onChange={event => setOutlet(event.target.value)}>
+            <option value="">Satış noktası seçin</option>{outlets.map(row => <option key={row.id} value={row.id}>{row.outlet_name || row.name}</option>)}
+          </select>
+        </label>
         <Input label={t("cm.pages_POSExtensions.a\xE7\u0131l\u0131\u015F_nakit")} value={opening} onChange={setOpening} type="number" />
-        <Btn onClick={async () => {
-        await apiFetch("/api/pos/ext/shifts/open", {
+        <Btn disabled={!outlet} onClick={async () => {
+        const response = await apiFetch("/api/pos/ext/shifts/open", {
           method: "POST",
           body: JSON.stringify({
             outlet_id: outlet,
             opening_cash: Number(opening)
           })
         });
+        setMessage(response.ok ? "Vardiya açıldı." : response.body?.detail || "Vardiya açılamadı.");
         await load();
       }}>{t("cm.pages_POSExtensions.a\xE7")}</Btn>
+        {message && <p className="mt-2 text-sm text-gray-700" role="status">{message}</p>}
       </Section>
-      <Section title={t("cm.pages_POSExtensions.vardiyalar")}><Json data={shifts} /></Section>
+      <Section title={t("cm.pages_POSExtensions.vardiyalar")}>
+        {shifts.length === 0 ? <p className="text-sm text-gray-500">Henüz vardiya kaydı yok.</p> : <div className="space-y-3">
+          {shifts.map(shift => <div key={shift.id} className="rounded-lg border p-3">
+            <div className="flex items-start justify-between gap-3"><div><strong>{outlets.find(row => row.id === shift.outlet_id)?.outlet_name || outlets.find(row => row.id === shift.outlet_id)?.name || 'Satış noktası'}</strong><p className="text-xs text-gray-500">{shift.status === 'open' ? 'Açık vardiya' : 'Kapanmış vardiya'} · Açılış nakdi {Number(shift.opening_cash || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${shift.status === 'open' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{shift.status === 'open' ? 'Açık' : 'Kapalı'}</span></div>
+            {shift.status === 'open' ? <div className="mt-3 flex items-end gap-2"><div className="flex-1"><Input label="Sayılan kasa toplamı" value={counted} onChange={setCounted} type="number" /></div><Btn disabled={counted === ''} onClick={async () => { const response = await apiFetch(`/api/pos/ext/shifts/${shift.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_total: Number(counted) }) }); setMessage(response.ok ? `Vardiya kapandı. Kasa farkı: ${Number(response.body?.shift?.variance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL` : response.body?.detail || 'Vardiya kapatılamadı.'); if (response.ok) setCounted(''); await load(); }}>Sayımı Onayla ve Kapat</Btn></div> : <div className="mt-2 grid grid-cols-3 gap-2 text-sm"><div><span className="text-gray-500">Beklenen</span><strong className="block">{Number(shift.expected_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Sayılan</span><strong className="block">{Number(shift.counted_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Fark</span><strong className={`block ${Number(shift.variance || 0) === 0 ? 'text-emerald-700' : 'text-red-700'}`}>{Number(shift.variance || 0).toLocaleString('tr-TR')} TL</strong></div></div>}
+          </div>)}
+        </div>}
+      </Section>
     </>;
 }
 function BarcodeTab() {
@@ -350,14 +373,14 @@ function FiscalTab() {
   }, []);
   return <>
       <Section title={t("cm.pages_POSExtensions.mali_yaz\u0131c\u0131_\xF6kc_durumu")}>
-        <p className="text-sm text-gray-700">{t("cm.pages_POSExtensions.s\xFCr\xFCc\xFC")}<code className="bg-gray-100 px-1 rounded">{t("cm.pages_POSExtensions.pos_fiscal_driver")}</code>{t("cm.pages_POSExtensions.env_de\u011Fi\u015Fkeniyle_se\xE7ilir_\xFCreti")}</p>
+        <p className="text-sm text-gray-700">Mali cihaz bağlantısını ve gün sonu işlemini buradan yönetebilirsiniz. Fiziksel cihaz bağlı değilse işlem güvenli test modunda sıraya alınır.</p>
         <div className="mt-2">
           <Btn variant="outline" onClick={async () => {
           await apiFetch("/api/pos/ext/fiscal/eod", {
             method: "POST"
           });
           await load();
-        }}>{t("cm.pages_POSExtensions.g\xFCn_sonu_z_simulator")}</Btn>
+        }}>Gün Sonu Z Raporu Oluştur</Btn>
         </div>
       </Section>
       <Section title={t("cm.pages_POSExtensions.bekleyen_fiscal_i_\u015F_kuyru\u011Fu")}><Json data={jobs} /></Section>

@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import {
   UtensilsCrossed, BarChart3, Sparkles, Store, LayoutGrid,
   AlertCircle, Coffee, Tablet, Printer, Menu as MenuIcon,
-  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor,
+  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor, SlidersHorizontal,
 } from 'lucide-react';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
@@ -171,6 +171,7 @@ const POSDashboard = () => {
               )}
               <QuickBtn        icon={Coffee}          label={t('staffRoomService.title', 'Oda Servisi Siparişleri')} onClick={() => navigate('/staff/room-service')} testId="nav-staff-room-service" />
               <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'Yiyecek ve İçecek Merkezi')} onClick={() => navigate('/fnb-complete')} testId="nav-fnb-complete" />
+              <QuickBtn        icon={SlidersHorizontal} label="Kampanya ve Kasa" onClick={() => navigate('/pos-extensions')} testId="nav-pos-extensions" />
               <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Modül Ayarları')} onClick={() => navigate('/admin/features')} />
               <QuickBtn        icon={ArrowLeft}       label={t('nav.dashboard', 'Kontrol Paneli')}        onClick={() => navigate('/app/dashboard')} />
             </div>

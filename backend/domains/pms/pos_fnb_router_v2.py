@@ -52,6 +52,11 @@ class CreateOrderRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+class PaymentPart(BaseModel):
+    method: str
+    amount: float
+
+
 class CloseOrderRequest(BaseModel):
     order_id: str
     payment_method: str = "cash"
@@ -60,6 +65,18 @@ class CloseOrderRequest(BaseModel):
     tip_amount: float = 0.0
     idempotency_key: str | None = None
     guest_signature: str | None = None
+    payments: list[PaymentPart] | None = None
+
+
+class VoidOrderItemRequest(BaseModel):
+    line_index: int
+    reason: str
+
+
+class RefundOrderRequest(BaseModel):
+    amount: float | None = None
+    reason: str
+    idempotency_key: str | None = None
 
 
 class VoidOrderRequest(BaseModel):
@@ -140,10 +157,41 @@ async def close_order(
         req.tip_amount,
         req.idempotency_key,
         req.guest_signature,
+        [part.model_dump() for part in req.payments] if req.payments else None,
     )
     if not result.ok:
         # Terminal-state conflicts → 409; everything else → 400.
         status_code = 409 if result.code in {"ORDER_VOIDED", "FOLIO_NOT_OPEN"} else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/items/void")
+async def void_order_item(
+    order_id: str,
+    req: VoidOrderItemRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.void_order_item(ctx, order_id, req.line_index, req.reason)
+    if not result.ok:
+        status_code = 403 if result.code == "FORBIDDEN" else 409 if result.code == "ORDER_NOT_OPEN" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/refund")
+async def refund_order(
+    order_id: str,
+    req: RefundOrderRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.refund_order(ctx, order_id, req.amount, req.reason, req.idempotency_key)
+    if not result.ok:
+        status_code = 403 if result.code == "FORBIDDEN" else 409 if result.code in {"ORDER_NOT_CLOSED", "REFUND_LIMIT"} else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 
