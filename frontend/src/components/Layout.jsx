@@ -343,7 +343,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
       const response = await axios.post('/admin/tenant-context/exit');
       persistExitedTenantContext(response.data);
       toast.success('Süperadmin görünümüne dönülüyor');
-      window.location.assign('/admin/tenants');
+      navigate('/admin/tenants', { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Otel çalışma alanından çıkılamadı');
       setExitingTenantContext(false);

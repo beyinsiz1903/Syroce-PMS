@@ -32,6 +32,7 @@ import { prefetchHeavyModules } from "@/lib/prefetch";
 import { websocket } from "@/lib/websocket";
 import {
   ADMIN_TENANT_CONTEXT_KEY,
+  ADMIN_TENANT_SESSION_EVENT,
   reconcileAdminTenantContext,
 } from "@/lib/adminTenantContext";
 
@@ -225,6 +226,22 @@ function App() {
     };
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    const applyTenantSession = (event) => {
+      const next = event?.detail;
+      if (!next?.user || !next?.tenant) return;
+      const nextModules = next.modules || next.tenant.modules || {};
+      setUser(next.user);
+      setModules(nextModules);
+      setTenant({ ...next.tenant, modules: nextModules });
+      clearAccessCaches();
+      try { websocket.reconnectWithFreshAuth?.(); } catch { /* non-fatal */ }
+      notifyAuthChanged();
+    };
+    window.addEventListener(ADMIN_TENANT_SESSION_EVENT, applyTenantSession);
+    return () => window.removeEventListener(ADMIN_TENANT_SESSION_EVENT, applyTenantSession);
+  }, []);
+
   const handleLogin = async (token, userData, tenantData, refreshToken) => {
     // clearAuthStorage() içinden notifyServiceWorkerAuthChanged() çağrılıyor
     // Backend tokens are managed via HttpOnly cookies now. We just record the session start.
@@ -363,7 +380,7 @@ function App() {
   if (isAuthenticated && user?.role === "guest") {
     return (
       <NotificationProvider>
-        <CurrencyProvider isAuthenticated={isAuthenticated}>
+        <CurrencyProvider key={tenant?.id || tenant?._id || 'guest'} isAuthenticated={isAuthenticated}>
         <QueryClientProvider client={queryClient}>
           <div className="App">
             <Toaster position="top-right" />
@@ -405,7 +422,7 @@ function App() {
   return (
     <EntitlementProvider currentTenantId={tenant?.id} isSuperAdmin={isPlatformSuperAdmin}>
       <NotificationProvider>
-      <CurrencyProvider isAuthenticated={isAuthenticated}>
+      <CurrencyProvider key={tenant?.id || tenant?._id || 'anonymous'} isAuthenticated={isAuthenticated}>
       <QueryClientProvider client={queryClient}>
         <div className="App">
           <Toaster position="top-right" />
