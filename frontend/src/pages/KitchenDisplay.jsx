@@ -347,6 +347,7 @@ const KitchenDisplay = () => {
             <button
               onClick={() => navigate('/pos')}
               aria-label="POS paneline dön"
+              title="POS paneline dön"
               className="p-2 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
             >
               <Home className="w-5 h-5" />
@@ -398,7 +399,7 @@ const KitchenDisplay = () => {
             {/* Refresh */}
             <button
               onClick={() => { setAutoRefresh(a => !a); loadOrders(); }}
-              aria-label={autoRefresh ? 'Otomatik yenilemeyi kapat' : 'Otomatik yenilemeyi aç'}
+              aria-label={autoRefresh ? 'Otomatik yenilemeyi kapat ve şimdi yenile' : 'Otomatik yenilemeyi aç ve şimdi yenile'}
               title={autoRefresh ? 'Otomatik yenileme açık' : 'Otomatik yenileme kapalı'}
               className={`p-2 rounded-xl border transition-colors ${
                 autoRefresh

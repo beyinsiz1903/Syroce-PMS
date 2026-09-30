@@ -172,7 +172,7 @@ const POSDashboard = () => {
               <QuickBtn        icon={Coffee}          label={t('staffRoomService.title', 'Oda Servisi Siparişleri')} onClick={() => navigate('/staff/room-service')} testId="nav-staff-room-service" />
               <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'Yiyecek ve İçecek Merkezi')} onClick={() => navigate('/fnb-complete')} testId="nav-fnb-complete" />
               <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Modül Ayarları')} onClick={() => navigate('/admin/features')} />
-              <QuickBtn        icon={ArrowLeft}       label={t('nav.dashboard', 'Kontrol Paneli')}        onClick={() => navigate('/')} />
+              <QuickBtn        icon={ArrowLeft}       label={t('nav.dashboard', 'Kontrol Paneli')}        onClick={() => navigate('/app/dashboard')} />
             </div>
           </div>
         </div>

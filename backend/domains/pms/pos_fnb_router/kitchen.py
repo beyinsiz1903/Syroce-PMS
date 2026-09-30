@@ -640,8 +640,11 @@ async def update_kitchen_order_status_v2(
         {"_id": 0, "status": 1},
     )
     if not existing:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+
     current_status = existing.get("status") or "pending"
+    if current_status == status:
+        return {"success": True, "order_id": order_id, "status": status, "idempotent": True}
     if status not in allowed_transitions.get(current_status, set()):
         raise HTTPException(
             status_code=409,
@@ -650,14 +653,16 @@ async def update_kitchen_order_status_v2(
     update_data = {"status": status}
     if status == "preparing":
         update_data["started_at"] = datetime.now(UTC).isoformat()
-    if status in ["ready", "served"]:
+    if status == "ready":
         update_data["ready_at"] = datetime.now(UTC).isoformat()
+    if status == "served":
+        update_data["served_at"] = datetime.now(UTC).isoformat()
     result = await db.kitchen_orders.update_one(
-        {"tenant_id": current_user.tenant_id, "id": order_id},
+        {"tenant_id": current_user.tenant_id, "id": order_id, "status": current_status},
         {"$set": update_data},
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Order not found")
+    if getattr(result, "matched_count", getattr(result, "modified_count", 0)) == 0:
+        raise HTTPException(status_code=409, detail="Sipariş durumu başka bir kullanıcı tarafından değiştirildi")
     await _broadcast_kitchen_queue(current_user.tenant_id)
     return {"success": True, "order_id": order_id, "status": status}
 
