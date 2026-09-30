@@ -25,10 +25,13 @@ const dashboard = {
     avg_occupancy: 0,
     total_revenue: 0,
     total_revenue_by_currency: {},
+    pickup_7d: 4,
+    arrivals_today: 2,
+    departures_today: 1,
   },
   properties: [
-    { property_id: 'hotel-denizli', property_name: 'Denizli Oteli', total_rooms: 120, occupancy_pct: 0 },
-    { property_id: 'hotel-fethiye', property_name: 'Fethiye Oteli', total_rooms: 120, occupancy_pct: 0 },
+    { property_id: 'hotel-denizli', property_name: 'Denizli Oteli', total_rooms: 120, occupied_rooms: 40, occupancy_pct: 33.3, pickup_7d: 3, arrivals_today: 2, departures_today: 1, currency: 'TRY', today_revenue_by_currency: { TRY: 1000 }, room_revenue_by_currency: { TRY: 900 }, adr_by_currency: { TRY: 22.5 }, integrations: {} },
+    { property_id: 'hotel-fethiye', property_name: 'Fethiye Oteli', total_rooms: 120, occupied_rooms: 20, occupancy_pct: 16.7, pickup_7d: 1, arrivals_today: 0, departures_today: 0, currency: 'EUR', today_revenue_by_currency: { EUR: 100 }, room_revenue_by_currency: { EUR: 80 }, adr_by_currency: { EUR: 4 }, integrations: {} },
   ],
 };
 
@@ -57,5 +60,17 @@ describe('MultiProperty workspace switching', () => {
     fireEvent.click(sibling);
     await waitFor(() => expect(axiosMock.post).toHaveBeenCalledWith('/admin/tenants/hotel-fethiye/context'));
     await waitFor(() => expect(sibling).toBeEnabled());
+  });
+
+  it('keeps currencies separate and opens a real property quick view', async () => {
+    render(<MemoryRouter><MultiProperty /></MemoryRouter>);
+
+    expect(await screen.findByTestId('chain-command-center')).toBeInTheDocument();
+    expect(screen.getAllByText(/₺1\.000/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/€100/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Hızlı görünüm/i })[0]);
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Denizli Oteli');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Bugünkü operasyon');
   });
 });
