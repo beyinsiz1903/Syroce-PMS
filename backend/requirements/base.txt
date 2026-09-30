@@ -36,7 +36,7 @@ librt==0.8.1
 MarkupSafe==3.0.3
 motor==3.3.1
 msgpack==1.2.1
-oauthlib==3.3.1
+oauthlib==4.0.0
 orjson==3.11.7
 packaging==26.0
 passlib==1.7.4
@@ -48,7 +48,7 @@ pycountry==26.2.16
 pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
-PyJWT==2.13.0
+PyJWT==2.14.0
 pymongo==4.8.0
 pyotp==2.9.0
 pyparsing==3.3.2
