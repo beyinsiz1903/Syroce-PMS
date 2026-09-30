@@ -74,6 +74,9 @@ class User(BaseModel):
     granted_permissions: list[str] = Field(default_factory=list)
     module_scopes: list[str] | None = None
     page_access: dict[str, bool] = Field(default_factory=dict)
+    # Hotel-administered, per-user guest-data visibility.  This is separate
+    # from role permissions: two front-desk users may have different masking.
+    guest_data_visibility: dict[str, str] = Field(default_factory=dict)
     effective_permissions: list[str] = Field(default_factory=list)
     # Süperadminin kendi hesabından çıkmadan belirli bir otelin çalışma
     # alanına geçebilmesi için sunucu tarafından türetilen, salt-okunur oturum

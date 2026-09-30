@@ -251,9 +251,21 @@ SOURCE_FIELD_MAP: dict[str, dict[str, list[str]]] = {
 
 # PII column keys per source (column-level masking when no PII access).
 PII_COLUMNS: dict[str, set[str]] = {
-    "reservations": {"guest_name", "id_number", "passport_number", "guest_email", "guest_phone"},
-    "guests": {"id_number", "email", "phone"},
+    "reservations": {"guest_name", "id_number", "passport_number", "guest_email", "guest_phone", "notes"},
+    "guests": {"name", "id_number", "email", "phone", "nationality", "notes", "total_revenue"},
     "folios": {"guest_name"},  # name itself is sensitive in some KVKK contexts
+}
+
+PII_COLUMN_FIELDS: dict[str, dict[str, str]] = {
+    "reservations": {
+        "guest_name": "name", "id_number": "identity", "passport_number": "identity",
+        "guest_email": "email", "guest_phone": "phone", "notes": "notes",
+    },
+    "guests": {
+        "name": "name", "id_number": "identity", "email": "email", "phone": "phone",
+        "nationality": "nationality", "notes": "notes", "total_revenue": "financial",
+    },
+    "folios": {"guest_name": "name"},
 }
 
 # Maximum allowed result rows per request (DoS guard).
@@ -276,8 +288,14 @@ def _user_has_pii_access(user) -> bool:
     return "view_guest_pii" in granted
 
 
-def _pii_is_masked(config: ReportConfig, has_pii: bool) -> bool:
-    return (not has_pii) and bool(set(config.columns) & PII_COLUMNS.get(config.data_source, set()))
+def _pii_is_masked(config: ReportConfig, has_pii: bool, visibility_policy: dict[str, str] | None = None) -> bool:
+    selected = set(config.columns) & PII_COLUMNS.get(config.data_source, set())
+    if not selected:
+        return False
+    if visibility_policy is None:
+        return not has_pii
+    fields = PII_COLUMN_FIELDS.get(config.data_source, {})
+    return any(visibility_policy.get(fields.get(column, ""), "full") != "full" for column in selected)
 
 
 def _mask_pii(value):
@@ -691,7 +709,12 @@ async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[di
 # ─── Fetch ──────────────────────────────────────────────────────────────
 
 
-async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool) -> list:
+async def fetch_report_data(
+    config: ReportConfig,
+    tenant_id: str,
+    has_pii: bool,
+    visibility_policy: dict[str, str] | None = None,
+) -> list:
     db = get_db()
     source_def = DATA_SOURCES.get(config.data_source)
     if not source_def:
@@ -723,14 +746,19 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
             raise HTTPException(status_code=422, detail=f"Geçersiz filtre işlemi: {report_filter.operator}")
 
     pii_keys = PII_COLUMNS.get(config.data_source, set())
-    if not has_pii:
-        forbidden_filters = sorted({item.field for item in (config.filters or []) if item.field in pii_keys})
+    restricted_pii_keys = {
+        column for column in pii_keys
+        if (not has_pii and visibility_policy is None)
+        or (visibility_policy is not None and visibility_policy.get(PII_COLUMN_FIELDS.get(config.data_source, {}).get(column, ""), "full") != "full")
+    }
+    if restricted_pii_keys:
+        forbidden_filters = sorted({item.field for item in (config.filters or []) if item.field in restricted_pii_keys})
         if forbidden_filters:
             raise HTTPException(
                 status_code=403,
                 detail=f"PII yetkisi olmadan bu alanlarda filtreleme yapılamaz: {', '.join(forbidden_filters)}",
             )
-        if config.sort_by in pii_keys:
+        if config.sort_by in restricted_pii_keys:
             raise HTTPException(status_code=403, detail="PII yetkisi olmadan bu alanda sıralama yapılamaz")
 
     # sort_by allow-list.
@@ -791,8 +819,15 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
         for col in config.columns:
             v = _report_value(config.data_source, source_def, doc, col)
             v = _clean_value(v)
-            if (not has_pii) and col in pii_keys:
-                v = _mask_pii(v)
+            if col in pii_keys:
+                if visibility_policy is not None:
+                    from security.guest_data_visibility import mask_guest_value
+
+                    field_key = PII_COLUMN_FIELDS.get(config.data_source, {}).get(col)
+                    if field_key:
+                        v = mask_guest_value(v, field_key, visibility_policy.get(field_key, "full"))
+                elif not has_pii:
+                    v = _mask_pii(v)
             row[col] = v
         cleaned.append(row)
 
@@ -809,6 +844,7 @@ async def get_builder_config(
 ):
     """Rapor oluşturucu için mevcut veri kaynaklarını ve sütun tanımlarını döndürür."""
     tenant_id = getattr(current_user, "tenant_id", None)
+    from security.guest_data_visibility import guest_visibility_summary
     currency_code, currency_symbol = await get_tenant_currency(tenant_id)
     sources = {}
     for key, src in DATA_SOURCES.items():
@@ -823,6 +859,7 @@ async def get_builder_config(
         "max_limit": MAX_LIMIT,
         "currency_code": currency_code,
         "currency_symbol": currency_symbol,
+        "privacy": guest_visibility_summary(current_user),
     }
 
 
@@ -837,9 +874,11 @@ async def generate_report(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
+    from security.guest_data_visibility import user_guest_data_visibility
+    visibility_policy, policy_source = user_guest_data_visibility(current_user)
 
     try:
-        data = await fetch_report_data(config, tenant_id, has_pii)
+        data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
     except HTTPException:
         raise
     except Exception as exc:
@@ -873,7 +912,8 @@ async def generate_report(
         "total_count": len(data),
         "column_labels": column_labels,
         "summary": summary,
-        "pii_masked": _pii_is_masked(config, has_pii),
+        "pii_masked": _pii_is_masked(config, has_pii, visibility_policy),
+        "privacy": {"policy_source": policy_source, "server_side_enforced": True},
         "generated_at": datetime.now(UTC).isoformat(),
     }
 
@@ -998,10 +1038,12 @@ async def export_report_excel(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
+    from security.guest_data_visibility import user_guest_data_visibility
+    visibility_policy, _policy_source = user_guest_data_visibility(current_user)
 
     try:
         _, currency_symbol = await get_tenant_currency(tenant_id)
-        return await _build_excel_response(config, tenant_id, has_pii, currency_symbol)
+        return await _build_excel_response(config, tenant_id, has_pii, currency_symbol, visibility_policy)
     except HTTPException:
         raise
     except Exception:
@@ -1014,12 +1056,18 @@ async def export_report_excel(
         raise HTTPException(status_code=500, detail="report_export_failed")
 
 
-async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii: bool, currency_symbol: str = "₺"):
+async def _build_excel_response(
+    config: "ReportConfig",
+    tenant_id: str,
+    has_pii: bool,
+    currency_symbol: str = "₺",
+    visibility_policy: dict[str, str] | None = None,
+):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
-    data = await fetch_report_data(config, tenant_id, has_pii)
+    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
     wb = Workbook()
@@ -1046,7 +1094,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
         parts.append(f"Başlangıç: {config.date_from}")
     if config.date_to:
         parts.append(f"Bitiş: {config.date_to}")
-    if _pii_is_masked(config, has_pii):
+    if _pii_is_masked(config, has_pii, visibility_policy):
         parts.append("PII alanları maskelenmiştir")
     date_cell.value = " | ".join(parts) if parts else f"Oluşturma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
     date_cell.font = Font(size=10, italic=True, color="666666")
@@ -1179,9 +1227,11 @@ async def export_report_pdf(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
+    from security.guest_data_visibility import user_guest_data_visibility
+    visibility_policy, _policy_source = user_guest_data_visibility(current_user)
     currency_code, currency_symbol = await get_tenant_currency(tenant_id)
 
-    data = await fetch_report_data(config, tenant_id, has_pii)
+    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
     headers = [source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns]
@@ -1221,13 +1271,13 @@ async def export_report_pdf(
     header_cells = "".join(f'<th style="padding:8px;background:#0F172A;color:white;font-size:{header_size}px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>' for h in headers)
 
     date_info = ""
-    if config.date_from or config.date_to or _pii_is_masked(config, has_pii):
+    if config.date_from or config.date_to or _pii_is_masked(config, has_pii, visibility_policy):
         parts = []
         if config.date_from:
             parts.append(f"Başlangıç: {_e(config.date_from)}")
         if config.date_to:
             parts.append(f"Bitiş: {_e(config.date_to)}")
-        if _pii_is_masked(config, has_pii):
+        if _pii_is_masked(config, has_pii, visibility_policy):
             parts.append("<i>PII alanları maskelenmiştir</i>")
         date_info = f'<p style="color:#64748b;font-size:11px;margin:4px 0 12px;">{" | ".join(parts)}</p>'
 

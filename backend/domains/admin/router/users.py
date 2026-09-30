@@ -349,6 +349,7 @@ async def list_tenant_users(
                 "granted_permissions": (decoded.get("granted_permissions") or u.get("granted_permissions") or []),
                 "module_scopes": decoded.get("module_scopes"),
                 "page_access": decoded.get("page_access", {}),
+                "guest_data_visibility": decoded.get("guest_data_visibility", {}),
                 "access_revision": decoded.get("access_revision", 0),
             }
         )
@@ -572,6 +573,7 @@ class ProvisionUserRequest(BaseModel):
     position: str | None = None
     phone: str | None = None
     mode: str = "invite"  # "invite" | "temp"
+    guest_data_visibility: dict[str, str] | None = None
 
 
 @router.get("/admin/assignable-roles")
@@ -610,6 +612,7 @@ async def provision_user(
     from core.email import _frontend_base_url, send_email
     from core.security import hash_password
     from security.encrypted_lookup import build_user_email_query, encrypt_user_doc
+    from security.guest_data_visibility import normalize_guest_data_visibility
 
     if not _can_provision_users(current_user):
         raise HTTPException(
@@ -628,6 +631,10 @@ async def provision_user(
         raise HTTPException(status_code=400, detail="Ad Soyad zorunludur.")
     if mode not in ("invite", "temp"):
         raise HTTPException(status_code=400, detail="Gecersiz yontem.")
+    try:
+        guest_data_visibility = normalize_guest_data_visibility(payload.guest_data_visibility)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Rol dogrulama: hem enum-gecerli hem de tenant paketine uygun olmali.
     if role not in {r.value for r in UserRole}:
@@ -668,6 +675,7 @@ async def provision_user(
         "is_active": True,
         "email_verified": False,
         "granted_permissions": [],
+        "guest_data_visibility": guest_data_visibility,
         "requires_password_change": requires_change,
         "hashed_password": hashed,
         "created_at": now_iso,
@@ -784,6 +792,7 @@ class UpdateUserAccessRequest(BaseModel):
     granted_permissions: list[str]
     revision: int
     reset_to_role: bool = False
+    guest_data_visibility: dict[str, str] | None = None
 
 
 class UpdateTenantUserProfileRequest(BaseModel):
@@ -876,8 +885,79 @@ async def update_tenant_user_profile(
 async def user_access_catalog(current_user: User = Depends(get_current_user)):
     _require_admin_for_target_user(current_user, current_user.tenant_id)
     from modules.pms_core.user_access_policy import CATALOG, DELEGABLE_PERMISSIONS, role_access_matrix
+    from security.guest_data_visibility import guest_data_visibility_catalog
 
-    return {**CATALOG, "permissions": sorted(DELEGABLE_PERMISSIONS), "roles": role_access_matrix()}
+    return {
+        **CATALOG,
+        "permissions": sorted(DELEGABLE_PERMISSIONS),
+        "roles": role_access_matrix(),
+        "guest_data_visibility": guest_data_visibility_catalog(),
+    }
+
+
+@router.get("/admin/data-security-report")
+async def data_security_report(current_user: User = Depends(get_current_user)):
+    """Return an auditable tenant snapshot of guest-data visibility.
+
+    The report contains policy metadata only; it never includes guest values.
+    It is safe to print/share as evidence of configured masking controls.
+    """
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from security.encrypted_lookup import decrypt_user_doc
+    from security.field_encryption import ENCRYPTED_FIELDS
+    from security.guest_data_visibility import guest_data_visibility_catalog, guest_visibility_summary
+
+    _require_admin_for_target_user(current_user, current_user.tenant_id)
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Hotel context required")
+
+    tenant = await db.tenants.find_one(
+        {"id": tenant_id},
+        {"_id": 0, "property_name": 1, "name": 1},
+    )
+    users = []
+    async for raw_user in db.users.find({"tenant_id": tenant_id}, {"_id": 0, "hashed_password": 0, "password_hash": 0}):
+        decoded = decrypt_user_doc(raw_user)
+        summary = guest_visibility_summary(SimpleNamespace(**decoded))
+        users.append({
+            "id": decoded.get("id"),
+            "name": decoded.get("name"),
+            "email": decoded.get("email"),
+            "role": decoded.get("role"),
+            "is_active": decoded.get("is_active", True),
+            **summary,
+        })
+    users.sort(key=lambda item: str(item.get("name") or item.get("email") or "").casefold())
+
+    guest_count = await db.guests.count_documents({"tenant_id": tenant_id})
+    encrypted_guest_count = await db.guests.count_documents({"tenant_id": tenant_id, "_enc_version": {"$exists": True}})
+    configured = sum(1 for item in users if item["policy_source"] == "user")
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "tenant_id": tenant_id,
+        "property_name": (tenant or {}).get("property_name") or (tenant or {}).get("name") or tenant_id,
+        "generated_by": {"id": current_user.id, "name": current_user.name},
+        "controls": {
+            "server_side_masking": True,
+            "applies_to": ["API ekranları", "raporlar", "CSV/Excel dışa aktarma", "yazdırma/PDF"],
+            "policy_model": "Kullanıcı bazlı alan görünürlüğü",
+            "available_modes": ["Tam göster", "Maskeli göster", "Tamamen gizle"],
+            "encryption_at_rest": "AES-256-GCM alan şifreleme",
+            "encrypted_guest_fields": sorted(item["field"] for item in ENCRYPTED_FIELDS.get("guests", [])),
+        },
+        "coverage": {
+            "total_users": len(users),
+            "explicit_user_policies": configured,
+            "legacy_user_policies": len(users) - configured,
+            "guest_records": guest_count,
+            "encrypted_guest_records": encrypted_guest_count,
+        },
+        "field_catalog": guest_data_visibility_catalog()["fields"],
+        "users": users,
+    }
 
 
 @router.patch("/admin/users/{user_id}/access")
@@ -888,6 +968,7 @@ async def update_user_access(
     from core.security import invalidate_user_doc_cache
     from modules.pms_core.module_scope_service import MODULE_SCOPES
     from modules.pms_core.user_access_policy import DELEGABLE_PERMISSIONS, PAGES
+    from security.guest_data_visibility import normalize_guest_data_visibility
 
     _require_admin_for_target_user(current_user, current_user.tenant_id)
     # Even platform admins use their current hotel context here, never an
@@ -909,6 +990,10 @@ async def update_user_access(
         raise HTTPException(400, "Permission cannot be delegated")
     if payload.revision != target.get("access_revision", 0):
         raise HTTPException(409, "Yetkiler başka bir yönetici tarafından değiştirildi. Yenileyin.")
+    try:
+        guest_data_visibility = normalize_guest_data_visibility(payload.guest_data_visibility)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     fields = {
         "module_scopes": sorted(set(payload.module_scopes)),
         "page_access": payload.page_access,
@@ -916,10 +1001,16 @@ async def update_user_access(
         # grants administered by other trusted flows.
         "granted_permissions": sorted(set(payload.granted_permissions)
                                       | (set(target.get("granted_permissions") or []) - DELEGABLE_PERMISSIONS)),
+        "guest_data_visibility": guest_data_visibility,
     }
     if payload.reset_to_role:
-        fields = {"page_access": {}, "granted_permissions": sorted(
-            set(target.get("granted_permissions") or []) - DELEGABLE_PERMISSIONS)}
+        fields = {
+            "page_access": {},
+            "granted_permissions": sorted(set(target.get("granted_permissions") or []) - DELEGABLE_PERMISSIONS),
+            # Data visibility is user-specific by design and must never be
+            # widened by resetting operational permissions to role defaults.
+            "guest_data_visibility": guest_data_visibility,
+        }
     cas_query = {**query, "$or": [{"access_revision": payload.revision}]}
     if payload.revision == 0:
         cas_query["$or"].append({"access_revision": {"$exists": False}})

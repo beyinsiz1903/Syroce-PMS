@@ -8,7 +8,7 @@ import { GuestTable, MoneyCell } from './GuestSection';
 import { reservationLabel } from '@/utils/displayIdentifiers';
 
 export const OfficialSection = ({
-  officialDate, setOfficialDate, officialRows, officialLoading,
+  officialDate, setOfficialDate, officialRows, officialPrivacy, officialLoading,
   officialError, officialSearch, setOfficialSearch,
   fetchOfficialGuests, handleOfficialExportCsv, handleOfficialPrint,
   filteredOfficialRows, officialTotalGuests, officialTotalRevenue,
@@ -40,6 +40,28 @@ export const OfficialSection = ({
 
     {officialError && (
       <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{officialError}</div>
+    )}
+
+    {officialPrivacy?.server_side_enforced && (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="official-privacy-summary">
+        <div className="flex items-start gap-3">
+          <Shield className="mt-0.5 h-5 w-5 flex-shrink-0 text-slate-600" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900">Veri koruması bu rapora uygulandı</p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Ekran, CSV ve yazdırma çıktısı aynı kullanıcıya özel görünürlük profiliyle sunulur. Gizlenen veriler tarayıcıya gönderilmez.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">Tam görünen: {officialPrivacy.full_fields?.length || 0}</span>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">Maskeli: {officialPrivacy.masked_fields?.length || 0}</span>
+              <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-1 text-slate-800">Gizli: {officialPrivacy.hidden_fields?.length || 0}</span>
+              {officialPrivacy.policy_source === 'legacy' && (
+                <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-orange-800">Eski kullanıcı profili — yönetici incelemesi gerekli</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     )}
 
     {officialRows.length > 0 && (
