@@ -625,6 +625,28 @@ async def update_kitchen_order_status_v2(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),
 ):
+    allowed_transitions = {
+        "pending": {"pending", "preparing"},
+        "preparing": {"preparing", "ready"},
+        "ready": {"ready", "served"},
+        "served": {"served"},
+        "cancelled": {"cancelled"},
+        "voided": {"voided"},
+    }
+    if status not in {"pending", "preparing", "ready", "served", "cancelled", "voided"}:
+        raise HTTPException(status_code=422, detail="Geçersiz mutfak siparişi durumu")
+    existing = await db.kitchen_orders.find_one(
+        {"tenant_id": current_user.tenant_id, "id": order_id},
+        {"_id": 0, "status": 1},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Order not found")
+    current_status = existing.get("status") or "pending"
+    if status not in allowed_transitions.get(current_status, set()):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sipariş '{current_status}' durumundan '{status}' durumuna geçirilemez",
+        )
     update_data = {"status": status}
     if status == "preparing":
         update_data["started_at"] = datetime.now(UTC).isoformat()
@@ -634,7 +656,7 @@ async def update_kitchen_order_status_v2(
         {"tenant_id": current_user.tenant_id, "id": order_id},
         {"$set": update_data},
     )
-    if result.modified_count == 0:
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
     await _broadcast_kitchen_queue(current_user.tenant_id)
     return {"success": True, "order_id": order_id, "status": status}

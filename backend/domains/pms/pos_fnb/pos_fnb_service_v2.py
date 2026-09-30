@@ -37,6 +37,26 @@ class PosFnbServiceV2:
 
         self._db = db
 
+    async def _broadcast_kitchen_queue(self, tenant_id: str) -> None:
+        """Push the current queue after waiter-side writes.
+
+        KitchenDisplay also polls, so a websocket failure must never roll back
+        a valid order.  The push merely removes the otherwise visible delay.
+        """
+        try:
+            from websocket_server import broadcast_kitchen_orders
+
+            orders = await self._db.kitchen_orders.find(
+                {
+                    "tenant_id": tenant_id,
+                    "status": {"$in": ["pending", "preparing", "ready"]},
+                },
+                {"_id": 0},
+            ).sort("ordered_at", 1).to_list(length=200)
+            await broadcast_kitchen_orders(tenant_id, orders)
+        except Exception:  # noqa: BLE001 -- realtime is best effort
+            logger.warning("Kitchen queue broadcast failed for tenant=%s", tenant_id, exc_info=True)
+
     # ==================================================================
     # POS Order — Full Lifecycle
     # ==================================================================
@@ -65,8 +85,8 @@ class PosFnbServiceV2:
         # Validate table availability for dine-in
         if order_type == "dine_in" and table_number:
             table = await self._db.table_layouts.find_one({"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id})
-            if table and table.get("status") == "reserved":
-                return ServiceResult.fail(f"Table {table_number} is reserved", "TABLE_RESERVED")
+            if table and (table.get("status") != "available" or table.get("current_order_id")):
+                return ServiceResult.fail(f"Table {table_number} is unavailable", "TABLE_UNAVAILABLE")
 
         now = datetime.now(UTC)
         order_id = str(uuid.uuid4())
@@ -74,12 +94,17 @@ class PosFnbServiceV2:
 
         # Calculate totals
         total_amount = 0.0
+        tax_amount = 0.0
         order_items = []
         for item in items:
             qty = item.get("quantity", 1)
             price = item.get("price", 0.0)
+            tax_rate = float(item.get("tax_rate", 0.10) or 0)
+            if not 0 <= tax_rate <= 1:
+                return ServiceResult.fail("Tax rate must be between 0 and 1", "VALIDATION_ERROR")
             item_total = round(qty * price, 2)
             total_amount += item_total
+            tax_amount += round(item_total * tax_rate, 2)
             order_items.append(
                 {
                     "item_id": item.get("item_id", str(uuid.uuid4())),
@@ -87,13 +112,14 @@ class PosFnbServiceV2:
                     "quantity": qty,
                     "unit_price": price,
                     "total": item_total,
+                    "tax_rate": tax_rate,
                     "station": item.get("station", "main"),
                     "special_instructions": item.get("special_instructions"),
                     "status": "pending",
                 }
             )
 
-        tax_amount = round(total_amount * 0.10, 2)
+        tax_amount = round(tax_amount, 2)
         grand_total = round(total_amount + tax_amount, 2)
 
         order_doc = {
@@ -147,8 +173,10 @@ class PosFnbServiceV2:
         if order_type == "dine_in" and table_number:
             await self._db.table_layouts.update_one(
                 {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id},
-                {"$set": {"status": "occupied", "current_order_id": order_id}},
+                {"$set": {"status": "occupied", "current_order_id": order_id, "opened_at": now.isoformat()}},
             )
+
+        await self._broadcast_kitchen_queue(ctx.tenant_id)
 
         return ServiceResult.success(
             {
@@ -174,6 +202,7 @@ class PosFnbServiceV2:
         booking_id: str | None = None,
         tip_amount: float = 0.0,
         idempotency_key: str | None = None,
+        guest_signature: str | None = None,
     ) -> ServiceResult:
         # Idempotency
         if idempotency_key:
@@ -224,6 +253,8 @@ class PosFnbServiceV2:
             "order_items": order.get("order_items", []),
             "created_at": now.isoformat(),
         }
+        if guest_signature:
+            txn_doc["guest_signature"] = guest_signature
         # Task #389 — Outbox/Compensation. Resolve the target folio (if any)
         # BEFORE the write so the IC folio-posting event is enqueued ATOMICALLY
         # with the transaction record (intent durable). The async, guaranteed,
@@ -232,11 +263,14 @@ class PosFnbServiceV2:
         # $inc) and guards a non-open folio at apply time.
         folio_charge_id = None
         outbox_payload = None
+        if post_to_folio and not booking_id:
+            return ServiceResult.fail("Room charge requires a booking", "BOOKING_REQUIRED")
         if post_to_folio and booking_id:
             folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
-            if folio:
-                folio_charge_id = str(uuid.uuid4())
-                charge_doc = {
+            if not folio:
+                return ServiceResult.fail("Open guest folio not found", "FOLIO_NOT_OPEN")
+            folio_charge_id = str(uuid.uuid4())
+            charge_doc = {
                     "id": folio_charge_id,
                     "tenant_id": ctx.tenant_id,
                     "booking_id": booking_id,
@@ -256,14 +290,14 @@ class PosFnbServiceV2:
                     # ux_folio_charges_pos_source (tenant, source_pos_order_id, line_no).
                     "source_pos_order_id": order_id,
                     "line_no": 0,
-                }
-                outbox_payload = {
-                    "tenant_id": ctx.tenant_id,
-                    "folio_id": folio["id"],
-                    "source_pos_order_id": order_id,
-                    "booking_id": booking_id,
-                    "charges": [charge_doc],
-                }
+            }
+            outbox_payload = {
+                "tenant_id": ctx.tenant_id,
+                "folio_id": folio["id"],
+                "source_pos_order_id": order_id,
+                "booking_id": booking_id,
+                "charges": [charge_doc],
+            }
 
         # Atomic intent: transaction record + IC outbox event in ONE Mongo txn.
         await self._persist_txn_and_intent(ctx.tenant_id, txn_doc, order_id, outbox_payload)
@@ -280,6 +314,7 @@ class PosFnbServiceV2:
                     "payment_method": payment_method,
                     "closed_at": now.isoformat(),
                     "closed_by": ctx.actor_id,
+                    "guest_signature": guest_signature,
                 }
             },
         )
@@ -310,7 +345,7 @@ class PosFnbServiceV2:
                     "outlet_id": order["outlet_id"],
                     "tenant_id": ctx.tenant_id,
                 },
-                {"$set": {"status": "dirty", "current_order_id": None}},
+                {"$set": {"status": "dirty", "current_order_id": None, "opened_at": None}},
             )
 
         # Recipe/BOM consumption: decrement ingredient stock for recipe-linked
@@ -337,6 +372,176 @@ class PosFnbServiceV2:
                 "folio_charge_id": folio_charge_id,
                 "posted_to_folio": post_to_folio and folio_charge_id is not None,
             }
+        )
+
+    async def get_order(self, ctx: OperationContext, order_id: str) -> ServiceResult:
+        order = await self._db.pos_orders.find_one(
+            {"id": order_id, "tenant_id": ctx.tenant_id},
+            {"_id": 0},
+        )
+        if not order:
+            return ServiceResult.fail("Order not found", "NOT_FOUND")
+        return ServiceResult.success({"order": order})
+
+    @audited("pos.add_order_items", "pos_order", severity=SEVERITY_INFO, capture_before=True)
+    async def add_order_items(
+        self,
+        ctx: OperationContext,
+        order_id: str,
+        items: list[dict],
+        idempotency_key: str | None = None,
+    ) -> ServiceResult:
+        if not items:
+            return ServiceResult.fail("Order must have at least one item", "VALIDATION_ERROR")
+        if idempotency_key:
+            existing = await self._db.pos_order_item_batches.find_one(
+                {"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key},
+                {"_id": 0},
+            )
+            if existing:
+                return ServiceResult.success({**existing, "idempotent": True})
+
+        order = await self._db.pos_orders.find_one(
+            {"id": order_id, "tenant_id": ctx.tenant_id},
+            {"_id": 0},
+        )
+        if not order:
+            return ServiceResult.fail("Order not found", "NOT_FOUND")
+        if order.get("status") not in {"pending", "preparing", "ready"} or order.get("payment_status") == "paid":
+            return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
+
+        now = datetime.now(UTC)
+        normalized: list[dict] = []
+        subtotal_delta = 0.0
+        tax_delta = 0.0
+        for item in items:
+            qty = max(1, int(item.get("quantity", 1) or 1))
+            price = max(0.0, float(item.get("price", 0) or 0))
+            tax_rate = float(item.get("tax_rate", 0.10) or 0)
+            if not 0 <= tax_rate <= 1:
+                return ServiceResult.fail("Tax rate must be between 0 and 1", "VALIDATION_ERROR")
+            line_total = round(qty * price, 2)
+            subtotal_delta += line_total
+            tax_delta += round(line_total * tax_rate, 2)
+            normalized.append(
+                {
+                    "item_id": item.get("item_id") or str(uuid.uuid4()),
+                    "item_name": item.get("name") or "Ürün",
+                    "quantity": qty,
+                    "unit_price": price,
+                    "total": line_total,
+                    "tax_rate": tax_rate,
+                    "station": item.get("station") or "main",
+                    "special_instructions": item.get("special_instructions"),
+                    "status": "pending",
+                }
+            )
+
+        tax_delta = round(tax_delta, 2)
+        grand_delta = round(subtotal_delta + tax_delta, 2)
+        updated = await self._db.pos_orders.update_one(
+            {"id": order_id, "tenant_id": ctx.tenant_id, "payment_status": {"$ne": "paid"}},
+            {
+                "$push": {"order_items": {"$each": normalized}},
+                "$inc": {
+                    "total_amount": round(subtotal_delta, 2),
+                    "tax_amount": tax_delta,
+                    "grand_total": grand_delta,
+                },
+                "$set": {"updated_at": now.isoformat()},
+            },
+        )
+        if getattr(updated, "matched_count", 0) == 0:
+            return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
+
+        for item in normalized:
+            await self._db.kitchen_orders.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": ctx.tenant_id,
+                    "order_id": order_id,
+                    "order_number": order.get("order_number"),
+                    "outlet_id": order.get("outlet_id"),
+                    "table_number": order.get("table_number"),
+                    "items": [item],
+                    "station": item.get("station"),
+                    "status": "pending",
+                    "priority": "normal",
+                    "ordered_at": now.isoformat(),
+                }
+            )
+
+        batch = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": ctx.tenant_id,
+            "order_id": order_id,
+            "idempotency_key": idempotency_key,
+            "items_count": len(normalized),
+            "amount_added": grand_delta,
+            "created_at": now.isoformat(),
+        }
+        if idempotency_key:
+            await self._db.pos_order_item_batches.insert_one(dict(batch))
+        await self._broadcast_kitchen_queue(ctx.tenant_id)
+        return ServiceResult.success(batch)
+
+    @audited("pos.transfer_order_table", "pos_order", severity=SEVERITY_INFO, capture_before=True)
+    async def transfer_order_table(
+        self,
+        ctx: OperationContext,
+        order_id: str,
+        to_table_number: str,
+    ) -> ServiceResult:
+        order = await self._db.pos_orders.find_one(
+            {"id": order_id, "tenant_id": ctx.tenant_id},
+            {"_id": 0},
+        )
+        if not order:
+            return ServiceResult.fail("Order not found", "NOT_FOUND")
+        if order.get("status") not in {"pending", "preparing", "ready"} or order.get("payment_status") == "paid":
+            return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
+        outlet_id = order.get("outlet_id")
+        source_number = str(order.get("table_number") or "")
+        target_number = str(to_table_number or "").strip()
+        if not outlet_id or not target_number:
+            return ServiceResult.fail("Target table is required", "VALIDATION_ERROR")
+        target = await self._db.table_layouts.find_one(
+            {"tenant_id": ctx.tenant_id, "outlet_id": outlet_id, "table_number": target_number},
+            {"_id": 0},
+        )
+        if not target:
+            return ServiceResult.fail("Target table not found", "NOT_FOUND")
+        if target.get("status") != "available" or target.get("current_order_id"):
+            return ServiceResult.fail("Target table is unavailable", "TABLE_UNAVAILABLE")
+
+        now = datetime.now(UTC).isoformat()
+        claimed = await self._db.table_layouts.update_one(
+            {
+                "tenant_id": ctx.tenant_id,
+                "outlet_id": outlet_id,
+                "table_number": target_number,
+                "status": "available",
+            },
+            {"$set": {"status": "occupied", "current_order_id": order_id, "opened_at": order.get("created_at") or now}},
+        )
+        if getattr(claimed, "matched_count", 0) == 0:
+            return ServiceResult.fail("Target table is unavailable", "TABLE_UNAVAILABLE")
+        await self._db.pos_orders.update_one(
+            {"id": order_id, "tenant_id": ctx.tenant_id},
+            {"$set": {"table_number": target_number, "updated_at": now}},
+        )
+        await self._db.kitchen_orders.update_many(
+            {"order_id": order_id, "tenant_id": ctx.tenant_id, "status": {"$nin": ["served", "cancelled"]}},
+            {"$set": {"table_number": target_number, "updated_at": now}},
+        )
+        if source_number:
+            await self._db.table_layouts.update_one(
+                {"tenant_id": ctx.tenant_id, "outlet_id": outlet_id, "table_number": source_number, "current_order_id": order_id},
+                {"$set": {"status": "available", "current_order_id": None, "opened_at": None}},
+            )
+        await self._broadcast_kitchen_queue(ctx.tenant_id)
+        return ServiceResult.success(
+            {"order_id": order_id, "from_table": source_number, "to_table": target_number}
         )
 
     # ==================================================================
@@ -469,8 +674,10 @@ class PosFnbServiceV2:
                     "outlet_id": order["outlet_id"],
                     "tenant_id": ctx.tenant_id,
                 },
-                {"$set": {"status": "available", "current_order_id": None}},
+                {"$set": {"status": "available", "current_order_id": None, "opened_at": None}},
             )
+
+        await self._broadcast_kitchen_queue(ctx.tenant_id)
 
         # Reverse folio posting if exists
         if order.get("payment_status") == "paid":

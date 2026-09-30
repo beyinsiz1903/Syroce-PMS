@@ -1294,7 +1294,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
     """
     tables = []
     raw_tables = await db.table_layouts.find({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id}).to_list(length=None)
-    # Batch-fetch all open transactions referenced by tables
+    # Batch-fetch all open transactions/orders referenced by tables.
     txn_ids = [t.get("current_transaction_id") for t in raw_tables if t.get("current_transaction_id")]
     txns_by_id: dict = {}
     if txn_ids:
@@ -1303,8 +1303,18 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
             {"_id": 0, "id": 1, "total_amount": 1, "guests": 1},
         ):
             txns_by_id[tx["id"]] = tx
+    order_ids = [t.get("current_order_id") for t in raw_tables if t.get("current_order_id")]
+    orders_by_id: dict = {}
+    if order_ids:
+        async for order in db.pos_orders.find(
+            {"id": {"$in": order_ids}, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "id": 1, "grand_total": 1, "guest_name": 1, "created_at": 1},
+        ):
+            orders_by_id[order["id"]] = order
     for table in raw_tables:
         transaction = txns_by_id.get(table.get("current_transaction_id"))
+        order = orders_by_id.get(table.get("current_order_id"))
+        active_bill = transaction or order
 
         tables.append(
             {
@@ -1317,9 +1327,13 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                 "height": table.get("height"),
                 "status": table.get("status"),
                 "server_assigned": table.get("server_assigned"),
-                "current_bill": round(transaction.get("total_amount", 0), 2) if transaction else 0,
+                "current_transaction_id": table.get("current_transaction_id"),
+                "current_order_id": table.get("current_order_id"),
+                "current_bill": round(active_bill.get("total_amount", active_bill.get("grand_total", 0)), 2) if active_bill else 0,
                 "guest_count": transaction.get("guests", 0) if transaction else 0,
-                "duration_minutes": calculate_table_duration(table) if table.get("status") == "occupied" else 0,
+                "duration_minutes": calculate_table_duration(
+                    table.get("opened_at") or (order or {}).get("created_at") or (transaction or {}).get("created_at")
+                ) if table.get("status") == "occupied" else 0,
             }
         )
 
@@ -1401,6 +1415,17 @@ async def update_pos_table_status(
     allowed = {"available", "occupied", "reserved", "dirty"}
     if new_status not in allowed:
         raise HTTPException(status_code=422, detail="Geçersiz masa durumu")
+    table = await db.table_layouts.find_one(
+        {"id": table_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "current_order_id": 1, "current_transaction_id": 1},
+    )
+    if not table:
+        raise HTTPException(status_code=404, detail="Masa bulunamadı")
+    if new_status == "available" and (table.get("current_order_id") or table.get("current_transaction_id")):
+        raise HTTPException(
+            status_code=409,
+            detail="Açık adisyon bulunan masa müsait yapılamaz; önce adisyonu kapatın veya aktarın",
+        )
     result = await db.table_layouts.update_one(
         {"id": table_id, "tenant_id": current_user.tenant_id},
         {"$set": {"status": new_status, "updated_at": datetime.now(UTC).isoformat()}},
