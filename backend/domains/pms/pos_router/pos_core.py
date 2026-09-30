@@ -304,12 +304,46 @@ async def get_pos_daily_summary(
     ]
     total_sales = round(sum(float(row.get("total_amount", 0) or 0) for row in completed), 2)
     count = len(completed)
+    item_totals: dict[str, dict[str, Any]] = {}
+    for row in completed:
+        for item in row.get("order_items") or row.get("items") or []:
+            name = str(item.get("item_name") or item.get("name") or "").strip()
+            if not name:
+                continue
+            quantity = float(item.get("quantity", 1) or 0)
+            line_total = item.get("total")
+            if line_total is None:
+                line_total = item.get("total_price")
+            if line_total is None:
+                unit_price = item.get("unit_price")
+                if unit_price is None:
+                    unit_price = item.get("price", 0)
+                line_total = float(unit_price or 0) * quantity
+
+            key = name.casefold()
+            aggregate = item_totals.setdefault(
+                key,
+                {"name": name, "quantity": 0.0, "revenue": 0.0},
+            )
+            aggregate["quantity"] += quantity
+            aggregate["revenue"] += float(line_total or 0)
+
+    top_items = sorted(
+        item_totals.values(),
+        key=lambda item: (-item["quantity"], -item["revenue"], item["name"].casefold()),
+    )[:5]
+    for item in top_items:
+        quantity = item["quantity"]
+        item["quantity"] = int(quantity) if quantity.is_integer() else round(quantity, 2)
+        item["revenue"] = round(item["revenue"], 2)
+
     return {
         "date": date,
         "outlet_id": outlet_id,
         "total_sales": total_sales,
         "transaction_count": count,
         "average_transaction": round(total_sales / count, 2) if count else 0,
+        "top_items": top_items,
     }
 
 
