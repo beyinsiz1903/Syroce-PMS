@@ -48,7 +48,7 @@ pycountry==26.2.16
 pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
-PyJWT==2.14.0
+PyJWT==2.15.0
 pymongo==4.8.0
 pyotp==2.9.0
 pyparsing==3.3.2
