@@ -97,12 +97,17 @@ class OutboxWorker:
         processing_timeout: int = 120,
         drain_pause: float = 0.1,
         tenant_id: str | None = None,
+        database: Any | None = None,
     ):
         self.poll_interval = poll_interval
         self.batch_size = batch_size
         self.processing_timeout = processing_timeout
         self.drain_pause = drain_pause
         self.tenant_id = tenant_id
+        # Tests and isolated worker runners can pin the worker to the exact
+        # database handle they seeded. Production keeps resolving the current
+        # system database lazily, so reconnects/startup binding still work.
+        self._database = database
         self.worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
@@ -111,6 +116,9 @@ class OutboxWorker:
         self._failed_count = 0
         self._retry_count = 0
         self._last_processed_at: str | None = None
+
+    def _system_db(self):
+        return self._database if self._database is not None else get_system_db()
 
     @property
     def metrics(self) -> dict[str, Any]:
@@ -168,7 +176,7 @@ class OutboxWorker:
         """Recover events stuck in 'processing' state beyond timeout."""
         cutoff = _iso(_utc_now() - timedelta(seconds=self.processing_timeout))
         now = _iso(_utc_now())
-        sysdb = get_system_db()
+        sysdb = self._system_db()
 
         result = await sysdb.outbox_events.update_many(
             {
@@ -210,7 +218,7 @@ class OutboxWorker:
         OutboxLifecycleWorker.
         """
         now = _iso(_utc_now())
-        sysdb = get_system_db()
+        sysdb = self._system_db()
 
         query = {
             "status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
@@ -283,7 +291,7 @@ class OutboxWorker:
     async def _mark_processed(self, event: dict[str, Any], message: str) -> None:
         """Mark event as successfully processed."""
         now = _iso(_utc_now())
-        sysdb = get_system_db()
+        sysdb = self._system_db()
         await sysdb.outbox_events.update_one(
             {"id": event["id"], "status": STATUS_PROCESSING},
             {
@@ -330,7 +338,7 @@ class OutboxWorker:
 
         if is_permanent or attempt_count >= max_attempts:
             # Permanently failed
-            sysdb = get_system_db()
+            sysdb = self._system_db()
             await sysdb.outbox_events.update_one(
                 {"id": event["id"], "status": STATUS_PROCESSING},
                 {
@@ -384,7 +392,7 @@ class OutboxWorker:
         else:
             # Schedule retry
             next_at = compute_next_available_at(attempt_count + 1)
-            sysdb = get_system_db()
+            sysdb = self._system_db()
             await sysdb.outbox_events.update_one(
                 {"id": event["id"], "status": STATUS_PROCESSING},
                 {

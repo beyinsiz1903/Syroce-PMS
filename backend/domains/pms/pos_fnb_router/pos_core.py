@@ -1029,6 +1029,9 @@ async def transfer_table(
     """
     tenant_id = current_user.tenant_id
 
+    if from_table == to_table:
+        raise HTTPException(status_code=400, detail="Kaynak ve hedef masa aynı olamaz")
+
     # 1. Fetch Source Transaction
     source_transaction = await db.pos_transactions.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": from_table, "status": "open"})
 
@@ -1039,11 +1042,31 @@ async def transfer_table(
     source_uuid = source_transaction.get("id")
 
     if transfer_all:
+        target_transaction = await db.pos_transactions.find_one(
+            {"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": to_table, "status": "open"}
+        )
+        if target_transaction:
+            raise HTTPException(
+                status_code=409,
+                detail="Hedef masada açık adisyon var. Önce adisyonları birleştirin veya kalem aktarımı yapın.",
+            )
         # Transfer entire table.
         # SECURITY: defense-in-depth with tenant_id filter.
         await db.pos_transactions.update_one(
             {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, {"$set": {"table_number": to_table, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.username}}
         )
+
+        # Keep the visual table plan consistent with the durable open check.
+        if hasattr(db, "table_layouts"):
+            now = datetime.now(UTC).isoformat()
+            await db.table_layouts.update_one(
+                {"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": from_table},
+                {"$set": {"status": "available", "current_transaction_id": None, "updated_at": now}},
+            )
+            await db.table_layouts.update_one(
+                {"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": to_table},
+                {"$set": {"status": "occupied", "current_transaction_id": source_uuid, "updated_at": now}},
+            )
 
         return {
             "success": True,
@@ -1294,17 +1317,42 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
     """
     tables = []
     raw_tables = await db.table_layouts.find({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id}).to_list(length=None)
-    # Batch-fetch all open transactions referenced by tables
+    # Batch-fetch all open transactions referenced by tables. Older checks did
+    # not always persist current_transaction_id, so also match by table number;
+    # otherwise the plan could show a table as empty while an open check exists.
     txn_ids = [t.get("current_transaction_id") for t in raw_tables if t.get("current_transaction_id")]
+    table_numbers = [str(t.get("table_number")) for t in raw_tables if t.get("table_number") is not None]
     txns_by_id: dict = {}
-    if txn_ids:
+    txns_by_number: dict = {}
+    if txn_ids or table_numbers:
         async for tx in db.pos_transactions.find(
-            {"id": {"$in": txn_ids}, "tenant_id": current_user.tenant_id},
-            {"_id": 0, "id": 1, "total_amount": 1, "guests": 1},
+            {
+                "tenant_id": current_user.tenant_id,
+                "outlet_id": outlet_id,
+                "status": "open",
+                "$or": [
+                    {"id": {"$in": txn_ids}},
+                    {"table_number": {"$in": table_numbers}},
+                ],
+            },
+            {"_id": 0, "id": 1, "table_number": 1, "total_amount": 1, "guests": 1, "opened_at": 1, "created_at": 1},
         ):
             txns_by_id[tx["id"]] = tx
+            if tx.get("table_number") is not None:
+                txns_by_number[str(tx["table_number"])] = tx
+    order_ids = [t.get("current_order_id") for t in raw_tables if t.get("current_order_id")]
+    orders_by_id: dict = {}
+    if order_ids:
+        async for order in db.pos_orders.find(
+            {"id": {"$in": order_ids}, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "id": 1, "grand_total": 1, "guest_name": 1, "created_at": 1},
+        ):
+            orders_by_id[order["id"]] = order
     for table in raw_tables:
-        transaction = txns_by_id.get(table.get("current_transaction_id"))
+        transaction = txns_by_id.get(table.get("current_transaction_id")) or txns_by_number.get(str(table.get("table_number")))
+        order = orders_by_id.get(table.get("current_order_id"))
+        active_bill = transaction or order
+        effective_status = "occupied" if active_bill else table.get("status")
 
         tables.append(
             {
@@ -1315,11 +1363,18 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                 "shape": table.get("shape"),
                 "width": table.get("width"),
                 "height": table.get("height"),
-                "status": table.get("status"),
+                "status": effective_status,
+                "current_transaction_id": transaction.get("id") if transaction else None,
                 "server_assigned": table.get("server_assigned"),
-                "current_bill": round(transaction.get("total_amount", 0), 2) if transaction else 0,
+                "current_order_id": order.get("id") if order else None,
+                "current_bill": round(active_bill.get("total_amount", active_bill.get("grand_total", 0)), 2) if active_bill else 0,
                 "guest_count": transaction.get("guests", 0) if transaction else 0,
-                "duration_minutes": calculate_table_duration(table) if table.get("status") == "occupied" else 0,
+                "duration_minutes": calculate_table_duration(
+                    (transaction or {}).get("opened_at")
+                    or table.get("opened_at")
+                    or (order or {}).get("created_at")
+                    or (transaction or {}).get("created_at")
+                ) if active_bill else 0,
             }
         )
 
@@ -1332,7 +1387,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
             }
         )
         if not outlet:
-            raise HTTPException(status_code=404, detail="Outlet bulunamadi")
+            raise HTTPException(status_code=404, detail="Satış noktası bulunamadı")
         default_tables = create_default_table_layout(current_user.tenant_id, outlet_id)
         for table_data in default_tables:
             await db.table_layouts.insert_one(table_data)
@@ -1359,6 +1414,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
         "available": sum(1 for t in tables if t["status"] == "available"),
         "occupied": sum(1 for t in tables if t["status"] == "occupied"),
         "reserved": sum(1 for t in tables if t["status"] == "reserved"),
+        "dirty": sum(1 for t in tables if t["status"] == "dirty"),
         "tables": tables,
     }
 
@@ -1401,6 +1457,30 @@ async def update_pos_table_status(
     allowed = {"available", "occupied", "reserved", "dirty"}
     if new_status not in allowed:
         raise HTTPException(status_code=422, detail="Geçersiz masa durumu")
+    table = await db.table_layouts.find_one(
+        {"id": table_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "outlet_id": 1, "table_number": 1, "current_order_id": 1, "current_transaction_id": 1},
+    )
+    if not table:
+        raise HTTPException(status_code=404, detail="Masa bulunamadı")
+    if new_status == "available":
+        linked_check = table.get("current_order_id") or table.get("current_transaction_id")
+        open_check = None
+        if not linked_check:
+            open_check = await db.pos_transactions.find_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "outlet_id": table.get("outlet_id"),
+                    "table_number": table.get("table_number"),
+                    "status": "open",
+                },
+                {"_id": 0, "id": 1},
+            )
+        if linked_check or open_check:
+            raise HTTPException(
+                status_code=409,
+                detail="Açık adisyon bulunan masa müsait yapılamaz; önce adisyonu kapatın veya aktarın",
+            )
     result = await db.table_layouts.update_one(
         {"id": table_id, "tenant_id": current_user.tenant_id},
         {"$set": {"status": new_status, "updated_at": datetime.now(UTC).isoformat()}},
@@ -1618,6 +1698,12 @@ async def create_pos_order(
         booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tenant_id})
         if booking:
             guest_id = booking["guest_id"]
+
+    if (data.payment_method or "").lower() == "room_charge":
+        if not data.booking_id or not booking:
+            raise HTTPException(status_code=404, detail="Konaklayan misafir bulunamadı")
+        if booking.get("status") not in {"checked_in", "in_house"}:
+            raise HTTPException(status_code=409, detail="Yalnızca tesiste konaklayan misafirin odasına hesap yazılabilir")
 
     # Waiter-terminal room charge: the touch terminal only knows the in-house
     # booking_id (folio ids are behind a finance-gated endpoint). When the check

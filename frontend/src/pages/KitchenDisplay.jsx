@@ -68,6 +68,25 @@ const humanizeStation = (value) => String(value || '')
   .replace(/[_-]+/g, ' ')
   .replace(/\b\p{L}/gu, letter => letter.toLocaleUpperCase('tr-TR'));
 
+export const normalizeKitchenOrders = (orders = []) => orders.map(order => ({
+  ...order,
+  items: Array.isArray(order.items) && order.items.length
+    ? order.items.map(item => ({
+        ...item,
+        name: item.name || item.item_name || 'Ürün',
+        notes: item.notes || item.special_instructions,
+      }))
+    : order.item_name
+      ? [{
+          id: order.item_id || order.id,
+          name: order.item_name,
+          quantity: order.quantity || 1,
+          notes: order.special_instructions,
+          station: order.station,
+        }]
+      : [],
+}));
+
 /* ─── sub-components ─────────────────────────────────────────────── */
 
 function OrderCard({ order, onReady, onServed, onStart, isUpdating }) {
@@ -212,7 +231,7 @@ const KitchenDisplay = () => {
   useEffect(() => {
     const unsub = websocket.on('kitchen_orders', (payload) => {
       if (!payload) return;
-      setOrders(payload.orders || []);
+      setOrders(normalizeKitchenOrders(payload.orders || []));
       setLastUpdate(payload.timestamp || new Date().toISOString());
     });
     return () => { if (unsub) unsub(); };
@@ -223,7 +242,7 @@ const KitchenDisplay = () => {
     setLoading(true);
     try {
       const res = await axios.get('/fnb/kitchen-display');
-      setOrders(res.data.orders || []);
+      setOrders(normalizeKitchenOrders(res.data.orders || []));
       setLastUpdate(new Date().toISOString());
       setLoadError(false);
     } catch {
@@ -314,7 +333,6 @@ const KitchenDisplay = () => {
         toast.warning(title, { description: body });
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urgentOrders]);
 
   /* ── render ── */
@@ -328,6 +346,8 @@ const KitchenDisplay = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/pos')}
+              aria-label="POS paneline dön"
+              title="POS paneline dön"
               className="p-2 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
             >
               <Home className="w-5 h-5" />
@@ -379,6 +399,7 @@ const KitchenDisplay = () => {
             {/* Refresh */}
             <button
               onClick={() => { setAutoRefresh(a => !a); loadOrders(); }}
+              aria-label={autoRefresh ? 'Otomatik yenilemeyi kapat ve şimdi yenile' : 'Otomatik yenilemeyi aç ve şimdi yenile'}
               title={autoRefresh ? 'Otomatik yenileme açık' : 'Otomatik yenileme kapalı'}
               className={`p-2 rounded-xl border transition-colors ${
                 autoRefresh

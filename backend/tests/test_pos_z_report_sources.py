@@ -130,8 +130,24 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
 async def test_daily_summary_uses_selected_date_outlet_and_excludes_voids(monkeypatch):
     query = AsyncMock(
         return_value=[
-            {"id": "paid-1", "status": "completed", "total_amount": 120.50},
-            {"id": "paid-2", "status": "closed", "total_amount": 79.50},
+            {
+                "id": "paid-1",
+                "status": "completed",
+                "total_amount": 120.50,
+                "order_items": [
+                    {"item_name": "Türk Kahvesi", "quantity": 2, "unit_price": 30},
+                    {"item_name": "Tost", "quantity": 1, "total_price": 60.50},
+                ],
+            },
+            {
+                "id": "paid-2",
+                "status": "closed",
+                "total_amount": 79.50,
+                "items": [
+                    {"name": "Türk Kahvesi", "quantity": 1, "price": 30},
+                    {"name": "Çay", "quantity": 1, "total": 49.50},
+                ],
+            },
             {"id": "void-1", "status": "cancelled", "total_amount": 50},
             {"id": "open-1", "status": "pending", "total_amount": 80},
         ]
@@ -156,4 +172,9 @@ async def test_daily_summary_uses_selected_date_outlet_and_excludes_voids(monkey
         "total_sales": 200.0,
         "transaction_count": 2,
         "average_transaction": 100.0,
+        "top_items": [
+            {"name": "Türk Kahvesi", "quantity": 3, "revenue": 90.0},
+            {"name": "Tost", "quantity": 1, "revenue": 60.5},
+            {"name": "Çay", "quantity": 1, "revenue": 49.5},
+        ],
     }

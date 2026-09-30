@@ -31,10 +31,13 @@ import {
   Home
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { normalizePOSMenuItems } from '@/utils/posMenu';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 
 const MobileFnB = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const businessDate = useBusinessDate();
   const [loading, setLoading] = useState(true);
   const [dailySummary, setDailySummary] = useState(null);
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -64,18 +67,26 @@ const MobileFnB = ({ user }) => {
   const loadData = useCallback(async (outletId = activeOutlet?.id) => {
     try {
       setLoading(true);
-      const today = new Date().toISOString().split('T')[0];
-
-      const outletQuery = outletId ? `&outlet_id=${encodeURIComponent(outletId)}` : '';
+      const summaryParams = { date: businessDate };
+      const outletParams = {};
+      if (outletId) {
+        summaryParams.outlet_id = outletId;
+        outletParams.outlet_id = outletId;
+      }
       const [summaryRes, transactionsRes, outletsRes, menuRes] = await Promise.allSettled([
-        axios.get(`/pos/daily-summary?date=${today}${outletQuery}`),
-        axios.get(`/pos/transactions?limit=10${outletQuery}`),
+        axios.get('/pos/daily-summary', { params: summaryParams }),
+        axios.get('/pos/transactions', { params: { limit: 10, ...outletParams } }),
         axios.get('/pos/outlets'),
-        axios.get(`/pos/menu-items?${outletId ? `outlet_id=${encodeURIComponent(outletId)}` : ''}`)
+        axios.get('/pos/menu-items', { params: outletParams })
       ]);
 
-      if (summaryRes.status === 'fulfilled') setDailySummary(summaryRes.value.data);
-      else setDailySummary(null);
+      if (summaryRes.status === 'fulfilled') {
+        setDailySummary(summaryRes.value.data);
+        setTopItems(summaryRes.value.data?.top_items || []);
+      } else {
+        setDailySummary(null);
+        setTopItems([]);
+      }
       if (transactionsRes.status === 'fulfilled') {
         const txData = transactionsRes.value.data;
         setRecentTransactions(Array.isArray(txData) ? txData : (txData?.transactions || txData?.orders || []));
@@ -90,12 +101,10 @@ const MobileFnB = ({ user }) => {
       }
       if (menuRes.status === 'fulfilled') {
         const menuData = menuRes.value.data;
-        const menuList = Array.isArray(menuData) ? menuData : (menuData?.menu_items || []);
+        const menuList = normalizePOSMenuItems(Array.isArray(menuData) ? menuData : menuData?.menu_items);
         setMenuItems(menuList);
-        setTopItems(menuList.slice(0, 5));
       } else {
         setMenuItems([]);
-        setTopItems([]);
       }
 
       const failures = [summaryRes, transactionsRes, outletsRes, menuRes].filter(result => result.status === 'rejected').length;
@@ -108,7 +117,7 @@ const MobileFnB = ({ user }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeOutlet]);
+  }, [activeOutlet, businessDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -229,8 +238,9 @@ const MobileFnB = ({ user }) => {
 
   const loadZReport = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await axios.get(`/pos/z-report?date=${today}`);
+      const res = await axios.get('/pos/z-report', {
+        params: { date: businessDate, ...(activeOutlet?.id ? { outlet_id: activeOutlet.id } : {}) },
+      });
       setZReportData(res.data);
       setZReportModalOpen(true);
     } catch (error) {
@@ -240,8 +250,9 @@ const MobileFnB = ({ user }) => {
 
   const loadVoidReport = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await axios.get(`/pos/void-transactions?start_date=${today}&end_date=${today}`);
+      const res = await axios.get('/pos/void-transactions', {
+        params: { date: businessDate, ...(activeOutlet?.id ? { outlet_id: activeOutlet.id } : {}) },
+      });
       setVoidTransactions(res.data.void_transactions || []);
       setVoidReportModalOpen(true);
     } catch (error) {
@@ -287,7 +298,7 @@ const MobileFnB = ({ user }) => {
                 aria-label="Ana Sayfa"
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/app/dashboard')}
                 className="text-white hover:bg-white/20 p-2"
                 title="Ana Sayfa"
               >
@@ -631,14 +642,22 @@ const MobileFnB = ({ user }) => {
               </CardHeader>
               <CardContent className="space-y-2">
                 {topItems.map((item, idx) => (
-                  <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                  <div key={`${item.name}-${idx}`} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center space-x-2">
                       <span className="font-bold text-amber-600">{idx + 1}.</span>
                       <span className="text-sm">{item.name}</span>
                     </div>
-                    <span className="text-sm font-bold">{formatCurrency(item.price)}</span>
+                    <div className="text-right">
+                      <p className="text-sm font-bold">{item.quantity} adet</p>
+                      <p className="text-xs text-gray-500">{formatCurrency(item.revenue)}</p>
+                    </div>
                   </div>
                 ))}
+                {topItems.length === 0 && (
+                  <p className="py-3 text-center text-sm text-gray-500">
+                    Seçili iş gününde tamamlanan ürün satışı yok.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>

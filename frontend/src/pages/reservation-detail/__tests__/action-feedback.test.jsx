@@ -39,7 +39,7 @@ vi.mock('axios', () => ({ default: axiosMock }));
 
 import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
 import { OnlinePaymentTab } from '@/pages/reservation-detail/OnlinePaymentTab';
-import { DailyRatesTab, ExtraChargesTab, distributeTotalAcrossEditableRates, filterDailyRatesForStay } from '@/pages/reservation-detail/PricingTabs';
+import { DailyRatesTab, ExtraChargesTab, completeDailyRatesForStay, distributeTotalAcrossEditableRates, filterDailyRatesForStay } from '@/pages/reservation-detail/PricingTabs';
 
 beforeEach(() => {
   axiosGet.mockReset();
@@ -63,6 +63,53 @@ describe('reservation detail action feedback', () => {
     );
 
     expect(rates.map(rate => rate.date)).toEqual(['2026-09-21', '2026-09-24']);
+  });
+
+  it('completes a partially imported daily-rate plan through the night before checkout', () => {
+    const rates = completeDailyRatesForStay(
+      [
+        { date: '2026-09-28', rate: 2500 },
+        { date: '2026-09-29', rate: 2500 },
+        { date: '2026-09-30', rate: 2500 },
+        { date: '2026-10-01', rate: 2500 },
+      ],
+      { check_in: '2026-09-28', check_out: '2026-10-03', total_amount: 17500 },
+    );
+
+    expect(rates.map(rate => rate.date)).toEqual([
+      '2026-09-28',
+      '2026-09-29',
+      '2026-09-30',
+      '2026-10-01',
+      '2026-10-02',
+    ]);
+    expect(rates.at(-1)).toMatchObject({ rate: '7500.00', generated_reason: 'missing_daily_rate' });
+    expect(rates.reduce((sum, rate) => sum + Number(rate.rate), 0)).toBe(17500);
+  });
+
+  it('shows and saves the missing night completed from the reservation total', async () => {
+    axiosMock.put.mockResolvedValue({ data: { success: true } });
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { date: '2026-09-28', rate: 2500 },
+          { date: '2026-09-29', rate: 2500 },
+          { date: '2026-09-30', rate: 2500 },
+          { date: '2026-10-01', rate: 2500 },
+        ]}
+        booking={{ id: 'booking-a', check_in: '2026-09-28', check_out: '2026-10-03', total_amount: 17500 }}
+      />,
+    );
+
+    expect(screen.getByText('02 Eki 2026 Cum')).toBeInTheDocument();
+    expect(screen.getByTestId('completed-daily-rates-notice')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/daily-rates',
+      { rates: expect.arrayContaining([expect.objectContaining({ date: '2026-10-02', rate: 7500 })]) },
+    ));
   });
 
   it('rejects a same-account cari transfer before posting', async () => {

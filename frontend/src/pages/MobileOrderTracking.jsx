@@ -81,7 +81,7 @@ const MobileOrderTracking = ({ user }) => {
     try {
       await axios.put(`/pos/mobile/order/${orderId}/status`, {
         status: newStatus,
-        notes: `Status updated to ${newStatus}`
+        notes: `Sipariş durumu ${getStatusLabel(newStatus)} olarak güncellendi`
       });
       
       toast.success(`Sipariş durumu: ${getStatusLabel(newStatus)}`);
@@ -93,7 +93,7 @@ const MobileOrderTracking = ({ user }) => {
       }
     } catch (error) {
       console.error('Failed to update status:', error);
-      toast.error('Durum güncellenemedi');
+      toast.error(error?.response?.data?.detail || 'Durum güncellenemedi');
     }
   };
 
@@ -192,7 +192,7 @@ const MobileOrderTracking = ({ user }) => {
       <div className="bg-gradient-to-r from-amber-600 to-red-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
+            <button aria-label="Geri" title="Geri" onClick={() => navigate('/mobile/fnb')} className="p-2 hover:bg-white/20 rounded-lg transition">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>

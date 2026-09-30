@@ -114,6 +114,56 @@ async def test_direct_pos_bridge_posts_settlement_revenue_and_tax(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_pos_bridge_posts_each_mixed_payment_to_its_account(monkeypatch):
+    mapping = {**bridge.DEFAULT_MAPPING, "tenant_id": "tenant-a", "enabled": True}
+    database = SimpleNamespace(gl_operational_mappings=_collection(one=mapping), pos_transactions=_collection())
+    post = AsyncMock(return_value={"id": "journal-mixed"})
+    monkeypatch.setattr(bridge, "post_journal_entry", post)
+
+    await bridge.post_direct_pos_to_gl(
+        database,
+        "tenant-a",
+        transaction={
+            "id": "txn-mixed", "order_id": "order-mixed", "transaction_date": "2026-09-30",
+            "total_amount": 220, "payment_method": "mixed",
+            "payment_breakdown": [{"method": "cash", "amount": 100}, {"method": "card", "amount": 120}],
+        },
+        order={"tax_amount": 20},
+        posted_to_folio=False,
+        actor="cashier-1",
+    )
+
+    assert post.await_args.kwargs["lines"] == [
+        {"account_code": "100", "debit": 100.0, "memo": "POS cash tahsilatı"},
+        {"account_code": "108", "debit": 120.0, "memo": "POS card tahsilatı"},
+        {"account_code": "600", "credit": 200.0, "memo": "POS geliri"},
+        {"account_code": "391", "credit": 20.0, "memo": "POS hesaplanan vergi"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pos_refund_reverses_mixed_settlement_revenue_and_tax(monkeypatch):
+    mapping = {**bridge.DEFAULT_MAPPING, "tenant_id": "tenant-a", "enabled": True}
+    database = SimpleNamespace(gl_operational_mappings=_collection(one=mapping), pos_transactions=_collection())
+    post = AsyncMock(return_value={"id": "journal-refund"})
+    monkeypatch.setattr(bridge, "post_journal_entry", post)
+
+    await bridge.post_direct_pos_refund_to_gl(
+        database, "tenant-a",
+        refund={"id": "refund-1", "order_id": "order-1", "transaction_date": "2026-09-30", "total_amount": -110},
+        original_transaction={"total_amount": 220, "payment_method": "mixed", "payment_breakdown": [{"method": "cash", "amount": 100}, {"method": "card", "amount": 120}]},
+        order={"tax_amount": 20}, actor="manager-1",
+    )
+
+    assert post.await_args.kwargs["lines"] == [
+        {"account_code": "600", "debit": 100.0, "memo": "POS satış iadesi"},
+        {"account_code": "391", "debit": 10.0, "memo": "POS iade vergi ters kaydı"},
+        {"account_code": "100", "credit": 50.0, "memo": "POS iade tahsilat ters kaydı"},
+        {"account_code": "108", "credit": 60.0, "memo": "POS iade tahsilat ters kaydı"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_room_charge_pos_skips_direct_gl_to_prevent_double_post(monkeypatch):
     database = SimpleNamespace(gl_operational_mappings=_collection(one={**bridge.DEFAULT_MAPPING, "enabled": True}))
     post = AsyncMock()

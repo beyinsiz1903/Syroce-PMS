@@ -72,8 +72,8 @@ const DailyAnalysisReport = ({ analysis }) => (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Doluluk" value={`${analysis.occupancy_percentage || 0}%`} icon={BedDouble} color="blue" />
       <KPICard title={analysis.revenue_source === 'accrued' ? 'Tahakkuk Eden Oda Geliri' : 'İşlenen Oda Geliri'} value={analysis.room_revenue || 0} icon={DollarSign} color="green" />
-      <KPICard title="ADR" value={analysis.adr || 0} icon={BarChart3} color="purple" />
-      <KPICard title="RevPAR" value={analysis.revpar || 0} icon={BarChart3} color="cyan" />
+      <KPICard title="Satılan Oda Başına Ortalama Fiyat" value={analysis.adr || 0} icon={BarChart3} color="purple" />
+      <KPICard title="Satılabilir Oda Başına Gelir" value={analysis.revpar || 0} icon={BarChart3} color="cyan" />
     </div>
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
       <div><p className="text-gray-500">Dolu / Toplam oda</p><p className="font-bold text-lg">{analysis.occupied_rooms || 0} / {analysis.total_rooms || 0}</p></div>
@@ -81,8 +81,8 @@ const DailyAnalysisReport = ({ analysis }) => (
       <div><p className="text-gray-500">Konaklayan misafir</p><p className="font-bold text-lg">{analysis.in_house_guests || 0}</p></div>
       <div><p className="text-gray-500">Tahsilat</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.collections_by_currency} fallback={analysis.collections} /></p></div>
       <div><p className="text-gray-500">Folyoya işlenen oda geliri</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.posted_room_revenue_by_currency} fallback={analysis.posted_room_revenue} /></p></div>
-      <div><p className="text-gray-500">ADR</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.adr_by_currency} fallback={analysis.adr} /></p></div>
-      <div><p className="text-gray-500">RevPAR</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.revpar_by_currency} fallback={analysis.revpar} /></p></div>
+      <div><p className="text-gray-500">Satılan oda başına ortalama fiyat</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.adr_by_currency} fallback={analysis.adr} /></p></div>
+      <div><p className="text-gray-500">Satılabilir oda başına gelir</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.revpar_by_currency} fallback={analysis.revpar} /></p></div>
     </CardContent></Card>
   </div>
 );

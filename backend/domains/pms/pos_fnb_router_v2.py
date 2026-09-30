@@ -37,6 +37,7 @@ class OrderItemSchema(BaseModel):
     name: str
     quantity: int = 1
     price: float
+    tax_rate: float = 0.10
     station: str = "main"
     special_instructions: str | None = None
 
@@ -51,6 +52,11 @@ class CreateOrderRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+class PaymentPart(BaseModel):
+    method: str
+    amount: float
+
+
 class CloseOrderRequest(BaseModel):
     order_id: str
     payment_method: str = "cash"
@@ -58,11 +64,33 @@ class CloseOrderRequest(BaseModel):
     booking_id: str | None = None
     tip_amount: float = 0.0
     idempotency_key: str | None = None
+    guest_signature: str | None = None
+    payments: list[PaymentPart] | None = None
+
+
+class VoidOrderItemRequest(BaseModel):
+    line_index: int
+    reason: str
+
+
+class RefundOrderRequest(BaseModel):
+    amount: float | None = None
+    reason: str
+    idempotency_key: str | None = None
 
 
 class VoidOrderRequest(BaseModel):
     order_id: str
     reason: str
+
+
+class AddOrderItemsRequest(BaseModel):
+    items: list[OrderItemSchema]
+    idempotency_key: str | None = None
+
+
+class TransferOrderTableRequest(BaseModel):
+    to_table_number: str
 
 
 class StockAdjustRequest(BaseModel):
@@ -108,7 +136,8 @@ async def create_order(
     items_dicts = [item.model_dump() for item in req.items]
     result = await pos_fnb_service_v2.create_order(ctx, req.outlet_id, req.table_number, items_dicts, req.guest_name, req.booking_id, req.order_type, req.idempotency_key)
     if not result.ok:
-        raise HTTPException(status_code=400, detail=from_service_result(result))
+        status_code = 409 if result.code == "TABLE_UNAVAILABLE" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 
 
@@ -119,10 +148,98 @@ async def close_order(
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await pos_fnb_service_v2.close_order(ctx, req.order_id, req.payment_method, req.post_to_folio, req.booking_id, req.tip_amount, req.idempotency_key)
+    result = await pos_fnb_service_v2.close_order(
+        ctx,
+        req.order_id,
+        req.payment_method,
+        req.post_to_folio,
+        req.booking_id,
+        req.tip_amount,
+        req.idempotency_key,
+        req.guest_signature,
+        [part.model_dump() for part in req.payments] if req.payments else None,
+    )
     if not result.ok:
         # Terminal-state conflicts → 409; everything else → 400.
-        status_code = 409 if result.code == "ORDER_VOIDED" else 400
+        status_code = 409 if result.code in {"ORDER_VOIDED", "FOLIO_NOT_OPEN"} else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/items/void")
+async def void_order_item(
+    order_id: str,
+    req: VoidOrderItemRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.void_order_item(ctx, order_id, req.line_index, req.reason)
+    if not result.ok:
+        status_code = 403 if result.code == "FORBIDDEN" else 409 if result.code == "ORDER_NOT_OPEN" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/refund")
+async def refund_order(
+    order_id: str,
+    req: RefundOrderRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.refund_order(ctx, order_id, req.amount, req.reason, req.idempotency_key)
+    if not result.ok:
+        status_code = 403 if result.code == "FORBIDDEN" else 409 if result.code in {"ORDER_NOT_CLOSED", "REFUND_LIMIT"} else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.get("/orders/{order_id}")
+async def get_order(
+    order_id: str,
+    user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.get_order(ctx, order_id)
+    if not result.ok:
+        raise HTTPException(status_code=404, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/items")
+async def add_order_items(
+    order_id: str,
+    req: AddOrderItemsRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.add_order_items(
+        ctx,
+        order_id,
+        [item.model_dump() for item in req.items],
+        req.idempotency_key,
+    )
+    if not result.ok:
+        status_code = 409 if result.code == "ORDER_NOT_OPEN" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/transfer-table")
+async def transfer_order_table(
+    order_id: str,
+    req: TransferOrderTableRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.transfer_order_table(ctx, order_id, req.to_table_number)
+    if not result.ok:
+        status_code = 409 if result.code in {"ORDER_NOT_OPEN", "TABLE_UNAVAILABLE"} else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 

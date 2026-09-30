@@ -95,12 +95,30 @@ async def update_reservation_status(
     if status not in valid_statuses:
         raise HTTPException(status_code=400, detail="Geçersiz rezervasyon durumu")
 
-    updated = await db.pos_table_reservations.find_one_and_update(
-        {"tenant_id": current_user.tenant_id, "id": reservation_id}, {"$set": {"status": status, "updated_at": datetime.now(UTC).isoformat()}}, return_document=True
-    )
-
-    if not updated:
+    reservation = await db.pos_table_reservations.find_one({"tenant_id": current_user.tenant_id, "id": reservation_id}, {"_id": 0})
+    if not reservation:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    current_status = reservation.get("status", "confirmed")
+    if status == current_status:
+        return reservation
+
+    allowed_transitions = {
+        "confirmed": {"seated", "cancelled"},
+        "seated": {"completed", "cancelled"},
+        "completed": set(),
+        "cancelled": set(),
+    }
+    if status not in allowed_transitions.get(current_status, set()):
+        raise HTTPException(status_code=409, detail=f"Rezervasyon {current_status} durumundan {status} durumuna geçirilemez.")
+
+    updated = await db.pos_table_reservations.find_one_and_update(
+        {"tenant_id": current_user.tenant_id, "id": reservation_id, "status": current_status},
+        {"$set": {"status": status, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.id}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="Rezervasyon başka bir kullanıcı tarafından güncellendi. Listeyi yenileyip tekrar deneyin.")
 
     updated.pop("_id", None)
     return updated

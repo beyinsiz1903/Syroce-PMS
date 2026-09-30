@@ -43,6 +43,61 @@ export const filterDailyRatesForStay = (dailyRates = [], booking = {}) => {
   });
 };
 
+const addCalendarDay = dateValue => {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  return next.toISOString().slice(0, 10);
+};
+
+export const completeDailyRatesForStay = (dailyRates = [], booking = {}) => {
+  const checkIn = String(booking?.check_in || '').slice(0, 10);
+  const checkOut = String(booking?.check_out || '').slice(0, 10);
+  if (!checkIn || !checkOut || checkOut <= checkIn) return dailyRates;
+
+  const expectedDates = [];
+  for (let date = checkIn; date < checkOut; date = addCalendarDay(date)) expectedDates.push(date);
+
+  const ratesByDate = new Map();
+  filterDailyRatesForStay(dailyRates, booking).forEach(rate => {
+    const date = String(rate?.date || '').slice(0, 10);
+    if (date && !ratesByDate.has(date)) ratesByDate.set(date, rate);
+  });
+  const missingDates = expectedDates.filter(date => !ratesByDate.has(date));
+  if (!missingDates.length) return expectedDates.map(date => ratesByDate.get(date));
+
+  const targetCents = Math.round((Number(booking?.total_amount) || 0) * 100);
+  const knownCents = [...ratesByDate.values()].reduce(
+    (sum, rate) => sum + Math.round((parseDecimalInput(rate?.rate) || 0) * 100),
+    0,
+  );
+  const remainingCents = targetCents - knownCents;
+  const minimumTotal = booking?.is_complimentary ? 0 : missingDates.length;
+  let distributableCents = remainingCents;
+  if (remainingCents < minimumTotal) {
+    const baseRateCents = Math.round((Number(booking?.base_rate) || 0) * 100);
+    const averageKnownCents = ratesByDate.size ? Math.round(knownCents / ratesByDate.size) : 0;
+    const averageStayCents = expectedDates.length ? Math.round(targetCents / expectedDates.length) : 0;
+    const fallbackCents = Math.max(
+      baseRateCents || averageKnownCents || averageStayCents,
+      booking?.is_complimentary ? 0 : 1,
+    );
+    distributableCents = fallbackCents * missingDates.length;
+  }
+
+  const centsPerNight = Math.floor(distributableCents / missingDates.length);
+  let remainder = distributableCents % missingDates.length;
+  missingDates.forEach(date => {
+    const cents = centsPerNight + (remainder-- > 0 ? 1 : 0);
+    ratesByDate.set(date, {
+      date,
+      rate: (cents / 100).toFixed(2),
+      generated: true,
+      generated_reason: 'missing_daily_rate',
+    });
+  });
+  return expectedDates.map(date => ratesByDate.get(date));
+};
+
 export function DailyRatesTab({
   dailyRates,
   booking,
@@ -66,19 +121,21 @@ export function DailyRatesTab({
   const bookingCheckIn = booking?.check_in;
   const bookingCheckOut = booking?.check_out;
   const stayRange = { check_in: bookingCheckIn, check_out: bookingCheckOut };
-  const applicableDailyRates = filterDailyRatesForStay(dailyRates, stayRange);
+  const applicableDailyRates = completeDailyRatesForStay(dailyRates, { ...booking, ...stayRange });
   useEffect(() => {
-    const stayRates = filterDailyRatesForStay(dailyRates, {
+    const stayRates = completeDailyRatesForStay(dailyRates, {
+      ...booking,
       check_in: bookingCheckIn,
       check_out: bookingCheckOut,
     });
     setRates(stayRates);
     setTotalInput(stayRates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0).toFixed(2));
-  }, [dailyRates, bookingCheckIn, bookingCheckOut]);
+  }, [dailyRates, booking, bookingCheckIn, bookingCheckOut]);
   const normalizedBusinessDate = String(businessDate || '').slice(0, 10);
   const isClosedRate = rate => Boolean(normalizedBusinessDate && String(rate?.date || '').slice(0, 10) < normalizedBusinessDate);
   const anyEditable = rates.some(rate => !isClosedRate(rate));
   const hasClosedRates = rates.some(isClosedRate);
+  const hasCompletedRates = rates.some(rate => rate?.generated_reason === 'missing_daily_rate');
   const isComplimentary = Boolean(booking?.is_complimentary);
   const hasCompTreatment = isComplimentary || Boolean(booking?.is_partially_complimentary);
   const hasComplimentaryTotalDrift = isComplimentary && Number(booking?.total_amount || 0) > 0;
@@ -233,6 +290,7 @@ export function DailyRatesTab({
         </div>}
       {readOnly && <p className="text-xs text-slate-500">Geçmiş veya tamamlanmış rezervasyonlarda fiyat değiştirilemez.</p>}
       {!readOnly && hasClosedRates && <p className="text-xs text-slate-500">Night Audit ile kapanan tarihler kilitlidir; yalnızca açık iş günü ve sonrası düzenlenebilir.</p>}
+      {hasCompletedRates && <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900" data-testid="completed-daily-rates-notice">Eksik gece fiyatı rezervasyon toplamına göre tamamlandı. Kaydettiğinizde fiyat planına kalıcı olarak işlenir.</div>}
       <div className="border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50"><tr><th className="text-left py-2 px-3 text-xs text-gray-500 font-medium">{t('cm.pages_reservationdetail_PricingTabs.tarih')}</th><th className="text-right py-2 px-3 text-xs text-gray-500 font-medium">Fiyat ({currency === 'TRY' ? 'TL' : currency})</th></tr></thead>

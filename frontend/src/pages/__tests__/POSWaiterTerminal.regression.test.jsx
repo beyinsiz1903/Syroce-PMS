@@ -1,8 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { normalizeWaiterMenuItems } from '@/pages/POSWaiterTerminal';
+const axiosGet = vi.fn();
+const axiosPost = vi.fn();
+
+vi.mock('axios', () => ({
+  default: {
+    get: (...args) => axiosGet(...args),
+    post: (...args) => axiosPost(...args),
+  },
+}));
+
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+import POSWaiterTerminal, { normalizeWaiterMenuItems } from '@/pages/POSWaiterTerminal';
 
 describe('POS waiter menu regressions', () => {
+  beforeEach(() => {
+    axiosGet.mockReset();
+    axiosPost.mockReset();
+  });
+
   it('keeps unavailable products visible while excluding inactive products', () => {
     const items = normalizeWaiterMenuItems([
       { id: 'sold-out', name: 'QA Burger', price: '120', available: false, status: 'active' },
@@ -16,5 +35,61 @@ describe('POS waiter menu regressions', () => {
       unit_price: 120,
       available: false,
     });
+  });
+
+  it('opens a persisted check and keeps it available after sending to kitchen', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'available' }] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [{ id: 'burger', name: 'Burger', price: 100, tax_rate: 0.18, category: 'food', available: true }] } });
+      if (url === '/pos/v2/orders/order-1') return Promise.resolve({ data: { order: {
+        id: 'order-1', order_number: 'ORD-1', status: 'pending', payment_status: 'unpaid',
+        grand_total: 118, order_items: [{ item_id: 'burger', item_name: 'Burger', quantity: 1, unit_price: 100, total: 100 }],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockResolvedValue({ data: { order_id: 'order-1' } });
+
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.click(await screen.findByTestId('menu-item-burger'));
+    fireEvent.click(screen.getByTestId('send-kitchen'));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders', expect.objectContaining({
+      outlet_id: 'outlet-1',
+      table_number: '1',
+      items: [expect.objectContaining({ item_id: 'burger', price: 100, tax_rate: 0.18 })],
+    })));
+    expect(await screen.findByTestId('active-order-summary')).toHaveTextContent('ORD-1');
+    expect(screen.getByTestId('pay-cash')).toBeEnabled();
+  });
+
+  it('closes an open check with a cent-exact mixed payment', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'occupied', current_order_id: 'order-1' }] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
+      if (url === '/pos/v2/orders/order-1') return Promise.resolve({ data: { order: {
+        id: 'order-1', order_number: 'ORD-1', status: 'pending', payment_status: 'unpaid',
+        grand_total: 118.01, order_items: [
+          { line_id: 'line-1', item_id: 'burger', item_name: 'Burger', quantity: 1, unit_price: 100, total: 100, tax_rate: .1801 },
+          { line_id: 'line-2', item_id: 'water', item_name: 'Su', quantity: 1, unit_price: 18.01, total: 18.01, tax_rate: 0 },
+        ],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockResolvedValue({ status: 200, data: { amount_paid: 118.01, payment_method: 'mixed' } });
+
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.click(await screen.findByTestId('toggle-split-payment'));
+    fireEvent.click(screen.getByTestId('submit-split-payment'));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders/close', expect.objectContaining({
+      order_id: 'order-1', payment_method: 'mixed',
+      payments: [{ method: 'cash', amount: 59 }, { method: 'card', amount: 59.01 }],
+    })));
   });
 });

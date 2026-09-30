@@ -55,7 +55,7 @@ describe('GuestTable in-house pricing', () => {
     expect(screen.getByRole('columnheader', { name: 'Konaklama Toplamı' })).toBeInTheDocument();
     expect(screen.getByText(/2\.500.*€/)).toBeInTheDocument();
     expect(screen.getByText(/10\.000.*€/)).toBeInTheDocument();
-    expect(screen.getByText(/\$165,71/)).toBeInTheDocument();
+    expect(screen.getAllByText(/\$165,71/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('region', { name: 'Konaklayanlar (In-House) tablosu' })).toHaveAttribute('tabindex', '0');
   });
 
@@ -74,5 +74,26 @@ describe('GuestTable in-house pricing', () => {
     expect(cells.at(-3)).toHaveTextContent('-');
     expect(cells.at(-2)).toHaveTextContent('-');
     expect(cells.at(-1)).toHaveTextContent('-');
+  });
+
+  it('summarizes filtered in-house guests, rooms, reservations and departures', () => {
+    render(
+      <GuestTable
+        guests={guests}
+        totalCount={3}
+        title="Otelde Konaklayanlar"
+        showNightlyRate
+        historical
+        reportDate="2026-09-25"
+        searchGuest="test"
+        setSearchGuest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('1 / 3 misafir')).toBeInTheDocument();
+    expect(screen.getByText('Dolu oda / rezervasyon')).toBeInTheDocument();
+    expect(screen.getByText('Seçili gün çıkış')).toBeInTheDocument();
+    expect(screen.getByText('Seçili tarihte otelde')).toBeInTheDocument();
+    expect(screen.getByText('Filtrelenen kayıtların toplamı')).toBeInTheDocument();
   });
 });

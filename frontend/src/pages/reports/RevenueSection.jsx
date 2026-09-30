@@ -173,7 +173,7 @@ const RevenueSection = ({
       <KPICard title="Seçili Gün Toplam Geliri" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={DollarSign} color="green" />
       <KPICard title={isDaily ? 'Seçili Gün Oda Geliri' : t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
       <KPICard title={isDaily ? 'Önceki Gün Geliri' : t('cm.pages_reports_RevenueSection.aylik_gelir')} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} icon={TrendingUp} color="purple" />
-      <KPICard title="Yeme & İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
+      <KPICard title="Yiyecek ve İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
     </div>
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">{isDaily ? 'Seçili Gün Gelir Trendi' : t('cm.pages_reports_RevenueSection.30_gunluk_gelir_trendi')}</CardTitle></CardHeader>
