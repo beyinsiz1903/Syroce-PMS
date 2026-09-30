@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ADMIN_TENANT_CONTEXT_KEY,
+  ADMIN_TENANT_SESSION_EVENT,
   isAdminTenantContextActive,
   persistEnteredTenantContext,
   persistExitedTenantContext,
@@ -37,6 +38,8 @@ describe('admin tenant context storage', () => {
   });
 
   it('persists target and origin snapshots atomically', () => {
+    const sessionChanged = vi.fn();
+    window.addEventListener(ADMIN_TENANT_SESSION_EVENT, sessionChanged, { once: true });
     persistEnteredTenantContext(entered);
 
     expect(JSON.parse(localStorage.getItem('user'))).toMatchObject({
@@ -52,6 +55,12 @@ describe('admin tenant context storage', () => {
       target: { tenant: { id: 'tenant-target' } },
     });
     expect(isAdminTenantContextActive()).toBe(true);
+    expect(sessionChanged).toHaveBeenCalledTimes(1);
+    expect(sessionChanged.mock.calls[0][0].detail).toEqual({
+      user: entered.user,
+      tenant: entered.tenant,
+      modules: entered.modules,
+    });
   });
 
   it('restores the origin snapshot when the short-lived context expires', () => {

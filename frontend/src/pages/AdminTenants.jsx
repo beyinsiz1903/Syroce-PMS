@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -59,6 +59,7 @@ const PlanBadge = ({ tier }) => {
 
 const AdminTenants = ({ user, tenant, onLogout }) => {
   const { t: _t } = useTranslation();
+  const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
@@ -184,7 +185,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       const response = await axios.post(`/admin/tenants/${targetId}/context`);
       persistEnteredTenantContext(response.data);
       toast.success(`${contextTarget.property_name || 'Otel'} çalışma alanına geçiliyor`);
-      window.location.assign('/app/dashboard');
+      navigate('/app/dashboard', { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Otel çalışma alanına geçilemedi');
       setSwitchingContext(false);

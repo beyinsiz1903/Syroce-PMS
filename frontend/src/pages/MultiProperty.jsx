@@ -69,7 +69,7 @@ const MultiProperty = ({ embedded = false }) => {
       const response = await axios.post(`/admin/tenants/${property.property_id}/context`);
       persistEnteredTenantContext(response.data);
       toast.success(`${property.property_name || 'Otel'} çalışma alanına geçiliyor`);
-      window.location.assign('/app/dashboard');
+      navigate('/app/dashboard', { replace: true });
     } catch (requestError) {
       toast.error(requestError?.response?.data?.detail || 'Otel çalışma alanına geçilemedi.');
       setSwitchingPropertyId('');
