@@ -87,7 +87,7 @@ pydantic==2.12.5
 pydantic_core==2.41.5
 pyflakes==3.4.0
 Pygments==2.19.2
-PyJWT==2.14.0
+PyJWT==2.15.0
 pymongo==4.5.0
 pyparsing==3.3.2
 pytest==9.0.2
@@ -122,7 +122,7 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.3
 uritemplate==4.2.0
-urllib3==2.7.0
+urllib3==2.8.0
 uvicorn==0.25.0
 watchfiles==1.1.1
 websockets==15.0.1

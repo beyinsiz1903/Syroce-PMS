@@ -47,12 +47,12 @@ describe('MobileFnB report scope', () => {
       params: { date: '2026-09-30', outlet_id: 'outlet-1' },
     }));
 
-    fireEvent.click(screen.getByText('Z Raporu'));
+    fireEvent.click(await screen.findByText('Z Raporu'));
     await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/pos/z-report', {
       params: { date: '2026-09-30', outlet_id: 'outlet-1' },
     }));
 
-    fireEvent.click(screen.getByText('İptal Raporu'));
+    fireEvent.click(await screen.findByText('İptal Raporu'));
     await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/pos/void-transactions', {
       params: { date: '2026-09-30', outlet_id: 'outlet-1' },
     }));

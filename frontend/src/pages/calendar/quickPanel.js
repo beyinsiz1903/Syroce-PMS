@@ -16,6 +16,11 @@ export const mergeQuickPanelDetail = (calendarBooking, detail) => {
       fullBooking.remaining_balance,
       calendarBooking?.remaining_balance,
     ),
+    pricing_reconciliation_required: Boolean(
+      detail?.summary?.pricing_reconciliation_required
+      ?? fullBooking.pricing_reconciliation_required
+      ?? calendarBooking?.pricing_reconciliation_required,
+    ),
   };
 };
 
