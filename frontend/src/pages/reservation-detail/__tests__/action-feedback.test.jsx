@@ -239,8 +239,8 @@ describe('reservation detail action feedback', () => {
     expect(axiosPost).not.toHaveBeenCalled();
   });
 
-  it('marks an unposted reservation complimentary with an audit reason', async () => {
-    axiosPost.mockResolvedValue({ data: { success: true } });
+  it('marks the entire stay complimentary with an audit reason', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, adjustment_amount: 0 } });
     const onRefresh = vi.fn();
     render(
       <DailyRatesTab
@@ -255,14 +255,14 @@ describe('reservation detail action feedback', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
-      '/pms/reservations/booking-a/mark-complimentary',
-      { reason: 'Misafir memnuniyeti', scope: 'accommodation_only' },
+      '/pms/reservations/booking-a/apply-complimentary-plan',
+      { reason: 'Misafir memnuniyeti', mode: 'entire_stay' },
     ));
     expect(onRefresh).toHaveBeenCalled();
   });
 
-  it('can mark a reservation as full comp', async () => {
-    axiosPost.mockResolvedValue({ data: { success: true } });
+  it('can make only open nights complimentary', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, adjustment_amount: 0 } });
     render(
       <DailyRatesTab
         dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
@@ -271,14 +271,39 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
-    fireEvent.change(screen.getByLabelText('Komp kapsamı'), { target: { value: 'full' } });
+    fireEvent.change(screen.getByLabelText('Comp işlemi'), { target: { value: 'open_nights' } });
     fireEvent.change(screen.getByPlaceholderText('Comp gerekçesi (zorunlu)'), { target: { value: 'VIP ağırlama' } });
     fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
-      '/pms/reservations/booking-a/mark-complimentary',
-      { reason: 'VIP ağırlama', scope: 'full' },
+      '/pms/reservations/booking-a/apply-complimentary-plan',
+      { reason: 'VIP ağırlama', mode: 'open_nights' },
     ));
+  });
+
+  it('can create a financial correction for closed nights', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, adjustment_amount: 4800 } });
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { id: 'closed-rate', date: '2026-08-17', rate: 4800 },
+          { id: 'open-rate', date: '2026-08-18', rate: 4800 },
+        ]}
+        booking={{ id: 'booking-a', currency: 'TRY' }}
+        businessDate="2026-08-18"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.change(screen.getByLabelText('Comp işlemi'), { target: { value: 'closed_nights_adjustment' } });
+    fireEvent.change(screen.getByPlaceholderText('Comp gerekçesi (zorunlu)'), { target: { value: 'Hizmet telafisi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/apply-complimentary-plan',
+      { reason: 'Hizmet telafisi', mode: 'closed_nights_adjustment' },
+    ));
+    expect(toast.success).toHaveBeenCalledWith('Kapanmış geceler için 4.800 TL finansal düzeltme oluşturuldu');
   });
 
   it('offers a guarded repair when a comp stay has a positive reservation total', async () => {

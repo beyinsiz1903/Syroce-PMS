@@ -62,7 +62,7 @@ export function DailyRatesTab({
   const [saveError, setSaveError] = useState('');
   const [showCompForm, setShowCompForm] = useState(false);
   const [compReason, setCompReason] = useState('');
-  const [compScope, setCompScope] = useState('accommodation_only');
+  const [compMode, setCompMode] = useState('entire_stay');
   const bookingCheckIn = booking?.check_in;
   const bookingCheckOut = booking?.check_out;
   const stayRange = { check_in: bookingCheckIn, check_out: bookingCheckOut };
@@ -80,6 +80,7 @@ export function DailyRatesTab({
   const anyEditable = rates.some(rate => !isClosedRate(rate));
   const hasClosedRates = rates.some(isClosedRate);
   const isComplimentary = Boolean(booking?.is_complimentary);
+  const hasCompTreatment = isComplimentary || Boolean(booking?.is_partially_complimentary);
   const hasComplimentaryTotalDrift = isComplimentary && Number(booking?.total_amount || 0) > 0;
   const ratesTotal = rates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
   const originalTotal = applicableDailyRates.reduce((sum, rate) => sum + (parseDecimalInput(rate.rate) || 0), 0);
@@ -154,8 +155,16 @@ export function DailyRatesTab({
     }
     setSaving(true);
     try {
-      await axios.post(`/pms/reservations/${booking.id}/mark-complimentary`, { reason, scope: compScope });
-      toast.success(compScope === 'full' ? 'Rezervasyon tamamen ikram olarak kaydedildi' : 'Konaklama ikram olarak kaydedildi');
+      const response = await axios.post(`/pms/reservations/${booking.id}/apply-complimentary-plan`, { reason, mode: compMode });
+      const adjustment = Number(response.data?.adjustment_amount || 0);
+      const successMessages = {
+        entire_stay: adjustment > 0
+          ? `Tüm konaklama Comp yapıldı; kapanmış geceler için ${fmtCurrency(adjustment, currency)} finansal düzeltme oluşturuldu`
+          : 'Tüm konaklama Comp yapıldı',
+        open_nights: 'Açık ve kalan geceler Comp yapıldı',
+        closed_nights_adjustment: `Kapanmış geceler için ${fmtCurrency(adjustment, currency)} finansal düzeltme oluşturuldu`,
+      };
+      toast.success(successMessages[compMode]);
       setShowCompForm(false);
       setCompReason('');
       onRefresh?.();
@@ -168,19 +177,19 @@ export function DailyRatesTab({
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.gunluk_fiyatlar')}</span>
         <div className="flex items-center gap-2">
-          {!isComplimentary && <Button size="sm" variant="outline" onClick={() => setShowCompForm(value => !value)} disabled={saving || readOnly || !anyEditable} className="h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günler comp yapılamaz' : 'Gerekçeli olarak ücretsiz konaklama tanımla'}>
+          {!isComplimentary && <Button size="sm" variant="outline" onClick={() => setShowCompForm(value => !value)} disabled={saving || readOnly || (!anyEditable && !hasClosedRates)} className="h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : 'Açık geceleri Comp yap veya kapanmış geceler için finansal düzeltme oluştur'}>
               <Gift className="w-3 h-3 mr-1" />
               Comp Ver
             </Button>}
           {editMode && <Button size="sm" variant="ghost" onClick={cancelEditing} disabled={saving} className="h-7 text-xs">Vazgeç</Button>}
-          <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : beginEditing()} disabled={saving || readOnly || !anyEditable || isComplimentary} className="h-7 text-xs" title={isComplimentary ? 'Comp rezervasyonun günlük fiyatları değiştirilemez' : readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
+          <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : beginEditing()} disabled={saving || readOnly || !anyEditable || hasCompTreatment} className="h-7 text-xs" title={hasCompTreatment ? 'Comp uygulanmış geceler normal fiyat düzenleme akışından değiştirilemez' : readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
             {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
             {editMode ? 'Kaydet' : 'Düzenle'}
           </Button>
         </div>
       </div>
-      {isComplimentary && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="complimentary-summary">
-          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Tam İkram' : 'Konaklama İkramı'}</div>
+      {(isComplimentary || booking?.is_partially_complimentary) && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="complimentary-summary">
+          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {isComplimentary ? 'Tüm Konaklama Comp' : 'Kısmi Comp / Finansal Düzeltme'}</div>
           {booking?.complimentary_reason && <p className="mt-0.5 text-xs text-emerald-800">Gerekçe: {booking.complimentary_reason}</p>}
           {booking?.complimentary_original_total > 0 && <p className="mt-0.5 text-xs text-emerald-800">Raporlanan konaklama değeri: {fmtCurrency(booking.complimentary_original_total, currency)}</p>}
         </div>}
@@ -192,16 +201,17 @@ export function DailyRatesTab({
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-amber-950">Rezervasyonu comp yap</p>
-              <p className="text-xs text-amber-800">Ödeme kaydı oluşmaz. Tahakkuk, ödeme veya fatura varsa finansal comp/indirim fişi gerekir.</p>
+              <p className="text-xs text-amber-800">Kapanmış iş günleri değiştirilmez. Gerekirse misafir folyosuna izlenebilir finansal düzeltme eklenir.</p>
             </div>
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Comp formunu kapat" onClick={() => setShowCompForm(false)}><X className="h-4 w-4" /></Button>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-amber-950" htmlFor="complimentary-scope">Komp kapsamı</label>
-              <select id="complimentary-scope" value={compScope} onChange={event => setCompScope(event.target.value)} disabled={saving} className="h-9 w-full rounded-md border border-amber-300 bg-white px-3 text-sm">
-                <option value="accommodation_only">Sadece Konaklama</option>
-                <option value="full">Tam İkram</option>
+              <label className="mb-1 block text-xs font-medium text-amber-950" htmlFor="complimentary-mode">Comp işlemi</label>
+              <select id="complimentary-mode" value={compMode} onChange={event => setCompMode(event.target.value)} disabled={saving} className="h-9 w-full rounded-md border border-amber-300 bg-white px-3 text-sm">
+                <option value="entire_stay">Tüm konaklamayı Comp yap</option>
+                <option value="open_nights">Yalnızca açık/kalan geceleri Comp yap</option>
+                <option value="closed_nights_adjustment">Kapanmış geceler için finansal düzeltme oluştur</option>
               </select>
             </div>
             <div>
@@ -209,7 +219,13 @@ export function DailyRatesTab({
               <Input id="complimentary-reason" value={compReason} onChange={event => setCompReason(event.target.value)} placeholder="Comp gerekçesi (zorunlu)" maxLength={500} disabled={saving} />
             </div>
           </div>
-          <p className="text-xs text-amber-800">{compScope === 'full' ? 'Konaklama ve mevcut/sonraki ekstra hizmetler ikram olarak sıfırlanır.' : 'Konaklama ikramdır; ekstra hizmetler ücretli kalır.'}</p>
+          <p className="text-xs text-amber-800">{
+            compMode === 'entire_stay'
+              ? 'Açık geceler sıfırlanır; kapanmış gecelerin tahakkuku değiştirilmeden karşı finansal düzeltme oluşturulur.'
+              : compMode === 'open_nights'
+                ? 'Sadece henüz Night Audit ile kapanmamış geceler sıfırlanır; geçmiş gelir korunur.'
+                : 'Günlük fiyatlar değişmez; yalnız kapanmış gecelerin oda tahakkuku kadar gerekçeli folyo indirimi oluşturulur.'
+          }</p>
           <div className="flex justify-end gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => setShowCompForm(false)} disabled={saving}>Vazgeç</Button>
             <Button type="button" size="sm" onClick={handleComplimentary} disabled={saving} className="bg-amber-600 hover:bg-amber-700">{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Comp Olarak Kaydet</Button>
