@@ -24,6 +24,7 @@ import { ChannelsSection, SourcesSection } from './reports/ChannelsSection';
 import { OfficialSection, PoliceSection } from './reports/OfficialSection';
 import ManagerDailyReports from './reports/ManagerDailyReports';
 import AccountingStatementsSection from './reports/AccountingStatementsSection';
+import ReportFrame from './reports/ReportFrame';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 const BACKEND_URL = "";
@@ -38,7 +39,7 @@ const REPORT_MENU = [{
   label: 'GENEL'
 }, {
   id: 'flash_report',
-  label: 'Gün Özeti (Flash)',
+  label: 'Günlük Yönetim Özeti',
   icon: Activity,
   desc: 'Anlık kasa ve tesis durumu'
 }, {
@@ -56,14 +57,14 @@ const REPORT_MENU = [{
   desc: 'Gelir analizi ve trend'
 }, {
   id: 'adr_revpar',
-  label: 'ADR & RevPAR',
+  label: 'Oda Gelir Performansı',
   icon: TrendingUp,
   desc: 'Performans metrikleri'
 }, {
   id: 'forecast_reports',
   label: 'Öngörü Raporları',
   icon: TrendingUp,
-  desc: 'Doluluk tahmini, pickup ve pace analizi'
+  desc: 'Doluluk tahmini ve rezervasyon gelişimi'
 }, {
   id: 'period',
   label: 'Dönem Karşılaştırma',
@@ -92,7 +93,7 @@ const REPORT_MENU = [{
   desc: 'Genel misafir listesi'
 }, {
   id: 'inhouse',
-  label: 'Konaklayanlar (In-House)',
+  label: 'Otelde Konaklayanlar',
   icon: Hotel,
   desc: 'Şu an otelde olan misafirler'
 }, {
@@ -105,12 +106,12 @@ const REPORT_MENU = [{
   label: 'ÖN BÜRO'
 }, {
   id: 'front_office',
-  label: 'Giriş / Çıkış (Arrival)',
+  label: 'Beklenen Girişler ve Çıkışlar',
   icon: ArrowLeftRight,
   desc: 'Giriş ve çıkış hareketleri'
 }, {
   id: 'noshow',
-  label: 'No-Show & İptaller',
+  label: 'Gelmeyen Misafirler ve İptaller',
   icon: AlertTriangle,
   desc: 'İptal ve no-show'
 }, {
@@ -123,7 +124,7 @@ const REPORT_MENU = [{
   desc: 'Canlı oda durumu'
 }, {
   id: 'housekeeping',
-  label: 'Housekeeping',
+  label: 'Kat Hizmetleri',
   icon: CheckCircle2,
   desc: 'Temizlik raporları'
 }, {
@@ -220,10 +221,10 @@ const REPORT_MENU = [{
   desc: 'Departman raporları'
 }, {
   type: 'header',
-  label: 'F&B'
+  label: 'YİYECEK VE İÇECEK'
 }, {
   id: 'fnb',
-  label: 'F&B Raporu',
+  label: 'Yiyecek ve İçecek Raporu',
   icon: Utensils,
   desc: 'Yiyecek & içecek'
 }];
@@ -231,6 +232,7 @@ const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official', 'forecast_repor
 const ACCOUNTING_STATEMENT_SECTIONS = new Set(['gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
 const REPORT_SECTION_IDS = new Set(REPORT_MENU.filter(item => item.id).map(item => item.id));
 const TABLE_EXPORT_SECTIONS = new Set(['guests', 'inhouse', 'front_office', 'noshow', 'housekeeping', 'payments', 'cash_movements', 'rate_control', 'official', 'police']);
+const DAILY_REPORT_SECTIONS = new Set(['inhouse', 'front_office', 'room_status', 'housekeeping', 'payments', 'front_cashier', 'cash_movements', 'rate_control', 'daily_analysis', 'official', 'police']);
 const BasicReports = ({
   user,
   tenant,
@@ -333,7 +335,7 @@ const BasicReports = ({
   }, [officialDate]);
   const handleOfficialExportCsv = () => {
     if (!officialRows.length) return;
-    const headers = ['booking_id', 'guest_name', 'national_id', 'passport_number', 'country', 'city', 'date_of_birth', 'room_number', 'check_in', 'check_out', 'adults', 'children', 'total_amount', 'currency', 'billing_tax_number', 'billing_address', 'company_id', 'market_segment'];
+    const headers = ['Rezervasyon No', 'Misafir Adı', 'T.C. Kimlik No', 'Pasaport No', 'Ülke', 'Şehir', 'Doğum Tarihi', 'Oda', 'Giriş', 'Çıkış', 'Yetişkin', 'Çocuk', 'Toplam Tutar', 'Para Birimi', 'Vergi No', 'Fatura Adresi', 'Şirket No', 'Pazar Bölümü'];
     const lines = [headers.map(csvCell).join(',')];
     officialRows.forEach(r => {
       lines.push([r.booking_id, r.guest_name, r.national_id, r.passport_number, r.country, r.city, r.date_of_birth, r.room_number, r.check_in, r.check_out, r.adults, r.children, r.total_amount, r.currency, r.billing_tax_number, r.billing_address, r.company_id, r.market_segment].map(csvCell).join(','));
@@ -422,7 +424,7 @@ const BasicReports = ({
     value
   }));
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
-    name: key === 'direct' ? 'Direkt' : key === 'ota' ? 'OTA' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Walk-in' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal Yöneticisi (OTA)' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
+    name: key === 'direct' ? 'Doğrudan' : key === 'ota' ? 'Online acente' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Kapı müşterisi' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal yöneticisi' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
     revenue: Object.keys(bookingSources.revenue_by_currency?.[key] || {}).length <= 1 ? (bookingSources.revenue?.[key] || 0) : 0,
     revenueByCurrency: bookingSources.revenue_by_currency?.[key] || {}
@@ -442,7 +444,8 @@ const BasicReports = ({
     const co = g.check_out ? g.check_out.substring(0, 10) : '';
     return ci && co && ci <= selectedDate && selectedDate < co && ['checked_in', 'in_house', 'checked_out'].includes(g.status);
   });
-  const selectedInHouseGuests = (Array.isArray(dailyLists.in_house) ? dailyLists.in_house : fallbackInHouseGuests).filter(g => {
+  const allSelectedInHouseGuests = Array.isArray(dailyLists.in_house) ? dailyLists.in_house : fallbackInHouseGuests;
+  const selectedInHouseGuests = allSelectedInHouseGuests.filter(g => {
     if (!searchGuest) return true;
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
@@ -523,7 +526,7 @@ const BasicReports = ({
       case 'guests':
         return <div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Tüm Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'inhouse':
-        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} title={`Konaklayanlar (In-House) · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} showNightlyRate exchangeRates={exchangeRates} searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} totalCount={allSelectedInHouseGuests.length} title={`Otelde Konaklayanlar · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} showNightlyRate historical reportDate={selectedDate} exchangeRates={exchangeRates} searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
       case 'nationality':
         return <NationalitySection countryData={countryData} />;
       case 'front_office':
@@ -570,6 +573,9 @@ const BasicReports = ({
     }
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
+  const periodLabel = DAILY_REPORT_SECTIONS.has(activeSection)
+    ? 'Seçili gün'
+    : reportPeriod === 'daily' ? 'Seçili gün' : 'Son 30 gün';
   const normalizedReportQuery = reportQuery.trim().toLocaleLowerCase('tr-TR');
   const visibleMenuItems = normalizedReportQuery
     ? REPORT_MENU.filter(item => item.id && `${item.label} ${item.desc || ''}`.toLocaleLowerCase('tr-TR').includes(normalizedReportQuery))
@@ -623,11 +629,11 @@ const BasicReports = ({
             <select value={activeSection} onChange={e => setActiveSection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" data-testid="mobile-report-selector">
               {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id}`, m.label)}</option>)}
             </select>
-            {showReportControls && <div className="grid grid-cols-2 gap-2 mt-2">
-              <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
+            {showReportControls && <div className={`grid gap-2 mt-2 ${DAILY_REPORT_SECTIONS.has(activeSection) ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              {!DAILY_REPORT_SECTIONS.has(activeSection) && <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
                 <option value="monthly">Son 30 Gün</option>
                 <option value="daily">Günlük</option>
-              </select>
+              </select>}
               <input type="date" className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportDate} onChange={e => { reportDateEditedRef.current = true; setReportDate(e.target.value); }} />
             </div>}
           </div>
@@ -636,16 +642,16 @@ const BasicReports = ({
 
         <main className="flex-1 hidden print:block lg:block overflow-y-auto" data-testid="reports-desktop-content">
           <div className="mx-auto w-full max-w-[1520px] p-5 xl:p-7">
-            <div className="mb-5 flex min-h-10 items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2 shadow-sm">
-              <div className="flex items-center gap-2 text-xs text-gray-400">
+            <div className="mb-5 flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm print:hidden">
+              <div className="flex min-w-0 items-center gap-2 text-xs text-gray-400">
                 <span>Raporlar</span>
                 <ChevronRight className="w-3 h-3" />
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
-                            <div className="flex items-center gap-2">
-                {showReportControls && activeSection !== 'flash_report' && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {showReportControls && activeSection !== 'flash_report' && !DAILY_REPORT_SECTIONS.has(activeSection) && (
                 <select 
-                  className="border rounded px-2 py-1 text-sm bg-white print:hidden"
+                  className="h-9 min-w-[132px] border rounded-lg px-2 text-sm bg-white"
                   value={reportPeriod}
                   onChange={(e) => setReportPeriod(e.target.value)}
                 >
@@ -653,11 +659,11 @@ const BasicReports = ({
                   <option value="daily">Günlük (Seçili Tarih)</option>
                 </select>
                 )}
-                {showReportControls && <label className="flex items-center gap-1.5 text-xs text-gray-500 print:hidden">
-                  Rapor tarihi
+                {showReportControls && <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs font-medium text-gray-500">
+                  <span>Rapor tarihi</span>
                   <input
                     type="date"
-                    className="border rounded px-2 py-1 text-sm bg-white text-gray-900"
+                    className="h-9 min-w-[145px] border rounded-lg px-2 text-sm bg-white text-gray-900"
                     value={reportDate}
                     onChange={(e) => {
                       reportDateEditedRef.current = true;
@@ -670,14 +676,16 @@ const BasicReports = ({
                   <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
                 </Button>}
                 {TABLE_EXPORT_SECTIONS.has(activeSection) && activeSection !== 'official' && <Button onClick={handleGenericExportCsv} variant="outline" size="sm" className="hidden print:hidden sm:flex">
-                  <Download className="w-3.5 h-3.5 mr-1.5" />Excel/CSV
+                  <Download className="w-3.5 h-3.5 mr-1.5" />CSV İndir
                 </Button>}
                 {needsDashboard && <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
                   <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile
                 </Button>}
               </div>
             </div>
-            {renderContent()}
+            <ReportFrame reportName={currentMenuItem?.label || 'Genel Bakış'} reportDate={activeSection === 'official' ? officialDate : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user}>
+              {renderContent()}
+            </ReportFrame>
           </div>
         </main>
       </div>
