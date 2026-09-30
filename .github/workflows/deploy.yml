@@ -20,11 +20,19 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           command_timeout: 30m
           script: |
-            set -e
+            set -euo pipefail
+            exec 9>/var/lock/syroce-pms-deploy.lock
+            flock -n 9 || { echo "Another deployment is already running"; exit 1; }
+
             cd /opt/syroce-pms
             # Stash any local changes and pull the latest code
             git reset --hard HEAD
             git pull origin main
+
+            # Keep the host monitor versioned with the deployment and derive
+            # expected containers from Compose service identities. This avoids
+            # stale hard-coded backend-2/worker-2 alarms after capacity changes.
+            install -m 0755 deploy/syroce-healthwatch.sh /usr/local/sbin/syroce-healthwatch
 
             # Fail before disrupting the running stack when the production
             # Exely webhook trust boundary is invalid.  The compose service
@@ -34,16 +42,19 @@ jobs:
             docker compose -f docker-compose.prod.yml run --rm --no-deps backend \
               python scripts/verify_exely_whitelist.py --env production
             
-            # Fix Docker naming conflicts by taking down stuck containers
-            docker compose -f docker-compose.prod.yml down || true
-            docker rm -f syroce-pms-backend-1 syroce-pms-backend-2 syroce-pms-frontend-1 syroce-pms-worker-1 syroce-pms-beat-1 || true
-            
-            # Build containers sequentially to prevent OOM
+            # Build sequentially while the current containers continue serving.
+            # Never tear the whole stack down before a build: worker image
+            # installation can take several minutes on this Droplet.
             docker compose -f docker-compose.prod.yml build backend
             docker compose -f docker-compose.prod.yml build worker
             docker compose -f docker-compose.prod.yml build beat
             docker compose -f docker-compose.prod.yml build frontend
-            
-            # Start containers
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
-            docker restart syroce-pms-nginx-1
+
+            # Replace only services whose image/config changed, then wait for
+            # every Compose healthcheck. Nginx remains online throughout the
+            # image build instead of exposing a multi-minute hard outage.
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans --wait --wait-timeout 180
+
+            # Verify both local service topology and the public route before
+            # considering the deployment successful.
+            /usr/local/sbin/syroce-healthwatch
