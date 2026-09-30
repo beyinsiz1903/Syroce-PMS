@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 import POSTableManagement   from '../components/POSTableManagement';
 import POSMenuItems         from '../components/POSMenuItems';
@@ -17,10 +18,6 @@ import {
 import { useEntitlements } from '@/context/EntitlementContext';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
-
-/* ── helper ── */
-const fmt = (n, digits = 0) =>
-  Number(n || 0).toLocaleString('tr-TR', { maximumFractionDigits: digits });
 
 /* ── stat card ── */
 function StatCard({ icon: Icon, label, value, sub, color = 'amber', loading, testId }) {
@@ -79,6 +76,7 @@ const POSDashboard = () => {
   const [selectedOutletId, setSelectedOutletId] = useState('all');
   const [stats,           setStats]           = useState({ outlet_count: 0, menu_count: 0, today_orders: 0, today_revenue: 0 });
   const [loadingStats,    setLoadingStats]    = useState(true);
+  const [dashboardError,  setDashboardError]  = useState('');
   const { hasFeature } = useEntitlements();
   const businessDate = useBusinessDate();
 
@@ -89,8 +87,13 @@ const POSDashboard = () => {
       const list = Array.isArray(res.data) ? res.data : (res.data.outlets || []);
       const active = list.filter(o => o.status !== 'inactive');
       setOutlets(active);
+      setDashboardError('');
       return active;
-    } catch { return []; }
+    } catch (error) {
+      console.error('Satış noktaları yüklenemedi:', error);
+      setDashboardError('Satış noktaları yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.');
+      return [];
+    }
   }, []);
 
   const loadStats = useCallback(async () => {
@@ -103,8 +106,8 @@ const POSDashboard = () => {
         reportParams.outlet_id = selectedOutletId;
       }
       const [menuRes, zRes] = await Promise.all([
-        axios.get('/pos/menu-items', { params: menuParams }).catch(() => ({ data: [] })),
-        axios.get('/pos/z-report',   { params: reportParams }).catch(() => ({ data: { transaction_count: 0, gross_sales: 0 } })),
+        axios.get('/pos/menu-items', { params: menuParams }),
+        axios.get('/pos/z-report', { params: reportParams }),
       ]);
       const menuList = Array.isArray(menuRes.data) ? menuRes.data : (menuRes.data.menu_items || []);
       setStats(prev => ({
@@ -112,14 +115,23 @@ const POSDashboard = () => {
         menu_count:    menuList.length,
         today_orders:  zRes.data.transaction_count || 0,
         today_revenue: zRes.data.gross_sales       || 0,
+        currency:      zRes.data.currency || cachedTenantCurrency(),
       }));
-    } catch { /* silent */ } finally {
+    } catch (error) {
+      console.error('POS özeti yüklenemedi:', error);
+      setDashboardError('POS özeti güncellenemedi. Ekrandaki rakamlar güncel olmayabilir.');
+    } finally {
       setLoadingStats(false);
     }
   }, [businessDate, selectedOutletId]);
 
   useEffect(() => { loadOutlets(); }, [loadOutlets]);
   useEffect(() => { setStats(prev => ({ ...prev, outlet_count: outlets.length })); }, [outlets.length]);
+  useEffect(() => {
+    if (selectedOutletId !== 'all' && !outlets.some(outlet => outlet.id === selectedOutletId)) {
+      setSelectedOutletId('all');
+    }
+  }, [outlets, selectedOutletId]);
   useEffect(() => { loadStats(); }, [loadStats]);
 
   const handleOutletsChanged = useCallback(async () => {
@@ -146,7 +158,7 @@ const POSDashboard = () => {
                   {t('posDashboard.title', 'Satış Noktası Paneli')}
                 </h1>
                 <p className="text-sm text-gray-500">
-                  {t('posDashboard.subtitle', 'Satış Noktası · Masa, Menü ve Sipariş Yönetimi')}
+                  {t('posDashboard.subtitle', 'Restoran, masa, menü ve sipariş yönetimi')}
                 </p>
               </div>
             </div>
@@ -158,8 +170,8 @@ const POSDashboard = () => {
                 <QuickBtn        icon={Monitor}         label={t('fnb.kitchenDisplay', 'Mutfak Ekranı')} onClick={() => navigate('/kitchen-display')} testId="nav-kitchen-display" />
               )}
               <QuickBtn        icon={Coffee}          label={t('staffRoomService.title', 'Oda Servisi Siparişleri')} onClick={() => navigate('/staff/room-service')} testId="nav-staff-room-service" />
-              <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'F&B Paketi')}    onClick={() => navigate('/fnb-complete')}       testId="nav-fnb-complete" />
-              <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Tüm Özellikler')} onClick={() => navigate('/admin/features')} />
+              <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'Yiyecek ve İçecek Merkezi')} onClick={() => navigate('/fnb-complete')} testId="nav-fnb-complete" />
+              <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Modül Ayarları')} onClick={() => navigate('/admin/features')} />
               <QuickBtn        icon={ArrowLeft}       label={t('nav.dashboard', 'Kontrol Paneli')}        onClick={() => navigate('/')} />
             </div>
           </div>
@@ -177,7 +189,7 @@ const POSDashboard = () => {
               value={stats.menu_count}   color="green" loading={loadingStats} testId="stat-menu"
             />
             <StatCard
-              icon={ShoppingBag} label={t('posDashboard.todaysOrders', 'Bugün Sipariş')}
+              icon={ShoppingBag} label={t('posDashboard.todaysOrders', 'Bugünkü Siparişler')}
               value={stats.today_orders} color="purple" loading={loadingStats}
             />
             <StatCard
@@ -194,11 +206,11 @@ const POSDashboard = () => {
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
               <Store className="w-3.5 h-3.5 inline mr-1" />
-              Filtre:
+              Satış noktası:
             </span>
             <div className="flex items-center gap-1.5 flex-wrap">
               <OutletPill
-                label="Tümü (toplam)"
+                label="Tüm satış noktaları"
                 active={selectedOutletId === 'all'}
                 onClick={() => setSelectedOutletId('all')}
                 testId="select-outlet-all"
@@ -225,8 +237,20 @@ const POSDashboard = () => {
 
       {/* ── Tabs body ── */}
       <div className="px-6 py-6">
+        {dashboardError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
+            <span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" />{dashboardError}</span>
+            <button className="font-semibold underline underline-offset-2" onClick={async () => {
+              setDashboardError('');
+              await loadOutlets();
+              await loadStats();
+              toast.success('POS bilgileri yenilendi');
+            }}>Yeniden dene</button>
+          </div>
+        )}
         <Tabs defaultValue="outlets" className="w-full">
-          <TabsList className="inline-flex h-10 items-center rounded-xl bg-white border border-gray-200 shadow-sm p-1 gap-0.5 mb-6">
+          <div className="overflow-x-auto pb-1 mb-5">
+          <TabsList className="inline-flex min-w-max h-10 items-center rounded-xl bg-white border border-gray-200 shadow-sm p-1 gap-0.5">
             {[
               { value: 'outlets',  icon: Store,       label: t('posDashboard.outlets',   'Satış Noktaları'), testId: 'tab-outlets' },
               { value: 'menu',     icon: MenuIcon,    label: t('posDashboard.menuItems', 'Menü Kalemleri'), testId: 'tab-menu' },
@@ -247,20 +271,24 @@ const POSDashboard = () => {
               </TabsTrigger>
             ))}
           </TabsList>
+          </div>
 
           <TabsContent value="outlets">
             <POSOutletManagement onChange={handleOutletsChanged} />
           </TabsContent>
 
           <TabsContent value="menu">
-            <POSMenuItems outletId={currentOutletId} onItemSelect={() => {}} />
+            <POSMenuItems outletId={currentOutletId} />
           </TabsContent>
 
           <TabsContent value="tables">
             {currentOutletId ? (
               <POSTableManagement outletId={currentOutletId} />
             ) : outlets.length > 0 ? (
-              <POSTableManagement outletId={outlets[0].id} />
+              <EmptyTabState
+                icon={LayoutGrid}
+                text="Masaları yönetmek için yukarıdan bir satış noktası seçin"
+              />
             ) : (
               <EmptyTabState
                 icon={LayoutGrid}

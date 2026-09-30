@@ -21,16 +21,21 @@ const PAYMENT_LABEL = {
   cash: 'Nakit',
   card: 'Kart',
   credit: 'Kredi Kartı',
-  room_charge: 'Oda Hesabi',
-  folio: 'Folio',
+  room_charge: 'Oda Hesabı',
+  folio: 'Folyo',
   unknown: 'Belirsiz',
 };
 
-const fmt = (n) => Number(n || 0).toLocaleString('tr-TR', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
 const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency());
+const CATEGORY_LABELS = {
+  food: 'Ana Yemek', appetizer: 'Başlangıç', dessert: 'Tatlı',
+  beverage: 'İçecek', alcohol: 'Alkollü', unknown: 'Diğer',
+};
+const percentage = (amount, total) => {
+  const safeTotal = Number(total) || 0;
+  if (safeTotal <= 0) return 0;
+  return Math.max(0, Math.min(100, (Number(amount) || 0) / safeTotal * 100));
+};
 
 const POSReports = ({ outletId }) => {
   const { t } = useTranslation();
@@ -39,12 +44,14 @@ const POSReports = ({ outletId }) => {
   const [report, setReport] = useState(null);
   const [voids, setVoids] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => { setDate(businessDate); }, [businessDate]);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      setError('');
       const params = { date };
       if (outletId) params.outlet_id = outletId;
       const [zRes, vRes] = await Promise.all([
@@ -59,6 +66,8 @@ const POSReports = ({ outletId }) => {
       setVoids(vlist);
     } catch (err) {
       console.error('Z raporu yüklenemedi:', err);
+      setReport(null);
+      setError('Rapor verileri yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.');
       toast.error('Rapor yüklenemedi');
     } finally {
       setLoading(false);
@@ -78,7 +87,7 @@ const POSReports = ({ outletId }) => {
           <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-amber-600" />
-              Z Raporu / Gun Sonu
+              Z Raporu / Gün Sonu
             </CardTitle>
             <div className="flex items-end gap-2">
               <div>
@@ -94,7 +103,7 @@ const POSReports = ({ outletId }) => {
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 {t('cm.components_POSReports.yenile')}
               </Button>
-              <Button size="sm" onClick={handlePrint} variant="outline">
+              <Button size="sm" onClick={handlePrint} variant="outline" disabled={!report || loading}>
                 <Printer className="w-4 h-4 mr-2" />
                 {t('cm.components_POSReports.yazdir')}
               </Button>
@@ -102,19 +111,25 @@ const POSReports = ({ outletId }) => {
           </div>
         </CardHeader>
         <CardContent>
-          {!report ? (
+          {loading && !report ? (
             <div className="text-center py-12 text-gray-500">
               <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mx-auto mb-2" />
               <p>{t('cm.components_POSReports.yukleniyor')}</p>
             </div>
-          ) : (
+          ) : error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-10 text-center text-red-700" role="alert">
+              <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+              <p className="font-medium">{error}</p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={load}>Yeniden dene</Button>
+            </div>
+          ) : report ? (
             <Tabs defaultValue="summary">
               <TabsList>
                 <TabsTrigger value="summary">{t('cm.components_POSReports.ozet')}</TabsTrigger>
                 <TabsTrigger value="payment">{t('cm.components_POSReports.odeme_dagilimi')}</TabsTrigger>
-                <TabsTrigger value="category">Kategori Dagilimi</TabsTrigger>
+                <TabsTrigger value="category">Kategori Dağılımı</TabsTrigger>
                 <TabsTrigger value="voids">
-                  Iptaller ({report.void_count ?? voids.length})
+                  İptaller ({report.void_count ?? voids.length})
                 </TabsTrigger>
               </TabsList>
 
@@ -135,9 +150,8 @@ const POSReports = ({ outletId }) => {
                       <DollarSign className="w-6 h-6 mx-auto text-green-600 mb-1" />
                       <p className="text-xs text-gray-600">{t('cm.components_POSReports.brut_satis')}</p>
                       <p className="text-2xl font-bold text-green-600">
-                        {fmt(report.gross_sales)}
+                        {money(report.gross_sales, report.currency)}
                       </p>
-                      <p className="text-xs text-gray-400">{report.currency || cachedTenantCurrency()}</p>
                     </CardContent>
                   </Card>
                   <Card>
@@ -145,9 +159,8 @@ const POSReports = ({ outletId }) => {
                       <TrendingUp className="w-6 h-6 mx-auto text-blue-600 mb-1" />
                       <p className="text-xs text-gray-600">{t('cm.components_POSReports.net_satis')}</p>
                       <p className="text-2xl font-bold text-blue-600">
-                        {fmt(report.net_sales)}
+                        {money(report.net_sales, report.currency)}
                       </p>
-                      <p className="text-xs text-gray-400">{report.currency || cachedTenantCurrency()}</p>
                     </CardContent>
                   </Card>
                   <Card>
@@ -162,7 +175,7 @@ const POSReports = ({ outletId }) => {
                   <Card>
                     <CardContent className="p-4 text-center">
                       <AlertCircle className="w-6 h-6 mx-auto text-red-600 mb-1" />
-                      <p className="text-xs text-gray-600">Iptaller</p>
+                      <p className="text-xs text-gray-600">İptaller</p>
                       <p className="text-2xl font-bold text-red-600">
                         {report.void_count || 0}
                       </p>
@@ -193,8 +206,7 @@ const POSReports = ({ outletId }) => {
                   {Object.keys(report.payment_methods || {}).length === 0 ? (
                     <p className="text-center py-8 text-gray-500">{t('cm.components_POSReports.bu_tarihte_odeme_yok')}</p>
                   ) : Object.entries(report.payment_methods || {}).map(([method, amount]) => {
-                    const total = report.gross_sales || 1;
-                    const pct = (amount / total) * 100;
+                    const pct = percentage(amount, report.gross_sales);
                     return (
                       <div key={method} className="border rounded-lg p-3">
                         <div className="flex items-center justify-between mb-1">
@@ -220,12 +232,12 @@ const POSReports = ({ outletId }) => {
                     <p className="text-center py-8 text-gray-500">Kategori verisi yok</p>
                   ) : Object.entries(report.category_sales || {}).map(([cat, amount]) => {
                     const total = Object.values(report.category_sales || {})
-                      .reduce((s, v) => s + v, 0) || 1;
-                    const pct = (amount / total) * 100;
+                      .reduce((sum, value) => sum + (Number(value) || 0), 0);
+                    const pct = percentage(amount, total);
                     return (
                       <div key={cat} className="border rounded-lg p-3">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium">{cat}</span>
+                          <span className="font-medium">{CATEGORY_LABELS[cat] || cat}</span>
                           <span className="font-bold">{money(amount, report.currency)}</span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -270,6 +282,8 @@ const POSReports = ({ outletId }) => {
                 )}
               </TabsContent>
             </Tabs>
+          ) : (
+            <div className="text-center py-12 text-gray-500">Bu tarih için rapor bulunamadı.</div>
           )}
         </CardContent>
       </Card>

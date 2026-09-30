@@ -1,25 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Users, RefreshCw, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { Users, RefreshCw, CheckCircle, Clock } from 'lucide-react';
+import { confirmDialog } from '@/lib/dialogs';
+
+const STATUS_LABELS = {
+  available: 'Müsait',
+  occupied: 'Dolu',
+  reserved: 'Rezerve',
+  dirty: 'Temizlenecek',
+};
 
 const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
   const [tables, setTables] = useState([]);
   const [statusCounts, setStatusCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(null);
+  const [notProvisioned, setNotProvisioned] = useState(false);
 
-  useEffect(() => {
-    loadTables();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [outletId]);
-
-  const loadTables = async () => {
+  const loadTables = useCallback(async () => {
     try {
       setLoading(true);
+      setNotProvisioned(false);
       const response = await axios.get(`/pos/table-layout/${outletId}`);
       setTables(response.data.tables || []);
       setStatusCounts({
@@ -34,6 +39,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       if (error?.response?.status === 404) {
         setTables([]);
         setStatusCounts({});
+        setNotProvisioned(true);
       } else {
         console.error('Masalar yüklenemedi:', error);
         toast.error('Masalar yüklenemedi');
@@ -41,14 +47,22 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [outletId]);
 
-  const updateTableStatus = async (tableId, newStatus) => {
+  useEffect(() => { loadTables(); }, [loadTables]);
+
+  const updateTableStatus = async (table, newStatus) => {
+    if (newStatus === 'available' && table.status !== 'available') {
+      const confirmed = await confirmDialog({
+        message: `Masa ${table.table_number} müsait duruma alınsın mı? Açık adisyon varsa önce adisyonu kapatın.`,
+      });
+      if (!confirmed) return;
+    }
     try {
-      setUpdating(tableId);
-      await axios.put(`/pos/tables/${tableId}/status?new_status=${newStatus}`);
-      toast.success('Table status updated');
-      loadTables();
+      setUpdating(table.id);
+      await axios.put(`/pos/tables/${table.id}/status`, null, { params: { new_status: newStatus } });
+      toast.success(`Masa ${table.table_number} durumu güncellendi`);
+      await loadTables();
     } catch (error) {
       if (error?.response?.status === 404) {
         toast.error('POS masa modülü henüz aktif değil');
@@ -102,11 +116,11 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center">
             <Users className="w-5 h-5 mr-2 text-blue-600" />
-            Restaurant Tables ({tables.length})
+            Restoran Masaları ({tables.length})
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={loadTables}>
+          <Button variant="outline" size="sm" onClick={loadTables} disabled={loading}>
             <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
+            Yenile
           </Button>
         </div>
       </CardHeader>
@@ -115,15 +129,15 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
         <div className="grid grid-cols-3 gap-3 mb-6">
           <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
             <p className="text-2xl font-bold text-green-700">{statusCounts.available || 0}</p>
-            <p className="text-xs text-green-600">Available</p>
+            <p className="text-xs text-green-600">Müsait</p>
           </div>
           <div className="text-center p-3 bg-red-50 rounded-lg border border-red-200">
             <p className="text-2xl font-bold text-red-700">{statusCounts.occupied || 0}</p>
-            <p className="text-xs text-red-600">Occupied</p>
+            <p className="text-xs text-red-600">Dolu</p>
           </div>
           <div className="text-center p-3 bg-yellow-50 rounded-lg border border-yellow-200">
             <p className="text-2xl font-bold text-yellow-700">{statusCounts.reserved || 0}</p>
-            <p className="text-xs text-yellow-600">Reserved</p>
+            <p className="text-xs text-yellow-600">Rezerve</p>
           </div>
         </div>
 
@@ -132,7 +146,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
           {tables.map((table) => (
             <Card
               key={table.id}
-              className={`cursor-pointer hover:shadow-lg transition-all ${
+              className={`hover:shadow-md transition-all ${
                 updating === table.id ? 'opacity-50' : ''
               }`}
             >
@@ -143,11 +157,11 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                   </p>
                   <Badge className={`${getStatusColor(table.status)} flex items-center justify-center gap-1 mb-2`}>
                     {getStatusIcon(table.status)}
-                    {table.status}
+                    {STATUS_LABELS[table.status] || 'Durum bilinmiyor'}
                   </Badge>
                   <p className="text-xs text-gray-600 mb-3">
                     <Users className="w-3 h-3 inline mr-1" />
-                    {table.seats ?? table.capacity ?? 0} seats
+                    {table.seats ?? table.capacity ?? 0} kişilik
                   </p>
 
                   {/* Quick Actions */}
@@ -157,11 +171,11 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                         size="sm"
                         variant="outline"
                         className="w-full text-xs"
-                        onClick={() => updateTableStatus(table.id, 'available')}
+                        onClick={() => updateTableStatus(table, 'available')}
                         disabled={updating === table.id}
                       >
                         <CheckCircle className="w-3 h-3 mr-1" />
-                        Free
+                        Müsait Yap
                       </Button>
                     )}
                     {table.status === 'available' && (
@@ -169,21 +183,21 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
                         <Button
                           size="sm"
                           className="w-full text-xs bg-red-600 hover:bg-red-700"
-                          onClick={() => updateTableStatus(table.id, 'occupied')}
+                          onClick={() => updateTableStatus(table, 'occupied')}
                           disabled={updating === table.id}
                         >
                           <Users className="w-3 h-3 mr-1" />
-                          Occupy
+                          Dolu Yap
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           className="w-full text-xs"
-                          onClick={() => updateTableStatus(table.id, 'reserved')}
+                          onClick={() => updateTableStatus(table, 'reserved')}
                           disabled={updating === table.id}
                         >
                           <Clock className="w-3 h-3 mr-1" />
-                          Reserve
+                          Rezerve Et
                         </Button>
                       </>
                     )}
@@ -196,7 +210,9 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
 
         {tables.length === 0 && (
           <div className="text-center py-8 text-gray-500">
-            No tables available
+            {notProvisioned
+              ? 'Bu satış noktası için masa düzeni henüz oluşturulmamış.'
+              : 'Bu satış noktasında henüz masa bulunmuyor.'}
           </div>
         )}
       </CardContent>

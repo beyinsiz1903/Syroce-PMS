@@ -18,7 +18,6 @@ import {
   AlertDialogTrigger,
 } from './ui/alert-dialog';
 import { UtensilsCrossed, RefreshCw, Search, Plus, Pencil, Trash2, Loader2, TrendingUp, Tag } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, currencySymbol, formatCurrency } from '@/lib/currency';
 
 /* ── constants ── */
@@ -49,7 +48,6 @@ const blankForm = {
 
 /* ── main component ── */
 const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
-  const { t } = useTranslation();
   const currency = cachedTenantCurrency();
   const [menuItems,        setMenuItems]        = useState([]);
   const [loading,          setLoading]          = useState(true);
@@ -87,9 +85,9 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
   const openEdit = (item) => {
     setEditing(item);
     setForm({
-      name:        item.name        || '',
+      name:        item.name || item.item_name || '',
       category:    item.category    || 'food',
-      price:       String(item.price  ?? ''),
+      price:       String(item.price ?? item.unit_price ?? ''),
       cost:        String(item.cost   ?? ''),
       tax_rate:    String(item.tax_rate ?? '0.10'),
       description: item.description || '',
@@ -100,8 +98,14 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
   };
 
   const submit = async () => {
-    if (!form.name.trim() || !form.price) {
+    const price = Number(form.price);
+    const cost = form.cost === '' ? null : Number(form.cost);
+    if (!form.name.trim() || !Number.isFinite(price) || price <= 0) {
       toast.error('Ürün adı ve fiyat zorunludur');
+      return;
+    }
+    if (cost != null && (!Number.isFinite(cost) || cost < 0)) {
+      toast.error('Maliyet sıfırdan küçük olamaz');
       return;
     }
     try {
@@ -109,8 +113,8 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
       const payload = {
         name:        form.name.trim(),
         category:    form.category,
-        price:       Number(form.price),
-        cost:        form.cost ? Number(form.cost) : null,
+        price,
+        cost,
         tax_rate:    Number(form.tax_rate || 0.10),
         description: form.description.trim() || null,
         available:   form.available,
@@ -142,8 +146,9 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
       await axios.delete(`/pos/menu-item/${item.id}`);
       toast.success('Ürün silindi');
       await load();
-    } catch {
-      toast.error('Silme başarısız');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Ürün silinemedi');
     }
   };
 
@@ -154,7 +159,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
   }, [menuItems]);
 
   const filteredItems = useMemo(() => menuItems.filter(item => {
-    const matchSearch   = (item.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchSearch   = (item.name || item.item_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchCategory = selectedCategory === 'all' || item.category === selectedCategory;
     return matchSearch && matchCategory;
   }), [menuItems, searchTerm, selectedCategory]);
@@ -203,7 +208,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
         <div>
           <Label className="text-sm font-medium">Satış Fiyatı ({currency}) <span className="text-red-500">*</span></Label>
           <Input
-            type="number" step="0.01"
+            type="number" step="0.01" min="0.01" inputMode="decimal"
             value={form.price}
             onChange={e => setForm({ ...form, price: e.target.value })}
             data-testid="input-menu-price"
@@ -213,7 +218,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
         <div>
           <Label className="text-sm font-medium">Maliyet ({currency})</Label>
           <Input
-            type="number" step="0.01"
+            type="number" step="0.01" min="0" inputMode="decimal"
             value={form.cost}
             onChange={e => setForm({ ...form, cost: e.target.value })}
             className="mt-1"
@@ -229,7 +234,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
           />
         </div>
         <div className="col-span-2">
-          <Label className="text-sm font-medium">Görsel URL (opsiyonel)</Label>
+          <Label className="text-sm font-medium">Ürün Görseli Bağlantısı (isteğe bağlı)</Label>
           <Input
             value={form.image_url}
             onChange={e => setForm({ ...form, image_url: e.target.value })}
@@ -262,7 +267,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
             Menü Kalemleri
             <span className="text-sm font-normal text-gray-400">({filteredItems.length})</span>
           </h2>
-          <p className="text-sm text-gray-500 mt-0.5">Fiyat, KDV, kategori ve stok yönetimi</p>
+          <p className="text-sm text-gray-500 mt-0.5">Fiyat, KDV, kategori ve satış durumu yönetimi</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -357,7 +362,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredItems.map(item => {
-            const price   = Number(item.price || 0);
+            const price   = Number(item.price ?? item.unit_price ?? 0);
             const cost    = Number(item.cost  || 0);
             const margin  = price > 0 ? ((price - cost) / price * 100) : 0;
             const taxPct  = Math.round(Number(item.tax_rate || 0.10) * 100);
@@ -388,7 +393,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                         className={`font-bold text-gray-900 leading-tight ${onItemSelect ? 'cursor-pointer hover:text-amber-600' : ''}`}
                         onClick={() => onItemSelect && onItemSelect(item)}
                       >
-                        {item.name}
+                        {item.name || item.item_name}
                       </h3>
                       {item.description && (
                         <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{item.description}</p>
@@ -396,9 +401,10 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                     </div>
                     {/* Edit / Delete — shown on hover */}
                     {allowEdit && (
-                      <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-1 shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => openEdit(item)}
+                          aria-label={`${item.name || item.item_name} ürününü düzenle`}
                           data-testid={`button-edit-menu-${item.id}`}
                           className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700"
                         >
@@ -406,7 +412,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                         </button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <button className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600">
+                            <button className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600" aria-label={`${item.name || item.item_name} ürününü sil`}>
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </AlertDialogTrigger>
@@ -414,7 +420,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Ürün silinsin mi?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                <strong>"{item.name}"</strong> menüden kaldırılacak.
+                                <strong>“{item.name || item.item_name}”</strong> menüden kaldırılacak.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -462,7 +468,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                           <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full ${margin > 60 ? 'bg-emerald-500' : margin > 40 ? 'bg-amber-400' : 'bg-red-400'}`}
-                              style={{ width: `${Math.min(margin, 100)}%` }}
+                              style={{ width: `${Math.max(0, Math.min(margin, 100))}%` }}
                             />
                           </div>
                           <span className={`text-sm font-bold ${margin > 60 ? 'text-emerald-600' : margin > 40 ? 'text-amber-600' : 'text-red-500'}`}>
