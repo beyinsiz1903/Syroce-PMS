@@ -1170,3 +1170,61 @@ code {
 /* Fixes for PR 708 */
 .dark .border-slate-100\/50 { border-color: hsl(var(--border)); }
 .dark .placeholder-slate-400::placeholder { color: hsl(var(--muted-foreground)); }
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #0f172a !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .report-document {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .report-print-header {
+    margin-bottom: 16px;
+  }
+
+  .report-print-footer {
+    margin-top: 14px;
+    justify-content: space-between;
+    border-top: 1px solid #cbd5e1;
+    padding-top: 6px;
+    font-size: 9px;
+    color: #64748b;
+  }
+
+  .report-document table {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 9px !important;
+  }
+
+  .report-document thead {
+    display: table-header-group;
+  }
+
+  .report-document tr,
+  .report-document .report-keep-together {
+    break-inside: avoid;
+  }
+
+  .report-document [class*='shadow'] {
+    box-shadow: none !important;
+  }
+
+  .report-document input,
+  .report-document button,
+  .report-document select,
+  .report-document [data-report-screen-only='true'] {
+    display: none !important;
+  }
+}

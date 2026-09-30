@@ -7,6 +7,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recha
 import { COLORS, formatCurrency, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
 import { MoneyCell } from './GuestSection';
 import { formatCurrency as formatCurrencyValue } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 const TASK_STATUS_LABELS = { completed: 'Tamamlandı', pending: 'Bekliyor', assigned: 'Atandı', open: 'Açık', new: 'Yeni', in_progress: 'Devam ediyor', inprogress: 'Devam ediyor', active: 'Devam ediyor', cleaning: 'Temizleniyor', ready: 'Hazır' };
 const TASK_TYPE_LABELS = { checkout_cleaning: 'Çıkış temizliği', stayover_cleaning: 'Konaklama temizliği', room_status: 'Oda kontrolü', deep_cleaning: 'Detaylı temizlik' };
 const PAYMENT_METHOD_LABELS = { cash: 'Nakit', credit_card: 'Kredi kartı', debit_card: 'Banka kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme' };
@@ -20,13 +21,13 @@ export const NoShowSection = ({
     t
   } = useTranslation();
   return <div className="space-y-6" data-testid="section-noshow">
-    <SectionHeader title="No-Show & İptaller" description="No-show ve iptal edilen rezervasyonlar" />
+    <SectionHeader title="Gelmeyen Misafirler ve İptaller" description="Giriş yapmayan ve iptal edilen rezervasyonlar" />
     <div className="grid grid-cols-2 gap-3">
-      <KPICard title="No-Show" value={s.no_shows || 0} icon={AlertTriangle} color="red" />
+      <KPICard title="Gelmeyen Misafir" value={s.no_shows || 0} icon={AlertTriangle} color="red" />
       <KPICard title={t('common.cancellationSingle')} value={s.cancellations || 0} icon={Calendar} color="amber" />
     </div>
     {noShowGuests.length > 0 && <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm text-rose-700">No-Show Listesi ({noShowGuests.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm text-rose-700">Gelmeyen Misafir Listesi ({noShowGuests.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-rose-50"><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Giriş Tarihi</th><th className="text-right py-2 px-3 text-xs font-semibold text-rose-700">Tutar</th></tr></thead>
@@ -43,7 +44,7 @@ export const NoShowSection = ({
           </table></div>
         </CardContent>
       </Card>}
-    {noShowGuests.length === 0 && cancelledGuests.length === 0 && <Card><CardContent className="py-12"><EmptyState icon={AlertTriangle} message="No-show veya iptal kaydı yok" submessage="Bu dönem için herhangi bir no-show veya iptal bulunmuyor" /></CardContent></Card>}
+    {noShowGuests.length === 0 && cancelledGuests.length === 0 && <Card><CardContent className="py-12"><EmptyState icon={AlertTriangle} message="Gelmeyen misafir veya iptal kaydı yok" submessage="Bu dönem için giriş yapmayan ya da iptal edilen rezervasyon bulunmuyor" /></CardContent></Card>}
   </div>;
 };
 export const RoomStatusSection = ({
@@ -71,7 +72,7 @@ export const HousekeepingSection = ({
   hk,
   reportDate
 }) => <div className="space-y-6" data-testid="section-housekeeping">
-    <SectionHeader title="Housekeeping Raporu" description={`${reportDate} tarihli görevler; oda durumu sütunu güncel anlık durumu gösterir`} />
+    <SectionHeader title="Kat Hizmetleri Raporu" description={`${reportDate} tarihli görevler; oda durumu sütunu güncel anlık durumu gösterir`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Tamamlanan" value={hk.completed || 0} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen" value={hk.pending || 0} icon={Clock} color="amber" />
@@ -83,7 +84,7 @@ export const HousekeepingSection = ({
       <KPICard title="Toplam Oda" value={hk.total || 0} icon={Hotel} color="purple" />
     </div>
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm">Housekeeping Performans Özeti</CardTitle></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Kat Hizmetleri Performans Özeti</CardTitle></CardHeader>
       <CardContent>
         <div className="space-y-4">
           {['completed', 'pending', 'in_progress'].map(status => {
@@ -128,7 +129,7 @@ export const PaymentsSection = ({
   return <div className="space-y-6" data-testid="section-payments">
     <SectionHeader title={t('common.paymentReport')} description={`${reportDate} tarihli geçerli tahsilatlar`} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      <KPICard title="Toplam Ödenen" value={payments.total_paid} icon={CheckCircle2} color="green" />
+      <KPICard title="Toplam Tahsilat" value={payments.total_paid} currencyBreakdown={payments.totals_by_currency} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen Fatura" value={payments.total_pending} icon={Clock} color="amber" />
       <KPICard title={t('common.paymentMethod')} value={Object.keys(payments.by_method || {}).length + ' ' + t('common.methodCountSuffix')} icon={CreditCard} color="blue" />
     </div>
@@ -187,7 +188,7 @@ export const DepartmentsSection = ({
           <StatBox label="Otelde" value={s.in_house || 0} color="green" />
         </div></CardContent>
       </Card>
-      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" />Housekeeping</CardTitle></CardHeader>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" />Kat Hizmetleri</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-3 gap-3">
           <StatBox label="Tamam" value={hk.completed || 0} color="green" />
           <StatBox label="Bekleyen" value={hk.pending || 0} color="amber" />
@@ -213,20 +214,20 @@ export const FnBSection = ({
   s,
   reportDate
 }) => <div className="space-y-6" data-testid="section-fnb">
-    <SectionHeader title="F&B Raporu" description="Yiyecek & İçecek gelir ve performans özeti" />
+    <SectionHeader title="Yiyecek ve İçecek Raporu" description="Yiyecek ve içecek gelir ve performans özeti" />
     <div className="grid grid-cols-2 gap-3">
-      <KPICard title="Seçili Gün F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />
+      <KPICard title="Seçili Gün Yiyecek ve İçecek Geliri" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
       <KPICard title="Toplam Gelir İçi Payı" value={s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) + '%' : '%0'} icon={Activity} color="purple" />
     </div>
     <Card className="border-l-4 border-l-amber-500">
       <CardContent className="p-6 text-center">
         <Utensils className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-        <h3 className="text-lg font-bold text-slate-900">F&B Geliri</h3>
-        <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrency(s.fnb_revenue)}</p>
-        <p className="text-sm text-slate-500 mt-2">{reportDate} tarihli toplam yiyecek & içecek geliri</p>
+        <h3 className="text-lg font-bold text-slate-900">Yiyecek ve İçecek Geliri</h3>
+        <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrencyBreakdown(s.fnb_revenue_by_currency, s.fnb_revenue)}</p>
+        <p className="text-sm text-slate-500 mt-2">{reportDate} tarihli toplam yiyecek ve içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrency(s.today_room_revenue)}</p></div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">F&B Payı</p><p className="font-bold text-slate-900">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrencyBreakdown(s.today_room_revenue_by_currency, s.today_room_revenue)}</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Toplam Gelirdeki Payı</p><p className="font-bold text-slate-900">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>
         </div>
       </CardContent>
     </Card>
