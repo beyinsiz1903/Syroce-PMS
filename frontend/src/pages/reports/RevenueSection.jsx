@@ -171,8 +171,16 @@ const RevenueSection = ({
     t
   } = useTranslation();
   const isDaily = reportPeriod === 'daily';
-  const hasMixedRoomTypeRevenue = roomTypeData.some((row) => Object.keys(row.revenueByCurrency || {}).length > 1);
-  const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
+  const roomTypeRevenueCurrencies = new Set(roomTypeData.flatMap((row) => Object.entries(row.revenueByCurrency || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const revenueTrendCurrencies = new Set((data?.revenue_trend || []).flatMap((row) => Object.entries(row.revenue_by_currency || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const hasMixedRoomTypeRevenue = roomTypeRevenueCurrencies.size > 1;
+  const hasMixedRevenueTrend = revenueTrendCurrencies.size > 1;
+  const roomTypeRevenueCurrency = [...roomTypeRevenueCurrencies][0] || 'TRY';
+  const revenueTrendCurrency = [...revenueTrendCurrencies][0] || 'TRY';
   return <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -197,7 +205,7 @@ const RevenueSection = ({
             <YAxis tick={{
               fontSize: 10
             }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-            <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
+            <Tooltip content={<CustomTooltip formatter={(value) => formatCurrency(value, revenueTrendCurrency)} />} />
             <Legend wrapperStyle={{
               fontSize: 11
             }} />
@@ -218,7 +226,7 @@ const RevenueSection = ({
               <YAxis tick={{
               fontSize: 10
             }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-              <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
+              <Tooltip content={<CustomTooltip formatter={(value) => formatCurrency(value, roomTypeRevenueCurrency)} />} />
               <Bar dataKey="revenue" name="Gelir" radius={[4, 4, 0, 0]}>{roomTypeData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>}

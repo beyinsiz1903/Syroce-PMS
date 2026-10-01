@@ -16,7 +16,11 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
   const capacityLabel = isDaily ? 'Satılabilir Oda' : 'Satılabilir Oda-Gecesi';
   const occupied = metrics.occupied_room_nights ?? s.occupied_rooms ?? 0;
   const capacity = metrics.available_room_nights ?? s.total_rooms ?? 0;
-  const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
+  const revenueTrendCurrencies = new Set((data?.revenue_trend || []).flatMap((row) => Object.entries(row.revenue_by_currency || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const hasMixedRevenueTrend = revenueTrendCurrencies.size > 1;
+  const revenueTrendCurrency = [...revenueTrendCurrencies][0] || 'TRY';
   const hasMultipleCurrencies = Object.keys(metrics.adr_by_currency || {}).filter((code) => Number(metrics.adr_by_currency[code]) !== 0).length > 1;
   return (
   <div className="space-y-6" data-testid="section-adr-revpar">
@@ -63,7 +67,7 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
             <YAxis tick={{ fontSize: 10 }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-            <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
+            <Tooltip content={<CustomTooltip formatter={(value) => formatCurrency(value, revenueTrendCurrency)} />} />
             <Bar dataKey="revenue" name="Günlük Gelir" fill="#0284C7" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>}
