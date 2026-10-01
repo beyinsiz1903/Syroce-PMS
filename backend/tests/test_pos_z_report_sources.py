@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 from domains.pms.pos_router import pos_core
 
@@ -29,6 +30,25 @@ class _Collection:
 
 @pytest.mark.asyncio
 async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch):
+    finalized_transactions = _Collection(
+        [
+            {
+                "id": "txn-1",
+                "order_id": "order-1",
+                "transaction_date": "2026-09-03",
+                "status": "completed",
+                "payment_method": "mixed",
+                "payment_breakdown": [
+                    {"method": "cash", "amount": 32},
+                    {"method": "card", "amount": 100},
+                ],
+                "total_amount": 132,
+                "tax_amount": 12,
+                "items": [{"category": "food", "total_price": 120}],
+                "created_at": "2026-09-08T18:31:00+00:00",
+            }
+        ]
+    )
     orders = _Collection(
         [
             {
@@ -64,9 +84,11 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
     menu_transactions = _Collection(
         [
             {
-                "id": "order-1",
+                "id": "legacy-mirror-1",
+                "order_id": "order-1",
                 "transaction_date": "2026-09-03",
                 "status": "completed",
+                "payment_method": "cash",
                 "total_amount": 132,
                 "tax_amount": 12,
             }
@@ -87,6 +109,7 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
         ]
     )
     fake_db = SimpleNamespace(
+        pos_transactions=finalized_transactions,
         pos_orders=orders,
         pos_menu_transactions=menu_transactions,
         transactions=legacy_transactions,
@@ -109,9 +132,10 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
     assert report["transaction_count"] == 2
     assert report["void_count"] == 1
     assert report["refunds"] == 20
-    assert report["payment_methods"] == {"cash": 132, "card": 50}
+    assert report["payment_methods"] == {"cash": 32, "card": 150}
     assert report["category_sales"] == {"food": 120, "beverage": 50}
     assert orders.queries[0]["business_date"] == "2026-09-03"
+    assert finalized_transactions.queries[0]["transaction_date"] == "2026-09-03"
     assert menu_transactions.queries[0]["transaction_date"] == "2026-09-03"
     assert legacy_transactions.queries[0]["transaction_date"] == "2026-09-03"
 
@@ -124,6 +148,46 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
     )
     assert voids["count"] == 1
     assert voids["void_transactions"][0]["id"] == "void-1"
+
+
+@pytest.mark.asyncio
+async def test_z_report_does_not_present_data_source_failure_as_zero_sales(monkeypatch):
+    monkeypatch.setattr(
+        pos_core,
+        "_query_pos_transactions",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await pos_core.get_z_report(
+            date="2026-09-03",
+            outlet_id=None,
+            current_user=SimpleNamespace(tenant_id="tenant-a"),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert "sıfır satış" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_void_report_does_not_present_data_source_failure_as_no_voids(monkeypatch):
+    monkeypatch.setattr(
+        pos_core,
+        "_query_pos_transactions",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await pos_core.get_void_transactions(
+            date="2026-09-03",
+            start_date=None,
+            end_date=None,
+            outlet_id=None,
+            current_user=SimpleNamespace(tenant_id="tenant-a"),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert "iptal kayıtları" in exc_info.value.detail
 
 
 @pytest.mark.asyncio

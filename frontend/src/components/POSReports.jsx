@@ -46,6 +46,7 @@ const POSReports = ({ outletId }) => {
   const [voids, setVoids] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [voidError, setVoidError] = useState('');
 
   useEffect(() => { setDate(businessDate); }, [businessDate]);
 
@@ -53,18 +54,22 @@ const POSReports = ({ outletId }) => {
     try {
       setLoading(true);
       setError('');
+      setVoidError('');
       const params = { date };
       if (outletId) params.outlet_id = outletId;
-      const [zRes, vRes] = await Promise.all([
-        axios.get('/pos/z-report', { params }),
-        axios.get('/pos/void-transactions', { params })
-          .catch(() => ({ data: { void_transactions: [] } })),
-      ]);
+      const zRes = await axios.get('/pos/z-report', { params });
       setReport(zRes.data || null);
-      const vlist = Array.isArray(vRes.data)
-        ? vRes.data
-        : (vRes.data.void_transactions || vRes.data.voided_transactions || []);
-      setVoids(vlist);
+      try {
+        const vRes = await axios.get('/pos/void-transactions', { params });
+        const vlist = Array.isArray(vRes.data)
+          ? vRes.data
+          : (vRes.data.void_transactions || vRes.data.voided_transactions || []);
+        setVoids(vlist);
+      } catch (voidRequestError) {
+        console.error('İptal kayıtları yüklenemedi:', voidRequestError);
+        setVoids([]);
+        setVoidError('İptal ayrıntıları yüklenemedi. Bu durum, iptal olmadığı anlamına gelmez.');
+      }
     } catch (err) {
       console.error('Z raporu yüklenemedi:', err);
       setReport(null);
@@ -252,7 +257,13 @@ const POSReports = ({ outletId }) => {
               </TabsContent>
 
               <TabsContent value="voids" className="mt-4">
-                {voids.length === 0 ? (
+                {voidError ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-8 text-center text-amber-800" role="alert">
+                    <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                    <p className="font-medium">{voidError}</p>
+                    <Button variant="outline" size="sm" className="mt-4" onClick={load}>Yeniden dene</Button>
+                  </div>
+                ) : voids.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                     <p>{t('cm.components_POSReports.iptal_edilmis_islem_yok')}</p>
