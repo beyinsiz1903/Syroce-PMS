@@ -56,7 +56,7 @@ export const OfficialSection = ({
               <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">Maskeli: {officialPrivacy.masked_fields?.length || 0}</span>
               <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-1 text-slate-800">Gizli: {officialPrivacy.hidden_fields?.length || 0}</span>
               {officialPrivacy.policy_source === 'legacy' && (
-                <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-orange-800">Eski kullanıcı profili — yönetici incelemesi gerekli</span>
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">Eski kullanıcı profili — yönetici incelemesi gerekli</span>
               )}
             </div>
           </div>
