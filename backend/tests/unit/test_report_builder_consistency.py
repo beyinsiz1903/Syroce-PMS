@@ -264,6 +264,41 @@ async def test_builder_rejects_pii_sort_before_masking(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_builder_enforces_user_visibility_even_when_role_has_legacy_pii_access(monkeypatch):
+    monkeypatch.setattr(
+        "routers.report_builder._db",
+        _DB(
+            bookings=_Collection([]),
+            rooms=_Collection([]),
+            guests=_Collection(
+                [{
+                    "id": "g1",
+                    "tenant_id": "t1",
+                    "name": "Ayşe Yılmaz",
+                    "email": "ayse@example.com",
+                    "id_number": "12345678901",
+                    "total_revenue": 9000,
+                }]
+            )
+        ),
+    )
+    config = ReportConfig(
+        data_source="guests",
+        columns=["name", "email", "id_number", "total_revenue"],
+    )
+    policy = {"name": "full", "email": "masked", "identity": "hidden", "financial": "hidden"}
+
+    rows = await fetch_report_data(config, "t1", has_pii=True, visibility_policy=policy)
+
+    assert rows == [{
+        "name": "Ayşe Yılmaz",
+        "email": "a***@example.com",
+        "id_number": None,
+        "total_revenue": None,
+    }]
+
+
+@pytest.mark.asyncio
 async def test_builder_fails_explicitly_instead_of_returning_partial_scan(monkeypatch):
     monkeypatch.setattr("routers.report_builder.MAX_SCAN_ROWS", 2)
     monkeypatch.setattr(

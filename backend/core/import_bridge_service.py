@@ -502,14 +502,14 @@ async def auto_import_reservation_to_pms(
         record = pre_claimed_record
     else:
         # ── 1. Atomic claim ──────────────────────────────────────────
+        # Fresh pending records are immediately claimable and must not depend on
+        # retry scheduling fields. Keeping the pending and retry claims separate
+        # also prevents a worker/test race from treating a valid fresh record as
+        # a not-yet-due retry.
         record = await db[COLL_IMPORTED].find_one_and_update(
             {
                 "id": imported_reservation_id,
-                "import_status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
-                "$or": [
-                    {"next_retry_at": None},
-                    {"next_retry_at": {"$lte": now_str}},
-                ],
+                "import_status": STATUS_PENDING,
             },
             {
                 "$set": {
@@ -520,6 +520,25 @@ async def auto_import_reservation_to_pms(
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0},
         )
+        if not record:
+            record = await db[COLL_IMPORTED].find_one_and_update(
+                {
+                    "id": imported_reservation_id,
+                    "import_status": STATUS_RETRY,
+                    "$or": [
+                        {"next_retry_at": None},
+                        {"next_retry_at": {"$lte": now_str}},
+                    ],
+                },
+                {
+                    "$set": {
+                        "import_status": STATUS_PROCESSING,
+                        "updated_at": now_str,
+                    },
+                },
+                return_document=ReturnDocument.AFTER,
+                projection={"_id": 0},
+            )
 
     if not record:
         return False, "Record not claimable (already processing, imported, or not due for retry)"

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import GuestDataVisibilityEditor from '@/components/GuestDataVisibilityEditor';
 
 const EMPTY = {
   name: '', email: '', role: '', department: '', position: '', phone: '', mode: 'invite',
@@ -24,6 +25,8 @@ export default function UserProvisionDialog({ departments = [], onCreated, disab
   const [form, setForm] = useState(EMPTY);
   const [roles, setRoles] = useState([]);
   const [tier, setTier] = useState('');
+  const [privacyCatalog, setPrivacyCatalog] = useState(null);
+  const [guestDataVisibility, setGuestDataVisibility] = useState({});
   const [loadingRoles, setLoadingRoles] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
@@ -32,9 +35,14 @@ export default function UserProvisionDialog({ departments = [], onCreated, disab
   const loadRoles = useCallback(async () => {
     setLoadingRoles(true);
     try {
-      const { data } = await axios.get('/admin/assignable-roles');
+      const [{ data }, { data: accessData }] = await Promise.all([
+        axios.get('/admin/assignable-roles'),
+        axios.get('/admin/user-access-catalog'),
+      ]);
       setRoles(data.roles || []);
       setTier(data.tier || '');
+      setPrivacyCatalog(accessData.guest_data_visibility || null);
+      setGuestDataVisibility(accessData.guest_data_visibility?.default_policy || {});
     } catch (e) {
       const msg = e?.response?.data?.detail;
       toast.error(typeof msg === 'string' ? msg : 'Roller yuklenemedi');
@@ -47,6 +55,8 @@ export default function UserProvisionDialog({ departments = [], onCreated, disab
     setForm(EMPTY);
     setResult(null);
     setCopied(false);
+    setPrivacyCatalog(null);
+    setGuestDataVisibility({});
     setOpen(true);
     loadRoles();
   };
@@ -68,6 +78,7 @@ export default function UserProvisionDialog({ departments = [], onCreated, disab
         position: form.position || null,
         phone: form.phone || null,
         mode: form.mode,
+        guest_data_visibility: guestDataVisibility,
       });
       if (data.mode === 'temp' && data.temp_password) {
         setResult({ temp_password: data.temp_password, email: form.email.trim() });
@@ -106,7 +117,7 @@ export default function UserProvisionDialog({ departments = [], onCreated, disab
       </Button>
 
       <Dialog open={open} onOpenChange={(o) => { if (!o) { setOpen(false); setResult(null); } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{result ? 'Gecici Sifre' : 'Kullanici Ekle (Giris Hesabi)'}</DialogTitle>
           </DialogHeader>
@@ -190,6 +201,14 @@ export default function UserProvisionDialog({ departments = [], onCreated, disab
                     ? 'Kullanici e-postadaki baglantidan kendi sifresini belirler.'
                     : 'Gecici sifre ekranda bir kez gosterilir; kullanici ilk giriste degistirir.'}
                 </p>
+              </div>
+              <div className="md:col-span-2">
+                <GuestDataVisibilityEditor
+                  catalog={privacyCatalog}
+                  value={guestDataVisibility}
+                  onChange={setGuestDataVisibility}
+                  disabled={saving}
+                />
               </div>
               <DialogFooter className="md:col-span-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Vazgec</Button>

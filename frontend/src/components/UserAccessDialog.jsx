@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { permissionLabels } from '@/config/permissionLabels';
+import GuestDataVisibilityEditor from '@/components/GuestDataVisibilityEditor';
 
 const toggle = (values, key, enabled) => enabled ? [...new Set([...values, key])] : values.filter(value => value !== key);
 
@@ -11,6 +12,7 @@ export default function UserAccessDialog({ target, onClose, onSaved }) {
   const [scopes, setScopes] = useState([]);
   const [pages, setPages] = useState({});
   const [permissions, setPermissions] = useState([]);
+  const [guestDataVisibility, setGuestDataVisibility] = useState({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -21,6 +23,10 @@ export default function UserAccessDialog({ target, onClose, onSaved }) {
       setScopes(target.module_scopes ?? data.roles.find(role => role.role === target.role)?.modules ?? []);
       setPages(target.page_access || {});
       setPermissions((target.granted_permissions || []).filter(key => data.permissions.includes(key)));
+      setGuestDataVisibility({
+        ...(data.guest_data_visibility?.default_policy || {}),
+        ...(target.guest_data_visibility || {}),
+      });
     }).catch(() => { if (active) setError('Yetki kataloğu yüklenemedi. Pencereyi kapatıp tekrar deneyin.'); });
     return () => { active = false; };
   }, [target]);
@@ -33,6 +39,7 @@ export default function UserAccessDialog({ target, onClose, onSaved }) {
       await axios.patch(`/admin/users/${target.id}/access`, {
         module_scopes: scopes, page_access: pages, granted_permissions: permissions,
         revision: target.access_revision || 0, reset_to_role: reset,
+        guest_data_visibility: guestDataVisibility,
       });
       onSaved();
       onClose();
@@ -76,6 +83,12 @@ export default function UserAccessDialog({ target, onClose, onSaved }) {
               disabled={defaults.includes(key)} onChange={e => setPermissions(toggle(permissions, key, e.target.checked))} />{permissionLabels[key] || key}</label>
           )}</div>
         </fieldset>
+        <GuestDataVisibilityEditor
+          catalog={catalog.guest_data_visibility}
+          value={guestDataVisibility}
+          onChange={setGuestDataVisibility}
+          disabled={saving}
+        />
         <details className="rounded border p-3">
           <summary className="cursor-pointer font-medium">Tüm rollerin varsayılan yetki dökümü</summary>
           <p className="my-2 text-xs text-muted-foreground">Sayfa açılması için hem modül hem gereken işlem izni gerekir. Kullanıcıya özel kısıtlar ve otel paketi ayrıca uygulanır.</p>

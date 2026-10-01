@@ -395,7 +395,7 @@ async def get_official_guest_list(
     else:
         business_date_state = await ensure_business_date_initialized(db, current_user.tenant_id)
         target_date = date_type.fromisoformat(str(business_date_state["business_date"])[:10])
-    has_pii = _user_has_pii_access(current_user)
+    from security.guest_data_visibility import guest_visibility_summary, protect_guest_row
 
     # Stays are [check-in, check-out): a departure date is not another room-night.
     day_start = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
@@ -516,20 +516,16 @@ async def get_official_guest_list(
         for occupant_index, (guest_id, guest) in enumerate(occupants):
             national_id, passport_number = _guest_identity(guest, b if occupant_index == 0 else {})
             rows.append(
-                {
+                protect_guest_row({
                     "id": f"{b.get('id')}:{guest_id or occupant_index}",
                     "booking_id": b.get("id"),
                     "guest_id": guest_id,
                     "guest_name": _guest_display_name(guest, b if occupant_index == 0 else {}),
-                    "national_id": national_id if has_pii else _mask_pii(national_id),
-                    "passport_number": passport_number if has_pii else _mask_pii(passport_number),
+                    "national_id": national_id,
+                    "passport_number": passport_number,
                     "country": (guest or {}).get("country") or (guest or {}).get("nationality"),
                     "city": (guest or {}).get("city"),
-                    "date_of_birth": (
-                        (guest or {}).get("date_of_birth") or (guest or {}).get("birth_date")
-                        if has_pii
-                        else _mask_pii((guest or {}).get("date_of_birth") or (guest or {}).get("birth_date"))
-                    ),
+                    "date_of_birth": (guest or {}).get("date_of_birth") or (guest or {}).get("birth_date"),
                     "room_number": str(b.get("room_number") or room_map.get(str(b.get("room_id"))) or "?").strip() or "?",
                     "check_in": b.get("check_in"),
                     "check_out": b.get("check_out"),
@@ -539,17 +535,18 @@ async def get_official_guest_list(
                     "reservation_children": b.get("children", 0),
                     "total_amount": b.get("total_amount", 0.0) if occupant_index == 0 else 0.0,
                     "currency": b.get("currency") or "TRY",
-                    "billing_tax_number": b.get("billing_tax_number") if has_pii else _mask_pii(b.get("billing_tax_number")),
-                    "billing_address": b.get("billing_address") if has_pii else _mask_pii(b.get("billing_address")),
-                    "company_id": b.get("company_id") if has_pii else _mask_pii(b.get("company_id")),
+                    "billing_tax_number": b.get("billing_tax_number"),
+                    "billing_address": b.get("billing_address"),
+                    "company_id": b.get("company_id"),
                     "market_segment": b.get("market_segment"),
-                }
+                }, current_user)
             )
 
     return {
         "date": target_date.isoformat(),
         "count": len(rows),
         "rows": rows,
+        "privacy": guest_visibility_summary(current_user),
     }
 
 
@@ -597,8 +594,27 @@ async def get_basic_reports_dashboard(
     else:
         business_date_state = await ensure_business_date_initialized(db, current_user.tenant_id)
         date = str(business_date_state["business_date"])[:10]
-    has_pii = _user_has_pii_access(current_user)
-    return await _basic_dashboard_impl(current_user, has_pii, date, period)
+    # Cache the complete tenant-scoped report, then apply the current user's
+    # field policy outside the cache.  This prevents one employee's unmasked
+    # response from ever being reused for another employee.
+    result = await _basic_dashboard_impl(current_user, True, date, period)
+    from copy import deepcopy
+
+    from security.guest_data_visibility import guest_visibility_summary, protect_guest_row
+
+    result = deepcopy(result)
+    result["guest_list"] = [protect_guest_row(row, current_user) for row in result.get("guest_list", [])]
+    result["daily_lists"] = {
+        key: [protect_guest_row(row, current_user) for row in rows]
+        for key, rows in (result.get("daily_lists") or {}).items()
+    }
+    if isinstance(result.get("payments"), dict):
+        result["payments"]["rows"] = [protect_guest_row(row, current_user) for row in result["payments"].get("rows", [])]
+    if isinstance(result.get("housekeeping"), dict):
+        result["housekeeping"]["rows"] = [protect_guest_row(row, current_user) for row in result["housekeeping"].get("rows", [])]
+    result["room_rate_control"] = [protect_guest_row(row, current_user) for row in result.get("room_rate_control", [])]
+    result["privacy"] = guest_visibility_summary(current_user)
+    return result
 
 
 @cached(ttl=120, key_prefix="reports_basic_dashboard_v2", role_aware=True)

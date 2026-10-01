@@ -1,3 +1,4 @@
+import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import ManagerDailyReports from '../ManagerDailyReports';
@@ -20,6 +21,7 @@ describe('ManagerDailyReports', () => {
     expect(within(section).getByText('Önceki bakiyeden tahsilat')).toBeInTheDocument();
     expect(within(section).getAllByText('₺10.000').length).toBeGreaterThan(0);
     expect(within(section).queryByText('-₺10.000')).not.toBeInTheDocument();
+    expect(within(section).queryByText('Folyo işlemleri − tahsilatlar')).not.toBeInTheDocument();
     expect(section.querySelectorAll('[data-lucide="dollar-sign"]')).toHaveLength(0);
   });
 
@@ -46,5 +48,23 @@ describe('ManagerDailyReports', () => {
     expect(within(section).getByText('Folyoya işlenen oda geliri')).toBeInTheDocument();
     expect(within(section).getByText('₺15.000')).toBeInTheDocument();
     expect(within(section).getByText(/Gün sonu oda tahakkukları tamamlanmadığı için/)).toBeInTheDocument();
+  });
+
+  it('keeps each currency separate in the balance explanation', () => {
+    render(<ManagerDailyReports
+      section="front_cashier"
+      reportDate="2026-09-30"
+      data={{
+        front_cashier: {
+          daily_balance_change_by_currency: { TRY: -1000, EUR: 50 },
+        },
+        payments: {},
+      }}
+    />);
+
+    expect(screen.getByText('Önceki bakiyeden tahsilat')).toBeInTheDocument();
+    expect(screen.getByText('Gün içinde oluşan açık bakiye')).toBeInTheDocument();
+    expect(screen.getByText('₺1.000')).toBeInTheDocument();
+    expect(screen.getByText((text) => text.replace(/\s/g, '') === '50€')).toBeInTheDocument();
   });
 });

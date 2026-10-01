@@ -330,15 +330,9 @@ async def test_auto_import_pending_assignment_defers_availability_outbox():
             from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
 
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
-            # DIAGNOSTIC
-            all_docs = await db["imported_reservations"].find().to_list(None)
-            print("=== ALL DOCS IN DB BEFORE CLAIM ===", all_docs)
-            # DIAGNOSTIC
-            all_docs = await db["imported_reservations"].find().to_list(None)
-            doc_info = str(all_docs)
             success, msg = await auto_import_reservation_to_pms(record["id"])
 
-        assert success is True, f"Auto import failed: {msg} | Docs: {doc_info} | searched ID: {record['id']}"
+        assert success is True, f"Auto import failed: {msg}"
         assert await db.outbox_events.count_documents({"tenant_id": TEST_TENANT}) == 0
     finally:
         await _cleanup(db)
