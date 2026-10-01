@@ -6,8 +6,31 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { ArrowLeft, Clock, Filter, Search, User, Shield, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye, Globe, Monitor, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Clock, Filter, Search, User, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye, Globe, Monitor, ShieldCheck, ShieldAlert, Download, LockKeyhole } from "lucide-react";
 const API = "";
+const MODULE_LABELS = {
+  pms: "PMS",
+  calendar: "Takvim",
+  bookings: "Rezervasyon",
+  booking: "Rezervasyon",
+  folio: "Folyo",
+  cashier: "Kasa",
+  pos: "Restoran POS",
+  pos_transaction: "Restoran POS",
+  housekeeping: "Kat Hizmetleri",
+  reports: "Raporlar",
+  users: "Kullanıcı Yönetimi",
+  auth: "Oturum",
+  system: "Sistem"
+};
+function friendlyAction(event) {
+  if (event.action && event.action.includes(" /api/")) {
+    const verbs = { POST: "oluşturdu / işlem yaptı", PUT: "güncelledi", PATCH: "değiştirdi", DELETE: "sildi" };
+    const verb = verbs[event.http_method] || "işlem yaptı";
+    return `${MODULE_LABELS[event.target_type] || event.target_type || "Sistem"}: ${verb}`;
+  }
+  return String(event.operation_name || event.action || "İşlem").replaceAll("_", " ").replaceAll(".", " › ");
+}
 function SeverityBadge({
   severity
 }) {
@@ -18,7 +41,7 @@ function SeverityBadge({
     info: "bg-sky-100 text-sky-700 border-sky-300"
   };
   return <span data-testid={`severity-${severity}`} className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${map[severity] || map.info}`}>
-      {severity}
+      {({ critical: "Kritik", high: "Yüksek", warning: "Uyarı", info: "Bilgi" })[severity] || severity}
     </span>;
 }
 function DiffView({
@@ -51,16 +74,16 @@ function TimelineEvent({
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-gray-900">{event.operation_name || event.action}</span>
+            <span className="text-sm font-medium text-gray-900">{friendlyAction(event)}</span>
             <SeverityBadge severity={event.severity || "info"} />
-            <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-700 border-gray-300">{event.target_type}</Badge>
+            <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-700 border-gray-300">{MODULE_LABELS[event.target_type] || event.target_type}</Badge>
             <Badge variant="outline" className={`text-[10px] ${event.result_status === "success" ? "text-emerald-700 bg-emerald-50 border-emerald-300" : "text-red-700 bg-red-50 border-red-300"}`}>
-              {event.result_status}
+              {event.result_status === "success" ? "Başarılı" : "Başarısız"}
             </Badge>
           </div>
           <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500 flex-wrap">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{time}</span>
-            <span className="flex items-center gap-1"><User className="w-3 h-3" />{event.actor_role || "system"}</span>
+            <span className="flex items-center gap-1"><User className="w-3 h-3" />{event.actor_role || event.actor_id || "Sistem"}</span>
             {event.target_id && <span className="font-mono">{event.target_id.substring(0, 8)}...</span>}
             {event.ip_address && <span data-testid="event-ip" className="flex items-center gap-1 font-mono" title={t("cm.pages_AuditTimelinePage.ip_adresi")}>
                 <Globe className="w-3 h-3" />{event.ip_address}
@@ -92,6 +115,7 @@ export default function AuditTimelinePage({
   const [filters, setFilters] = useState({
     severity: "",
     actor: "",
+    action: "",
     entity_type: "",
     ip_address: "",
     user_agent: "",
@@ -110,7 +134,8 @@ export default function AuditTimelinePage({
     try {
       const params = new URLSearchParams();
       if (filters.severity) params.append("severity", filters.severity);
-      if (filters.actor) params.append("actor", filters.actor);
+      if (filters.actor) params.append("actor_id", filters.actor);
+      if (filters.action) params.append("action", filters.action);
       if (filters.entity_type) params.append("entity_type", filters.entity_type);
       params.append("limit", filters.limit);
       if (filters.ip_address) params.append("ip_address", filters.ip_address);
@@ -152,14 +177,43 @@ export default function AuditTimelinePage({
       return next;
     });
   };
+  const exportCsv = async () => {
+    const params = new URLSearchParams();
+    if (filters.severity) params.append("severity", filters.severity);
+    if (filters.actor) params.append("actor_id", filters.actor);
+    if (filters.action) params.append("action", filters.action);
+    if (filters.entity_type) params.append("entity_type", filters.entity_type);
+    const res = await axios.get(`/audit/timeline.csv?${params}`, { headers, responseType: "blob" });
+    const url = URL.createObjectURL(res.data);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "islem-kayitlari.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   return <>
     <div data-testid="audit-timeline-page" className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-gray-600">
-            <ArrowLeft className="w-4 h-4 mr-1" />{t("cm.pages_AuditTimelinePage.back")}</Button>
-          <Button data-testid="refresh-timeline-btn" size="sm" variant="outline" onClick={fetchTimeline}>
-            {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}{t("cm.pages_AuditTimelinePage.refresh")}</Button>
+        <div className="flex items-start justify-between mb-4 gap-4">
+          <div className="flex items-start gap-2">
+            <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="text-gray-600 mt-0.5">
+              <ArrowLeft className="w-4 h-4 mr-1" />{t("cm.pages_AuditTimelinePage.back")}</Button>
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-900">İşlem Kayıtları</h1>
+              <p className="text-sm text-gray-500">Tüm modüllerde kim, ne zaman, hangi işlemi yaptı?</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button data-testid="export-timeline-btn" size="sm" variant="outline" onClick={exportCsv}>
+              <Download className="w-3 h-3 mr-1" />CSV indir</Button>
+            <Button data-testid="refresh-timeline-btn" size="sm" variant="outline" onClick={fetchTimeline}>
+              {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}{t("cm.pages_AuditTimelinePage.refresh")}</Button>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded border border-sky-200 bg-sky-50 text-sky-900 text-sm">
+          <LockKeyhole className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>Parola, kart bilgisi ve erişim anahtarları kayda alınmaz. Misafir bilgileri, bu kullanıcı için belirlenen veri görünürlüğü ayarına göre maskelenir.</span>
         </div>
 
         {/* Tamper-evidence: hash-chain integrity status (read-only) */}
@@ -227,6 +281,10 @@ export default function AuditTimelinePage({
                   <Input data-testid="filter-actor" placeholder={t("cm.pages_AuditTimelinePage.actor")} value={filters.actor} onChange={e => setFilters(p => ({
                     ...p,
                     actor: e.target.value
+                  }))} className="text-xs h-7 w-32 md:w-auto" />
+                  <Input data-testid="filter-action" placeholder="İşlem ara..." value={filters.action} onChange={e => setFilters(p => ({
+                    ...p,
+                    action: e.target.value
                   }))} className="text-xs h-7 w-32 md:w-auto" />
                   <Input data-testid="filter-ip" placeholder={t("cm.pages_AuditTimelinePage.ip_adresi")} value={filters.ip_address} onChange={e => setFilters(p => ({
                     ...p,

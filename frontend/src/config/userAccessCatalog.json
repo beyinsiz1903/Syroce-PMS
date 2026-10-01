@@ -157,6 +157,21 @@
       ]
     },
     {
+      "key": "audit_logs",
+      "label": "İşlem kayıtları",
+      "module": "reports",
+      "paths": [
+        "/audit-timeline",
+        "/app/audit-logs"
+      ],
+      "api_prefixes": [
+        "/api/audit"
+      ],
+      "permissions": [
+        "view_audit_log"
+      ]
+    },
+    {
       "key": "finance",
       "label": "Finansal raporlar",
       "module": "finance",

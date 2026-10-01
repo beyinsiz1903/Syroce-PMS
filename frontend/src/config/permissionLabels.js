@@ -19,4 +19,5 @@ export const permissionLabels = {
   view_contact_center: 'İletişim merkezini görüntüle',
   manage_contact_center: 'İletişim merkezi işlemlerini yönet',
   send_urgent_message: 'Acil mesaj gönder',
+  view_audit_log: 'İşlem kayıtlarını ve güvenlik izlerini görüntüle',
 };
