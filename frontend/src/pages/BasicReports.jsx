@@ -269,6 +269,7 @@ const BasicReports = ({
   const [officialDate, setOfficialDate] = useState(businessDate);
   const officialDateEditedRef = useRef(false);
   const [officialRows, setOfficialRows] = useState([]);
+  const [officialPrivacy, setOfficialPrivacy] = useState(null);
   const [officialLoading, setOfficialLoading] = useState(false);
   const [officialError, setOfficialError] = useState(null);
   const [officialSearch, setOfficialSearch] = useState('');
@@ -327,6 +328,7 @@ const BasicReports = ({
         credentials: 'include',
       });
       setOfficialRows(result?.rows || []);
+      setOfficialPrivacy(result?.privacy || null);
     } catch (err) {
       setOfficialError(err && err.status ? 'Resmi misafir listesi yüklenemedi' : err.message || 'Resmi misafir listesi yüklenemedi');
     } finally {
@@ -361,6 +363,9 @@ const BasicReports = ({
     w.document.write('</head><body>');
     w.document.write('<h1>Resmi Müşteri Listesi</h1>');
     w.document.write('<p>Tarih: ' + new Date(officialDate).toLocaleDateString('tr-TR') + ' | Toplam kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Toplam tutar: ' + formatCurrency(officialTotalRevenue) + '</p>');
+    if (officialPrivacy?.server_side_enforced) {
+      w.document.write('<p><strong>Veri koruması etkin.</strong> Maskeli alan sayısı: ' + (officialPrivacy.masked_fields?.length || 0) + ' | Gizli alan sayısı: ' + (officialPrivacy.hidden_fields?.length || 0) + '. Bu çıktı kullanıcıya özel veri görünürlüğü profiliyle hazırlanmıştır.</p>');
+    }
     w.document.write(tableEl.outerHTML);
     w.document.write('</body></html>');
     w.document.close();
@@ -559,7 +564,7 @@ const BasicReports = ({
         return <OfficialSection officialDate={officialDate} setOfficialDate={value => {
           officialDateEditedRef.current = true;
           setOfficialDate(value);
-        }} officialRows={officialRows} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
+        }} officialRows={officialRows} officialPrivacy={officialPrivacy} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
       case 'police':
         return <PoliceSection filteredGuests={selectedInHouseGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} reportDate={selectedDate} />;
       case 'departments':

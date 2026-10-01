@@ -26,17 +26,6 @@ try:
 except Exception:
     _fenc = None
 
-try:
-    from cache_manager import cached
-except ImportError:
-
-    def cached(ttl=300, key_prefix=""):
-        def decorator(func):
-            return func
-
-        return decorator
-
-
 router = APIRouter(prefix="/api", tags=["pms"])
 
 _GUEST_COLLECTION = "guests"
@@ -59,6 +48,18 @@ def _decrypt_guest(doc: dict) -> dict:
 
         strip_ngram_fields(doc)
     return doc
+
+
+def _protect_guest_for_user(doc: dict, user: User, *, model_safe: bool = False) -> dict:
+    """Apply the employee's field policy before guest data leaves the API."""
+    from security.guest_data_visibility import protect_guest_row
+
+    protected = protect_guest_row(doc, user)
+    # ``GET /pms/guests`` retains its long-standing Guest response schema,
+    # where name is required.  The sentinel reveals no guest value.
+    if model_safe and not protected.get("name"):
+        protected["name"] = "Gizli misafir"
+    return protected
 
 
 @router.post("/pms/guests", response_model=Guest)
@@ -87,7 +88,7 @@ async def create_guest(
             if replay_id:
                 doc = await db.guests.find_one({"id": replay_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
                 if doc:
-                    return _decrypt_guest(doc)
+                    return _protect_guest_for_user(_decrypt_guest(doc), current_user, model_safe=True)
             # Cache pointer is stale (guest was hard-deleted out of band) —
             # fall through to a fresh insert under the same key.
         elif claim["status"] == "in_flight":
@@ -110,7 +111,7 @@ async def create_guest(
                     lock_id=lock_id,
                     response_body={"id": existing_guest["id"], "tenant_id": current_user.tenant_id},
                 )
-            return existing_guest
+            return _protect_guest_for_user(existing_guest, current_user, model_safe=True)
 
         guest = Guest(tenant_id=current_user.tenant_id, **guest_data.model_dump())
         guest_dict = guest.model_dump()
@@ -146,7 +147,7 @@ async def create_guest(
                 lock_id=lock_id,
                 response_body={"id": guest.id, "tenant_id": current_user.tenant_id},
             )
-        return guest
+        return _protect_guest_for_user(guest.model_dump(), current_user, model_safe=True)
     except Exception as exc:
         if lock_id:
             await release_idempotency(db, lock_id=lock_id, error=str(exc))
@@ -154,7 +155,6 @@ async def create_guest(
 
 
 @router.get("/pms/guests", response_model=list[Guest])
-@cached(ttl=300, key_prefix="pms_guests")  # Cache for 5 minutes
 async def get_guests(
     # v97 perf — default 1000 → 50. 373 guest x _decrypt_guest sırf
     # liste için 940ms harcıyordu. Frontend zaten paginate ediyor;
@@ -184,7 +184,7 @@ async def get_guests(
         elif "id_number" not in guest:
             guest["id_number"] = ""
 
-        guests.append(guest)
+        guests.append(_protect_guest_for_user(guest, current_user, model_safe=True))
 
     return guests
 
@@ -296,7 +296,7 @@ async def search_guests(
     results = []
     for g in deduplicate_guest_records(decrypted_results)[:limit]:
         results.append(
-            {
+            _protect_guest_for_user({
                 "id": g.get("id", ""),
                 "name": g.get("name", ""),
                 "email": g.get("email", ""),
@@ -304,7 +304,7 @@ async def search_guests(
                 "id_number": g.get("id_number", ""),
                 "vip_status": g.get("vip_status", False),
                 "total_stays": g.get("total_stays", 0),
-            }
+            }, current_user)
         )
     return results
 
@@ -325,7 +325,7 @@ async def get_guest_by_id(
         guest["name"] = guest.get("email", "Unknown")
     if "id_number" not in guest:
         guest["id_number"] = guest.get("passport_number", "")
-    return guest
+    return _protect_guest_for_user(guest, current_user)
 
 
 @router.put("/pms/guests/{guest_id}")
@@ -368,7 +368,20 @@ async def update_guest(
         "blacklisted",
         "blacklist_reason",
     }
-    update_fields = {k: v for k, v in data.items() if k in allowed}
+    from security.guest_data_visibility import user_guest_data_visibility, visibility_mode_for_field
+
+    visibility_policy, _policy_source = user_guest_data_visibility(current_user)
+    update_fields = {}
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        field_key, mode = visibility_mode_for_field(visibility_policy, key)
+        # A form populated from a masked/hidden response must not be able to
+        # overwrite the real stored value with its placeholder or an empty
+        # value.  Non-sensitive operational fields remain editable.
+        if field_key and mode != "full":
+            continue
+        update_fields[key] = value
     if not update_fields:
         raise HTTPException(status_code=400, detail="Guncellenecek alan bulunamadi")
 
@@ -392,7 +405,7 @@ async def update_guest(
         {"$set": update_fields},
     )
     updated = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-    return _decrypt_guest(updated)
+    return _protect_guest_for_user(_decrypt_guest(updated), current_user)
 
 
 @router.delete("/pms/guests/{guest_id}")

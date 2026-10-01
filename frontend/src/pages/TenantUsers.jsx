@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input';
 import UserProvisionDialog from '@/components/UserProvisionDialog';
 import UserAccessDialog from '@/components/UserAccessDialog';
 import UserProfileDialog from '@/components/UserProfileDialog';
+import DataSecurityReportDialog from '@/components/DataSecurityReportDialog';
+import { ShieldCheck } from 'lucide-react';
 
 function TenantUserList() {
   const [users, setUsers] = useState([]);
@@ -14,6 +16,7 @@ function TenantUserList() {
   const [revision, setRevision] = useState(0);
   const [selectedUser, setSelectedUser] = useState(null);
   const [profileUser, setProfileUser] = useState(null);
+  const [securityReportOpen, setSecurityReportOpen] = useState(false);
   const refresh = () => setRevision(value => value + 1);
   useEffect(() => {
     const controller = new AbortController();
@@ -39,6 +42,7 @@ function TenantUserList() {
       <div><h1 className="text-2xl font-semibold">Otel Kullanıcıları</h1>
         <p className="text-sm text-muted-foreground">Yalnızca oturum açtığınız otelin giriş hesapları. İK modülü gerektirmez.</p></div>
       <div className="flex gap-2">
+        <Button variant="outline" onClick={() => setSecurityReportOpen(true)} disabled={loading || !!error}><ShieldCheck className="mr-2 h-4 w-4" />Veri Güvenliği Raporu</Button>
         <Button variant="outline" onClick={refresh} disabled={loading}>Yenile</Button>
         <UserProvisionDialog onCreated={refresh} disabled={loading || !!error} />
       </div>
@@ -52,7 +56,7 @@ function TenantUserList() {
           <th className="p-3">Ad Soyad</th><th className="p-3">E-posta</th><th className="p-3">Rol</th><th className="p-3">İşlemler</th>
         </tr></thead>
         <tbody>{filtered.map(user => <tr key={user.id} className="border-b">
-          <td className="p-3">{user.name || '—'}</td><td className="p-3">{user.email || '—'}</td><td className="p-3">{user.role}</td>
+          <td className="p-3">{user.name || '—'}</td><td className="p-3">{user.email || '—'}</td><td className="p-3">{user.role}<div className="mt-1 text-xs text-muted-foreground">{Object.keys(user.guest_data_visibility || {}).length ? 'Kullanıcıya özel veri profili' : 'Eski veri profili'}</div></td>
           <td className="p-3">{!['admin', 'super_admin', 'guest', 'agency_admin', 'agency_agent'].includes(user.role) &&
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => setProfileUser(user)}>Bilgileri düzenle</Button>
@@ -64,6 +68,7 @@ function TenantUserList() {
     </div>}
     {selectedUser && <UserAccessDialog target={selectedUser} onClose={() => setSelectedUser(null)} onSaved={refresh} />}
     {profileUser && <UserProfileDialog target={profileUser} onClose={() => setProfileUser(null)} onSaved={refresh} />}
+    <DataSecurityReportDialog open={securityReportOpen} onClose={() => setSecurityReportOpen(false)} />
   </section>;
 }
 
