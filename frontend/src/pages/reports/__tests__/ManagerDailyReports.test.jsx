@@ -67,4 +67,28 @@ describe('ManagerDailyReports', () => {
     expect(screen.getByText('₺1.000')).toBeInTheDocument();
     expect(screen.getByText((text) => text.replace(/\s/g, '') === '50€')).toBeInTheDocument();
   });
+
+  it('labels a zero-value complimentary night as Comp instead of pending night audit', () => {
+    render(<ManagerDailyReports
+      section="rate_control"
+      reportDate="2026-10-01"
+      data={{ room_rate_control: [{
+        booking_id: 'booking-comp',
+        room_number: '207',
+        room_type: 'Standart',
+        guest_name: 'Comp Misafir',
+        agreed_rate: 0,
+        posted_rate: 0,
+        variance: 0,
+        currency: 'TRY',
+        posting_status: 'complimentary',
+        complimentary_reason: 'Yönetim ikramı',
+      }] }}
+    />);
+
+    const section = screen.getByTestId('section-rate-control');
+    expect(within(section).getByText('Comp')).toBeInTheDocument();
+    expect(within(section).getByText('Neden: Yönetim ikramı')).toBeInTheDocument();
+    expect(within(section).queryByText('Gün sonu bekliyor')).not.toBeInTheDocument();
+  });
 });

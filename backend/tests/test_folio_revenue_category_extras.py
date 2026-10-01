@@ -39,6 +39,7 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
                     "charge_category": "room",
                     "amount": 1000,
                     "total": 1000,
+                    "currency": "TRY",
                 }
             ]
         ),
@@ -51,6 +52,7 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
                     "charge_amount": 100,
                     "quantity": 2,
                     "total": 200,
+                    "currency": "EUR",
                 },
                 {
                     "tenant_id": "tenant-1",
@@ -79,3 +81,9 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
     assert rows["beverage"]["net"] == 200
     assert rows["beverage"]["total"] == 200
     assert result["totals"]["total"] == 1200
+    assert rows["room"]["by_currency"]["TRY"]["total"] == 1000
+    assert rows["beverage"]["by_currency"]["EUR"]["total"] == 200
+    assert result["totals_by_currency"] == {
+        "TRY": {"subtotal": 1000.0, "discount": 0.0, "net": 1000.0, "vat": 0.0, "city_tax": 0.0, "total": 1000.0},
+        "EUR": {"subtotal": 200.0, "discount": 0.0, "net": 200.0, "vat": 0.0, "city_tax": 0.0, "total": 200.0},
+    }

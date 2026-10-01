@@ -7,6 +7,7 @@ import { SectionHeader } from './ReportHelpers';
 import { GuestTable, MoneyCell } from './GuestSection';
 import { reservationLabel } from '@/utils/displayIdentifiers';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import GuestPrivacyNotice from './GuestPrivacyNotice';
 
 export const OfficialSection = ({
   officialDate, setOfficialDate, officialRows, officialPrivacy, officialLoading,
@@ -44,25 +45,7 @@ export const OfficialSection = ({
     )}
 
     {officialPrivacy?.server_side_enforced && (
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="official-privacy-summary">
-        <div className="flex items-start gap-3">
-          <Shield className="mt-0.5 h-5 w-5 flex-shrink-0 text-slate-600" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900">Veri koruması bu rapora uygulandı</p>
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              Ekran, CSV ve yazdırma çıktısı aynı kullanıcıya özel görünürlük profiliyle sunulur. Gizlenen veriler tarayıcıya gönderilmez.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">Tam görünen: {officialPrivacy.full_fields?.length || 0}</span>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">Maskeli: {officialPrivacy.masked_fields?.length || 0}</span>
-              <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-1 text-slate-800">Gizli: {officialPrivacy.hidden_fields?.length || 0}</span>
-              {officialPrivacy.policy_source === 'legacy' && (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">Eski kullanıcı profili — yönetici incelemesi gerekli</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <div data-testid="official-privacy-summary"><GuestPrivacyNotice privacy={officialPrivacy} /></div>
     )}
 
     {officialRows.length > 0 && (
@@ -96,7 +79,7 @@ export const OfficialSection = ({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-          <span>{officialDate} tarihi için konaklayan misafirler</span>
+          <span>{new Date(`${officialDate}T12:00:00`).toLocaleDateString('tr-TR')} tarihinde konaklayan misafirler</span>
           {officialRows.length > 0 && (
             <span className="text-xs text-gray-500 flex gap-3 flex-wrap">
               <span>{filteredOfficialRows.length} kayıt gösteriliyor</span>
@@ -133,7 +116,9 @@ export const OfficialSection = ({
                 </tr>
               )) : (
                 <tr><td colSpan={7} className="py-10 text-center text-gray-400 text-xs">
-                  {officialRows.length === 0 ? 'Listeyi getirmek için tarih seçip "Listeyi Getir" butonuna tıklayın.' : 'Arama kriterlerine uygun kayıt bulunamadı.'}
+                  {officialRows.length === 0
+                    ? (officialPrivacy ? 'Seçili tarihte konaklayan misafir bulunamadı.' : 'Listeyi getirmek için tarih seçip "Listeyi Getir" butonuna tıklayın.')
+                    : 'Arama kriterlerine uygun kayıt bulunamadı.'}
                 </td></tr>
               )}
             </tbody>

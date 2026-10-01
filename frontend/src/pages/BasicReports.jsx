@@ -25,6 +25,7 @@ import { OfficialSection, PoliceSection } from './reports/OfficialSection';
 import ManagerDailyReports from './reports/ManagerDailyReports';
 import AccountingStatementsSection from './reports/AccountingStatementsSection';
 import ReportFrame from './reports/ReportFrame';
+import GuestPrivacyNotice from './reports/GuestPrivacyNotice';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 const BACKEND_URL = "";
@@ -524,6 +525,11 @@ const BasicReports = ({
     window.print();
   };
 
+  const withGuestPrivacy = content => <div className="space-y-4">
+    <GuestPrivacyNotice privacy={data?.privacy} compact />
+    {content}
+  </div>;
+
   const renderContent = () => {
 
     switch (activeSection) {
@@ -544,30 +550,32 @@ const BasicReports = ({
       case 'room_types':
         return <RoomTypesSection roomTypeData={roomTypeData} />;
       case 'guests':
-        return <div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Tüm Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+        return withGuestPrivacy(<div data-testid="section-guests"><GuestTable guests={filteredGuests} title="Tüm Misafir Listesi" searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>);
       case 'inhouse':
-        return <div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} totalCount={allSelectedInHouseGuests.length} title={`Otelde Konaklayanlar · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} showNightlyRate historical reportDate={selectedDate} exchangeRates={exchangeRates} searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>;
+        return withGuestPrivacy(<div data-testid="section-inhouse"><GuestTable guests={selectedInHouseGuests} totalCount={allSelectedInHouseGuests.length} title={`Otelde Konaklayanlar · ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('tr-TR')}`} showNightlyRate historical reportDate={selectedDate} exchangeRates={exchangeRates} searchGuest={searchGuest} setSearchGuest={setSearchGuest} /></div>);
       case 'nationality':
         return <NationalitySection countryData={countryData} />;
       case 'front_office':
-        return <FrontOfficeSection s={s} todayArrivals={todayArrivals} todayDepartures={todayDepartures} reportDate={selectedDate} exchangeRates={exchangeRates} />;
+        return withGuestPrivacy(<FrontOfficeSection s={s} todayArrivals={todayArrivals} todayDepartures={todayDepartures} reportDate={selectedDate} exchangeRates={exchangeRates} />);
       case 'noshow':
-        return <NoShowSection s={{ ...s, ...periodActivity }} noShowGuests={noShowGuests} cancelledGuests={cancelledGuests} exchangeRates={exchangeRates} />;
+        return withGuestPrivacy(<NoShowSection s={{ ...s, ...periodActivity }} noShowGuests={noShowGuests} cancelledGuests={cancelledGuests} exchangeRates={exchangeRates} />);
       case 'room_status':
         return <RoomStatusSection roomStatus={roomStatus} roomStatusData={roomStatusData} />;
       case 'housekeeping':
-        return <HousekeepingSection hk={hk} reportDate={selectedDate} />;
+        return withGuestPrivacy(<HousekeepingSection hk={hk} reportDate={selectedDate} />);
       case 'channels':
         return <ChannelsSection sourceData={sourceData} />;
       case 'sources':
         return <SourcesSection sourceData={sourceData} />;
       case 'payments':
-        return <PaymentsSection payments={payments} paymentData={paymentData} reportDate={selectedDate} />;
+        return withGuestPrivacy(<PaymentsSection payments={payments} paymentData={paymentData} reportDate={selectedDate} />);
       case 'front_cashier':
       case 'cash_movements':
       case 'rate_control':
       case 'daily_analysis':
-        return <ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />;
+        return ['cash_movements', 'rate_control'].includes(activeSection)
+          ? withGuestPrivacy(<ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />)
+          : <ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />;
       case 'trial_balance':
         return <div data-testid="section-trial-balance"><TrialBalancePage reportDate={reportDate} /></div>;
       case 'gl_trial_balance':
@@ -581,7 +589,7 @@ const BasicReports = ({
           setOfficialDate(value);
         }} officialRows={officialRows} officialPrivacy={officialPrivacy} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialRevenueByCurrency={officialRevenueByCurrency} />;
       case 'police':
-        return <PoliceSection filteredGuests={selectedInHouseGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} reportDate={selectedDate} />;
+        return withGuestPrivacy(<PoliceSection filteredGuests={selectedInHouseGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} reportDate={selectedDate} />);
       case 'departments':
         return <DepartmentsSection s={s} hk={hk} maint={maint} finance={finance} />;
       case 'fnb':
