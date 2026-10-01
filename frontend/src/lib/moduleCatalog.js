@@ -94,6 +94,7 @@ export function resolveModuleState(item, tenant = {}) {
     explicit,
     included,
     licensed: enabled || included,
+    path: item.path || null,
     launchable: enabled && Boolean(item.path),
   };
 }
