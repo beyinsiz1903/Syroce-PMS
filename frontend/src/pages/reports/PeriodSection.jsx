@@ -10,6 +10,15 @@ import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const PeriodSection = ({ data, pc }) => {
   const { t } = useTranslation();
+  const currencies = Array.from(new Set([
+    ...Object.keys(pc.month_revenue_by_currency || {}),
+    ...Object.keys(pc.prev_month_revenue_by_currency || {}),
+  ])).sort();
+  const revenueComparisons = currencies.map(currency => ({
+    currency,
+    current: Number(pc.month_revenue_by_currency?.[currency] || 0),
+    previous: Number(pc.prev_month_revenue_by_currency?.[currency] || 0),
+  }));
   const revChange = calcChange(pc.month_revenue, pc.prev_month_revenue);
   const bookChange = calcChange(pc.month_bookings, pc.prev_month_bookings);
   const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
@@ -62,13 +71,22 @@ const PeriodSection = ({ data, pc }) => {
         </CardContent>
       </Card>
       <div className="grid md:grid-cols-2 gap-4">
-        <Card className={`border-2 ${changeClasses(revChange)}`}>
+        <Card className={`border-2 ${revenueComparisons.length > 1 ? 'border-slate-200 bg-slate-50/30 text-slate-700' : changeClasses(revChange)}`}>
           <CardContent className="p-5 text-center">
-            <p className="text-sm font-medium text-gray-600">{t('cm.pages_reports_PeriodSection.gelir_degisimi_onceki_aya_gore')}</p>
-            <p className="text-3xl font-bold mt-2">
-              {changeText(revChange)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">{formatCurrency(pc.month_revenue)} vs {formatCurrency(pc.prev_month_revenue)}</p>
+            <p className="text-sm font-medium text-gray-600">Gelir değişimi (para birimi bazında)</p>
+            {revenueComparisons.length ? <div className="mt-3 space-y-2 text-left">
+              {revenueComparisons.map(({ currency, current, previous }) => {
+                const change = calcChange(current, previous);
+                const changeLabel = previous === 0 && current > 0 ? 'Yeni gelir' : changeText(change);
+                return <div key={currency} className="rounded-lg bg-white/70 px-3 py-2">
+                  <div className="flex items-center justify-between gap-3"><span className="font-semibold">{currency}</span><span className="font-bold">{changeLabel}</span></div>
+                  <p className="mt-0.5 text-xs text-gray-500">{formatCurrency(current, currency)} / önceki {formatCurrency(previous, currency)}</p>
+                </div>;
+              })}
+            </div> : <>
+              <p className="text-3xl font-bold mt-2">{changeText(revChange)}</p>
+              <p className="text-xs text-gray-500 mt-1">{formatCurrency(pc.month_revenue)} / önceki {formatCurrency(pc.prev_month_revenue)}</p>
+            </>}
           </CardContent>
         </Card>
         <Card className={`border-2 ${changeClasses(bookChange)}`}>

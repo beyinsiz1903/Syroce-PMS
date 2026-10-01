@@ -16,7 +16,7 @@ describe('AccountingStatementsSection', () => {
 
     render(<AccountingStatementsSection type="gl_trial_balance" reportDate="2026-09-27" reportPeriod="monthly" />);
 
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/gl/trial-balance', { params: { as_of: '2026-09-27' } }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/gl/trial-balance', { params: { as_of: '2026-09-27' } }));
     expect(await screen.findByText('Kasa')).toBeInTheDocument();
     expect(screen.getByText('Dengeli')).toBeInTheDocument();
   });
@@ -28,7 +28,7 @@ describe('AccountingStatementsSection', () => {
 
     render(<AccountingStatementsSection type="income_statement" reportDate="2026-09-27" reportPeriod="monthly" />);
 
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/gl/statements/income-statement', {
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/gl/statements/income-statement', {
       params: { start: '2026-08-29', end: '2026-09-27' },
     }));
     expect(await screen.findByText('Bu dönem için muhasebeleşmiş hareket bulunmuyor.')).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe('AccountingStatementsSection', () => {
 
     render(<AccountingStatementsSection type="journal" reportDate="2026-09-27" reportPeriod="daily" />);
 
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/gl/journal', {
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/gl/journal', {
       params: { start: '2026-09-27', end: '2026-09-27' },
     }));
     expect(await screen.findByText('YEV-2026-001')).toBeInTheDocument();

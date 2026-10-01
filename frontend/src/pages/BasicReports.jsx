@@ -16,7 +16,7 @@ import AdrRevparSection from './reports/AdrRevparSection';
 import PeriodSection from './reports/PeriodSection';
 import OccupancySection from './reports/OccupancySection';
 import RoomTypesSection from './reports/RoomTypesSection';
-import { GuestTable, convertToTry } from './reports/GuestSection';
+import { GuestTable } from './reports/GuestSection';
 import NationalitySection from './reports/NationalitySection';
 import FrontOfficeSection from './reports/FrontOfficeSection';
 import { NoShowSection, RoomStatusSection, HousekeepingSection, PaymentsSection, DepartmentsSection, FnBSection } from './reports/OperationsSection';
@@ -336,10 +336,10 @@ const BasicReports = ({
     }
   }, [officialDate]);
   const handleOfficialExportCsv = () => {
-    if (!officialRows.length) return;
+    if (!filteredOfficialRows.length) return;
     const headers = ['Rezervasyon No', 'Misafir Adı', 'T.C. Kimlik No', 'Pasaport No', 'Ülke', 'Şehir', 'Doğum Tarihi', 'Oda', 'Giriş', 'Çıkış', 'Yetişkin', 'Çocuk', 'Toplam Tutar', 'Para Birimi', 'Vergi No', 'Fatura Adresi', 'Şirket No', 'Pazar Bölümü'];
     const lines = [headers.map(csvCell).join(',')];
-    officialRows.forEach(r => {
+    filteredOfficialRows.forEach(r => {
       lines.push([r.booking_id, r.guest_name, r.national_id, r.passport_number, r.country, r.city, r.date_of_birth, r.room_number, r.check_in, r.check_out, r.adults, r.children, r.total_amount, r.currency, r.billing_tax_number, r.billing_address, r.company_id, r.market_segment].map(csvCell).join(','));
     });
     const blob = new Blob([lines.join('\n')], {
@@ -362,7 +362,7 @@ const BasicReports = ({
     w.document.write('<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f5f5f5;font-weight:600}h1{font-size:18px;margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:12px}</style>');
     w.document.write('</head><body>');
     w.document.write('<h1>Resmi Müşteri Listesi</h1>');
-    w.document.write('<p>Tarih: ' + new Date(officialDate).toLocaleDateString('tr-TR') + ' | Toplam kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Toplam tutar: ' + formatCurrency(officialTotalRevenue) + '</p>');
+    w.document.write('<p>Tarih: ' + new Date(`${officialDate}T12:00:00`).toLocaleDateString('tr-TR') + ' | Gösterilen kayıt: ' + filteredOfficialRows.length + ' | Toplam kişi: ' + officialTotalGuests + ' | Konaklama toplamı: ' + officialRevenueSummary + '</p>');
     if (officialPrivacy?.server_side_enforced) {
       w.document.write('<p><strong>Veri koruması etkin.</strong> Maskeli alan sayısı: ' + (officialPrivacy.masked_fields?.length || 0) + ' | Gizli alan sayısı: ' + (officialPrivacy.hidden_fields?.length || 0) + '. Bu çıktı kullanıcıya özel veri görünürlüğü profiliyle hazırlanmıştır.</p>');
     }
@@ -424,10 +424,17 @@ const BasicReports = ({
     name: key,
     count: value
   }));
-  const paymentData = Object.entries(payments.by_method || {}).map(([key, value]) => ({
+  const paymentMethodBreakdowns = payments.totals_by_method_currency || {};
+  const paymentData = Object.entries(Object.keys(paymentMethodBreakdowns).length ? paymentMethodBreakdowns : payments.by_method || {}).map(([key, rawValue]) => {
+    const totals = rawValue && typeof rawValue === 'object' ? rawValue : { TRY: Number(rawValue || 0) };
+    const currencies = Object.keys(totals).filter(currency => Number(totals[currency]) !== 0);
+    return {
     name: key === 'credit_card' ? 'Kredi Kartı' : key === 'cash' ? 'Nakit' : key === 'bank_transfer' ? 'Havale/EFT' : key === 'debit_card' ? 'Banka Kartı' : key,
-    value
-  }));
+    value: currencies.length === 1 ? Number(totals[currencies[0]] || 0) : 0,
+    currency: currencies.length === 1 ? currencies[0] : null,
+    totals,
+  };
+  });
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
     name: key === 'direct' ? 'Doğrudan' : key === 'ota' ? 'Online acente' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Kapı müşterisi' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal yöneticisi' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
@@ -455,13 +462,21 @@ const BasicReports = ({
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
   });
-  const officialTotalGuests = officialRows.reduce((a, r) => a + (r.adults || 0) + (r.children || 0), 0);
-  const officialTotalRevenue = officialRows.reduce((sum, row) => sum + (convertToTry(row.total_amount, row.currency, exchangeRates) || 0), 0);
   const filteredOfficialRows = officialRows.filter(r => {
     if (!officialSearch) return true;
     const term = officialSearch.toLowerCase();
     return (r.guest_name || '').toLowerCase().includes(term) || (r.room_number || '').toString().includes(term) || (r.national_id || '').includes(term) || (r.passport_number || '').toLowerCase().includes(term);
   });
+  const officialTotalGuests = filteredOfficialRows.reduce((a, r) => a + (r.adults || 0) + (r.children || 0), 0);
+  const officialRevenueByCurrency = filteredOfficialRows.reduce((totals, row) => {
+    const currency = String(row.currency || 'TRY').toUpperCase();
+    totals[currency] = (totals[currency] || 0) + Number(row.total_amount || 0);
+    return totals;
+  }, {});
+  const officialRevenueSummary = Object.entries(officialRevenueByCurrency)
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency, amount]) => formatCurrency(amount, currency))
+    .join(' · ') || '-';
 
   const handleGenericExportCsv = () => {
     if (activeSection === 'official' && typeof handleOfficialExportCsv === 'function') {
@@ -554,7 +569,7 @@ const BasicReports = ({
       case 'daily_analysis':
         return <ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />;
       case 'trial_balance':
-        return <div data-testid="section-trial-balance"><TrialBalancePage /></div>;
+        return <div data-testid="section-trial-balance"><TrialBalancePage reportDate={reportDate} /></div>;
       case 'gl_trial_balance':
       case 'income_statement':
       case 'balance_sheet':
@@ -564,7 +579,7 @@ const BasicReports = ({
         return <OfficialSection officialDate={officialDate} setOfficialDate={value => {
           officialDateEditedRef.current = true;
           setOfficialDate(value);
-        }} officialRows={officialRows} officialPrivacy={officialPrivacy} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
+        }} officialRows={officialRows} officialPrivacy={officialPrivacy} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialRevenueByCurrency={officialRevenueByCurrency} />;
       case 'police':
         return <PoliceSection filteredGuests={selectedInHouseGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} reportDate={selectedDate} />;
       case 'departments':

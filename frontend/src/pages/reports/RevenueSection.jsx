@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { DollarSign, Calendar, TrendingUp, Utensils, RefreshCw } from 'lucide-react';
+import { ReceiptText, Calendar, TrendingUp, Utensils, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, Cell, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
 import { useTranslation } from 'react-i18next';
@@ -170,7 +170,7 @@ const RevenueSection = ({
   return <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Seçili Gün Toplam Geliri" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={DollarSign} color="green" />
+      <KPICard title="Seçili Gün Toplam Geliri" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={ReceiptText} color="green" />
       <KPICard title={isDaily ? 'Seçili Gün Oda Geliri' : t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
       <KPICard title={isDaily ? 'Önceki Gün Geliri' : t('cm.pages_reports_RevenueSection.aylik_gelir')} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} icon={TrendingUp} color="purple" />
       <KPICard title="Yiyecek ve İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />

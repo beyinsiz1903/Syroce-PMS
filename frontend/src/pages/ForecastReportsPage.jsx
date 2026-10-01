@@ -58,7 +58,7 @@ export default function ForecastReportsPage() {
         params: { days, segment: segment || undefined },
       });
       setForecast(data);
-    } catch (e) { handleErr("Forecast yüklenemedi", e); }
+    } catch (e) { handleErr("Doluluk tahmini yüklenemedi", e); }
     finally { setLoading(false); }
   }, [days, segment, handleErr]);
 
@@ -69,7 +69,7 @@ export default function ForecastReportsPage() {
         params: { period_days: pickupDays },
       });
       setPickup(data);
-    } catch (e) { handleErr("Pickup yüklenemedi", e); }
+    } catch (e) { handleErr("Rezervasyon kazanımı yüklenemedi", e); }
     finally { setLoading(false); }
   }, [pickupDays, handleErr]);
 
@@ -80,7 +80,7 @@ export default function ForecastReportsPage() {
         params: { target_date: paceDate, compare_year: paceCompare || undefined },
       });
       setPace(data);
-    } catch (e) { handleErr("Pace yüklenemedi", e); }
+    } catch (e) { handleErr("Rezervasyon hızı yüklenemedi", e); }
     finally { setLoading(false); }
   }, [paceDate, paceCompare, handleErr]);
 
@@ -111,18 +111,18 @@ export default function ForecastReportsPage() {
     <div className="container mx-auto p-6 space-y-4 max-w-7xl">
       <div>
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <TrendingUp className="h-6 w-6" /> Forecast / Pace / Pickup
+          <TrendingUp className="h-6 w-6" /> Öngörü ve Rezervasyon Eğilimleri
         </h2>
         <p className="text-sm text-muted-foreground">
-          {t('cm.pages_ForecastReportsPage.10_30_90_gun_doluluk_tahmini_booking_pac')}
+          10, 30 ve 90 günlük doluluk tahminlerini, rezervasyon hızını ve yeni rezervasyonları tek ekranda izleyin.
         </p>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="forecast" data-testid="tab-forecast">Forecast</TabsTrigger>
-          <TabsTrigger value="pace" data-testid="tab-pace">Pace</TabsTrigger>
-          <TabsTrigger value="pickup" data-testid="tab-pickup">Pickup</TabsTrigger>
+          <TabsTrigger value="forecast" data-testid="tab-forecast">Doluluk Tahmini</TabsTrigger>
+          <TabsTrigger value="pace" data-testid="tab-pace">Rezervasyon Hızı</TabsTrigger>
+          <TabsTrigger value="pickup" data-testid="tab-pickup">Yeni Rezervasyonlar</TabsTrigger>
         </TabsList>
 
         <TabsContent value="forecast">
@@ -130,7 +130,7 @@ export default function ForecastReportsPage() {
             <CardHeader>
               <CardTitle>Doluluk Tahmini</CardTitle>
               <CardDescription>
-                On-the-books + tahmin. Segment filtresi opsiyonel.
+                Kesinleşmiş rezervasyonlar ve geçmiş gerçekleşmelere dayalı tahmin. Pazar bölümü filtresi isteğe bağlıdır.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -149,11 +149,11 @@ export default function ForecastReportsPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Segment (opsiyonel)</Label>
+                  <Label>Pazar bölümü (isteğe bağlı)</Label>
                   <Input
                     value={segment}
                     onChange={(e) => setSegment(e.target.value)}
-                    placeholder="corporate, leisure…"
+                    placeholder="Kurumsal, bireysel…"
                     className="w-[200px]"
                     data-testid="input-forecast-segment"
                   />
@@ -179,8 +179,8 @@ export default function ForecastReportsPage() {
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip />
                         <Legend />
-                        <Line type="monotone" dataKey="rooms_otb" name="OTB Oda" stroke="#94a3b8" />
-                        <Line type="monotone" dataKey="rooms_forecast" name="Forecast Oda" stroke="#2563eb" strokeWidth={2} />
+                        <Line type="monotone" dataKey="rooms_otb" name="Kesinleşmiş Oda" stroke="#94a3b8" />
+                        <Line type="monotone" dataKey="rooms_forecast" name="Tahmini Oda" stroke="#2563eb" strokeWidth={2} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -190,13 +190,13 @@ export default function ForecastReportsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>{t('cm.pages_ForecastReportsPage.tarih')}</TableHead>
-                          <TableHead className="text-right">OTB</TableHead>
-                          <TableHead className="text-right">Forecast</TableHead>
+                          <TableHead className="text-right">Kesinleşmiş Oda</TableHead>
+                          <TableHead className="text-right">Tahmini Oda</TableHead>
                           <TableHead className="text-right">Doluluk</TableHead>
                           <TableHead className="text-right">ADR</TableHead>
                           <TableHead className="text-right">RevPAR</TableHead>
-                          <TableHead className="text-right">OTB Gelir</TableHead>
-                          <TableHead className="text-right">Forecast Gelir</TableHead>
+                          <TableHead className="text-right">Kesinleşmiş Gelir</TableHead>
+                          <TableHead className="text-right">Tahmini Gelir</TableHead>
                           <TableHead className="text-right">Güven</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -226,9 +226,9 @@ export default function ForecastReportsPage() {
         <TabsContent value="pace">
           <Card>
             <CardHeader>
-              <CardTitle>Booking Pace</CardTitle>
+              <CardTitle>Rezervasyon Hızı</CardTitle>
               <CardDescription>
-                {t('cm.pages_ForecastReportsPage.hedef_tarih_icin_x_gun_once_kac_oda_elim')}
+                Hedef tarihe yaklaşırken kesinleşen oda sayısını geçmiş dönemle karşılaştırın.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -310,9 +310,9 @@ export default function ForecastReportsPage() {
         <TabsContent value="pickup">
           <Card>
             <CardHeader>
-              <CardTitle>Pickup Raporu</CardTitle>
+              <CardTitle>Yeni Rezervasyon Kazanımı</CardTitle>
               <CardDescription>
-                {t('cm.pages_ForecastReportsPage.son_n_gunde_alinan_rezervasyonlarin_chec')}
+                Son günlerde alınan rezervasyonların konaklama tarihine göre oda ve gelir katkısını inceleyin.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -375,7 +375,7 @@ export default function ForecastReportsPage() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Check-in</TableHead>
+                            <TableHead>Giriş tarihi</TableHead>
                             <TableHead className="text-right">{t('cm.pages_ForecastReportsPage.oda')}</TableHead>
                             <TableHead className="text-right">Gelir</TableHead>
                           </TableRow>

@@ -116,6 +116,8 @@ const GuestTable = ({
   totalCount,
   reportDate,
   historical = false,
+  showAmount = true,
+  showEmail = true,
 }) => {
   const reservationKey = guest => guest.booking_id || guest.reservation_id || String(guest.id || '').split(':')[0];
   const uniqueReservations = new Set(guests.map(reservationKey).filter(Boolean)).size;
@@ -152,7 +154,7 @@ const GuestTable = ({
     </div>}
     <div className="relative" data-report-screen-only="true">
       <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400 z-10" />
-      <Input placeholder="Misafir, oda veya e-posta ara..." value={searchGuest} onChange={e => setSearchGuest(e.target.value)} className="pl-9 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:ring-blue-200" data-testid="guest-search-input" />
+      <Input placeholder={showEmail ? 'Misafir, oda veya e-posta ara...' : 'Misafir veya oda ara...'} value={searchGuest} onChange={e => setSearchGuest(e.target.value)} className="pl-9 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:ring-blue-200" data-testid="guest-search-input" />
     </div>
     <Card>
       <CardContent className="p-0">
@@ -168,7 +170,7 @@ const GuestTable = ({
             {showNightlyRate && <th className="whitespace-nowrap text-left py-2.5 px-3 font-semibold text-gray-600">Ücretlendirme</th>}
             {showNightlyRate && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">Misafire Yansıtılan</th>}
             {showNightlyRate && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">Tahsilat</th>}
-            <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">{showNightlyRate ? 'Konaklama Toplamı' : 'Tutar'}</th>
+            {showAmount && <th className="whitespace-nowrap text-right py-2.5 px-3 font-semibold text-gray-600">{showNightlyRate ? 'Konaklama Toplamı' : 'Tutar'}</th>}
           </tr></thead>
           <tbody>
             {guests.length > 0 ? guests.map((g, i) => {
@@ -176,7 +178,7 @@ const GuestTable = ({
               return <tr key={g.id || i} className="border-b hover:bg-sky-50/30 transition-colors">
                 <td className="min-w-[190px] max-w-[260px] py-2 px-3">
                   <div className="truncate font-medium text-gray-900" title={g.guest_name || '-'}>{g.guest_name || '-'}</div>
-                  <div className="truncate text-[11px] text-gray-400" title={g.guest_email || ''}>{g.guest_email && g.guest_email.includes('@') ? g.guest_email : ''}</div>
+                  {showEmail && <div className="truncate text-[11px] text-gray-400" title={g.guest_email || ''}>{g.guest_email && g.guest_email.includes('@') ? g.guest_email : ''}</div>}
                 </td>
                 <td className="whitespace-nowrap py-2 px-3 font-medium">{g.room_number || '-'}</td>
                 {showId && <td className="whitespace-nowrap py-2 px-3 text-xs font-mono">{g.id_number || g.passport_number || '-'}</td>}
@@ -186,9 +188,9 @@ const GuestTable = ({
                 {showNightlyRate && <td className="py-2 px-3"><PricingTreatmentCell guest={g} /></td>}
                 {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right font-semibold tabular-nums text-blue-700"><GuestNightChargeCell guest={g} exchangeRates={exchangeRates} /></td>}
                 {showNightlyRate && <td className="whitespace-nowrap py-2 px-3 text-right tabular-nums"><ReceivedPaymentsCell payments={g.received_payments} /></td>}
-                <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : <MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} />}</td>
+                {showAmount && <td className="whitespace-nowrap py-2 px-3 text-right font-medium tabular-nums">{g.is_primary === false ? '-' : <MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} />}</td>}
               </tr>;
-            }) : <tr><td colSpan={6 + (showId ? 1 : 0) + (showNightlyRate ? 3 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
+            }) : <tr><td colSpan={5 + (showId ? 1 : 0) + (showNightlyRate ? 3 : 0) + (showAmount ? 1 : 0)} className="py-8 text-center text-gray-400">Kayıt bulunamadı</td></tr>}
           </tbody>
           {showNightlyRate && primaryRows.length > 0 && <tfoot>
             <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-800">

@@ -3,15 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar, Loader2, Search, Download, Printer, Shield } from 'lucide-react';
-import { formatCurrency, SectionHeader } from './ReportHelpers';
+import { SectionHeader } from './ReportHelpers';
 import { GuestTable, MoneyCell } from './GuestSection';
 import { reservationLabel } from '@/utils/displayIdentifiers';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 export const OfficialSection = ({
   officialDate, setOfficialDate, officialRows, officialPrivacy, officialLoading,
   officialError, officialSearch, setOfficialSearch,
   fetchOfficialGuests, handleOfficialExportCsv, handleOfficialPrint,
-  filteredOfficialRows, officialTotalGuests, officialTotalRevenue,
+  filteredOfficialRows, officialTotalGuests, officialRevenueByCurrency,
 }) => (
   <div className="space-y-4" data-testid="section-official">
     <SectionHeader title="Resmi Müşteri Listesi (Maliye Raporu)" description="Maliye ve resmi denetimler için seçtiğiniz tarihte otelde konaklayan tüm misafirlerin listesi" />
@@ -27,10 +28,10 @@ export const OfficialSection = ({
             Listeyi Getir
           </Button>
           <div className="flex items-center gap-2 md:ml-auto">
-            <Button variant="outline" size="sm" onClick={handleOfficialExportCsv} disabled={officialLoading || !officialRows.length} data-testid="official-csv-btn">
+            <Button variant="outline" size="sm" onClick={handleOfficialExportCsv} disabled={officialLoading || !filteredOfficialRows.length} data-testid="official-csv-btn">
               <Download className="w-3.5 h-3.5 mr-1.5" />CSV İndir
             </Button>
-            <Button variant="outline" size="sm" onClick={handleOfficialPrint} disabled={officialLoading || !officialRows.length} data-testid="official-print-btn">
+            <Button variant="outline" size="sm" onClick={handleOfficialPrint} disabled={officialLoading || !filteredOfficialRows.length} data-testid="official-print-btn">
               <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
             </Button>
           </div>
@@ -67,20 +68,20 @@ export const OfficialSection = ({
     {officialRows.length > 0 && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3 bg-sky-50 rounded-lg border border-sky-100 text-center">
-          <p className="text-xs text-sky-600 font-medium">Toplam Kayıt</p>
-          <p className="text-xl font-bold text-slate-900">{officialRows.length}</p>
+          <p className="text-xs text-sky-600 font-medium">Gösterilen / Toplam Kayıt</p>
+          <p className="text-xl font-bold text-slate-900">{filteredOfficialRows.length} / {officialRows.length}</p>
         </div>
         <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
           <p className="text-xs text-emerald-600 font-medium">Toplam Kişi</p>
           <p className="text-xl font-bold text-emerald-800">{officialTotalGuests}</p>
         </div>
         <div className="p-3 bg-amber-50 rounded-lg border border-amber-100 text-center">
-          <p className="text-xs text-amber-600 font-medium">Toplam Tutar</p>
-          <p className="text-xl font-bold text-amber-800">{formatCurrency(officialTotalRevenue, 'TRY')}</p>
+          <p className="text-xs text-amber-600 font-medium">Konaklama Toplamı</p>
+          <p className="text-sm font-bold text-amber-800">{formatCurrencyBreakdown(officialRevenueByCurrency)}</p>
         </div>
         <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 text-center">
           <p className="text-xs text-indigo-600 font-medium">Seçili Tarih</p>
-          <p className="text-xl font-bold text-slate-900">{new Date(officialDate).toLocaleDateString('tr-TR')}</p>
+          <p className="text-xl font-bold text-slate-900">{new Date(`${officialDate}T12:00:00`).toLocaleDateString('tr-TR')}</p>
         </div>
       </div>
     )}
@@ -154,6 +155,6 @@ export const PoliceSection = ({ filteredGuests, searchGuest, setSearchGuest, rep
         </div>
       </CardContent>
     </Card>
-    <GuestTable guests={filteredGuests} title={`Polis Bildirimi Listesi · ${reportDate}`} showId={true} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />
+    <GuestTable guests={filteredGuests} title={`Polis Bildirimi Listesi · ${reportDate}`} showId showAmount={false} showEmail={false} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />
   </div>
 );

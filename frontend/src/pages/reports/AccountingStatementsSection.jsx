@@ -10,25 +10,25 @@ const REPORTS = {
   gl_trial_balance: {
     title: 'Genel Muhasebe Mizanı',
     description: 'Yevmiye kayıtlarından hesaplanan borç, alacak ve hesap bakiyeleri',
-    endpoint: '/api/gl/trial-balance',
+    endpoint: '/gl/trial-balance',
     exportName: 'trial_balance',
   },
   income_statement: {
     title: 'Gelir Tablosu',
     description: 'Seçili dönemde muhasebeleşen gelir, gider ve net faaliyet sonucu',
-    endpoint: '/api/gl/statements/income-statement',
+    endpoint: '/gl/statements/income-statement',
     exportName: 'income_statement',
   },
   balance_sheet: {
     title: 'Bilanço',
     description: 'Seçili tarih itibarıyla varlık, yükümlülük ve özkaynak dengesi',
-    endpoint: '/api/gl/statements/balance-sheet',
+    endpoint: '/gl/statements/balance-sheet',
     exportName: 'balance_sheet',
   },
   journal: {
     title: 'Yevmiye Defteri',
     description: 'Onaylanmış muhasebe fişlerinin tarih ve belge sırasındaki dökümü',
-    endpoint: '/api/gl/journal',
+    endpoint: '/gl/journal',
     exportName: 'journal',
   },
 };

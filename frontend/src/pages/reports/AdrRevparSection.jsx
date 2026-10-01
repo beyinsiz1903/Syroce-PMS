@@ -17,15 +17,19 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
   const occupied = metrics.occupied_room_nights ?? s.occupied_rooms ?? 0;
   const capacity = metrics.available_room_nights ?? s.total_rooms ?? 0;
   const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
+  const hasMultipleCurrencies = Object.keys(metrics.adr_by_currency || {}).filter((code) => Number(metrics.adr_by_currency[code]) !== 0).length > 1;
   return (
   <div className="space-y-6" data-testid="section-adr-revpar">
     <SectionHeader title="Oda Gelir Performansı" description="Satılan oda fiyatı ile satılabilir oda başına gelirin anlaşılır karşılaştırması" />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title={`Satılan Oda Başına Ortalama Fiyat (${periodLabel})`} value={metrics.adr} currencyBreakdown={metrics.adr_by_currency} prevValue={pc.prev_month_adr} icon={TrendingUp} color="blue" />
+      <KPICard title={`Satılan Oda Başına Ortalama Fiyat (${periodLabel})`} value={metrics.adr} currencyBreakdown={metrics.adr_by_currency} prevLabel={hasMultipleCurrencies ? 'Para birimi bazında ayrı hesaplanır' : `${previousLabel}: ${formatCurrency(pc.prev_month_adr)}`} icon={TrendingUp} color="blue" />
       <KPICard title={`Satılabilir Oda Başına Gelir (${periodLabel})`} value={metrics.revpar} currencyBreakdown={metrics.revpar_by_currency} icon={BarChart3} color="green" />
       <KPICard title={occupiedLabel} value={occupied} icon={BedDouble} color="purple" />
       <KPICard title={capacityLabel} value={capacity} icon={Hotel} color="cyan" />
     </div>
+    {hasMultipleCurrencies && <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+      Döviz tutarları birbirine eklenmez. Ortalama oda fiyatı ve satılabilir oda başına gelir her para birimi için ayrı hesaplanır.
+    </div>}
     <div className="grid md:grid-cols-2 gap-4">
       <Card className="border-l-4 border-l-sky-500">
         <CardContent className="p-6">

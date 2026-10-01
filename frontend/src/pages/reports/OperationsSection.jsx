@@ -2,9 +2,9 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, DollarSign, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
+import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, ReceiptText, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { COLORS, formatCurrency, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
+import { COLORS, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
 import { MoneyCell } from './GuestSection';
 import { formatCurrency as formatCurrencyValue } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
@@ -126,24 +126,29 @@ export const PaymentsSection = ({
   const {
     t
   } = useTranslation();
+  const chartCurrencies = new Set(paymentData.flatMap(item => Object.entries(item.totals || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const canComparePaymentMethods = chartCurrencies.size <= 1;
+  const chartCurrency = [...chartCurrencies][0] || 'TRY';
   return <div className="space-y-6" data-testid="section-payments">
     <SectionHeader title={t('common.paymentReport')} description={`${reportDate} tarihli geçerli tahsilatlar`} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <KPICard title="Toplam Tahsilat" value={payments.total_paid} currencyBreakdown={payments.totals_by_currency} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen Fatura" value={payments.total_pending} icon={Clock} color="amber" />
-      <KPICard title={t('common.paymentMethod')} value={Object.keys(payments.by_method || {}).length + ' ' + t('common.methodCountSuffix')} icon={CreditCard} color="blue" />
+      <KPICard title={t('common.paymentMethod')} value={Object.keys(payments.totals_by_method_currency || payments.by_method || {}).length + ' ' + t('common.methodCountSuffix')} icon={CreditCard} color="blue" />
     </div>
     <div className="grid md:grid-cols-2 gap-4">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">Ödeme Yöntemi Dağılımı</CardTitle></CardHeader>
         <CardContent>
-          {paymentData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
+          {paymentData.length > 0 && canComparePaymentMethods ? <ResponsiveContainer width="100%" height={300}>
               <PieChart><Pie data={paymentData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" paddingAngle={3} label={({ percent }) => (percent * 100 > 3 ? `${(percent * 100).toFixed(0)}%` : "")}>
                 {paymentData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie><Tooltip /><Legend iconSize={10} wrapperStyle={{
+              </Pie><Tooltip formatter={value => formatCurrencyValue(value, chartCurrency)} /><Legend iconSize={10} wrapperStyle={{
                 fontSize: 11
               }} /></PieChart>
-            </ResponsiveContainer> : <EmptyState icon={CreditCard} message={t('common.noPaymentData')} />}
+            </ResponsiveContainer> : paymentData.length > 0 ? <div className="py-12 text-center text-sm text-slate-600"><AlertTriangle className="mx-auto mb-3 h-8 w-8 text-amber-500" /><p className="font-medium">Farklı para birimleri tek grafikte karşılaştırılmadı.</p><p className="mt-1 text-xs text-slate-500">Doğru tutarlar ödeme detaylarında para birimi bazında gösteriliyor.</p></div> : <EmptyState icon={CreditCard} message={t('common.noPaymentData')} />}
         </CardContent>
       </Card>
       <Card>
@@ -156,7 +161,7 @@ export const PaymentsSection = ({
                 }} />
                   <span className="font-medium text-sm">{p.name}</span>
                 </div>
-                <span className="font-bold text-sm">{formatCurrency(p.value)}</span>
+                <span className="text-right font-bold text-sm">{formatCurrencyBreakdown(p.totals, p.value, p.currency || 'TRY')}</span>
               </div>)}</div> : <p className="text-gray-400 text-center py-12">Veri yok</p>}
         </CardContent>
       </Card>
@@ -201,7 +206,7 @@ export const DepartmentsSection = ({
           <StatBox label="Tamamlanan" value={maint.completed_month || 0} color="green" />
         </div></CardContent>
       </Card>
-      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><DollarSign className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><ReceiptText className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
           <StatBox label="Bekleyen" value={finance.pending_invoices || 0} color="red" />
           <StatBox label="Ödenen" value={finance.paid_invoices_month || 0} color="green" />
@@ -213,11 +218,19 @@ export const DepartmentsSection = ({
 export const FnBSection = ({
   s,
   reportDate
-}) => <div className="space-y-6" data-testid="section-fnb">
+}) => {
+  const shareRows = Object.entries(s.fnb_revenue_by_currency || {}).map(([currency, amount]) => {
+    const total = Number(s.today_revenue_by_currency?.[currency] || 0);
+    return total > 0 ? `${currency}: %${(Number(amount || 0) / total * 100).toFixed(1)}` : null;
+  }).filter(Boolean);
+  const revenueShare = shareRows.length
+    ? shareRows.join(' · ')
+    : s.today_revenue > 0 ? `%${((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1)}` : '%0';
+  return <div className="space-y-6" data-testid="section-fnb">
     <SectionHeader title="Yiyecek ve İçecek Raporu" description="Yiyecek ve içecek gelir ve performans özeti" />
     <div className="grid grid-cols-2 gap-3">
       <KPICard title="Seçili Gün Yiyecek ve İçecek Geliri" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
-      <KPICard title="Toplam Gelir İçi Payı" value={s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) + '%' : '%0'} icon={Activity} color="purple" />
+      <KPICard title="Toplam Gelir İçindeki Payı" value={revenueShare} icon={Activity} color="purple" />
     </div>
     <Card className="border-l-4 border-l-amber-500">
       <CardContent className="p-6 text-center">
@@ -227,8 +240,9 @@ export const FnBSection = ({
         <p className="text-sm text-slate-500 mt-2">{reportDate} tarihli toplam yiyecek ve içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrencyBreakdown(s.today_room_revenue_by_currency, s.today_room_revenue)}</p></div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Toplam Gelirdeki Payı</p><p className="font-bold text-slate-900">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Toplam Gelirdeki Payı</p><p className="font-bold text-slate-900">{revenueShare}</p></div>
         </div>
       </CardContent>
     </Card>
   </div>;
+};

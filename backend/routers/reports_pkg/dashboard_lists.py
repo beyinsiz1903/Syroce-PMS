@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 
@@ -156,6 +157,50 @@ def _normalized_room_status(value) -> str:
         status,
         status if status in {"available", "occupied", "dirty", "maintenance", "out_of_order"} else "out_of_order",
     )
+
+
+def _normalized_nationality(value) -> str:
+    """Return one human-readable bucket for common country aliases.
+
+    Guest imports may contain ISO-2, ISO-3, Turkish/English names or arbitrary
+    casing.  Reports must not count the same nationality as several countries.
+    """
+    raw = " ".join(str(value or "").strip().split())
+    if not raw:
+        return "Belirtilmemiş"
+    key = "".join(
+        char for char in unicodedata.normalize("NFKD", raw.casefold())
+        if not unicodedata.combining(char)
+    ).replace("ı", "i").replace(".", "")
+    aliases = {
+        "tr": "Türkiye", "tur": "Türkiye", "turkiye": "Türkiye", "turkey": "Türkiye",
+        "sa": "Suudi Arabistan", "sau": "Suudi Arabistan", "saudi arabia": "Suudi Arabistan", "suudi arabistan": "Suudi Arabistan",
+        "cn": "Çin", "chn": "Çin", "china": "Çin", "cin": "Çin",
+        "il": "İsrail", "isr": "İsrail", "israel": "İsrail", "israil": "İsrail",
+        "ch": "İsviçre", "che": "İsviçre", "switzerland": "İsviçre", "isvicre": "İsviçre",
+    }
+    return aliases.get(key, raw.upper() if len(raw) in {2, 3} else raw.title())
+
+
+def _normalized_room_type(value) -> str:
+    """Normalize known legacy room-type spelling variants for reporting only."""
+    raw = " ".join(str(value or "Standart").strip().split())
+    folded = "".join(
+        char for char in unicodedata.normalize("NFKD", raw.casefold())
+        if not unicodedata.combining(char)
+    ).replace("ı", "i")
+    key = re.sub(r"[^\w]+", "", folded)
+    aliases = {
+        "standard": "Standart",
+        "standart": "Standart",
+        "jakuziliagacev": "Jakuzili ağaç ev",
+        "jakuzisizagacev": "Jakuzisiz ağaç ev",
+        "dublexagacev": "Dubleks ağaç ev",
+        "dubleksagacev": "Dubleks ağaç ev",
+        "suitodajakuzilivesomineli": "Jakuzili ve şömineli süit",
+        "suitodaoturmaodasijakuzisomine": "Jakuzili ve şömineli süit",
+    }
+    return aliases.get(key, raw)
 
 
 def _date_part(value) -> str:
@@ -1060,7 +1105,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     total_rooms = len(active_rooms)
     room_types = {}
     for r in active_rooms:
-        rt = r.get("room_type", "Standard")
+        rt = _normalized_room_type(r.get("room_type"))
         room_types[rt] = room_types.get(rt, 0) + 1
 
     room_status_counts = {"available": 0, "occupied": 0, "dirty": 0, "maintenance": 0, "out_of_order": 0}
@@ -1179,8 +1224,15 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     )
     today_revenue = round(daily_non_room_revenue + daily_performance["room_revenue"], 2)
     today_revenue_by_currency = effective_day_revenue_breakdown(target_day)
-    today_room_revenue_by_currency = _merge_currency_breakdowns(
-        room_charges_by_day_currency.get(target_day) or accrued_room_by_day_currency.get(target_day, {})
+    posted_room_revenue_by_currency = _merge_currency_breakdowns(room_charges_by_day_currency.get(target_day, {}))
+    accrued_room_revenue_by_currency = _merge_currency_breakdowns(accrued_room_by_day_currency.get(target_day, {}))
+    # Keep the displayed currency breakdown on the exact same basis as the
+    # scalar room revenue/ADR/RevPAR.  Falling back independently made one card
+    # show accrued revenue while its detail rows divided posted revenue.
+    today_room_revenue_by_currency = (
+        posted_room_revenue_by_currency
+        if daily_performance["revenue_source"] == "posted"
+        else accrued_room_revenue_by_currency
     )
     fnb_revenue_by_currency = _currency_breakdown(
         [charge for charge in daily_period_charges if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() in FNB_CHARGE_CATEGORIES],
@@ -1342,7 +1394,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     # konaklayan kişileri (ek misafirler dahil) sayar.
     country_dist = {}
     for guest_row in recent_guests_data:
-        c = guest_row.get("nationality") or "Belirtilmemiş"
+        c = _normalized_nationality(guest_row.get("nationality"))
         country_dist[c] = country_dist.get(c, 0) + 1
 
     blocked_room_ids = {
@@ -1359,12 +1411,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     }
     room_type_occ = {}
     for rt_name in room_types:
-        rt_rooms = [r for r in active_rooms if r.get("room_type", "Standard") == rt_name and str(r.get("id")) not in blocked_room_ids]
+        rt_rooms = [r for r in active_rooms if _normalized_room_type(r.get("room_type")) == rt_name and str(r.get("id")) not in blocked_room_ids]
         rt_room_ids = {str(r.get("id")) for r in rt_rooms if r.get("id")}
         rt_count = len(rt_rooms)
         rt_occ = len(rt_room_ids & occupied_room_ids)
         room_type_occ[rt_name] = {"total": rt_count, "occupied": rt_occ, "occupancy": round((rt_occ / rt_count * 100), 1) if rt_count > 0 else 0, "revenue": 0, "revenue_by_currency": {}}
-    booking_room_types = {str(booking.get("id")): booking.get("room_type", "Standard") for booking in all_bk if booking.get("id")}
+    booking_room_types = {str(booking.get("id")): _normalized_room_type(booking.get("room_type")) for booking in all_bk if booking.get("id")}
     for charge in charges_between(trend_start, report_end):
         rt = booking_room_types.get(str(charge.get("booking_id")))
         if rt in room_type_occ:
@@ -1646,14 +1698,15 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "departures": departures,
             "in_house_guests": len(daily_in_house),
             "room_revenue": analysis_room_revenue,
+            "room_revenue_by_currency": daily_performance["room_revenue_by_currency"],
             "posted_room_revenue": today_room_revenue,
+            "posted_room_revenue_by_currency": posted_room_revenue_by_currency,
             "expected_room_revenue": expected_room_revenue,
             "revenue_source": analysis_revenue_source,
             "adr": analysis_adr,
             "revpar": analysis_revpar,
             "collections": round(total_paid, 2),
             "collections_by_currency": {code: round(amount, 2) for code, amount in payment_totals_by_currency.items()},
-            "posted_room_revenue_by_currency": today_room_revenue_by_currency,
             "adr_by_currency": daily_performance["adr_by_currency"],
             "revpar_by_currency": daily_performance["revpar_by_currency"],
         },

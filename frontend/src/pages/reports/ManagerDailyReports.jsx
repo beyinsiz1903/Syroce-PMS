@@ -90,15 +90,19 @@ const DailyAnalysisReport = ({ analysis }) => (
     <SectionHeader title="Günlük Analiz Raporu" description={`${analysis.date || ''} tarihli operasyon ve finans özeti`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Doluluk" value={`${analysis.occupancy_percentage || 0}%`} icon={BedDouble} color="blue" />
-      <KPICard title={analysis.revenue_source === 'accrued' ? 'Tahakkuk Eden Oda Geliri' : 'İşlenen Oda Geliri'} value={analysis.room_revenue || 0} icon={ReceiptText} color="green" />
-      <KPICard title="Satılan Oda Başına Ortalama Fiyat" value={analysis.adr || 0} icon={BarChart3} color="purple" />
-      <KPICard title="Satılabilir Oda Başına Gelir" value={analysis.revpar || 0} icon={BarChart3} color="cyan" />
+      <KPICard title={analysis.revenue_source === 'accrued' ? 'Tahakkuk Eden Oda Geliri' : 'Folyoya İşlenen Oda Geliri'} value={<CurrencyBreakdown totals={analysis.room_revenue_by_currency} fallback={analysis.room_revenue} />} icon={ReceiptText} color="green" />
+      <KPICard title="Satılan Oda Başına Ortalama Fiyat" value={<CurrencyBreakdown totals={analysis.adr_by_currency} fallback={analysis.adr} />} icon={BarChart3} color="purple" />
+      <KPICard title="Satılabilir Oda Başına Gelir" value={<CurrencyBreakdown totals={analysis.revpar_by_currency} fallback={analysis.revpar} />} icon={BarChart3} color="cyan" />
     </div>
+    {analysis.revenue_source === 'accrued' && <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+      Gün sonu oda tahakkukları tamamlanmadığı için ortalama fiyat ve oda başına gelir, rezervasyonların tahakkuk eden gece tutarından hesaplanır. Folyoya işlenen tutar aşağıda ayrıca gösterilir.
+    </div>}
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
       <div><p className="text-gray-500">Dolu / Toplam oda</p><p className="font-bold text-lg">{analysis.occupied_rooms || 0} / {analysis.total_rooms || 0}</p></div>
       <div><p className="text-gray-500">Giriş / Çıkış</p><p className="font-bold text-lg">{analysis.arrivals || 0} / {analysis.departures || 0}</p></div>
       <div><p className="text-gray-500">Konaklayan misafir</p><p className="font-bold text-lg">{analysis.in_house_guests || 0}</p></div>
       <div><p className="text-gray-500">Tahsilat</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.collections_by_currency} fallback={analysis.collections} /></p></div>
+      <div><p className="text-gray-500">Hesaplamada kullanılan oda geliri</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.room_revenue_by_currency} fallback={analysis.room_revenue} /></p><p className="text-xs text-gray-400">{analysis.revenue_source === 'accrued' ? 'Tahakkuk eden gece tutarı' : 'Folyoya işlenmiş tutar'}</p></div>
       <div><p className="text-gray-500">Folyoya işlenen oda geliri</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.posted_room_revenue_by_currency} fallback={analysis.posted_room_revenue} /></p></div>
       <div><p className="text-gray-500">Satılan oda başına ortalama fiyat</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.adr_by_currency} fallback={analysis.adr} /></p></div>
       <div><p className="text-gray-500">Satılabilir oda başına gelir</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.revpar_by_currency} fallback={analysis.revpar} /></p></div>

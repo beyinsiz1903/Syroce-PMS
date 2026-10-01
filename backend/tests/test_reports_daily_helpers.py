@@ -15,7 +15,9 @@ from routers.reports_pkg.dashboard_lists import (
     _guest_link_active_on,
     _merge_currency_breakdowns,
     _nightly_booking_rate,
+    _normalized_nationality,
     _normalized_room_status,
+    _normalized_room_type,
     _payment_is_collection,
     _payment_is_effective,
     _payment_method,
@@ -237,6 +239,37 @@ def test_room_status_normalization_keeps_report_buckets_consistent():
     assert _normalized_room_status("sale-closed") == "out_of_order"
     assert _normalized_room_status("clean") == "available"
     assert _normalized_room_status("unexpected_legacy_value") == "out_of_order"
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("TR", "Türkiye"),
+        ("tur", "Türkiye"),
+        ("Turkey", "Türkiye"),
+        ("sau", "Suudi Arabistan"),
+        ("CN", "Çin"),
+        ("İSVİÇRE", "İsviçre"),
+        (None, "Belirtilmemiş"),
+    ],
+)
+def test_nationality_normalization_merges_country_aliases(raw_value, expected):
+    assert _normalized_nationality(raw_value) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("standard", "Standart"),
+        ("standart", "Standart"),
+        ("Jakuzili ağaçev", "Jakuzili ağaç ev"),
+        ("Jakuzisizağaç ev", "Jakuzisiz ağaç ev"),
+        ("Dublex AğaçEv", "Dubleks ağaç ev"),
+        ("Suit Oda + Oturma Odası + Jakuzi + Şömine", "Jakuzili ve şömineli süit"),
+    ],
+)
+def test_room_type_normalization_merges_legacy_names(raw_value, expected):
+    assert _normalized_room_type(raw_value) == expected
 
 
 def test_report_date_rejects_invalid_values_instead_of_returning_server_error():

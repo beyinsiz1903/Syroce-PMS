@@ -4,22 +4,29 @@ import { Users, ArrowUpRight, ArrowDownRight, ArrowLeftRight, CheckCircle2 } fro
 import { KPICard, EmptyState } from './ReportHelpers';
 import { MoneyCell } from './GuestSection';
 import { SectionHeader } from './ReportHelpers';
+export const reservationCount = rows => {
+  const bookingIds = new Set((rows || []).map(row => row.booking_id).filter(Boolean));
+  return bookingIds.size || (rows || []).length;
+};
 const FrontOfficeSection = ({
   s,
   todayArrivals,
   todayDepartures,
   reportDate,
   exchangeRates
-}) => <div className="space-y-6" data-testid="section-front-office">
+}) => {
+  const arrivalReservations = reservationCount(todayArrivals);
+  const departureReservations = reservationCount(todayDepartures);
+  return <div className="space-y-6" data-testid="section-front-office">
     <SectionHeader title="Giriş / Çıkış Raporu" description={`${reportDate} tarihli giriş, çıkış ve konaklama hareketleri`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Beklenen Giriş" value={s.arrivals || 0} icon={ArrowUpRight} color="blue" />
-      <KPICard title="Beklenen Çıkış" value={s.departures || 0} icon={ArrowDownRight} color="amber" />
+      <KPICard title="Giriş Rezervasyonu" value={arrivalReservations} icon={ArrowUpRight} color="blue" />
+      <KPICard title="Çıkış Rezervasyonu" value={departureReservations} icon={ArrowDownRight} color="amber" />
       <KPICard title="Otelde" value={s.in_house || 0} icon={Users} color="green" />
       <KPICard title="Müsait Oda" value={(s.total_rooms || 0) - (s.occupied_rooms || 0)} icon={CheckCircle2} color="cyan" />
     </div>
     {todayArrivals.length > 0 && <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Beklenen / Gerçekleşen Girişler ({todayArrivals.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Girişler ({arrivalReservations} rezervasyon · {todayArrivals.length} misafir)</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-sky-50"><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Çıkış</th><th className="text-right py-2 px-3 text-xs font-semibold text-sky-700">Tutar</th></tr></thead>
@@ -28,7 +35,7 @@ const FrontOfficeSection = ({
         </CardContent>
       </Card>}
     {todayDepartures.length > 0 && <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Beklenen / Gerçekleşen Çıkışlar ({todayDepartures.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Çıkışlar ({departureReservations} rezervasyon · {todayDepartures.length} misafir)</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-amber-50"><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Durum</th><th className="text-right py-2 px-3 text-xs font-semibold text-amber-700">Tutar</th></tr></thead>
@@ -38,4 +45,5 @@ const FrontOfficeSection = ({
       </Card>}
     {todayArrivals.length === 0 && todayDepartures.length === 0 && <Card><CardContent className="py-12"><EmptyState icon={ArrowLeftRight} message="Seçili tarih için giriş/çıkış hareketi yok" /></CardContent></Card>}
   </div>;
+};
 export default FrontOfficeSection;
