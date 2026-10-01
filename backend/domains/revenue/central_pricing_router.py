@@ -97,27 +97,49 @@ async def _chain_context(current_user) -> tuple[str, list[dict]]:
 
 async def _property_room_rates(chain_id: str, property_doc: dict) -> dict:
     tenant_id = property_doc["tenant_id"]
+    room_types = await system_db.room_types.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "name": 1, "room_type": 1, "code": 1},
+    ).to_list(1000)
+    room_type_names = {
+        str(row.get("id")): str(row.get("name") or row.get("room_type") or row.get("code") or row.get("id"))
+        for row in room_types
+        if row.get("id")
+    }
     rooms = await system_db.rooms.find(
         {"tenant_id": tenant_id, "is_active": {"$ne": False}},
         {"_id": 0, "room_type": 1, "type": 1, "base_price": 1, "base_rate": 1},
     ).to_list(20000)
-    grouped: dict[str, dict] = defaultdict(lambda: {"count": 0, "rates": []})
+    grouped: dict[str, dict] = defaultdict(lambda: {"count": 0, "rates": [], "label": "", "unresolved": False})
     for room in rooms:
-        room_type = str(room.get("room_type") or room.get("type") or "Standard")
-        grouped[room_type]["count"] += 1
+        raw_room_type = str(room.get("room_type") or room.get("type") or "Standart").strip()
+        resolved_from_catalog = raw_room_type in room_type_names
+        resolved = room_type_names.get(raw_room_type, raw_room_type)
+        try:
+            uuid.UUID(resolved)
+            unresolved = True
+            label = "Tanımsız oda tipi"
+        except (ValueError, TypeError, AttributeError):
+            unresolved = False
+            label = resolved
+        key = label.casefold()
+        if not grouped[key]["label"] or resolved_from_catalog:
+            grouped[key]["label"] = label
+        grouped[key]["unresolved"] = grouped[key]["unresolved"] or unresolved
+        grouped[key]["count"] += 1
         candidate = room.get("base_price", room.get("base_rate"))
         if candidate is not None:
-            grouped[room_type]["rates"].append(_money(candidate))
+            grouped[key]["rates"].append(_money(candidate))
 
     directives = await system_db.central_pricing_rates.find(
         {"chain_id": chain_id, "tenant_id": tenant_id},
         {"_id": 0},
     ).to_list(500)
-    directive_by_type = {row["room_type"]: row for row in directives}
+    directive_by_type = {str(row["room_type"]).strip().casefold(): row for row in directives}
     all_room_types = sorted(set(grouped) | set(directive_by_type))
     room_rates = []
     for room_type in all_room_types:
-        room_group = grouped.get(room_type, {"count": 0, "rates": []})
+        room_group = grouped.get(room_type, {"count": 0, "rates": [], "label": "", "unresolved": False})
         directive = directive_by_type.get(room_type, {})
         base_rate = directive.get("current_rate")
         if base_rate is None:
@@ -125,15 +147,20 @@ async def _property_room_rates(chain_id: str, property_doc: dict) -> dict:
             base_rate = _money(sum(rates) / len(rates)) if rates else 0.0
         room_rates.append(
             {
-                "room_type": room_type,
+                "room_type": room_group.get("label") or directive.get("room_type") or room_type,
                 "base_rate": _money(base_rate),
                 "count": room_group["count"],
                 "currency": directive.get("currency", "TRY"),
                 "effective_from": directive.get("effective_from"),
                 "provider_sync_status": directive.get("provider_sync_status", "not_requested"),
+                "data_quality": "unresolved_room_type" if room_group.get("unresolved") else ("missing_rate" if _money(base_rate) <= 0 else "ok"),
             }
         )
-    return {**property_doc, "room_rates": room_rates}
+    return {
+        **property_doc,
+        "room_rates": room_rates,
+        "data_quality_warnings": sum(1 for row in room_rates if row["data_quality"] != "ok"),
+    }
 
 
 @router.get("/rates")

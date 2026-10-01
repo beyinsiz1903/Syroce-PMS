@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { CheckCircle2, XCircle, AlertTriangle, Info, RefreshCw } from 'lucide-react';
 
 export const REC_STYLES = {
@@ -43,5 +44,15 @@ export const EmptyState = ({ text }) => (
   <div className="flex flex-col items-center justify-center py-20 text-gray-400">
     <Info className="w-10 h-10 mb-3" />
     <p className="text-sm text-center max-w-md">{text}</p>
+  </div>
+);
+
+export const ErrorState = ({ text, onRetry }) => (
+  <div className="flex flex-col items-center justify-center py-20 text-red-700">
+    <AlertTriangle className="w-10 h-10 mb-3 text-red-500" />
+    <p className="text-sm text-center max-w-md">{text}</p>
+    <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+      <RefreshCw className="w-4 h-4 mr-2" /> Yeniden dene
+    </Button>
   </div>
 );

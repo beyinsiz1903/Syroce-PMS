@@ -11,12 +11,14 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import AITabs from '@/components/AITabs';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
 
 const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [recommendation, setRecommendation] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [roomType, setRoomType] = useState('Standard');
   const [targetDate, setTargetDate] = useState(new Date().toISOString().split('T')[0]);
   const pricingCurrency = recommendation?.currency || tenant?.currency || cachedTenantCurrency();
@@ -24,11 +26,14 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
 
   const loadRecommendation = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await axios.get(`/pricing/ai-recommendation?room_type=${roomType}&target_date=${targetDate}`);
       setRecommendation(response.data);
-    } catch (error) {
+    } catch {
       console.error('Pricing recommendation yüklenemedi');
+      setRecommendation(null);
+      setLoadError('Fiyat önerisi yüklenemedi. Herhangi bir fiyat değişikliği yapılmadı.');
     } finally {
       setLoading(false);
     }
@@ -39,6 +44,10 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
   }, [loadRecommendation]);
 
   const handleUpdateRate = async () => {
+    const confirmed = await confirmDialog({
+      message: `${roomType} oda tipi için ${targetDate} tarihindeki fiyat ${money(recommendation.recommended_price)} olarak kaydedilsin mi?`
+    });
+    if (!confirmed) return;
     try {
       const resp = await axios.post('/rms/update-rate', {
         room_type: roomType,
@@ -54,10 +63,16 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
         toast.info(data.message || `Fiyat ${money(recommendation.recommended_price)} yerel olarak kaydedildi. Gerçek OTA dağıtımı için Toplu Fiyat/Envanter ekranını kullanın.`);
       }
       loadRecommendation();
-    } catch (error) {
+    } catch {
       toast.error('Fiyat uygulanamadı. Lütfen tekrar deneyin veya kanal yapılandırmasını kontrol edin.');
     }
   };
+  const translateRule = rule => String(rule || '')
+    .replace('Dusuk doluluk', 'Düşük doluluk')
+    .replace('talep carpani', 'talep çarpanı')
+    .replace('Yaklasan tarih', 'Yaklaşan tarih')
+    .replace('aciliyet', 'yakın tarih')
+    .replace('rakip ayari uygulanmadi', 'rakip ayarı uygulanmadı');
 
   return (
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="ai_revenue_autopilot">
@@ -111,6 +126,13 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
             <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
             <p className="text-sm font-medium">Hesaplanıyor...</p>
           </div>
+        ) : loadError ? (
+          <Card className="border-red-200 bg-red-50/40">
+            <CardContent className="p-6 text-center">
+              <p className="text-sm text-red-800 mb-3">{loadError}</p>
+              <Button variant="outline" size="sm" onClick={loadRecommendation}>Tekrar Dene</Button>
+            </CardContent>
+          </Card>
         ) : recommendation && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
@@ -207,7 +229,7 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                       {recommendation.applied_rules.map((rule, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-sm text-slate-600">
                           <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                          <span>{rule}</span>
+                          <span>{translateRule(rule)}</span>
                         </li>
                       ))}
                     </ul>
@@ -239,7 +261,7 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                           recommendation.demand_level === 'medium' ? 'bg-blue-100 text-blue-700' :
                           'bg-emerald-100 text-emerald-700'
                         }`}>
-                          {recommendation.demand_level}
+                          {({ very_high: 'Çok yüksek', high: 'Yüksek', medium: 'Orta', low: 'Düşük' })[recommendation.demand_level] || recommendation.demand_level}
                         </Badge>
                       </div>
                     </div>

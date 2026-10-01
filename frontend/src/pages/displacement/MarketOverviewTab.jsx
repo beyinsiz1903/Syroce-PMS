@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Building2, DollarSign, Percent, BarChart3 } from 'lucide-react';
 import { RISK_COLORS } from './helpers';
-import { LoadingState, EmptyState, MetricCard } from './shared';
+import { LoadingState, EmptyState, ErrorState, MetricCard } from './shared';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 const MarketOverviewTab = ({
@@ -19,22 +19,27 @@ const MarketOverviewTab = ({
   } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [days, setDays] = useState(14);
   const fetch = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const res = await axios.get(`/displacement/market-overview?days=${days}`);
       setData(res.data);
     } catch (e) {
       console.error('Market overview error:', e);
+      setData(null);
+      setError(t('displacement.marketLoadError', 'Pazar verileri yüklenemedi. Lütfen yeniden deneyin.'));
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, t]);
   useEffect(() => {
     fetch();
   }, [fetch]);
   if (loading) return <LoadingState text={t('displacement.loadingMarket', 'Loading market data...')} />;
+  if (error) return <ErrorState text={error} onRetry={fetch} />;
   if (!data) return <EmptyState text={t('displacement.noData', 'No data available')} />;
   const currency = data.currency || tenant?.currency || cachedTenantCurrency();
   return <div className="space-y-6">
