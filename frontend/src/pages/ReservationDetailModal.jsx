@@ -114,7 +114,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [propertyTransferLoading, setPropertyTransferLoading] = useState(false);
   const [propertyTransferSaving, setPropertyTransferSaving] = useState(false);
   const [propertyTransferOptions, setPropertyTransferOptions] = useState([]);
-  const [propertyTransferForm, setPropertyTransferForm] = useState({ targetPropertyId: '', roomType: '', reason: '' });
+  const [propertyTransferForm, setPropertyTransferForm] = useState({ targetPropertyId: '', roomType: '', reason: '', financialHandling: 'reject' });
   const loadGenerationRef = useRef(0);
   const tabsListRef = useRef(null);
   const openedAtRef = useRef(Date.now());
@@ -380,7 +380,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     setPropertyTransferOpen(true);
     setPropertyTransferLoading(true);
     setPropertyTransferOptions([]);
-    setPropertyTransferForm({ targetPropertyId: '', roomType: '', reason: '' });
+    setPropertyTransferForm({ targetPropertyId: '', roomType: '', reason: '', financialHandling: 'reject' });
     try {
       const response = await axios.post('/platform/multi-property/search-availability', {
         check_in: dateInputValue(booking?.check_in),
@@ -395,7 +395,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         const preferredRoomType = first.room_types?.includes(currentRoomType)
           ? currentRoomType
           : (first.room_types?.[0] || '');
-        setPropertyTransferForm({ targetPropertyId: first.property_id, roomType: preferredRoomType, reason: '' });
+        setPropertyTransferForm({ targetPropertyId: first.property_id, roomType: preferredRoomType, reason: '', financialHandling: 'reject' });
       }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Zincir otellerinin müsaitliği alınamadı');
@@ -420,17 +420,20 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         target_property_id: propertyTransferForm.targetPropertyId,
         target_room_type: propertyTransferForm.roomType,
         reason: propertyTransferForm.reason.trim(),
+        financial_handling: propertyTransferForm.financialHandling,
       });
       const targetName = response.data?.target_property_name || 'hedef tesis';
       const roomNumber = response.data?.target_room_number;
-      toast.success(`Rezervasyon ${targetName}${roomNumber ? ` · Oda ${roomNumber}` : ''} tesisine aktarıldı`);
+      const settlementMessage = response.data?.settlement_id ? ' · Mahsuplaşma kaydı oluşturuldu' : '';
+      toast.success(`Rezervasyon ${targetName}${roomNumber ? ` · Oda ${roomNumber}` : ''} tesisine aktarıldı${settlementMessage}`);
       setPropertyTransferOpen(false);
       if (typeof onOperationComplete === 'function') {
         await onOperationComplete({ bookingId: booking.id, operation: 'property_transferred' });
       }
       handleClose();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Tesis değişikliği tamamlanamadı');
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : detail?.message || 'Tesis değişikliği tamamlanamadı');
     } finally {
       setPropertyTransferSaving(false);
     }
@@ -588,6 +591,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             </Badge>
             {booking?.group_booking_id && (
               <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px] h-5 px-2">Grup</Badge>
+            )}
+            {booking?.source_property_name && (
+              <Badge className="bg-sky-50 text-sky-800 border border-sky-200 text-[11px] h-5 px-2 hidden md:inline-flex" data-testid="transfer-origin-badge">
+                <Repeat2 className="w-3 h-3 mr-1" /> {booking.source_property_name} tesisinden geldi
+              </Badge>
             )}
             {pricingReconciliationRequired ? (
               <Badge className="bg-amber-50 text-amber-800 border border-amber-300 text-[11px] h-5 px-2 hidden md:inline-flex">
@@ -1257,8 +1265,24 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   onChange={(event) => setPropertyTransferForm((current) => ({ ...current, reason: event.target.value }))}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-finance">Kaynak tesiste tahsilat varsa</Label>
+                <select
+                  id="property-transfer-finance"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={propertyTransferForm.financialHandling}
+                  disabled={propertyTransferSaving}
+                  onChange={(event) => setPropertyTransferForm((current) => ({ ...current, financialHandling: event.target.value }))}
+                >
+                  <option value="reject">Transferi durdur; önce iade/düzeltme yap</option>
+                  <option value="retain_and_settle">Tahsilatı kaynakta tut; zincir içi mahsuplaşma oluştur</option>
+                </select>
+                <p className="text-xs leading-5 text-slate-500">
+                  Mahsuplaşma seçilirse nakit ilk tesiste kalır; hizmeti verecek hedef tesis için aynı transfer numarasıyla alacak/borç mutabakatı açılır.
+                </p>
+              </div>
               <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                Bu doğrudan zincir içi işlemdir; karşı otelden ayrıca pazar ilanı veya onay beklenmez.
+                Hedef tesise bildirim gider; kaynak tesis, hedef tesis, transfer nedeni ve varsa mahsuplaşma rezervasyon geçmişine kaydedilir.
               </p>
             </div>
           )}

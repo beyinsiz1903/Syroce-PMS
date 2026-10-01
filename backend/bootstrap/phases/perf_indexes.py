@@ -88,6 +88,24 @@ async def ensure_performance_indexes():
         ("audit_logs", [("tenant_id", 1), ("action", 1), ("timestamp", -1)], "idx_audit_log_action", {}),
         ("tenants", [("chain_id", 1), ("parent_tenant_id", 1)], "idx_tenant_chain", {}),
         (
+            "reservation_transfers",
+            [("source_property", 1), ("target_property", 1), ("transferred_at", -1)],
+            "idx_reservation_transfer_chain_timeline",
+            {},
+        ),
+        (
+            "chain_transfer_settlements",
+            [("transfer_id", 1)],
+            "ux_chain_transfer_settlement_transfer",
+            {"unique": True},
+        ),
+        (
+            "chain_transfer_settlements",
+            [("chain_id", 1), ("status", 1), ("created_at", -1)],
+            "idx_chain_transfer_settlement_status",
+            {},
+        ),
+        (
             "gl_intercompany_rules",
             [("chain_id", 1), ("pair_key", 1)],
             "idx_gl_intercompany_chain_pair",

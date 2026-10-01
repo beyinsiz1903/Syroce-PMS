@@ -8,6 +8,7 @@ Platform Scaling Router - Unified API for all enterprise scaling modules:
 
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
@@ -37,8 +38,13 @@ from modules.platform_scaling.revenue_ml import (
     RevenueMLDashboard,
 )
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_op  # v73 Bug DI
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_op,  # v73 Bug DI
+)
+from modules.pms_core.role_permission_service import (
+    require_module as require_module_v101,  # v101 DW
+)
 from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, encrypt_user_doc
 
 router = APIRouter(prefix="/api/platform", tags=["platform-scaling"])
@@ -92,6 +98,13 @@ class TransferReservationReq(BaseModel):
     target_property_id: str
     target_room_type: str | None = None
     reason: str | None = None
+    financial_handling: Literal["reject", "retain_and_settle"] = "reject"
+
+
+class ReconcileTransferSettlementReq(BaseModel):
+    method: Literal["bank_transfer", "intercompany_netting", "manual_journal"]
+    reference: str = Field(min_length=2, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
 
 
 class GlobalRateAdjustReq(BaseModel):
@@ -333,16 +346,138 @@ async def api_transfer_reservation(
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Transfer reservation to another property."""
+    if req.financial_handling == "retain_and_settle":
+        # Keeping money in the source hotel creates a real inter-property
+        # payable/receivable.  A normal front-desk transfer must not be able to
+        # choose that accounting policy without payment authority.
+        RolePermissionService().enforce_user_permission(current_user, "post_payment")
     result = await crs.transfer_reservation(
         current_user,
         req.booking_id,
         req.target_property_id,
         req.reason,
         req.target_room_type,
+        req.financial_handling,
     )
     if not result.get("success"):
+        if result.get("error_code") == "financial_handling_required":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": result["error_code"],
+                    "message": result.get("error"),
+                    "payment_totals": result.get("payment_totals") or {},
+                },
+            )
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
+
+
+@router.get("/multi-property/transfers")
+async def api_chain_transfers(
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the verified chain's reservation-transfer and settlement trail."""
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    allowed_ids = {tenant_id_from_document(prop) for prop in properties if tenant_id_from_document(prop)}
+    safe_limit = max(1, min(limit, 500))
+    sysdb = get_system_db()
+    transfers = await (
+        sysdb.reservation_transfers.find(
+            {
+                "source_property": {"$in": list(allowed_ids)},
+                "target_property": {"$in": list(allowed_ids)},
+            },
+            {"_id": 0, "original_booking": 0},
+        )
+        .sort("transferred_at", -1)
+        .limit(safe_limit)
+        .to_list(safe_limit)
+    )
+    settlements = await sysdb.chain_transfer_settlements.find(
+        {"transfer_id": {"$in": [row.get("id") for row in transfers if row.get("id")]}},
+        {"_id": 0},
+    ).to_list(safe_limit)
+    settlement_by_transfer = {row.get("transfer_id"): row for row in settlements}
+    for transfer in transfers:
+        transfer["settlement"] = settlement_by_transfer.get(transfer.get("id"))
+    return {"count": len(transfers), "transfers": transfers}
+
+
+@router.post("/multi-property/transfer-settlements/{settlement_id}/reconcile")
+async def api_reconcile_transfer_settlement(
+    settlement_id: str,
+    req: ReconcileTransferSettlementReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),
+):
+    """Close a chain transfer payable/receivable with an auditable reference."""
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    allowed_ids = {tenant_id_from_document(prop) for prop in properties if tenant_id_from_document(prop)}
+    sysdb = get_system_db()
+    settlement = await sysdb.chain_transfer_settlements.find_one(
+        {
+            "id": settlement_id,
+            "source_property_id": {"$in": list(allowed_ids)},
+            "target_property_id": {"$in": list(allowed_ids)},
+        },
+        {"_id": 0},
+    )
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Zincir içi mahsuplaşma kaydı bulunamadı")
+    if settlement.get("status") != "open":
+        raise HTTPException(status_code=409, detail="Bu mahsuplaşma daha önce kapatılmış")
+
+    now = datetime.now(UTC).isoformat()
+    reconciliation = {
+        "method": req.method,
+        "reference": req.reference.strip(),
+        "note": (req.note or "").strip(),
+        "reconciled_by": current_user.id,
+        "reconciled_at": now,
+    }
+    result = await sysdb.chain_transfer_settlements.update_one(
+        {"id": settlement_id, "status": "open"},
+        {
+            "$set": {
+                "status": "reconciled",
+                "accounting_status": "reconciled",
+                "reconciliation": reconciliation,
+                "updated_at": now,
+            }
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Mahsuplaşma bu sırada başka bir kullanıcı tarafından kapatıldı")
+    await sysdb.reservation_transfers.update_one(
+        {"id": settlement.get("transfer_id")},
+        {"$set": {"settlement_status": "reconciled", "updated_at": now}},
+    )
+
+    activity_details = {
+        "settlement_id": settlement_id,
+        "transfer_id": settlement.get("transfer_id"),
+        **reconciliation,
+        "currency_lines": settlement.get("currency_lines") or [],
+    }
+    for tenant_id, booking_id in (
+        (settlement.get("source_property_id"), settlement.get("source_booking_id")),
+        (settlement.get("target_property_id"), settlement.get("target_booking_id")),
+    ):
+        if tenant_id and booking_id:
+            await sysdb.reservation_activity_log.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "booking_id": booking_id,
+                    "action": "property_transfer_settlement_reconciled",
+                    "actor": getattr(current_user, "name", None) or getattr(current_user, "email", None) or current_user.id,
+                    "details": activity_details,
+                    "created_at": now,
+                }
+            )
+    return {"success": True, "settlement_id": settlement_id, "status": "reconciled", "reconciliation": reconciliation}
 
 
 @router.get("/multi-property/revenue")

@@ -3,8 +3,10 @@ Multi-Property Platform - Central reservation service, central revenue managemen
 multi-property dashboard, and global alert system.
 """
 
+import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
@@ -19,6 +21,35 @@ from security.encrypted_lookup import decrypt_booking_doc
 # rejects sibling-tenant reads; the central-office service is the audited,
 # chain-scoped exception.
 db = get_system_db()
+logger = logging.getLogger(__name__)
+
+
+def _money(value: object) -> Decimal:
+    try:
+        return Decimal(str(value or 0)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0.00")
+
+
+def _payment_totals(payments: list[dict], fallback_currency: str) -> dict[str, float]:
+    totals: dict[str, Decimal] = {}
+    for payment in payments:
+        currency = str(payment.get("currency") or fallback_currency or "TRY").upper()
+        totals[currency] = totals.get(currency, Decimal("0.00")) + _money(payment.get("amount"))
+    return {
+        currency: float(amount)
+        for currency, amount in sorted(totals.items())
+        if amount > 0
+    }
+
+
+def _property_name(property_doc: dict, fallback: str) -> str:
+    return str(
+        property_doc.get("property_name")
+        or property_doc.get("hotel_name")
+        or property_doc.get("name")
+        or fallback
+    )
 
 
 async def _properties_for_central_user(current_user: User) -> tuple[str, list[dict]]:
@@ -190,6 +221,7 @@ class CentralReservationService:
         target_property_id: str,
         reason: str | None = None,
         target_room_type: str | None = None,
+        financial_handling: str = "reject",
     ) -> dict[str, Any]:
         """Move a future reservation to a verified sibling property safely.
 
@@ -212,26 +244,62 @@ class CentralReservationService:
         if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed"}:
             return {"success": False, "error": "Yalnız giriş yapılmamış aktif rezervasyonlar başka tesise aktarılabilir"}
 
+        source_property = next((prop for prop in properties if tenant_id_from_document(prop) == tenant_id), {})
+        target_property = next((prop for prop in properties if tenant_id_from_document(prop) == target_property_id), {})
+        source_property_name = _property_name(source_property, tenant_id)
+        target_property_name = _property_name(target_property, target_property_id)
+
         folios = await db.folios.find(
             {"tenant_id": tenant_id, "booking_id": booking_id},
             {"_id": 0, "id": 1},
         ).to_list(100)
         folio_ids = [folio.get("id") for folio in folios if folio.get("id")]
-        financial_scope: list[dict[str, Any]] = [{"booking_id": booking_id}]
+        # Historical deposit/import paths may use reservation_id rather than
+        # booking_id.  Missing that alias allowed a paid reservation to move
+        # without a settlement trail.
+        financial_scope: list[dict[str, Any]] = [
+            {"booking_id": booking_id},
+            {"reservation_id": booking_id},
+        ]
         if folio_ids:
             financial_scope.append({"folio_id": {"$in": folio_ids}})
-        financial_activity = 0
-        for collection_name in ("payments", "folio_charges", "extra_charges"):
-            financial_activity += await getattr(db, collection_name).count_documents({
-                "tenant_id": tenant_id,
-                "$or": financial_scope,
-                "voided": {"$ne": True},
-                "status": {"$nin": ["cancelled", "voided"]},
-            })
-        if financial_activity:
+        active_financial_query = {
+            "tenant_id": tenant_id,
+            "$or": financial_scope,
+            "voided": {"$ne": True},
+            "status": {"$nin": ["cancelled", "voided", "refunded", "reversed"]},
+        }
+        payment_count = await db.payments.count_documents(active_financial_query)
+        charge_count = 0
+        for collection_name in ("folio_charges", "extra_charges"):
+            charge_count += await getattr(db, collection_name).count_documents(active_financial_query)
+        payments = []
+        if payment_count:
+            payments = await db.payments.find(
+                active_financial_query,
+                {"_id": 0, "id": 1, "amount": 1, "currency": 1, "method": 1, "reference": 1},
+            ).to_list(1000)
+        payment_totals = _payment_totals(payments, str(booking.get("currency") or "TRY"))
+
+        # Charges mean service/revenue has already been recognised by the
+        # source hotel.  That is not a simple prepayment transfer and must be
+        # corrected there before the reservation can move.
+        if charge_count:
             return {
                 "success": False,
-                "error": "Bu rezervasyonda finansal hareket var. Tesis değişikliğinden önce folyo ve ödemeleri kaynak tesiste kapatın veya iade edin.",
+                "error": "Bu rezervasyonda tahakkuk veya ek ücret var. Tesis değişikliğinden önce kaynak tesiste finansal düzeltme yapılmalıdır.",
+            }
+        if payment_count and financial_handling != "retain_and_settle":
+            return {
+                "success": False,
+                "error_code": "financial_handling_required",
+                "error": "Kaynak tesiste tahsilat var. İade edin veya tahsilatı kaynak tesiste tutup zincir içi mahsuplaşma oluşturun.",
+                "payment_totals": payment_totals,
+            }
+        if payment_count and not payment_totals:
+            return {
+                "success": False,
+                "error": "Tahsilat kayıtlarının para birimi veya tutarı doğrulanamadı; transfer uygulanmadı.",
             }
 
         requested_room_type = str(target_room_type or booking.get("room_type") or "").strip()
@@ -249,6 +317,7 @@ class CentralReservationService:
             return {"success": False, "error": "Hedef tesiste seçilen oda tipinde aktif oda bulunamadı"}
 
         transfer_id = str(uuid.uuid4())
+        settlement_id = str(uuid.uuid4()) if payment_totals else None
         target_booking_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
         target_booking = None
@@ -257,6 +326,8 @@ class CentralReservationService:
             "_id", "id", "tenant_id", "room_id", "room_number", "guest_id", "company_id",
             "folio_id", "cancelled_at", "cancelled_by", "cancellation_reason", "transfer_id",
             "transferred_from", "transferred_to_tenant_id", "transferred_to_booking_id",
+            "source_booking_id", "source_tenant_id", "source_property_id", "source_property_name",
+            "transfer_financial_handling", "transfer_settlement_id", "transferred_prepayments",
         }
         booking_payload = {key: value for key, value in booking.items() if key not in excluded_fields}
         for room in rooms:
@@ -270,9 +341,17 @@ class CentralReservationService:
                 "status": booking.get("status") or "confirmed",
                 "source_booking_id": booking_id,
                 "source_tenant_id": tenant_id,
+                "source_property_id": tenant_id,
+                "source_property_name": source_property_name,
                 "property_transfer_status": "received",
                 "transfer_id": transfer_id,
                 "transfer_reason": (reason or "").strip(),
+                "transfer_financial_handling": "retain_and_settle" if payment_totals else "no_financial_activity",
+                "transfer_settlement_id": settlement_id,
+                "transferred_prepayments": [
+                    {"currency": currency, "amount": amount}
+                    for currency, amount in payment_totals.items()
+                ],
                 "created_at": now,
                 "updated_at": now,
             }
@@ -286,16 +365,26 @@ class CentralReservationService:
 
         transfer_record = {
             "id": transfer_id,
+            "guest_name": booking.get("guest_name"),
+            "confirmation_number": booking.get("confirmation_number") or booking.get("reservation_number"),
             "booking_id": booking_id,
             "source_booking_id": booking_id,
             "target_booking_id": target_booking_id,
             "source_property": tenant_id,
+            "source_property_name": source_property_name,
             "target_property": target_property_id,
+            "target_property_name": target_property_name,
             "reason": (reason or "").strip(),
             "status": "completed",
             "transfer_type": "chain_direct",
             "transferred_by": current_user.id,
             "transferred_at": now,
+            "financial_handling": "retain_and_settle" if payment_totals else "no_financial_activity",
+            "payment_totals": payment_totals,
+            "collection_property_id": tenant_id if payment_totals else None,
+            "service_property_id": target_property_id,
+            "settlement_id": settlement_id,
+            "settlement_status": "open" if payment_totals else "not_required",
             "original_booking": {k: v for k, v in booking.items() if k != "_id"},
         }
         source_update = await db.bookings.update_one(
@@ -307,6 +396,8 @@ class CentralReservationService:
                     "transferred_to_tenant_id": target_property_id,
                     "transferred_to_booking_id": target_booking_id,
                     "transfer_id": transfer_id,
+                    "transfer_financial_handling": "retain_and_settle" if payment_totals else "no_financial_activity",
+                    "transfer_settlement_id": settlement_id,
                     "cancellation_reason": "Zincir içi tesis değişikliği",
                     "cancelled_at": now,
                     "cancelled_by": current_user.id,
@@ -322,17 +413,130 @@ class CentralReservationService:
         await db.room_night_locks.delete_many({"booking_id": booking_id, "tenant_id": tenant_id})
         await db.reservation_transfers.insert_one(transfer_record)
 
-        target_property = next((prop for prop in properties if tenant_id_from_document(prop) == target_property_id), {})
+        if settlement_id:
+            await db.chain_transfer_settlements.insert_one(
+                {
+                    "id": settlement_id,
+                    "transfer_id": transfer_id,
+                    "chain_id": source_property.get("chain_id") or target_property.get("chain_id"),
+                    "source_property_id": tenant_id,
+                    "source_property_name": source_property_name,
+                    "target_property_id": target_property_id,
+                    "target_property_name": target_property_name,
+                    "collection_property_id": tenant_id,
+                    "service_property_id": target_property_id,
+                    "source_booking_id": booking_id,
+                    "target_booking_id": target_booking_id,
+                    "currency_lines": [
+                        {
+                            "currency": currency,
+                            "amount": amount,
+                            "source_position": "payable",
+                            "target_position": "receivable",
+                        }
+                        for currency, amount in payment_totals.items()
+                    ],
+                    "source_payment_ids": [payment.get("id") for payment in payments if payment.get("id")],
+                    "status": "open",
+                    "accounting_status": "pending_reconciliation",
+                    "created_by": current_user.id,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+
+        activity_details = {
+            "transfer_id": transfer_id,
+            "source_property_id": tenant_id,
+            "source_property_name": source_property_name,
+            "target_property_id": target_property_id,
+            "target_property_name": target_property_name,
+            "source_booking_id": booking_id,
+            "target_booking_id": target_booking_id,
+            "reason": (reason or "").strip(),
+            "payment_totals": payment_totals,
+            "settlement_id": settlement_id,
+        }
+        for activity_tenant_id, activity_booking_id, action in (
+            (tenant_id, booking_id, "property_transfer_sent"),
+            (target_property_id, target_booking_id, "property_transfer_received"),
+        ):
+            await db.reservation_activity_log.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": activity_tenant_id,
+                    "booking_id": activity_booking_id,
+                    "action": action,
+                    "actor": getattr(current_user, "name", None) or getattr(current_user, "email", None) or current_user.id,
+                    "details": activity_details,
+                    "created_at": now,
+                }
+            )
+
+        notifications = [
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": target_property_id,
+                "user_id": None,
+                "type": "cross_property_transfer",
+                "title": "Zincirden yeni rezervasyon geldi",
+                "message": f"{source_property_name} tesisinden {booking.get('guest_name') or 'bir misafir'} için rezervasyon aktarıldı.",
+                "priority": "high",
+                "target_roles": ["admin", "supervisor", "front_desk", "finance"],
+                "read": False,
+                "action_url": "/app/reservation-calendar",
+                "related_entity": "booking",
+                "related_id": target_booking_id,
+                "metadata": activity_details,
+                "created_at": now,
+            }
+        ]
+        if settlement_id:
+            for finance_tenant_id, counterparty_name in (
+                (tenant_id, target_property_name),
+                (target_property_id, source_property_name),
+            ):
+                notifications.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": finance_tenant_id,
+                        "user_id": None,
+                        "type": "chain_transfer_settlement",
+                        "title": "Zincir içi mahsuplaşma bekliyor",
+                        "message": f"{counterparty_name} ile rezervasyon transferi tahsilatı için mutabakat gerekli.",
+                        "priority": "high",
+                        "target_roles": ["admin", "finance"],
+                        "read": False,
+                        "action_url": "/app/general-ledger",
+                        "related_entity": "chain_transfer_settlement",
+                        "related_id": settlement_id,
+                        "metadata": activity_details,
+                        "created_at": now,
+                    }
+                )
+        try:
+            for notification in notifications:
+                await db.notifications.insert_one(notification)
+        except Exception:
+            # The reservation and settlement are durable; leave a loud server
+            # trace for retry/repair instead of rolling back a completed room
+            # move and risking double inventory.
+            logger.exception("Chain transfer notification write failed transfer=%s", transfer_id)
+
         return {
             "success": True,
             "transfer_id": transfer_id,
             "source": tenant_id,
             "target": target_property_id,
-            "target_property_name": target_property.get("property_name") or target_property.get("hotel_name") or target_property.get("name"),
+            "source_property_name": source_property_name,
+            "target_property_name": target_property_name,
             "source_booking_id": booking_id,
             "target_booking_id": target_booking_id,
             "target_room_id": target_booking.get("room_id"),
             "target_room_number": target_booking.get("room_number"),
+            "payment_totals": payment_totals,
+            "settlement_id": settlement_id,
+            "settlement_status": "open" if settlement_id else "not_required",
         }
 
 

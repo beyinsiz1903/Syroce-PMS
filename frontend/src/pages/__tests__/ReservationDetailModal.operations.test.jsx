@@ -135,6 +135,7 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(await screen.findByTestId('property-transfer-dialog')).toBeInTheDocument();
     expect(await screen.findByRole('option', { name: /Fethiye Oteli/ })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Değişiklik nedeni'), { target: { value: 'Misafir talebi' } });
+    fireEvent.change(screen.getByLabelText('Kaynak tesiste tahsilat varsa'), { target: { value: 'retain_and_settle' } });
     fireEvent.click(screen.getByTestId('confirm-property-transfer'));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith(
@@ -144,6 +145,7 @@ describe('ReservationDetailModal operation URLs', () => {
         target_property_id: 'hotel-fethiye',
         target_room_type: 'Standard',
         reason: 'Misafir talebi',
+        financial_handling: 'retain_and_settle',
       },
     ));
   });
