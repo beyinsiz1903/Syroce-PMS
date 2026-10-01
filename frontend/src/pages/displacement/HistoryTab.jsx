@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { REC_STYLES, LoadingState, EmptyState } from './shared';
+import { REC_STYLES, LoadingState, EmptyState, ErrorState } from './shared';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const HistoryTab = ({
   user,
@@ -16,19 +16,24 @@ const HistoryTab = ({
   const fallbackCurrency = tenant?.currency || cachedTenantCurrency();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await axios.get('/displacement/history?limit=20');
-        setData(Array.isArray(res.data) ? res.data : []);
-      } catch (e) {
-        console.error('History error:', e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await axios.get('/displacement/history?limit=20');
+      setData(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      console.error('History error:', e);
+      setData([]);
+      setError(t('displacement.historyLoadError', 'Geçmiş analizler yüklenemedi. Lütfen yeniden deneyin.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+  useEffect(() => { load(); }, [load]);
   if (loading) return <LoadingState text={t('displacement.loadingHistory', 'Loading history...')} />;
+  if (error) return <ErrorState text={error} onRetry={load} />;
   if (!data.length) {
     return <EmptyState text={t('displacement.noHistory', 'No saved analyses yet. Run an analysis and save it to see history here.')} />;
   }
@@ -43,7 +48,7 @@ const HistoryTab = ({
                 <RecI className={`w-6 h-6 ${recS.color}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-semibold text-sm truncate">{item.scenario?.group_name || 'Unnamed'}</h4>
+                    <h4 className="font-semibold text-sm truncate">{item.scenario?.group_name || t('displacement.unnamedGroup', 'Adsız grup')}</h4>
                     <Badge className={recS.bg + ' ' + recS.color + ' text-[10px]'}>
                       {rec?.toUpperCase()}
                     </Badge>

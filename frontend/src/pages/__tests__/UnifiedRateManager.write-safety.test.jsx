@@ -35,7 +35,7 @@ describe('UnifiedRateManager write safety', () => {
         provider_delivery_state: deliveryState,
       })).toEqual({
         level: 'warning',
-        message: '2 yerel kayıt güncellendi; provider teslimatı henüz doğrulanmadı.',
+        message: '2 yerel kayıt güncellendi; kanal sağlayıcısına teslimat henüz doğrulanmadı.',
       });
     },
   );
@@ -47,7 +47,7 @@ describe('UnifiedRateManager write safety', () => {
       provider_delivery_state: 'CONFIRMED',
     })).toEqual({
       level: 'success',
-      message: '10 kayıt güncellendi ve provider teslimatı doğrulandı.',
+      message: '10 kayıt güncellendi ve kanal sağlayıcısına teslimat doğrulandı.',
     });
   });
 
@@ -70,7 +70,7 @@ describe('UnifiedRateManager write safety', () => {
       provider_error_codes: ['EXELY_ARI_REJECTED'],
     })).toEqual({
       level: 'error',
-      message: '3 yerel kayıt güncellendi; provider teslimatı başarısız: EXELY_ARI_REJECTED',
+      message: '3 yerel kayıt güncellendi; kanal sağlayıcısına teslimat başarısız: EXELY_ARI_REJECTED',
     });
   });
 });

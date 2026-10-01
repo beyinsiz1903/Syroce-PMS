@@ -874,6 +874,17 @@ async def generate_internal_pricing(
             recommendations.append(rec)
 
     if recommendations:
+        # Aynı tarih/oda tipi için her üretimde yeni bir "pending" satır eklemek
+        # ekranda tekrarlar oluşturuyor ve toplu uygulamada aynı fiyatı birden çok
+        # kez işliyordu. Üretilen aralıkta eski bekleyenleri yenileriyle değiştir.
+        await db.rms_pricing_recommendations.delete_many(
+            {
+                "tenant_id": tid,
+                "status": "pending",
+                "date": {"$gte": start.date().isoformat(), "$lte": end.date().isoformat()},
+                "room_type": {"$in": sorted({r["room_type"] for r in recommendations})},
+            }
+        )
         await db.rms_pricing_recommendations.insert_many([r.copy() for r in recommendations])
 
     return {

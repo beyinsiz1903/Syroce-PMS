@@ -12,16 +12,16 @@ import { Plus, Trash2, Pencil, Shield, X, Loader2 } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 const CONDITION_TYPES = [
-  { value: 'occupancy_above', label: 'Doluluk ustu (%)' },
-  { value: 'occupancy_below', label: 'Doluluk alti (%)' },
-  { value: 'lead_time_below', label: 'Varisa kalan gun alti' },
-  { value: 'lead_time_above', label: 'Varisa kalan gun ustu' },
-  { value: 'day_of_week', label: 'Haftanin gunu' },
+  { value: 'occupancy_above', label: 'Doluluk üstü (%)' },
+  { value: 'occupancy_below', label: 'Doluluk altı (%)' },
+  { value: 'lead_time_below', label: 'Varışa kalan gün altı' },
+  { value: 'lead_time_above', label: 'Varışa kalan gün üstü' },
+  { value: 'day_of_week', label: 'Haftanın günü' },
 ];
 
 const ACTION_TYPES = [
-  { value: 'increase_percent', label: 'Fiyati artir (%)' },
-  { value: 'decrease_percent', label: 'Fiyati azalt (%)' },
+  { value: 'increase_percent', label: 'Fiyatı artır (%)' },
+  { value: 'decrease_percent', label: 'Fiyatı azalt (%)' },
 ];
 
 const emptyRule = {
@@ -63,7 +63,7 @@ export default function YieldRulesPanel() {
 
   const handleSave = async () => {
     if (!form.name || !form.condition_value || !form.action_value) {
-      toast.error('Tüm alanlari doldurun');
+      toast.error('Tüm alanları doldurun');
       return;
     }
     try {
@@ -100,7 +100,7 @@ export default function YieldRulesPanel() {
     <div data-testid="yield-rules-panel" className="space-y-4 p-1">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-slate-800">Yield Kurallari</h2>
+          <h2 className="text-xl font-semibold text-slate-800">Gelir Kuralları</h2>
           <p className="text-sm text-slate-500">{t('cm.pages_YieldRulesPanel.otomatik_fiyat_ayarlama_kurallari_taniml')}</p>
         </div>
         <Button size="sm" onClick={openAdd} data-testid="add-rule-btn">
@@ -112,7 +112,7 @@ export default function YieldRulesPanel() {
       {showForm && (
         <Card className="border-sky-200 bg-sky-50/30" data-testid="yield-rule-form">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm">{editId ? 'Kurali Düzenle' : 'Yeni Kural Ekle'}</CardTitle>
+            <CardTitle className="text-sm">{editId ? 'Kuralı Düzenle' : 'Yeni Kural Ekle'}</CardTitle>
             <Button size="icon" variant="ghost" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -128,18 +128,18 @@ export default function YieldRulesPanel() {
             </div>
             <div>
               <Label className="text-xs">{t('cm.pages_YieldRulesPanel.aciklama')}</Label>
-              <Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Kural aciklamasi" />
+              <Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Kural açıklaması" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Kosul Tipi</Label>
+                <Label className="text-xs">Koşul Türü</Label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm bg-white" value={form.condition_type}
                   onChange={e => setForm(p => ({ ...p, condition_type: e.target.value }))}>
                   {CONDITION_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
                 </select>
               </div>
               <div>
-                <Label className="text-xs">Kosul Degeri</Label>
+                <Label className="text-xs">Koşul Değeri</Label>
                 <Input value={form.condition_value}
                   onChange={e => setForm(p => ({ ...p, condition_value: e.target.value }))}
                   placeholder={form.condition_type === 'day_of_week' ? 'friday,saturday' : '80'} data-testid="rule-condition-input" />
@@ -147,14 +147,14 @@ export default function YieldRulesPanel() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Aksiyon Tipi</Label>
+                <Label className="text-xs">İşlem Türü</Label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm bg-white" value={form.action_type}
                   onChange={e => setForm(p => ({ ...p, action_type: e.target.value }))}>
                   {ACTION_TYPES.map(at => <option key={at.value} value={at.value}>{at.label}</option>)}
                 </select>
               </div>
               <div>
-                <Label className="text-xs">Aksiyon Degeri (%)</Label>
+                <Label className="text-xs">İşlem Değeri (%)</Label>
                 <Input type="number" value={form.action_value}
                   onChange={e => setForm(p => ({ ...p, action_value: e.target.value }))} placeholder="15" data-testid="rule-action-input" />
               </div>
@@ -165,7 +165,7 @@ export default function YieldRulesPanel() {
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>{t('cm.pages_YieldRulesPanel.iptal')}</Button>
-              <Button size="sm" onClick={handleSave} data-testid="save-rule-btn">{editId ? 'Guncelle' : 'Kaydet'}</Button>
+              <Button size="sm" onClick={handleSave} data-testid="save-rule-btn">{editId ? 'Güncelle' : 'Kaydet'}</Button>
             </div>
           </CardContent>
         </Card>

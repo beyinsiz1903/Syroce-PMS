@@ -63,7 +63,7 @@ export const BulkUpdatePanel = ({
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold text-gray-700">
-              Neleri guncellemek istiyorsunuz?
+              Neleri güncellemek istiyorsunuz?
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-2">
@@ -88,11 +88,11 @@ export const BulkUpdatePanel = ({
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-2">
             <div>
-              <Label className="text-xs text-gray-500">Baslangic</Label>
+              <Label className="text-xs text-gray-500">Başlangıç</Label>
               <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="mt-1 h-8 text-sm" data-testid="bulk-date-from" />
             </div>
             <div>
-              <Label className="text-xs text-gray-500">Bitis</Label>
+              <Label className="text-xs text-gray-500">Bitiş</Label>
               <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="mt-1 h-8 text-sm" data-testid="bulk-date-to" />
             </div>
           </CardContent>
@@ -101,7 +101,7 @@ export const BulkUpdatePanel = ({
         {/* Day Selection */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold text-gray-700">Gun</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">Gün</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-1.5">
             <label className="flex items-center gap-2 cursor-pointer text-sm font-medium" data-testid="day-all">
@@ -121,11 +121,11 @@ export const BulkUpdatePanel = ({
         <div className="hidden gap-2 lg:flex">
           <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={handleBulkUpdate} disabled={saving} data-testid="bulk-update-btn">
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Save className="w-4 h-4 mr-1.5" />}
-            Guncelle
+            Güncelle
           </Button>
           <Button variant="outline" onClick={handleReset} data-testid="bulk-reset-btn">
             <RotateCcw className="w-4 h-4 mr-1" />
-            Sifirla
+            Sıfırla
           </Button>
         </div>
       </div>
@@ -137,7 +137,7 @@ export const BulkUpdatePanel = ({
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_ratemanager_BulkUpdatePanel.oda_adi')}</CardTitle>
               <button onClick={toggleAllRoomTypes} className="text-xs text-blue-600 hover:underline" data-testid="select-all-rooms">
-                {roomTypes.length > 0 && roomTypes.every(rt => isRoomTypeFullySelected(rt.code)) ? 'Tumunu kaldir' : 'Tumunu sec'}
+                {roomTypes.length > 0 && roomTypes.every(rt => isRoomTypeFullySelected(rt.code)) ? 'Tümünü kaldır' : 'Tümünü seç'}
               </button>
             </div>
           </CardHeader>
@@ -187,7 +187,7 @@ export const BulkUpdatePanel = ({
             <Badge variant="outline" className="bg-white">{totalSelectedPlans} plan</Badge>
             <Badge variant="outline" className="bg-white">{enabledFields.size} alan</Badge>
             <Badge variant="outline" className="bg-white">{dateFrom} → {dateTo}</Badge>
-            {!allDays && <Badge variant="outline" className="bg-white">{selectedDays.size} gun</Badge>}
+            {!allDays && <Badge variant="outline" className="bg-white">{selectedDays.size} gün</Badge>}
           </div>
         </CardContent>
       </Card>
@@ -238,7 +238,7 @@ const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTyp
       type="button"
       onClick={(e) => { e.stopPropagation(); applyToAllSelected(field, value); }}
       className="text-amber-500 hover:text-amber-700 p-0.5 transition-colors flex-shrink-0"
-      title="Tumune uygula"
+      title="Tümüne uygula"
       data-testid={`apply-all-${field}`}
     >
       <CopyCheck className="w-3.5 h-3.5" />

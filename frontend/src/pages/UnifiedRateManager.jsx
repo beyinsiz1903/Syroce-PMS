@@ -30,19 +30,19 @@ export const getUnifiedRateDeliveryFeedback = data => {
     return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve ${data.agency_push_count} acenteye anında iletildi.` };
   }
   if (data?.provider_verified === true) {
-    return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve provider teslimatı doğrulandı.` };
+    return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve kanal sağlayıcısına teslimat doğrulandı.` };
   }
   if (data?.provider_delivery_state === 'SCHEDULED' || data?.provider_delivery_state === 'QUEUED' || data?.provider_delivery_state === 'PENDING') {
-    return { level: 'warning', message: `${data.saved || 0} yerel kayıt güncellendi; provider teslimatı henüz doğrulanmadı.` };
+    return { level: 'warning', message: `${data.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat henüz doğrulanmadı.` };
   }
   if (data?.provider_delivery_state === 'PARTIAL') {
-    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı kısmen tamamlandı. İşlem günlüğünü kontrol edin.` };
+    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat kısmen tamamlandı. İşlem günlüğünü kontrol edin.` };
   }
   const providerError = data?.provider_error_codes?.[0];
   if (providerError) {
-    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı başarısız: ${providerError}` };
+    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat başarısız: ${providerError}` };
   }
-  return { level: 'warning', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı yapılmadı.` };
+  return { level: 'warning', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat yapılmadı.` };
 };
 const UnifiedRateManager = ({
   user,
@@ -86,6 +86,11 @@ const UnifiedRateManager = ({
     RUB: '\u20BD'
   };
   const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
+  const pushModeGroups = useMemo(() => pushProviders.reduce((groups, item) => {
+    const mode = item.mode || 'inactive';
+    groups[mode] = (groups[mode] || 0) + 1;
+    return groups;
+  }, {}), [pushProviders]);
 
   // Bulk update state
   const [selections, setSelections] = useState({});
@@ -150,7 +155,7 @@ const UnifiedRateManager = ({
         setProvider(data.provider || null);
         setProviderConfigurationError(data.configuration_error || null);
       } catch {
-        toast.error('Kanal saglayici tespit edilemedi');
+        toast.error('Kanal sağlayıcısı tespit edilemedi');
       }
       setDetecting(false);
     };
@@ -190,7 +195,7 @@ const UnifiedRateManager = ({
     axios.get(`${UNIFIED_PREFIX}/push-providers`, {
       headers
     }).then(res => setPushProviders(res.data?.providers || [])).catch(e => {
-      console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Bildirim saglayicilar yuklenemedi');
+      console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Bildirim sağlayıcıları yüklenemedi');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [provider]);
@@ -630,7 +635,7 @@ const UnifiedRateManager = ({
   }
   const formatDate = ds => {
     const d = new Date(ds + 'T00:00:00');
-    const dayNames = ['Paz', 'Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt'];
+    const dayNames = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
     return {
       day: d.getDate(),
       month: d.toLocaleDateString('tr-TR', {
@@ -656,7 +661,7 @@ const UnifiedRateManager = ({
     inactive: {
       className: 'bg-slate-400 text-white',
       icon: null,
-      label: 'Inaktif'
+      label: 'Pasif'
     },
     read_only: {
       className: 'bg-sky-500 text-white',
@@ -668,7 +673,7 @@ const UnifiedRateManager = ({
     return <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
         <div className="flex items-center justify-center min-h-[400px]" data-testid="unified-rate-loading">
           <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
-          <span className="ml-3 text-zinc-500">Kanal saglayici tespit ediliyor...</span>
+          <span className="ml-3 text-zinc-500">Kanal sağlayıcısı tespit ediliyor...</span>
         </div>
       </MaybeLayout>;
   }
@@ -708,11 +713,11 @@ const UnifiedRateManager = ({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2" data-testid="unified-push-provider-badges">
-            {pushProviders.length > 0 ? pushProviders.map(p => {
-            const cfg = modeConfig[p.mode] || modeConfig.inactive;
-            return <Badge key={p.slug} className={cfg.className} data-testid={`unified-push-badge-${p.slug}`}>
+            {pushProviders.length > 0 ? Object.entries(pushModeGroups).map(([mode, count]) => {
+            const cfg = modeConfig[mode] || modeConfig.inactive;
+            return <Badge key={mode} className={cfg.className} data-testid={`unified-push-badge-${mode}`}>
                   {cfg.icon}
-                  Kanal: {cfg.label}
+                  {count > 1 ? `${count} kanal bağlantısı` : 'Kanal bağlantısı'}: {cfg.label}
                 </Badge>;
           }) : <Badge className="bg-zinc-600 text-white" data-testid="unified-push-badge-default">
                 Kanal Yöneticisi
@@ -751,7 +756,7 @@ const UnifiedRateManager = ({
                   <CalendarDays className="mr-1 h-4 w-4" /> <span className="sm:hidden">Takvim</span><span className="hidden sm:inline">Takvim Görünümü</span>
                 </TabsTrigger>
                 <TabsTrigger value="stop-sale" className="px-1 text-[11px] sm:px-3 sm:text-sm" data-testid="unified-stop-sale-tab">
-                  <Ban className="mr-1 h-4 w-4" /> Stop Sale
+                  <Ban className="mr-1 h-4 w-4" /> Satışı Durdur
                 </TabsTrigger>
               </TabsList>
 
@@ -776,7 +781,7 @@ const UnifiedRateManager = ({
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-semibold text-zinc-700 flex items-center gap-1.5">
                     <Building2 className="w-4 h-4" />
-                    Acentelere Ilet
+                    Acentelere İlet
                   </CardTitle>
                   <button onClick={() => setAgencyPanelOpen(p => !p)} className="text-zinc-400 hover:text-zinc-600" data-testid="agency-panel-toggle">
                     {agencyPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -791,7 +796,7 @@ const UnifiedRateManager = ({
                       {/* Select all */}
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-zinc-600 pb-1 border-b border-zinc-100" data-testid="agency-select-all">
                         <Checkbox checked={selectedAgencies.size === agencies.length && agencies.length > 0} onCheckedChange={toggleAllAgencies} />
-                        Tumunu Sec ({agencies.length})
+                        Tümünü Seç ({agencies.length})
                       </label>
 
                       {/* Agency list */}
@@ -812,7 +817,7 @@ const UnifiedRateManager = ({
                             {selectedAgencies.has(agency.id) && <div className="ml-6 mt-1 flex gap-1">
                                 {editingOverride === agency.id ? <AgencyOverrideEditor agency={agency} roomTypes={roomTypes} onSave={saveAgencyOverride} onCancel={() => setEditingOverride(null)} onDelete={() => deleteAgencyOverride(agency.id)} currencySymbol={currencySymbol} /> : <button onClick={() => setEditingOverride(agency.id)} className="text-[10px] text-sky-600 hover:text-sky-800 flex items-center gap-0.5" data-testid={`agency-override-btn-${agency.id}`}>
                                     <Settings2 className="w-3 h-3" />
-                                    {agency.has_custom_rates ? 'Özel fiyat düzenle' : 'Özel fiyat tanimla'}
+                                    {agency.has_custom_rates ? 'Özel fiyat düzenle' : 'Özel fiyat tanımla'}
                                   </button>}
                               </div>}
                           </div>)}

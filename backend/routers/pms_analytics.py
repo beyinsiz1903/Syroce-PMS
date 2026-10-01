@@ -122,13 +122,13 @@ async def get_channel_loss_analytics(
 
     if total_data_points < 5:
         confidence = "low"
-        confidence_note = "Veri yetersiz — sonuclar gosterge niteligindedir"
+        confidence_note = "Veri yetersiz — sonuçlar gösterge niteliğindedir"
     elif data_days < 7:
         confidence = "medium"
-        confidence_note = f"Son {data_days} gune gore hesaplandi — daha fazla veri ile guvenilirlik artar"
+        confidence_note = f"Son {data_days} güne göre hesaplandı — daha fazla veri ile güvenilirlik artar"
     else:
         confidence = "high"
-        confidence_note = f"Son {data_days} gunluk veriye dayanmaktadir"
+        confidence_note = f"Son {data_days} günlük veriye dayanmaktadır"
 
     return {
         "channels": channels,
@@ -229,7 +229,7 @@ async def get_overbooking_heatmap(
     peak_days = sorted(heatmap, key=lambda x: -x["overbooking_count"])[:5]
 
     # --- Weekly pattern ---
-    weekday_names = ["Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi", "Pazar"]
+    weekday_names = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
     weekday_data = defaultdict(lambda: {"overbooking": 0, "total_noshow": 0, "count": 0})
 
     for d, info in date_map.items():
@@ -271,13 +271,13 @@ async def get_overbooking_heatmap(
 
     if total_ob < 3:
         confidence = "low"
-        confidence_note = "Overbooking verisi yetersiz — sonuclar gosterge niteligindedir"
+        confidence_note = "Fazla satış verisi yetersiz — sonuçlar gösterge niteliğindedir"
     elif data_days < 14:
         confidence = "medium"
-        confidence_note = f"Son {data_days} gune dayanmaktadir"
+        confidence_note = f"Son {data_days} güne dayanmaktadır"
     else:
         confidence = "high"
-        confidence_note = f"{total_ob} overbooking, {data_days} gun uzerinden analiz edildi"
+        confidence_note = f"{total_ob} fazla satış kaydı, {data_days} gün üzerinden analiz edildi"
 
     return {
         "heatmap": heatmap,
@@ -657,13 +657,13 @@ async def get_noshow_prediction(
     total_hist = len(hist_bookings)
     if total_hist < 20:
         confidence = "low"
-        confidence_note = "Veri yetersiz — tahminler gosterge niteligindedir"
+        confidence_note = "Veri yetersiz — tahminler gösterge niteliğindedir"
     elif total_hist < 100:
         confidence = "medium"
-        confidence_note = f"{total_hist} gecmis rezervasyona dayanmaktadir"
+        confidence_note = f"{total_hist} geçmiş rezervasyona dayanmaktadır"
     else:
         confidence = "high"
-        confidence_note = f"{total_hist} gecmis rezervasyon analiz edildi"
+        confidence_note = f"{total_hist} geçmiş rezervasyon analiz edildi"
 
     return {
         "predictions": predictions[:50],  # Top 50

@@ -8,6 +8,7 @@ import MaybeLayout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
 const BACKEND = "";
 const headers = {};
 export default function CentralPricingManager({
@@ -34,8 +35,10 @@ export default function CentralPricingManager({
   const [templateForm, setTemplateForm] = useState({ name: '', description: '', room_type: 'Standard', rate: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [ratesRes, templatesRes, historyRes] = await Promise.all([axios.get(`/central-pricing/rates`, {
         headers
@@ -49,6 +52,10 @@ export default function CentralPricingManager({
       setHistory(historyRes.data.history || []);
     } catch (e) {
       console.error(e);
+      setLoadError('Merkezi fiyat verileri yüklenemedi. Eski veriler gösterilmiyor.');
+      setRates(null);
+      setTemplates([]);
+      setHistory([]);
     }
     setLoading(false);
   }, []);
@@ -61,6 +68,10 @@ export default function CentralPricingManager({
       setMessage('Geçerli fiyat ve değişiklik nedeni zorunludur.');
       return;
     }
+    const confirmed = await confirmDialog({
+      message: `${bulkForm.room_type} oda tipi için zincirdeki tüm otellere uygulanacak fiyat kararını oluşturmak istiyor musunuz?\n\nDeğer: ${bulkForm.new_rate} (${bulkForm.adjustment_type})\nBaşlangıç: ${bulkForm.effective_from}`
+    });
+    if (!confirmed) return;
     try {
       const res = await axios.post(`/central-pricing/bulk-update`, {
         ...bulkForm,
@@ -106,6 +117,7 @@ export default function CentralPricingManager({
         </div>
 
         {message && <div className="p-3 bg-blue-50 rounded-lg text-blue-700">{message}</div>}
+        {loadError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800" role="alert">{loadError}</div>}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -119,13 +131,15 @@ export default function CentralPricingManager({
             {rates?.properties?.map((prop, i) => <Card key={i}>
                 <CardHeader>
                   <CardTitle className="text-lg">{prop.property_name}</CardTitle>
+                  {prop.data_quality_warnings > 0 && <CardDescription className="text-amber-700">{prop.data_quality_warnings} oda tipi kaydında tanım veya fiyat eksiği var.</CardDescription>}
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {prop.room_rates?.map((rt, j) => <div key={j} className="p-3 border rounded">
+                    {prop.room_rates?.map((rt, j) => <div key={j} className={`p-3 border rounded ${rt.data_quality !== 'ok' ? 'border-amber-300 bg-amber-50' : ''}`}>
                         <p className="font-medium">{rt.room_type}</p>
-                        <p className="text-2xl font-bold">{formatCurrency(rt.base_rate, rt.currency || currency)}</p>
+                        <p className="text-2xl font-bold">{rt.data_quality === 'ok' ? formatCurrency(rt.base_rate, rt.currency || currency) : 'Kontrol gerekli'}</p>
                         <p className="text-sm text-gray-500">{rt.count} oda</p>
+                        {rt.data_quality === 'unresolved_room_type' && <p className="text-xs text-amber-800 mt-1">Oda tipi eşleştirmesi gerekli</p>}
                       </div>)}
                     {(!prop.room_rates || prop.room_rates.length === 0) && <p className="text-gray-400 col-span-4">Fiyat bilgisi bulunamadı</p>}
                   </div>

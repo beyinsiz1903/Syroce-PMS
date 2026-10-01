@@ -34,10 +34,10 @@ export default function GelirYonetimiPage({ user, tenant, onLogout, embedded = f
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid w-full grid-cols-4 max-w-2xl" data-testid="gelir-tabs">
             <TabsTrigger value="dashboard" data-testid="tab-dashboard" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" /> Dashboard
+              <BarChart3 className="h-4 w-4" /> Genel Bakış
             </TabsTrigger>
             <TabsTrigger value="yield" data-testid="tab-yield" className="flex items-center gap-2">
-              <Shield className="h-4 w-4" /> Yield Kurallari
+              <Shield className="h-4 w-4" /> Gelir Kuralları
             </TabsTrigger>
             <TabsTrigger value="sezon" data-testid="tab-sezon" className="flex items-center gap-2">
               <CalendarRange className="h-4 w-4" /> Sezon Takvimi

@@ -23,6 +23,32 @@ router = APIRouter(prefix="/api", tags=["rms-revenue"])
 # ========================================
 
 
+def _active_pending_query(tenant_id: str, today: str | None = None) -> dict:
+    """Return only actionable recommendations; historical dates must never be applied."""
+    effective_today = today or datetime.now(UTC).date().isoformat()
+    return {
+        "tenant_id": tenant_id,
+        "status": "pending",
+        "date": {"$gte": effective_today},
+    }
+
+
+def _dedupe_recommendations(recommendations: list[dict]) -> list[dict]:
+    """Keep the newest recommendation for each date/room-type pair."""
+    newest: dict[tuple[str, str], dict] = {}
+    for recommendation in recommendations:
+        key = (
+            str(recommendation.get("date") or ""),
+            str(recommendation.get("room_type") or "Standard"),
+        )
+        current = newest.get(key)
+        current_stamp = str((current or {}).get("generated_at") or (current or {}).get("created_at") or "")
+        candidate_stamp = str(recommendation.get("generated_at") or recommendation.get("created_at") or "")
+        if current is None or candidate_stamp >= current_stamp:
+            newest[key] = recommendation
+    return sorted(newest.values(), key=lambda rec: (str(rec.get("date") or ""), str(rec.get("room_type") or "")))
+
+
 # ─── Endpoints (split: pricing_strategy) ───
 
 
@@ -139,7 +165,11 @@ async def apply_all_recommendations(
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Apply all pending pricing recommendations"""
-    pending = await db.rms_pricing_recommendations.find({"tenant_id": current_user.tenant_id, "status": "pending"}, {"_id": 0}).to_list(100)
+    pending_docs = await db.rms_pricing_recommendations.find(
+        _active_pending_query(current_user.tenant_id),
+        {"_id": 0},
+    ).to_list(1000)
+    pending = _dedupe_recommendations(pending_docs)
 
     if not pending:
         return {"message": "No pending recommendations to apply", "applied_count": 0}
@@ -423,8 +453,11 @@ async def get_pricing_recommendations(
         query["date"] = date
     if status:
         query["status"] = status
+        if status == "pending" and not date:
+            query["date"] = {"$gte": datetime.now(UTC).date().isoformat()}
 
-    recommendations = await db.rms_pricing_recommendations.find(query, {"_id": 0}).sort("date", 1).to_list(1000)
+    recommendation_docs = await db.rms_pricing_recommendations.find(query, {"_id": 0}).sort("date", 1).to_list(1000)
+    recommendations = _dedupe_recommendations(recommendation_docs) if status == "pending" else recommendation_docs
 
     return {"recommendations": recommendations, "count": len(recommendations)}
 
@@ -440,6 +473,8 @@ async def apply_pricing_recommendation(
 
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    if str(recommendation.get("date") or "") < datetime.now(UTC).date().isoformat():
+        raise HTTPException(status_code=409, detail="Gecmis tarihli fiyat onerisi uygulanamaz")
 
     # Update rate in rate calendar
     await db.rate_calendar.update_one(
