@@ -69,6 +69,42 @@ db = get_system_db()
 router = APIRouter(prefix="/api", tags=["auth"])
 
 
+_SECURITY_EVENT_DETAILS = {
+    "login_failed": "Başarısız oturum açma denemesi",
+    "password_change": "Parola değiştirildi",
+    "user_created": "Kullanıcı oluşturuldu",
+    "user_deleted": "Kullanıcı silindi",
+    "role_change": "Kullanıcı yetkileri değiştirildi",
+    "token_refresh": "Oturum güvenle yenilendi",
+}
+
+
+def _mask_security_actor(value: str | None) -> str | None:
+    """Güvenlik özetinde kişisel veriyi açmadan aktörü belirt."""
+    if not value:
+        return None
+    value = str(value).strip()
+    if not value or value.startswith("SYR1:"):
+        return "Korunan kullanıcı"
+    if "@" in value:
+        local, domain = value.rsplit("@", 1)
+        if local and domain:
+            return f"{local[0]}***@{domain}"
+    return "Korunan kullanıcı"
+
+
+def _safe_security_event(event: dict) -> dict:
+    """Audit belgesini güvenlik ekranı için sınırlı ve hassas verisiz hale getir."""
+    action = str(event.get("action") or "")
+    return {
+        "id": event.get("id"),
+        "action": action,
+        "timestamp": event.get("timestamp"),
+        "user_email": _mask_security_actor(event.get("user_email")),
+        "details": _SECURITY_EVENT_DETAILS.get(action, "Güvenlik olayı kaydedildi"),
+    }
+
+
 # Bug AS fix — lazy unique+TTL index on consumed_jtis (idempotent, fail-closed)
 # Architect note: must NOT swallow errors; if the unique index does not exist,
 # the atomic single-use guarantee for 2FA challenge_token is silently lost
@@ -1638,7 +1674,9 @@ async def get_security_summary(
             "slow_requests": apm_summary.get("slow_request_count", 0),
         },
         "rate_limits": rate_limit_stats,
-        "recent_events": security_events[:20],
+        # Audit belgeleri JTI, ham ayrıntı veya şifreli kişisel veri içerebilir.
+        # Güvenlik özeti yalnızca bu ekranın ihtiyaç duyduğu güvenli görünümü döndürür.
+        "recent_events": [_safe_security_event(event) for event in security_events[:20]],
         "timestamp": now.isoformat(),
     }
 

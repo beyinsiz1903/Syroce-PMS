@@ -1,6 +1,31 @@
 import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { confirmDialog } from "@/lib/dialogs";
 const API = "";
+
+const STATUS_LABELS = {
+  healthy: "Sağlıklı",
+  connected: "Bağlı",
+  running: "Çalışıyor",
+  active: "Aktif",
+  disconnected: "Bağlantı yok",
+  degraded: "Performans düşük",
+  unhealthy: "Sağlıksız",
+  disabled: "Devre dışı",
+  development: "Geliştirme",
+  single: "Tek sunucu",
+  simulated: "Simülasyon"
+};
+
+const QUEUE_LABELS = {
+  default: "Genel görevler",
+  ml: "Model eğitimi ve tahmin",
+  analytics: "Analiz ve rapor üretimi",
+  messaging: "Mesaj teslimi ve yeniden deneme",
+  pipeline: "Veri işleme akışları",
+  backup: "Yedekleme ve bakım"
+};
 
 // Status badge component
 const StatusBadge = ({
@@ -21,7 +46,7 @@ const StatusBadge = ({
   };
   const c = colors[status] || colors.disabled;
   return <span data-testid={`status-badge-${status}`} className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${c}`}>
-      {status}
+      {STATUS_LABELS[status] || status}
     </span>;
 };
 
@@ -57,14 +82,13 @@ const QueueRow = ({
   data
 }) => <div data-testid={`queue-${name}`} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
     <div>
-      <span className="text-sm font-medium text-slate-700">{name}</span>
-      <span className="text-xs text-slate-500 ml-2">{data.description}</span>
+      <span className="text-sm font-medium text-slate-700">{QUEUE_LABELS[name] || name}</span>
     </div>
     <div className="flex gap-4 text-xs text-slate-500">
-      <span>Submitted: <span className="text-slate-800">{data.metrics?.submitted || 0}</span></span>
-      <span>Completed: <span className="text-emerald-600">{data.metrics?.completed || 0}</span></span>
-      <span>Failed: <span className="text-rose-600">{data.metrics?.failed || 0}</span></span>
-      <span>Pending: <span className="text-amber-600">{data.pending || 0}</span></span>
+      <span>Gönderilen: <span className="text-slate-800">{data.metrics?.submitted || 0}</span></span>
+      <span>Tamamlanan: <span className="text-emerald-600">{data.metrics?.completed || 0}</span></span>
+      <span>Hatalı: <span className="text-rose-600">{data.metrics?.failed || 0}</span></span>
+      <span>Bekleyen: <span className="text-amber-600">{data.pending || 0}</span></span>
     </div>
   </div>;
 export default function InfraHardeningDashboard({
@@ -102,26 +126,33 @@ export default function InfraHardeningDashboard({
     return () => clearInterval(interval);
   }, [fetchData]);
   const triggerBackup = async () => {
+    if (!await confirmDialog({
+      message: "Yeni bir sistem yedeği başlatmak istediğinize emin misiniz?",
+      confirmText: "Yedeklemeyi Başlat"
+    })) return;
     try {
       setBackupTriggered(true);
-      await fetch(`/api/infra/backup/trigger`, {
+      const response = await fetch(`/api/infra/backup/trigger`, {
         credentials: "include",
         method: "POST",
         headers: {}
       });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      toast.success("Yedekleme arka planda başlatıldı");
       setTimeout(() => {
         setBackupTriggered(false);
         fetchData();
       }, 3000);
     } catch {
       setBackupTriggered(false);
+      toast.error("Yedekleme başlatılamadı");
     }
   };
   if (loading) {
-    if (embedded) return <div data-testid="infra-loading" className="flex items-center justify-center min-h-[40vh]"><div className="text-slate-500 animate-pulse text-lg">Altyapi durumu yükleniyor...</div></div>;
+    if (embedded) return <div data-testid="infra-loading" className="flex items-center justify-center min-h-[40vh]"><div className="text-slate-500 animate-pulse text-lg">Altyapı durumu yükleniyor...</div></div>;
     return <>
         <div data-testid="infra-loading" className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-slate-500 animate-pulse text-lg">Altyapi durumu yükleniyor...</div>
+          <div className="text-slate-500 animate-pulse text-lg">Altyapı durumu yükleniyor...</div>
         </div>
       </>;
   }
@@ -147,7 +178,7 @@ export default function InfraHardeningDashboard({
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{t("techDashboards.infraHardening")}</h1>
             <p className="text-sm text-slate-500 mt-1">
-              Production-grade SaaS altyapi durumu ve izleme
+              Üretim ortamı altyapı durumu ve izleme
             </p>
           </div>
           <button data-testid="refresh-btn" onClick={fetchData} className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition">
@@ -160,47 +191,47 @@ export default function InfraHardeningDashboard({
 
         {/* Top Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <MetricCard testId="metric-redis-mode" label="Redis Mode" value={redis.mode || "—"} sub={redis.connected ? "Connected" : "Fallback"} />
-          <MetricCard testId="metric-queues" label="Worker Queues" value={workers.queues?.length || 0} sub={`${workers.total_pending || 0} pending`} />
-          <MetricCard testId="metric-secrets" label="Secrets Provider" value={secrets.provider || "env"} sub={secrets.status || "—"} />
-          <MetricCard testId="metric-backup" label="Backup" value={backup.enabled ? "Aktif" : "Pasif"} sub={`RPO: ${backup.rpo_target || "—"}`} />
-          <MetricCard testId="metric-instances" label="Instances" value={scaling.total_instances || 1} sub={`${scaling.active_instances || 1} active`} />
-          <MetricCard testId="metric-container" label="Container" value={container.is_containerized ? "Docker" : "Native"} sub={container.hostname || "—"} />
+          <MetricCard testId="metric-redis-mode" label="Redis Çalışma Biçimi" value={redis.mode || "—"} sub={redis.connected ? "Bağlı" : "Yedek yöntem"} />
+          <MetricCard testId="metric-queues" label="Görev Kuyrukları" value={workers.queues?.length || 0} sub={`${workers.total_pending || 0} bekleyen`} />
+          <MetricCard testId="metric-secrets" label="Gizli Bilgi Sağlayıcısı" value={secrets.provider || "env"} sub={STATUS_LABELS[secrets.status] || secrets.status || "—"} />
+          <MetricCard testId="metric-backup" label="Yedekleme" value={backup.enabled ? "Aktif" : "Pasif"} sub={`Kurtarma noktası: ${backup.rpo_target || "—"}`} />
+          <MetricCard testId="metric-instances" label="Sunucular" value={scaling.total_instances || 1} sub={`${scaling.active_instances || 1} aktif`} />
+          <MetricCard testId="metric-container" label="Çalışma Ortamı" value={container.is_containerized ? "Docker" : "Yerel"} sub={container.hostname || "—"} />
         </div>
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Redis Cluster */}
-          <Section testId="section-redis" title="Redis Cluster" status={redis.connected ? "connected" : "disconnected"}>
+          <Section testId="section-redis" title="Redis Kümesi" status={redis.connected ? "connected" : "disconnected"}>
             <div className="grid grid-cols-2 gap-3">
-              <MetricCard testId="redis-latency" label="Latency" value={redis.health?.latency_ms ? `${redis.health.latency_ms}ms` : "—"} />
-              <MetricCard testId="redis-memory" label="Memory" value={redis.health?.used_memory_human || "—"} />
-              <MetricCard testId="redis-clients" label="Clients" value={redis.health?.connected_clients ?? "—"} />
-              <MetricCard testId="redis-reconnects" label="Reconnects" value={redis.metrics?.reconnects || 0} />
+              <MetricCard testId="redis-latency" label="Gecikme" value={redis.health?.latency_ms ? `${redis.health.latency_ms}ms` : "—"} />
+              <MetricCard testId="redis-memory" label="Bellek" value={redis.health?.used_memory_human || "—"} />
+              <MetricCard testId="redis-clients" label="Bağlantılar" value={redis.health?.connected_clients ?? "—"} />
+              <MetricCard testId="redis-reconnects" label="Yeniden Bağlantı" value={redis.metrics?.reconnects || 0} />
             </div>
             <div className="mt-3 text-xs text-slate-500">
-              Mode: <span className="text-slate-700">{redis.mode}</span> | 
-              Pool: <span className="text-slate-700">{redis.metrics?.max_connections || "—"}</span>
+              Çalışma biçimi: <span className="text-slate-700">{redis.mode}</span> |
+              Bağlantı havuzu: <span className="text-slate-700">{redis.metrics?.max_connections || "—"}</span>
             </div>
           </Section>
 
           {/* Distributed Locks */}
-          <Section testId="section-locks" title="Distributed Locks" status={locks.fallback_used > 0 ? "development" : "active"}>
+          <Section testId="section-locks" title="Dağıtık Kilitler" status={locks.fallback_used > 0 ? "development" : "active"}>
             <div className="grid grid-cols-3 gap-3">
-              <MetricCard testId="locks-acquired" label="Acquired" value={locks.locks_acquired || 0} />
-              <MetricCard testId="locks-active" label="Active" value={locks.active_locks || 0} />
-              <MetricCard testId="locks-contention" label="Contention" value={locks.contention_events || 0} />
+              <MetricCard testId="locks-acquired" label="Alınan" value={locks.locks_acquired || 0} />
+              <MetricCard testId="locks-active" label="Aktif" value={locks.active_locks || 0} />
+              <MetricCard testId="locks-contention" label="Çakışma" value={locks.contention_events || 0} />
             </div>
-            {locks.fallback_used > 0 && <div className="text-xs text-amber-600 mt-2">In-process fallback kullaniliyor ({locks.fallback_used} kez)</div>}
+            {locks.fallback_used > 0 && <div className="text-xs text-amber-600 mt-2">Süreç içi yedek yöntem kullanılıyor ({locks.fallback_used} kez)</div>}
           </Section>
 
           {/* Worker Queues */}
-          <Section testId="section-workers" title="Background Workers" status={workers.total_failed > 0 ? "degraded" : "running"}>
+          <Section testId="section-workers" title="Arka Plan İşleyicileri" status={workers.total_failed > 0 ? "degraded" : "running"}>
             <div className="grid grid-cols-4 gap-2 mb-3">
-              <MetricCard testId="workers-submitted" label="Submitted" value={workers.total_submitted || 0} />
-              <MetricCard testId="workers-completed" label="Completed" value={workers.total_completed || 0} />
-              <MetricCard testId="workers-failed" label="Failed" value={workers.total_failed || 0} />
-              <MetricCard testId="workers-stuck" label="Stuck" value={workers.stuck_candidates || 0} />
+              <MetricCard testId="workers-submitted" label="Gönderilen" value={workers.total_submitted || 0} />
+              <MetricCard testId="workers-completed" label="Tamamlanan" value={workers.total_completed || 0} />
+              <MetricCard testId="workers-failed" label="Hatalı" value={workers.total_failed || 0} />
+              <MetricCard testId="workers-stuck" label="Takılan" value={workers.stuck_candidates || 0} />
             </div>
             <div className="space-y-0 border-t border-slate-100 pt-2">
               {workers.queue_details && Object.entries(workers.queue_details).map(([name, qd]) => <QueueRow key={name} name={name} data={qd} />)}
@@ -208,40 +239,40 @@ export default function InfraHardeningDashboard({
           </Section>
 
           {/* Secrets Management */}
-          <Section testId="section-secrets" title="Secrets Management" status={secrets.status || "disabled"}>
+          <Section testId="section-secrets" title="Gizli Bilgi Yönetimi" status={secrets.status || "disabled"}>
             <div className="grid grid-cols-3 gap-3">
-              <MetricCard testId="secrets-provider-name" label="Provider" value={secrets.provider || "env"} />
-              <MetricCard testId="secrets-requests" label="Requests" value={secrets.metrics?.total_requests || 0} />
-              <MetricCard testId="secrets-errors" label="Errors" value={secrets.metrics?.errors || 0} />
+              <MetricCard testId="secrets-provider-name" label="Sağlayıcı" value={secrets.provider || "env"} />
+              <MetricCard testId="secrets-requests" label="İstekler" value={secrets.metrics?.total_requests || 0} />
+              <MetricCard testId="secrets-errors" label="Hatalar" value={secrets.metrics?.errors || 0} />
             </div>
             <div className="text-xs text-slate-500 mt-2">
-              {secrets.provider === "env" && "Yerel ortam degiskenleri kullaniliyor (gelistirme modu)"}
+              {secrets.provider === "env" && "Ortam değişkenleri kullanılıyor"}
               {secrets.provider === "aws" && "AWS Secrets Manager bağlı"}
               {secrets.provider === "vault" && "HashiCorp Vault bağlı"}
             </div>
           </Section>
 
           {/* Backup & DR */}
-          <Section testId="section-backup" title="Backup & Disaster Recovery" status={backup.enabled ? "active" : "disabled"}>
+          <Section testId="section-backup" title="Yedekleme ve Felaket Kurtarma" status={backup.enabled ? "active" : "disabled"}>
             <div className="grid grid-cols-3 gap-3">
-              <MetricCard testId="backup-total" label="Total Backups" value={backup.metrics?.total_backups || 0} />
-              <MetricCard testId="backup-successful" label="Successful" value={backup.metrics?.successful_backups || 0} />
-              <MetricCard testId="backup-last-duration" label="Last Duration" value={backup.metrics?.last_backup_duration_sec ? `${backup.metrics.last_backup_duration_sec}s` : "—"} />
+              <MetricCard testId="backup-total" label="Toplam Yedek" value={backup.metrics?.total_backups || 0} />
+              <MetricCard testId="backup-successful" label="Başarılı" value={backup.metrics?.successful_backups || 0} />
+              <MetricCard testId="backup-last-duration" label="Son Süre" value={backup.metrics?.last_backup_duration_sec ? `${backup.metrics.last_backup_duration_sec}s` : "—"} />
             </div>
             <div className="flex items-center justify-between mt-3">
               <div className="text-xs text-slate-500">
                 RPO: <span className="text-slate-700">{backup.rpo_target}</span> | 
                 RTO: <span className="text-slate-700">{backup.rto_target}</span> | 
-                Retention: <span className="text-slate-700">{backup.retention_days} gun</span>
+                Saklama: <span className="text-slate-700">{backup.retention_days} gün</span>
               </div>
               <button data-testid="trigger-backup-btn" onClick={triggerBackup} disabled={backupTriggered} className="px-3 py-1.5 bg-emerald-600/20 border border-emerald-600/40 text-emerald-600 rounded text-xs hover:bg-emerald-600/30 transition disabled:opacity-50">
-                {backupTriggered ? "Baslatildi..." : "Backup Baslat"}
+                {backupTriggered ? "Başlatıldı..." : "Yedekleme Başlat"}
               </button>
             </div>
           </Section>
 
           {/* Cloud Observability */}
-          <Section testId="section-observability" title="Cloud Observability" status={obs.otel?.active || obs.sentry?.active ? "active" : "disabled"}>
+          <Section testId="section-observability" title="Bulut Gözlemlenebilirliği" status={obs.otel?.active || obs.sentry?.active ? "active" : "disabled"}>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-500">OpenTelemetry</span>
@@ -252,26 +283,26 @@ export default function InfraHardeningDashboard({
                 <StatusBadge status={obs.sentry?.active ? "active" : "disabled"} />
               </div>
               {obs.otel?.active && <div className="text-xs text-slate-500">
-                  Spans: {obs.otel.spans_created} created, Endpoint: {obs.otel.endpoint}
+                  Oluşturulan iz: {obs.otel.spans_created}, hedef servis: {obs.otel.endpoint}
                 </div>}
               {obs.sentry?.active && <div className="text-xs text-slate-500">
-                  Events: {obs.sentry.events_sent}, Errors: {obs.sentry.errors_captured}
+                  Olaylar: {obs.sentry.events_sent}, hatalar: {obs.sentry.errors_captured}
                 </div>}
               {obs.cloud_metrics?.latency && Object.keys(obs.cloud_metrics.latency).length > 0 && <div className="text-xs text-slate-500 mt-2">
-                  Latency metrics: {Object.keys(obs.cloud_metrics.latency).length} endpoints tracked
+                  Gecikmesi izlenen servis yolu: {Object.keys(obs.cloud_metrics.latency).length}
                 </div>}
             </div>
           </Section>
         </div>
 
         {/* Horizontal Scaling — Full Width */}
-        <Section testId="section-scaling" title="Horizontal Scaling" status={scaling.scaling_mode || "single"}>
+        <Section testId="section-scaling" title="Yatay Ölçekleme" status={scaling.scaling_mode || "single"}>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <MetricCard testId="scaling-mode" label="Mode" value={scaling.scaling_mode || "single"} />
-            <MetricCard testId="scaling-current" label="Current Instance" value={scaling.current_instance || "—"} />
-            <MetricCard testId="scaling-total" label="Total Instances" value={scaling.total_instances || 1} />
-            <MetricCard testId="scaling-active" label="Active" value={scaling.active_instances || 1} />
-            <MetricCard testId="scaling-stale" label="Stale" value={scaling.stale_instances || 0} />
+            <MetricCard testId="scaling-mode" label="Çalışma Biçimi" value={scaling.scaling_mode || "single"} />
+            <MetricCard testId="scaling-current" label="Mevcut Sunucu" value={scaling.current_instance || "—"} />
+            <MetricCard testId="scaling-total" label="Toplam Sunucu" value={scaling.total_instances || 1} />
+            <MetricCard testId="scaling-active" label="Aktif" value={scaling.active_instances || 1} />
+            <MetricCard testId="scaling-stale" label="Yanıt Vermeyen" value={scaling.stale_instances || 0} />
           </div>
           {scaling.stateless_check && <div className="mt-3 flex flex-wrap gap-2">
               {Object.entries(scaling.stateless_check.checks || {}).map(([check, passed]) => <span key={check} className={`px-2 py-0.5 rounded text-xs ${passed ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-rose-600"}`}>
@@ -281,16 +312,16 @@ export default function InfraHardeningDashboard({
         </Section>
 
         {/* Container Info — Full Width */}
-        <Section testId="section-container" title="Container & Runtime" status={container.is_containerized ? "active" : "development"}>
+        <Section testId="section-container" title="Konteyner ve Çalışma Ortamı" status={container.is_containerized ? "active" : "development"}>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <MetricCard testId="container-type" label="Runtime" value={container.is_containerized ? "Containerized" : "Native"} />
-            <MetricCard testId="container-k8s" label="Kubernetes" value={container.is_kubernetes ? "Yes" : "No"} />
+            <MetricCard testId="container-type" label="Çalışma Ortamı" value={container.is_containerized ? "Konteyner" : "Yerel"} />
+            <MetricCard testId="container-k8s" label="Kubernetes" value={container.is_kubernetes ? "Evet" : "Hayır"} />
             <MetricCard testId="container-python" label="Python" value={container.python_version || "—"} />
-            <MetricCard testId="container-host" label="Hostname" value={container.hostname || "—"} />
+            <MetricCard testId="container-host" label="Sunucu Adı" value={container.hostname || "—"} />
           </div>
           {container.environment_vars_present && <div className="mt-3 flex flex-wrap gap-2">
               {Object.entries(container.environment_vars_present).map(([envVar, present]) => <span key={envVar} className={`px-2 py-0.5 rounded text-xs ${present === true || typeof present === "string" && present !== "false" && present !== "env" ? "bg-emerald-500/10 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
-                  {envVar}: {typeof present === "boolean" ? present ? "set" : "—" : present}
+                  {envVar}: {typeof present === "boolean" ? present ? "Tanımlı" : "—" : present}
                 </span>)}
             </div>}
         </Section>

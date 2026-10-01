@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Shield, ShieldCheck, ShieldAlert, Lock, Unlock, Activity, AlertTriangle, Users, Clock, RefreshCw, Loader2, Eye, TrendingUp, Zap, Server, Globe, Key, UserCheck, Ban } from 'lucide-react';
+import { Shield, ShieldCheck, ShieldAlert, Lock, Activity, AlertTriangle, Users, Clock, RefreshCw, Loader2, Eye, Zap, Server, Globe, Key, UserCheck, Ban } from 'lucide-react';
+import { maskSecurityActor, safeSecurityEventDetail } from '@/lib/securityEventPrivacy';
 const API = "";
 const SecurityDashboard = ({
   user,
@@ -86,7 +87,7 @@ const SecurityDashboard = ({
             {o.failed_logins_24h > 10 ? <ShieldAlert className="w-6 h-6 text-red-600" /> : <ShieldCheck className="w-6 h-6 text-emerald-600" />}
             <div>
               <p className="font-semibold text-gray-900">
-                {o.failed_logins_24h > 10 ? t('securityDashboard.securityWarning') : t('securityDashboard.systemSecure')}
+                {o.failed_logins_24h > 10 ? t('securityDashboard.securityWarning') : t('securityDashboard.loginActivityNormal')}
               </p>
               <p className="text-xs text-gray-500">
                 Son güncelleme: {new Date(data?.timestamp).toLocaleString(i18n.language)}
@@ -184,43 +185,35 @@ const SecurityDashboard = ({
             <CardContent className="space-y-2">
               {[{
               name: 'HTTPS / HSTS',
-              status: true,
               icon: Lock
             }, {
-              name: 'CSP (Content Security Policy)',
-              status: true,
+              name: 'İçerik güvenliği politikası (CSP)',
               icon: Shield
             }, {
-              name: 'X-Frame-Options',
-              status: true,
+              name: 'Sayfa yerleştirme koruması',
               icon: Globe
             }, {
-              name: 'Rate Limiting',
-              status: true,
+              name: 'İstek hız sınırı',
               icon: Zap
             }, {
-              name: 'GZip Compression',
-              status: true,
+              name: 'GZip sıkıştırma',
               icon: Server
             }, {
-              name: 'JWT Validation',
-              status: true,
+              name: 'Oturum doğrulaması',
               icon: Key
             }, {
-              name: 'Input Sanitization',
-              status: true,
+              name: 'Girdi temizleme',
               icon: ShieldCheck
             }, {
-              name: 'Audit Logging',
-              status: true,
+              name: 'İşlem kayıtları',
               icon: Eye
             }].map((item, i) => <div key={item.id || i} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50">
                   <div className="flex items-center gap-2">
                     <item.icon className="w-3.5 h-3.5 text-gray-500" />
                     <span className="text-sm text-gray-700">{item.name}</span>
                   </div>
-                  <Badge className={item.status ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700'}>
-                    {item.status ? t('common.active') : t('common.inactive')}
+                  <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200">
+                    {t('securityDashboard.policyLayer')}
                   </Badge>
                 </div>)}
             </CardContent>
@@ -265,8 +258,8 @@ const SecurityDashboard = ({
                               {evt.action === 'login_failed' ? t('securityDashboard.loginFailed') : evt.action === 'login_success' ? t('securityDashboard.loginSuccess') : evt.action === 'token_refresh' ? t('securityDashboard.tokenRefresh') : evt.action === 'password_change' ? t('securityDashboard.passwordChange') : evt.action}
                             </Badge>
                           </td>
-                          <td className="py-2 px-3 text-xs text-gray-700">{evt.user_email || '-'}</td>
-                          <td className="py-2 px-3 text-xs text-gray-500 max-w-[200px] truncate">{evt.details || '-'}</td>
+                          <td className="py-2 px-3 text-xs text-gray-700">{maskSecurityActor(evt.user_email)}</td>
+                          <td className="py-2 px-3 text-xs text-gray-500 max-w-[200px] truncate">{safeSecurityEventDetail(evt)}</td>
                         </tr>;
                 })}
                   </tbody>
