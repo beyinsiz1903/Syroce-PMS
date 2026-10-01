@@ -452,9 +452,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[min(680px,calc(100vw-2rem))] max-h-[75vh] overflow-y-auto p-3">
-          <DropdownMenuLabel className="px-1 pb-2 text-xs font-semibold text-slate-500">
-            Tüm çalışma alanları
-          </DropdownMenuLabel>
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-950">
+            <DropdownMenuLabel className="px-1 text-xs font-semibold text-slate-500">Tüm çalışma alanları</DropdownMenuLabel>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleNavigate('/app/applications')} data-testid="open-application-center">
+              Uygulama merkezini aç
+            </Button>
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {applicationGroups.map((group) => {
               const GroupIcon = GROUP_ICONS[group.id] || Home;
