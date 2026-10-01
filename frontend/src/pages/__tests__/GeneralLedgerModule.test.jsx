@@ -5,6 +5,7 @@ import {
   describeIncomeTotals,
   downloadBlob,
   formatVoucherHistoryEntry,
+  formatSettlementAmount,
   formatAccountMapping,
   getJournalValidationError,
   GL_ENDPOINTS,
@@ -47,6 +48,8 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       fxRevalue: '/gl/fx/revalue',
       chainConsolidated: '/gl/chain/consolidated',
       intercompanyRules: '/gl/chain/intercompany-rules',
+      chainTransfers: '/platform/multi-property/transfers',
+      chainTransferSettlements: '/platform/multi-property/transfer-settlements',
       eledgerSettings: '/gl/e-ledger/settings',
       eledgerPreflight: '/gl/e-ledger/preflight',
       eledgerSourcePackage: '/gl/e-ledger/source-package',
@@ -57,6 +60,11 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       apGLMapping: '/ap/gl-mapping',
       fixedAssetGLMapping: '/fixed-assets/gl-mapping',
     });
+  });
+
+  it('keeps chain settlements in their original currency', () => {
+    expect(formatSettlementAmount(1000, 'TRY')).toContain('₺');
+    expect(formatSettlementAmount(250, 'EUR')).toContain('€');
   });
 
   it('does not expose a direct-post or client idempotency bypass in voucher payloads', () => {

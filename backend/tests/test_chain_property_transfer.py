@@ -51,6 +51,9 @@ async def test_chain_transfer_creates_target_booking_then_closes_source(monkeypa
         extra_charges=_collection(),
         room_night_locks=_collection(),
         reservation_transfers=_collection(),
+        chain_transfer_settlements=_collection(),
+        reservation_activity_log=_collection(),
+        notifications=_collection(),
     )
     monkeypatch.setattr(service_module, "db", fake_db)
     monkeypatch.setattr(service_module, "decrypt_booking_doc", lambda value: value)
@@ -87,6 +90,11 @@ async def test_chain_transfer_creates_target_booking_then_closes_source(monkeypa
         "tenant_id": "denizli",
     })
     fake_db.reservation_transfers.insert_one.assert_awaited_once()
+    fake_db.chain_transfer_settlements.insert_one.assert_not_awaited()
+    target_notification = fake_db.notifications.insert_one.await_args.args[0]
+    assert target_notification["tenant_id"] == "fethiye"
+    assert target_notification["related_id"] == result["target_booking_id"]
+    assert target_payload["source_property_name"] == "Denizli Oteli"
 
 
 @pytest.mark.asyncio
@@ -124,5 +132,82 @@ async def test_chain_transfer_rejects_booking_with_financial_activity(monkeypatc
     )
 
     assert result["success"] is False
-    assert "finansal hareket" in result["error"]
+    assert result["error_code"] == "financial_handling_required"
     atomic_create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_chain_transfer_retains_prepayment_and_creates_two_sided_settlement(monkeypatch):
+    source_booking = {
+        "id": "source-booking",
+        "tenant_id": "denizli",
+        "room_type": "Standard",
+        "guest_name": "Ön Ödemeli Misafir",
+        "check_in": "2026-10-10",
+        "check_out": "2026-10-12",
+        "status": "confirmed",
+        "currency": "TRY",
+    }
+    fake_db = SimpleNamespace(
+        bookings=_collection(find_one=source_booking),
+        rooms=_collection(find_rows=[{"id": "room-204", "room_number": "204", "room_type": "Standard"}]),
+        folios=_collection(find_rows=[{"id": "folio-1"}]),
+        payments=_collection(
+            count=1,
+            find_rows=[{"id": "payment-1", "amount": 1000, "currency": "TRY", "method": "bank_transfer"}],
+        ),
+        folio_charges=_collection(),
+        extra_charges=_collection(),
+        room_night_locks=_collection(),
+        reservation_transfers=_collection(),
+        chain_transfer_settlements=_collection(),
+        reservation_activity_log=_collection(),
+        notifications=_collection(),
+    )
+    monkeypatch.setattr(service_module, "db", fake_db)
+    monkeypatch.setattr(service_module, "decrypt_booking_doc", lambda value: value)
+    monkeypatch.setattr(
+        service_module,
+        "_properties_for_transfer_user",
+        AsyncMock(return_value=("denizli", [
+            {"tenant_id": "denizli", "chain_id": "chain-1", "property_name": "Denizli Oteli"},
+            {"tenant_id": "fethiye", "chain_id": "chain-1", "property_name": "Fethiye Oteli"},
+        ])),
+    )
+    atomic_create = AsyncMock(side_effect=lambda tenant_id, booking_doc: booking_doc)
+    monkeypatch.setattr(service_module, "create_booking_atomic", atomic_create)
+
+    blocked = await service_module.CentralReservationService().transfer_reservation(
+        SimpleNamespace(id="user-1", name="Merkez", tenant_id="denizli"),
+        "source-booking",
+        "fethiye",
+        "Misafir talebi",
+        "Standard",
+    )
+    assert blocked["error_code"] == "financial_handling_required"
+    assert blocked["payment_totals"] == {"TRY": 1000.0}
+    atomic_create.assert_not_awaited()
+
+    result = await service_module.CentralReservationService().transfer_reservation(
+        SimpleNamespace(id="user-1", name="Merkez", tenant_id="denizli"),
+        "source-booking",
+        "fethiye",
+        "Misafir talebi",
+        "Standard",
+        "retain_and_settle",
+    )
+
+    assert result["success"] is True
+    assert result["settlement_status"] == "open"
+    settlement = fake_db.chain_transfer_settlements.insert_one.await_args.args[0]
+    assert settlement["collection_property_id"] == "denizli"
+    assert settlement["service_property_id"] == "fethiye"
+    assert settlement["currency_lines"] == [{
+        "currency": "TRY",
+        "amount": 1000.0,
+        "source_position": "payable",
+        "target_position": "receivable",
+    }]
+    target_payload = atomic_create.await_args.kwargs["booking_doc"]
+    assert target_payload["transferred_prepayments"] == [{"currency": "TRY", "amount": 1000.0}]
+    assert fake_db.notifications.insert_one.await_count == 3

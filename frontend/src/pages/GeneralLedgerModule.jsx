@@ -42,6 +42,8 @@ export const GL_ENDPOINTS = {
   fxRevalue: '/gl/fx/revalue',
   chainConsolidated: '/gl/chain/consolidated',
   intercompanyRules: '/gl/chain/intercompany-rules',
+  chainTransfers: '/platform/multi-property/transfers',
+  chainTransferSettlements: '/platform/multi-property/transfer-settlements',
   eledgerSettings: '/gl/e-ledger/settings',
   eledgerPreflight: '/gl/e-ledger/preflight',
   eledgerSourcePackage: '/gl/e-ledger/source-package',
@@ -369,6 +371,12 @@ export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
 
 const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-balance', 'statements', 'periods', 'workspace', 'integrations', 'setup'];
 
+export const formatSettlementAmount = (amount, currency) => formatCurrency(
+  Number(amount) || 0,
+  String(currency || 'TRY').toUpperCase(),
+  { decimals: 2, compactDecimals: false },
+);
+
 const GeneralLedgerModule = () => {
   const { t } = useTranslation();
   const businessDate = useBusinessDate();
@@ -407,6 +415,9 @@ const GeneralLedgerModule = () => {
   const [statements, setStatements] = useState({ income: null, balance: null });
   const [comparison, setComparison] = useState({ income: null, balance: null });
   const [chainFinance, setChainFinance] = useState(null);
+  const [chainTransfers, setChainTransfers] = useState([]);
+  const [settlementForms, setSettlementForms] = useState({});
+  const [settlementBusy, setSettlementBusy] = useState('');
   const [intercompany, setIntercompany] = useState({ rules: [], properties: [], can_manage: false });
   const [intercompanyForm, setIntercompanyForm] = useState({ name: '', kind: 'balance', tenant_a_id: '', account_a_code: '', tenant_b_id: '', account_b_code: '' });
   const [intercompanyBusy, setIntercompanyBusy] = useState(false);
@@ -572,11 +583,14 @@ const GeneralLedgerModule = () => {
     const previousStart = `${previousYear}-01-01`;
     const previousEnd = `${previousYear}${today.slice(4)}`;
     try {
-      const [incomeRes, balanceRes, chainRes, rulesRes, eledgerSettingsRes, eledgerPreflightRes] = await Promise.all([
+      const [incomeRes, balanceRes, chainRes, rulesRes, transfersRes, eledgerSettingsRes, eledgerPreflightRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.comparativeIncome, { params: { start, end: today, comparison_start: previousStart, comparison_end: previousEnd } }),
         axios.get(GL_ENDPOINTS.comparativeBalance, { params: { as_of: today, comparison_as_of: previousEnd } }),
         axios.get(GL_ENDPOINTS.chainConsolidated, { params: { start, end: today, as_of: today } }),
         axios.get(GL_ENDPOINTS.intercompanyRules),
+        // A hotel outside a chain, or a non-headquarters finance user, may not
+        // access the chain trail.  That must not make its own statements fail.
+        axios.get(GL_ENDPOINTS.chainTransfers, { params: { limit: 100 } }).catch(() => ({ data: { transfers: [] } })),
         axios.get(GL_ENDPOINTS.eledgerSettings),
         axios.get(GL_ENDPOINTS.eledgerPreflight, { params: { period: eledgerPeriod } }),
       ]);
@@ -584,6 +598,7 @@ const GeneralLedgerModule = () => {
       setComparison({ income: incomeRes.data, balance: balanceRes.data });
       setChainFinance(chainRes.data || null);
       setIntercompany(rulesRes.data || { rules: [], properties: [], can_manage: false });
+      setChainTransfers(transfersRes.data?.transfers || []);
       if (eledgerSettingsRes.data?.settings) {
         setEledgerSettings({
           taxpayer_id: '', legal_name: '', source_application: 'Syroce PMS', source_application_version: '', software_approval_reference: '',
@@ -614,6 +629,28 @@ const GeneralLedgerModule = () => {
       toast.error(error.response?.data?.detail || 'Kur değerlemesi yapılamadı.');
     } finally {
       setFxBusy(false);
+    }
+  };
+
+  const reconcileTransferSettlement = async (settlementId) => {
+    const form = settlementForms[settlementId] || {};
+    if (!String(form.reference || '').trim()) {
+      toast.error('Banka dekontu, netleştirme veya mahsup fişi referansını girin.');
+      return;
+    }
+    setSettlementBusy(settlementId);
+    try {
+      await axios.post(`${GL_ENDPOINTS.chainTransferSettlements}/${settlementId}/reconcile`, {
+        method: form.method || 'bank_transfer',
+        reference: form.reference.trim(),
+        note: String(form.note || '').trim() || null,
+      });
+      toast.success('Zincir içi mahsuplaşma mutabakatı kapatıldı.');
+      await fetchStatements();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Mahsuplaşma kapatılamadı.');
+    } finally {
+      setSettlementBusy('');
     }
   };
 
@@ -1641,6 +1678,117 @@ const GeneralLedgerModule = () => {
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+          )}
+          {chainTransfers.length > 0 && (
+            <Card className="mt-5">
+              <CardHeader>
+                <CardTitle>Zincir İçi Rezervasyon ve Mahsuplaşma Takibi</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  Rezervasyonu gönderen, hizmeti verecek tesis ve tahsilatı elinde tutan tesis ayrı gösterilir.
+                  Açık kayıtlar banka transferi veya grup içi netleştirme sonrasında muhasebe tarafından kapatılmalıdır.
+                </p>
+                {chainTransfers.map((transfer) => {
+                  const settlement = transfer.settlement;
+                  const lines = settlement?.currency_lines || [];
+                  const isOpen = settlement?.status === 'open';
+                  return (
+                    <div key={transfer.id} className="rounded-lg border p-3 text-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">
+                            {transfer.source_property_name || transfer.source_property}
+                            {' → '}
+                            {transfer.target_property_name || transfer.target_property}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {transfer.guest_name || 'Misafir adı yok'} · Kaynak rezervasyon {transfer.source_booking_id || transfer.booking_id}
+                            {' · '}Hedef rezervasyon {transfer.target_booking_id}
+                          </p>
+                          {transfer.reason && <p className="text-xs text-slate-600 mt-1">Aktarım gerekçesi: {transfer.reason}</p>}
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isOpen ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                          {!settlement ? 'Mahsuplaşma gerekmedi' : isOpen ? 'Mutabakat bekliyor' : 'Mutabakat tamamlandı'}
+                        </span>
+                      </div>
+                      {settlement && (
+                        <div className="mt-3 rounded-md bg-slate-50 p-3">
+                          <div className="grid gap-2 md:grid-cols-3">
+                            <div>
+                              <p className="text-xs text-slate-500">Tahsilatı alan tesis</p>
+                              <p className="font-medium">{transfer.source_property_name || settlement.source_property_name}</p>
+                              <p className="text-xs text-slate-600">Hedef tesise borçlu</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500">Hizmeti verecek tesis</p>
+                              <p className="font-medium">{transfer.target_property_name || settlement.target_property_name}</p>
+                              <p className="text-xs text-slate-600">Kaynak tesisten alacaklı</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500">Mahsuplaşma tutarı</p>
+                              {lines.map((line) => (
+                                <p key={line.currency} className="font-semibold">{formatSettlementAmount(line.amount, line.currency)}</p>
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-xs text-amber-700 mt-2">
+                            Bu kayıt tahsilatı hedef tesise ödeme gibi göstermez; finansal mutabakat tamamlanana kadar açık borç/alacak olarak izlenir.
+                          </p>
+                          {isOpen ? (
+                            <div className="mt-3 grid gap-2 border-t pt-3 md:grid-cols-4">
+                              <select
+                                aria-label="Mutabakat yöntemi"
+                                className="rounded-md border bg-white px-3 py-2 text-xs"
+                                value={settlementForms[settlement.id]?.method || 'bank_transfer'}
+                                onChange={(event) => setSettlementForms((current) => ({
+                                  ...current,
+                                  [settlement.id]: { ...current[settlement.id], method: event.target.value },
+                                }))}
+                              >
+                                <option value="bank_transfer">Banka transferi</option>
+                                <option value="intercompany_netting">Grup içi netleştirme</option>
+                                <option value="manual_journal">Mahsup fişi</option>
+                              </select>
+                              <Input
+                                aria-label="Mutabakat referansı"
+                                placeholder="Dekont / fiş referansı"
+                                value={settlementForms[settlement.id]?.reference || ''}
+                                onChange={(event) => setSettlementForms((current) => ({
+                                  ...current,
+                                  [settlement.id]: { ...current[settlement.id], reference: event.target.value },
+                                }))}
+                              />
+                              <Input
+                                aria-label="Mutabakat notu"
+                                placeholder="Açıklama (isteğe bağlı)"
+                                value={settlementForms[settlement.id]?.note || ''}
+                                onChange={(event) => setSettlementForms((current) => ({
+                                  ...current,
+                                  [settlement.id]: { ...current[settlement.id], note: event.target.value },
+                                }))}
+                              />
+                              <Button
+                                disabled={settlementBusy === settlement.id}
+                                onClick={() => reconcileTransferSettlement(settlement.id)}
+                              >
+                                {settlementBusy === settlement.id ? 'Kapatılıyor...' : 'Mutabakatı Kapat'}
+                              </Button>
+                            </div>
+                          ) : settlement.reconciliation?.reference ? (
+                            <p className="mt-2 border-t pt-2 text-xs text-emerald-700">
+                              {settlement.reconciliation.reference} referansıyla {settlement.reconciliation.reconciled_at
+                                ? new Date(settlement.reconciliation.reconciled_at).toLocaleString('tr-TR')
+                                : 'kapatıldı'}.
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           )}
