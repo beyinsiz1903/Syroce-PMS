@@ -21,7 +21,7 @@ const ROUTE_OVERRIDES = {
   invoices: '/app/invoices',
   invoices_basic: '/app/invoices',
   folio_basic: '/app/pms?tab=cashier',
-  folio_management: '/group-folio',
+  folio_management: '/app/folio-management',
   cost_management: '/app/cost-management',
   night_audit: '/night-audit',
   night_audit_basic: '/night-audit',

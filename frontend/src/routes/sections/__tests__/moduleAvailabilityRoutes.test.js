@@ -4,6 +4,7 @@ import { channelManagerRoutes } from "../channelManager";
 import { hotelFeaturesAiRoutes } from "../hotelFeaturesAi";
 import { marketplaceLoyaltyRoutes } from "../marketplaceLoyalty";
 import { revenueRmsRoutes } from "../revenueRms";
+import { coreOperationsRoutes } from "../coreOperations";
 import { getRouteConfigs } from "../../routeDefinitions";
 
 const p = (component) => ({ type: "protected", component });
@@ -42,6 +43,19 @@ describe("module availability route gates", () => {
       hasFeature: () => false,
     }).find((item) => item.path === "/staff/:id");
     expect(composed.moduleScopes).toBeUndefined();
+  });
+
+  it("opens hotel-owned setup workspaces through their licensed module gates", () => {
+    const routes = coreOperationsRoutes({ p, pa, pm, modules: {} });
+
+    expect(routes.find((route) => route.path === "/app/wbe-settings")).toMatchObject({
+      type: "module",
+      moduleKey: "booking_engine",
+    });
+    expect(routes.find((route) => route.path === "/app/folio-management")).toMatchObject({
+      type: "module",
+      moduleKey: "folio_management",
+    });
   });
 
   it("preserves feature route type after composing protected props", () => {

@@ -7,7 +7,7 @@ import {
   RoomMapPage, WakeUpCallsPage, LostFoundPage, MinibarPage, TransferParkingPage, GuestJourney,
   OperationalEventDashboard, MigrationObservabilityPage, IntegrationHub,
   AdminControlPanel, HousekeepingDashboard, POSDashboard, POSWaiterTerminal, POSExtensions, FeaturesShowcase,
-  SustainabilityReport, WBESettings,
+  SustainabilityReport, WBESettings, FolioManagementHub,
 } from "./lazyPages";
 
 export function coreOperationsRoutes({ p, pa, pm, modules }) {
@@ -51,7 +51,8 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/operational-events", ...p(OperationalEventDashboard), wrapLayout: true, layoutModule: "pms_operations" },
     { path: "/app/migration-observability", ...p(MigrationObservabilityPage), wrapLayout: true, layoutModule: "reports" },
     { path: "/app/sustainability", ...p(SustainabilityReport), wrapLayout: true, layoutModule: "reports" },
-    { path: "/app/wbe-settings", ...pa(WBESettings), wrapLayout: true, layoutModule: "wbe" },
+    { path: "/app/wbe-settings", ...pm(WBESettings, "booking_engine", undefined, { strict: true }), wrapLayout: true, layoutModule: "wbe" },
+    { path: "/app/folio-management", ...pm(FolioManagementHub, "folio_management"), wrapLayout: true, layoutModule: "folio_management" },
     { path: "/app/integration-hub", ...p(IntegrationHub), wrapLayout: true, layoutModule: "integration-hub" },
     { path: "/app/admin-control-panel", ...pa(AdminControlPanel), wrapLayout: true, layoutModule: "admin_control_panel" },
 
