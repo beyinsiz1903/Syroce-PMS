@@ -21,15 +21,76 @@ const MODULE_LABELS = {
   reports: "Raporlar",
   users: "Kullanıcı Yönetimi",
   auth: "Oturum",
-  system: "Sistem"
+  system: "Sistem",
+  gl_report: "Genel Muhasebe Raporu",
+  guest: "Misafir",
+  room: "Oda",
+  keycard: "Anahtar Kart",
+  inventory: "Envanter",
+  payment: "Ödeme",
+  invoice: "Fatura",
+  tenant: "Otel",
+  hotel: "Otel",
+  user: "Kullanıcı"
 };
-function friendlyAction(event) {
+
+const ACTION_LABELS = {
+  login_success: "Oturum açıldı",
+  login_failed: "Oturum açma başarısız",
+  logout: "Oturum kapatıldı",
+  token_refresh: "Oturum süresi yenilendi",
+  gl_report_exported: "Muhasebe raporu dışa aktarıldı",
+  report_exported: "Rapor dışa aktarıldı",
+  csv_exported: "CSV raporu indirildi",
+  created: "Oluşturuldu",
+  updated: "Güncellendi",
+  deleted: "Silindi",
+  viewed: "Görüntülendi",
+  exported: "Dışa aktarıldı"
+};
+
+const normalizeAuditKey = value => String(value || "")
+  .trim()
+  .toLocaleLowerCase("tr-TR")
+  .replace(/[.\s-]+/g, "_")
+  .replace(/_+/g, "_");
+
+export function auditEntityLabel(value) {
+  const key = normalizeAuditKey(value);
+  return MODULE_LABELS[key] || String(value || "Sistem").replaceAll("_", " ").replaceAll(".", " ");
+}
+
+export function auditActionLabel(value) {
+  const key = normalizeAuditKey(value);
+  if (ACTION_LABELS[key]) return ACTION_LABELS[key];
+  return String(value || "İşlem")
+    .replaceAll("_", " ")
+    .replaceAll(".", " › ")
+    .replace(/\b\w/g, character => character.toLocaleUpperCase("tr-TR"));
+}
+
+export function summarizeUserAgent(userAgent) {
+  const value = String(userAgent || "");
+  if (!value) return "Bilinmeyen cihaz";
+  const os = /Mac OS X/i.test(value) ? "macOS"
+    : /Windows/i.test(value) ? "Windows"
+      : /Android/i.test(value) ? "Android"
+        : /iPhone|iPad/i.test(value) ? "iOS/iPadOS"
+          : /Linux/i.test(value) ? "Linux" : "Bilinmeyen işletim sistemi";
+  const browser = value.match(/Edg\/([\d.]+)/i) ? `Edge ${value.match(/Edg\/([\d.]+)/i)[1]}`
+    : value.match(/Chrome\/([\d.]+)/i) ? `Chrome ${value.match(/Chrome\/([\d.]+)/i)[1]}`
+      : value.match(/Version\/([\d.]+).*Safari/i) ? `Safari ${value.match(/Version\/([\d.]+).*Safari/i)[1]}`
+        : value.match(/Firefox\/([\d.]+)/i) ? `Firefox ${value.match(/Firefox\/([\d.]+)/i)[1]}` : "Bilinmeyen tarayıcı";
+  return `${browser} · ${os}`;
+}
+
+export function friendlyAction(event) {
   if (event.action && event.action.includes(" /api/")) {
     const verbs = { POST: "oluşturdu / işlem yaptı", PUT: "güncelledi", PATCH: "değiştirdi", DELETE: "sildi" };
     const verb = verbs[event.http_method] || "işlem yaptı";
-    return `${MODULE_LABELS[event.target_type] || event.target_type || "Sistem"}: ${verb}`;
+    return `${auditEntityLabel(event.target_type)}: ${verb}`;
   }
-  return String(event.operation_name || event.action || "İşlem").replaceAll("_", " ").replaceAll(".", " › ");
+  return auditActionLabel(event.operation_name || event.action);
 }
 function SeverityBadge({
   severity
@@ -76,7 +137,7 @@ function TimelineEvent({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium text-gray-900">{friendlyAction(event)}</span>
             <SeverityBadge severity={event.severity || "info"} />
-            <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-700 border-gray-300">{MODULE_LABELS[event.target_type] || event.target_type}</Badge>
+            <Badge variant="outline" className="text-[10px] bg-gray-100 text-gray-700 border-gray-300">{auditEntityLabel(event.target_type)}</Badge>
             <Badge variant="outline" className={`text-[10px] ${event.result_status === "success" ? "text-emerald-700 bg-emerald-50 border-emerald-300" : "text-red-700 bg-red-50 border-red-300"}`}>
               {event.result_status === "success" ? "Başarılı" : "Başarısız"}
             </Badge>
@@ -89,7 +150,7 @@ function TimelineEvent({
                 <Globe className="w-3 h-3" />{event.ip_address}
               </span>}
             {event.user_agent && <span data-testid="event-device" className="flex items-center gap-1 max-w-[220px] truncate" title={event.user_agent}>
-                <Monitor className="w-3 h-3 shrink-0" /><span className="truncate">{event.user_agent}</span>
+                <Monitor className="w-3 h-3 shrink-0" /><span className="truncate">{summarizeUserAgent(event.user_agent)}</span>
               </span>}
             {event.duration_ms && <span>{event.duration_ms}{t("cm.pages_AuditTimelinePage.ms")}</span>}
           </div>
@@ -127,7 +188,6 @@ export default function AuditTimelinePage({
     id: ""
   });
   const [entityTrail, setEntityTrail] = useState(null);
-  const token = localStorage.getItem("token") || localStorage.getItem("access_token");
   const headers = {};
   const fetchTimeline = useCallback(async () => {
     setLoading(true);
@@ -257,7 +317,7 @@ export default function AuditTimelinePage({
               <CardContent className="p-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Filter className="w-4 h-4 text-gray-500" />
-                  <select data-testid="filter-severity" value={filters.severity} onChange={e => setFilters(p => ({
+                  <select data-testid="filter-severity" aria-label="Önem düzeyine göre filtrele" value={filters.severity} onChange={e => setFilters(p => ({
                     ...p,
                     severity: e.target.value
                   }))} className="bg-white border border-gray-300 rounded text-xs px-2 py-1 text-gray-700">
@@ -266,7 +326,7 @@ export default function AuditTimelinePage({
                     <option value="warning">{t("cm.pages_AuditTimelinePage.warning")}</option>
                     <option value="info">{t("cm.pages_AuditTimelinePage.info")}</option>
                   </select>
-                  <select data-testid="filter-entity" value={filters.entity_type} onChange={e => setFilters(p => ({
+                  <select data-testid="filter-entity" aria-label="Kayıt türüne göre filtrele" value={filters.entity_type} onChange={e => setFilters(p => ({
                     ...p,
                     entity_type: e.target.value
                   }))} className="bg-white border border-gray-300 rounded text-xs px-2 py-1 text-gray-700">
@@ -278,19 +338,19 @@ export default function AuditTimelinePage({
                     <option value="keycard">{t("cm.pages_AuditTimelinePage.keycard")}</option>
                     <option value="inventory">{t("cm.pages_AuditTimelinePage.inventory")}</option>
                   </select>
-                  <Input data-testid="filter-actor" placeholder={t("cm.pages_AuditTimelinePage.actor")} value={filters.actor} onChange={e => setFilters(p => ({
+                  <Input data-testid="filter-actor" aria-label="İşlemi yapan kullanıcıya göre filtrele" placeholder={t("cm.pages_AuditTimelinePage.actor")} value={filters.actor} onChange={e => setFilters(p => ({
                     ...p,
                     actor: e.target.value
                   }))} className="text-xs h-7 w-32 md:w-auto" />
-                  <Input data-testid="filter-action" placeholder="İşlem ara..." value={filters.action} onChange={e => setFilters(p => ({
+                  <Input data-testid="filter-action" aria-label="İşlem adına göre filtrele" placeholder="İşlem ara..." value={filters.action} onChange={e => setFilters(p => ({
                     ...p,
                     action: e.target.value
                   }))} className="text-xs h-7 w-32 md:w-auto" />
-                  <Input data-testid="filter-ip" placeholder={t("cm.pages_AuditTimelinePage.ip_adresi")} value={filters.ip_address} onChange={e => setFilters(p => ({
+                  <Input data-testid="filter-ip" aria-label="IP adresine göre filtrele" placeholder={t("cm.pages_AuditTimelinePage.ip_adresi")} value={filters.ip_address} onChange={e => setFilters(p => ({
                     ...p,
                     ip_address: e.target.value
                   }))} className="text-xs h-7 w-32 md:w-auto" />
-                  <Input data-testid="filter-device" placeholder={t("cm.pages_AuditTimelinePage.cihaz_taray\u0131c\u0131")} value={filters.user_agent} onChange={e => setFilters(p => ({
+                  <Input data-testid="filter-device" aria-label="Cihaz veya tarayıcıya göre filtrele" placeholder={t("cm.pages_AuditTimelinePage.cihaz_taray\u0131c\u0131")} value={filters.user_agent} onChange={e => setFilters(p => ({
                     ...p,
                     user_agent: e.target.value
                   }))} className="text-xs h-7 w-40 md:w-auto" />
@@ -322,7 +382,7 @@ export default function AuditTimelinePage({
                   <Search className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.entity_audit_trail")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <select data-testid="entity-type-select" value={searchEntity.type} onChange={e => setSearchEntity(p => ({
+                <select data-testid="entity-type-select" aria-label="İzlenecek kayıt türü" value={searchEntity.type} onChange={e => setSearchEntity(p => ({
                   ...p,
                   type: e.target.value
                 }))} className="w-full bg-white border border-gray-300 rounded text-xs px-2 py-1.5 text-gray-700">
@@ -332,7 +392,7 @@ export default function AuditTimelinePage({
                   <option value="room">{t("cm.pages_AuditTimelinePage.room")}</option>
                   <option value="guest">{t("cm.pages_AuditTimelinePage.guest")}</option>
                 </select>
-                <Input data-testid="entity-id-input" placeholder={t("cm.pages_AuditTimelinePage.entity_id")} value={searchEntity.id} onChange={e => setSearchEntity(p => ({
+                <Input data-testid="entity-id-input" aria-label="İzlenecek kayıt kimliği" placeholder={t("cm.pages_AuditTimelinePage.entity_id")} value={searchEntity.id} onChange={e => setSearchEntity(p => ({
                   ...p,
                   id: e.target.value
                 }))} className="text-xs" />
@@ -340,9 +400,9 @@ export default function AuditTimelinePage({
                   <Eye className="w-3 h-3 mr-1" />{t("cm.pages_AuditTimelinePage.view_trail")}</Button>
 
                 {entityTrail && <div className="mt-3 space-y-2">
-                    <p className="text-xs text-gray-600">{entityTrail.entity_type}: {entityTrail.entity_id} ({entityTrail.count || 0}{t("cm.pages_AuditTimelinePage.events")}</p>
+                    <p className="text-xs text-gray-600">{auditEntityLabel(entityTrail.entity_type)}: {entityTrail.entity_id} ({entityTrail.count || 0}{t("cm.pages_AuditTimelinePage.events")}</p>
                     {(entityTrail.trail || []).map((t, i) => <div key={t.id || i} className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
-                        <p className="text-gray-800">{t.operation_name || t.action}</p>
+                        <p className="text-gray-800">{auditActionLabel(t.operation_name || t.action)}</p>
                         <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString(i18n.language) : "—"}</p>
                       </div>)}
                   </div>}
@@ -357,7 +417,7 @@ export default function AuditTimelinePage({
                 </CardHeader>
                 <CardContent>
                   {Object.entries(summary.by_operation).map(([op, count]) => <div key={op} className="flex justify-between items-center py-1 text-xs">
-                      <span className="text-gray-600 font-mono">{op}</span>
+                      <span className="text-gray-600">{auditActionLabel(op)}</span>
                       <span className="text-gray-900 font-semibold">{count}</span>
                     </div>)}
                 </CardContent>
