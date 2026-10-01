@@ -23,6 +23,7 @@ export function executiveOpsRoutes({ p, pm }) {
 
     // ── Ops & Phases ───────────────────────────────────
     { path: "/audit-timeline", ...p(AuditTimelinePage, {}), wrapLayout: true, layoutModule: "audit-timeline" },
+    { path: "/app/audit-logs", type: "redirect", to: "/audit-timeline" },
     { path: "/urgent-message-report", ...p(UrgentMessageReportPage, {}), wrapLayout: true, layoutModule: "urgent-message-report" },
     { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}), wrapLayout: true, layoutModule: "recalled_messages_report" },
     { path: "/id-photo-view-report", ...p(IdPhotoViewReportPage, {}), wrapLayout: true, layoutModule: "id-photo-view-report" },

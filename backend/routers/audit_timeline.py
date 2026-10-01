@@ -20,10 +20,56 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from security.guest_data_visibility import protect_guest_row, visibility_mode_for_field
+from security.log_sanitizer import is_sensitive_field, sanitize_string
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/audit", tags=["Audit Timeline"])
+
+
+def _protect_audit_value(value, current_user):
+    """Remove secrets and apply the caller's guest-data visibility policy."""
+    if isinstance(value, dict):
+        protected = protect_guest_row(value, current_user)
+        cleaned = {}
+        for key, item in protected.items():
+            field_key, _mode = visibility_mode_for_field({}, key)
+            if is_sensitive_field(key) and not field_key:
+                cleaned[key] = "***REDACTED***"
+            elif field_key:
+                # Already handled by the hotel-defined per-user guest policy.
+                cleaned[key] = item
+            else:
+                cleaned[key] = _protect_audit_value(item, current_user)
+        return cleaned
+    if isinstance(value, list):
+        return [_protect_audit_value(item, current_user) for item in value]
+    if isinstance(value, str):
+        return sanitize_string(value)
+    return value
+
+
+def _normalize_audit_record(log: dict, current_user) -> dict:
+    """Unify legacy and canonical audit schemas for the central screen."""
+    normalized = dict(log)
+    normalized["operation_name"] = log.get("operation_name") or log.get("action") or "unknown_operation"
+    normalized["action"] = log.get("action") or normalized["operation_name"]
+    normalized["target_type"] = log.get("target_type") or log.get("entity_type") or "system"
+    normalized["entity_type"] = log.get("entity_type") or normalized["target_type"]
+    normalized["target_id"] = log.get("target_id") or log.get("entity_id")
+    normalized["entity_id"] = log.get("entity_id") or normalized["target_id"]
+    normalized["result_status"] = log.get("result_status") or "success"
+    normalized["severity"] = log.get("severity") or "info"
+    for field in ("metadata", "before_snapshot", "after_snapshot", "override_reason"):
+        if field in normalized:
+            normalized[field] = _protect_audit_value(normalized[field], current_user)
+    return normalized
+
+
+def _append_condition(query: dict, condition: dict) -> None:
+    """Combine compatibility clauses without overwriting an earlier `$or`."""
+    query.setdefault("$and", []).append(condition)
 
 
 def _ts_to_iso(ts) -> str:
@@ -94,6 +140,7 @@ async def get_audit_timeline(
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_audit_log")),
 ):
     """
     Timeline-friendly audit log query.
@@ -129,11 +176,17 @@ async def get_audit_timeline(
         from security.query_safety import safe_search_term
 
         if _a := safe_search_term(action):
-            query["operation_name"] = {"$regex": _a, "$options": "i"}
+            _append_condition(
+                query,
+                {"$or": [
+                    {"operation_name": {"$regex": _a, "$options": "i"}},
+                    {"action": {"$regex": _a, "$options": "i"}},
+                ]},
+            )
     if severity:
         query["severity"] = severity
     if entity_type:
-        query["target_type"] = entity_type
+        _append_condition(query, {"$or": [{"target_type": entity_type}, {"entity_type": entity_type}]})
     if ip_address:
         from security.query_safety import safe_search_term
 
@@ -168,7 +221,7 @@ async def get_audit_timeline(
 
         # Total-serialize the page so a stray non-JSON-native legacy field
         # cannot 500 at FastAPI's encode step (which runs outside this try).
-        logs = [_json_safe(_log) for _log in logs]
+        logs = [_json_safe(_normalize_audit_record(_log, current_user)) for _log in logs]
 
         next_cursor = logs[-1]["timestamp"] if has_more and logs else None
         grouped = _group_by_time(logs)
@@ -194,12 +247,63 @@ async def get_audit_timeline(
         }
 
 
+@router.get("/timeline.csv")
+async def export_audit_timeline_csv(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    actor_id: str | None = None,
+    action: str | None = None,
+    severity: str | None = None,
+    entity_type: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """Download a privacy-filtered operational audit report for the hotel."""
+    result = await get_audit_timeline(
+        start_date=start_date,
+        end_date=end_date,
+        actor_id=actor_id,
+        action=action,
+        severity=severity,
+        entity_type=entity_type,
+        ip_address=None,
+        user_agent=None,
+        limit=2000,
+        cursor=None,
+        current_user=current_user,
+        _perm=_perm,
+    )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Tarih", "Modül", "İşlem", "Kullanıcı", "Sonuç", "Önem", "Kayıt", "IP", "Cihaz"])
+    for event in result.get("events", []):
+        writer.writerow([
+            event.get("timestamp") or "",
+            event.get("target_type") or "",
+            event.get("action") or event.get("operation_name") or "",
+            event.get("actor_id") or "system",
+            event.get("result_status") or "",
+            event.get("severity") or "",
+            event.get("target_id") or "",
+            event.get("ip_address") or "",
+            event.get("user_agent") or "",
+        ])
+    payload = buf.getvalue().encode("utf-8-sig")
+    filename = f"islem-kayitlari-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.csv"
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/timeline/{entity_type}/{entity_id}")
 async def get_entity_audit_trail(
     entity_type: str,
     entity_id: str,
     limit: int = Query(default=50, le=200),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_audit_log")),
 ):
     """
     Get full audit trail for a specific entity (booking, guest, room, folio, etc.)
@@ -208,15 +312,18 @@ async def get_entity_audit_trail(
     ctx = OperationContext.from_user(current_user)
     query = {
         "tenant_id": ctx.tenant_id,
-        "target_type": entity_type,
-        "target_id": entity_id,
+        "$or": [
+            {"target_type": entity_type, "target_id": entity_id},
+            {"entity_type": entity_type, "entity_id": entity_id},
+        ],
     }
 
     logs = await db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
 
     # Compute diffs between snapshots
     trail = []
-    for log in logs:
+    for raw_log in logs:
+        log = _normalize_audit_record(raw_log, current_user)
         entry = {
             "id": log.get("id"),
             "operation": log.get("operation_name"),
@@ -224,7 +331,7 @@ async def get_entity_audit_trail(
             "actor_role": log.get("actor_role"),
             "result_status": log.get("result_status"),
             "severity": log.get("severity"),
-            "timestamp": log.get("timestamp"),
+            "timestamp": _ts_to_iso(log.get("timestamp")),
             "duration_ms": log.get("duration_ms"),
             "before_snapshot": log.get("before_snapshot"),
             "after_snapshot": log.get("after_snapshot"),
@@ -240,7 +347,7 @@ async def get_entity_audit_trail(
                 if before.get(k) != after.get(k):
                     changed[k] = {"before": before.get(k), "after": after.get(k)}
             entry["changed_fields"] = changed
-        trail.append(entry)
+        trail.append(_json_safe(entry))
 
     return {
         "entity_type": entity_type,
@@ -250,7 +357,6 @@ async def get_entity_audit_trail(
     }
 
 
-@router.get("/summary")
 def _merge_severity(severity_data: list[dict]) -> dict:
     merged = {"info": 0, "warning": 0, "critical": 0}
     for d in severity_data:
@@ -263,6 +369,7 @@ def _merge_severity(severity_data: list[dict]) -> dict:
 async def get_audit_summary(
     period: str = Query(default="24h", pattern="^(1h|6h|24h|7d|30d)$"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_audit_log")),
 ):
     """
     Aggregated audit summary for dashboard cards.
@@ -282,7 +389,7 @@ async def get_audit_summary(
                     {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
                 ],
                 "by_operation": [
-                    {"$group": {"_id": "$operation_name", "count": {"$sum": 1}}},
+                    {"$group": {"_id": {"$ifNull": ["$operation_name", "$action"]}, "count": {"$sum": 1}}},
                     {"$sort": {"count": -1}},
                     {"$limit": 10},
                 ],

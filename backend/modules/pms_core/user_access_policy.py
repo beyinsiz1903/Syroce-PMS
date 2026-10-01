@@ -33,6 +33,7 @@ DELEGABLE_PERMISSIONS = frozenset(
         "view_contact_center",
         "manage_contact_center",
         "send_urgent_message",
+        "view_audit_log",
     }
 )
 

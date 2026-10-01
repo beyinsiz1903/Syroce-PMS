@@ -118,7 +118,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "audit_timeline",
-    label: "Denetim Zaman Çizelgesi",
+    label: "İşlem Kayıtları",
     path: "/audit-timeline",
     tier: "basic",
     group: "core",
