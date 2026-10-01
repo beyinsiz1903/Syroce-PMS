@@ -30,6 +30,7 @@ export const ReservationCalendar = lazy(() => import("@/pages/ReservationCalenda
 export const SustainabilityReport = lazy(() => import("@/pages/SustainabilityReport"));
 export const WebBookingEngine = lazy(() => import("@/pages/WebBookingEngine"));
 export const WBESettings = lazy(() => import("@/pages/WBESettings"));
+export const FolioManagementHub = lazy(() => import("@/pages/FolioManagementHub"));
 export const Settings = lazy(() => import("@/pages/settings"));
 export const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 export const PCIComplianceDashboard = lazy(() => import("@/pages/PCIComplianceDashboard"));

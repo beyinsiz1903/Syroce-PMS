@@ -14,6 +14,14 @@ describe('module catalog', () => {
     expect(resolveModuleState(pms, { subscription_tier: 'mini', modules: { pms: true } }).enabled).toBe(true);
   });
 
+  it('exposes the resolved workspace path with the module state', () => {
+    const pms = PRODUCT_MODULES.find((item) => item.key === 'pms');
+    const state = resolveModuleState(pms, { subscription_tier: 'mini', modules: { pms: true } });
+
+    expect(state.path).toBe('/app/reservation-calendar');
+    expect(state.launchable).toBe(true);
+  });
+
   it('reports enabled modules without inventing launch routes', () => {
     const counts = moduleCounts({ subscription_tier: 'mini', modules: { pms: true } });
     expect(counts.total).toBe(PRODUCT_MODULES.length);
@@ -22,4 +30,3 @@ describe('module catalog', () => {
     expect(counts.needsSetup).toBe(counts.enabled - counts.launchable);
   });
 });
-

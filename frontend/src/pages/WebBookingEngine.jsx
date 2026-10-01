@@ -1,39 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import axios from "axios";
-import { Calendar, Users, Briefcase, Wifi, Coffee, Wind, BedDouble, CheckCircle, ArrowRight } from "lucide-react";
+import api from "@/api/axios";
+import { Calendar, Users, BedDouble, CheckCircle, ArrowRight, SearchCheck, ShieldCheck } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/currency";
-
-const FEATURED_ROOMS = [
-  {
-    id: "rt_std_01",
-    name: "Standart Oda",
-    description: "Şehir manzaralı konforlu standart oda. Modern tasarımı ve rahat yatağı ile günün yorgunluğunu atın.",
-    image_url: "/wbe/standard_room.jpg",
-    features: ["Ücretsiz Wi-Fi", "Klima", "Mini Bar", "2 Kişilik"],
-  },
-  {
-    id: "rt_dlx_02",
-    name: "Deluxe Oda",
-    description: "Geniş yaşam alanı ve eşsiz deniz manzarası. Özel balkonunuzda kahvenizi yudumlarken lüksün tadını çıkarın.",
-    image_url: "/wbe/deluxe_room.jpg",
-    features: ["Deniz Manzarası", "Kral Yatak", "Jakuzi", "3 Kişilik"],
-  },
-  {
-    id: "rt_fam_03",
-    name: "Aile Süiti",
-    description: "Çocuklu aileler için tasarlanmış geniş süit. İki yatak odası ve ferah oturma alanıyla ev konforu sunar.",
-    image_url: "/wbe/family_suite.jpg",
-    features: ["İki Yatak Odası", "Mutfak Nişi", "2 Banyo", "5 Kişilik"],
-  },
-];
 
 export default function WebBookingEngine() {
   const { tenantId } = useParams();
@@ -68,7 +44,7 @@ export default function WebBookingEngine() {
     setBookingResult(null);
 
     try {
-      const res = await axios.get(`/wbe/${tenantId}/availability`, { params: searchParams });
+      const res = await api.get(`/wbe/${tenantId}/availability`, { params: searchParams });
       setRooms(res.data);
       // Scroll down gently to results
       setTimeout(() => {
@@ -94,7 +70,7 @@ export default function WebBookingEngine() {
         ...guestInfo
       };
       
-      const res = await axios.post(`/wbe/${tenantId}/book`, payload);
+      const res = await api.post(`/wbe/${tenantId}/book`, payload);
       setBookingResult(res.data);
       toast.success("Rezervasyonunuz başarıyla oluşturuldu!");
       window.scrollTo(0, 0);
@@ -233,35 +209,16 @@ export default function WebBookingEngine() {
         {/* Dynamic Content Area (Results OR Featured Rooms) */}
         <div ref={resultsRef} className="scroll-mt-8">
           
-          {/* Featured Rooms (Show when not searched or when searching but no results yet and haven't selected a room) */}
+          {/* Do not advertise sample rooms or prices before a real inventory search. */}
           {!hasSearched && !selectedRoom && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pt-8">
               <div className="text-center space-y-2">
-                <h2 className="text-3xl font-light text-slate-800">Odalarımız ve Süitlerimiz</h2>
-                <p className="text-slate-500 max-w-2xl mx-auto">Her detayı özenle düşünülmüş, lüks ve konforu bir arada sunan odalarımızda kendinizi özel hissedeceksiniz.</p>
+                <h2 className="text-3xl font-light text-slate-800">Konaklamanızı planlayın</h2>
+                <p className="text-slate-500 max-w-2xl mx-auto">Tarih ve misafir sayısını seçtiğinizde yalnızca otelin gerçek müsaitliği ve güncel satış fiyatları gösterilir.</p>
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {FEATURED_ROOMS.map((room) => (
-                  <Card key={room.id} className="overflow-hidden border-none shadow-lg hover:shadow-xl transition-all duration-300 group cursor-pointer bg-white">
-                    <div className="relative h-64 overflow-hidden">
-                      <img src={room.image_url} alt={room.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                      <div className="absolute bottom-4 left-4 right-4 text-white">
-                        <h3 className="text-2xl font-medium">{room.name}</h3>
-                      </div>
-                    </div>
-                    <CardContent className="p-6">
-                      <p className="text-slate-600 text-sm line-clamp-3 mb-4">{room.description}</p>
-                      <div className="flex flex-wrap gap-2">
-                        {room.features.map((feature, i) => (
-                          <span key={i} className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-md font-medium">
-                            {feature}
-                          </span>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {[['Tarihleri seçin', Calendar], ['Gerçek müsaitliği görün', SearchCheck], ['Güvenle talep oluşturun', ShieldCheck]].map(([label, Icon]) => (
+                  <Card key={label} className="border-slate-200 bg-white shadow-sm"><CardContent className="flex items-center gap-3 p-5"><Icon className="h-5 w-5 text-slate-500" /><span className="font-medium text-slate-800">{label}</span></CardContent></Card>
                 ))}
               </div>
             </div>
@@ -292,10 +249,9 @@ export default function WebBookingEngine() {
                         <div className="flex justify-between items-start gap-4">
                           <div>
                             <h3 className="text-2xl font-medium text-slate-800">{room.name}</h3>
-                            <div className="flex items-center gap-4 mt-3 text-sm text-slate-600">
+                            <div className="flex flex-wrap items-center gap-3 mt-3 text-sm text-slate-600">
                               <span className="flex items-center gap-1.5"><Users className="w-4 h-4 text-slate-400"/> Maks {room.capacity} Kişi</span>
-                              <span className="flex items-center gap-1.5"><Wifi className="w-4 h-4 text-slate-400"/> Ücretsiz Wi-Fi</span>
-                              <span className="flex items-center gap-1.5"><Coffee className="w-4 h-4 text-slate-400"/> Kahvaltı Dahil</span>
+                              {(room.amenities || []).map((amenity) => <span key={amenity} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs">{amenity}</span>)}
                             </div>
                           </div>
                           <div className="text-right bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -304,7 +260,7 @@ export default function WebBookingEngine() {
                               <span className="text-3xl font-bold text-slate-900">{room.total_price.toLocaleString()}</span>
                               <span className="text-lg font-medium text-slate-600">{room.currency}</span>
                             </div>
-                            <div className="text-xs text-slate-400 mt-1">Vergiler ve harçlar dahildir</div>
+                            <div className="text-xs text-slate-400 mt-1">Seçilen tarihler için toplam oda ücreti</div>
                           </div>
                         </div>
                         <p className="text-slate-600 mt-4 leading-relaxed line-clamp-2">{room.description}</p>
