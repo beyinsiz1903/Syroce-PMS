@@ -16,6 +16,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
+import { formatBusinessDateForDisplay } from '@/lib/businessDateOriginCopy';
 
 const PAYMENT_LABEL = {
   cash: 'Nakit',
@@ -140,7 +141,7 @@ const POSReports = ({ outletId }) => {
                     <span className="font-semibold">{report.report_number || 'Z-?'}</span>
                     <Badge variant="outline" className="ml-auto">
                       <Calendar className="w-3 h-3 mr-1" />
-                      {report.report_date}
+                      {formatBusinessDateForDisplay(report.report_date)}
                     </Badge>
                   </div>
                 </div>
