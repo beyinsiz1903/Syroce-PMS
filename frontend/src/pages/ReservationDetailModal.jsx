@@ -670,7 +670,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   )}
                   {(summary?.total_discounts || 0) > 0 && (
                     <div className="flex justify-between text-xs" data-testid="total-discounts">
-                      <span className="text-slate-500">İndirim</span>
+                      <span className="text-slate-500">{(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp indirimi' : 'İndirim'}</span>
                       <span className="font-semibold text-rose-600">-{fmtCurrency(summary.total_discounts, currency)}</span>
                     </div>
                   )}

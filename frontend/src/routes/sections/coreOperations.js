@@ -1,6 +1,6 @@
 import {
   Dashboard, ProfilePage, PCIComplianceDashboard, XchangePage, MicePage,
-  ProcurementPage, InventoryProcurementGuide, MailingPage, ModuleStorePage,
+  ProcurementPage, InventoryProcurementGuide, MailingPage, ModuleStorePage, ApplicationCenter,
   AfsadakatLauncher, OnboardingWizard, AIEnhancedPMS, AIModule, AIZekaPage, PMSModule,
   PMSOperationalDashboard, FolioDetailView, HousekeepingStatusPage,
   ShiftHandoverPage, EarlyLatePricingSettings, EodReportPage, WalkinPage,
@@ -23,6 +23,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/app/mailing", ...p(MailingPage), wrapLayout: true, layoutModule: "mailing" },
     { path: "/app/module-store", ...p(ModuleStorePage), wrapLayout: true, layoutModule: "module_store" },
     { path: "/module-store", ...p(ModuleStorePage), wrapLayout: true, layoutModule: "module_store" },
+    { path: "/app/applications", ...p(ApplicationCenter), wrapLayout: true, layoutModule: "applications" },
     { path: "/app/afsadakat", ...p(AfsadakatLauncher), wrapLayout: true, layoutModule: "afsadakat" },
     { path: "/app/onboarding", ...p(OnboardingWizard), wrapLayout: true, layoutModule: "onboarding" },
     { path: "/dashboard-simple", ...p(Dashboard, { modules }), wrapLayout: true, layoutModule: "dashboard" },

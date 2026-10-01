@@ -3,7 +3,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { BarChart3 } from 'lucide-react';
 import { cachedTenantCurrency, formatCurrency as formatCurrencyValue } from '@/lib/currency';
-import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { currencyBreakdownEntries, formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 // Sprint A DS palette: sky / emerald / amber / rose / indigo / slate.
 // Recharts grafikleri için hex tonları (mavi/yeşil yerine sky/emerald):
@@ -44,15 +44,32 @@ const COLOR_TO_INTENT = {
 export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevLabel, icon: Icon, color = 'default' }) => {
   const intent = COLOR_TO_INTENT[color] || 'default';
   const isCurrency = /gelir|adr|rev|ciro|ödeme|tutar|tahsilat|fiyat|bakiye/i.test(title);
-  const displayVal = currencyBreakdown
-    ? formatCurrencyBreakdown(currencyBreakdown, value, cachedTenantCurrency())
+  const currencyEntries = currencyBreakdownEntries(currencyBreakdown);
+  const hasMixedCurrencies = currencyEntries.length > 1;
+  const displayVal = hasMixedCurrencies
+    ? <div className="space-y-1.5 text-lg" data-testid="currency-breakdown">
+        {currencyEntries.map(({ currency, formatted }) => (
+          <div key={currency} className="flex items-baseline justify-between gap-3">
+            <span className="text-xs font-semibold tracking-wide text-slate-500">{currency}</span>
+            <span>{formatted}</span>
+          </div>
+        ))}
+      </div>
+    : currencyBreakdown
+      ? formatCurrencyBreakdown(currencyBreakdown, value, cachedTenantCurrency())
     : typeof value === 'number' ? (isCurrency ? formatCurrency(value) : formatNumber(value)) : value;
   let sub = prevLabel;
-  if (!sub && prevValue !== undefined && typeof value === 'number') {
+  if (!sub && !hasMixedCurrencies && prevValue !== undefined && typeof value === 'number') {
     const change = calcChange(value, typeof prevValue === 'number' ? prevValue : 0);
     if (Number(change.pct) > 0) {
       sub = (change.direction === 'up' ? '▲ +' : '▼ -') + change.pct + '% (önceki dönem)';
     }
+  }
+  if (hasMixedCurrencies) {
+    sub = <div className="space-y-1">
+      {prevLabel && <div>{prevLabel}</div>}
+      <div className="font-medium text-slate-600">Ayrı para birimleridir; kur dönüşümü yapılmamıştır.</div>
+    </div>;
   }
   return (
     <KpiCard
