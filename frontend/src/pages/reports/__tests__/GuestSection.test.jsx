@@ -125,4 +125,23 @@ describe('GuestTable in-house pricing', () => {
     expect(screen.getByText('Emsal değer:', { exact: false })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Misafire Yansıtılan' })).toBeInTheDocument();
   });
+
+  it('can hide contact and financial fields in an official identity list', () => {
+    render(
+      <GuestTable
+        guests={guests}
+        title="Polis Bildirimi"
+        showId
+        showEmail={false}
+        showAmount={false}
+        searchGuest=""
+        setSearchGuest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText('Misafir veya oda ara...')).toBeInTheDocument();
+    expect(screen.queryByText('guest@example.com')).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Tutar' })).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'TC/Pasaport' })).toBeInTheDocument();
+  });
 });

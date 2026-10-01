@@ -230,72 +230,10 @@ const Reports = ({ user, tenant, onLogout }) => {
       link.download = filename;
       document.body.appendChild(link);
       link.click();
-
-  if (isReportsLite) {
-    return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
-        <div className="p-6 max-w-4xl mx-auto space-y-6">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Raporlar (PMS Lite)</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Son 7 ve 30 güne ait doluluk ve ciro özetlerini görebilirsiniz.
-            </p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Doluluk (7 Gün)</CardTitle>
-                <CardDescription>Son 7 gün ortalama doluluk oranı</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">%--</div>
-                <p className="mt-1 text-xs text-gray-500">Bu ekranda özet metrikler gösterilir.</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Ciro (7 Gün)</CardTitle>
-                <CardDescription>Son 7 gün toplam oda geliri</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">—</div>
-                <p className="mt-1 text-xs text-gray-500">Detaylı kırılımlar ileride eklenebilir.</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Doluluk (30 Gün)</CardTitle>
-                <CardDescription>Son 30 gün ortalama doluluk oranı</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">%--</div>
-                <p className="mt-1 text-xs text-gray-500">Bu alanda daha fazla detay daha sonra eklenebilir.</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Ciro (30 Gün)</CardTitle>
-                <CardDescription>Son 30 gün toplam oda geliri</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">—</div>
-                <p className="mt-1 text-xs text-gray-500">Muhasebe / AR raporları burada gösterilmiyor.</p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
       
-      toast.success(`${report.name} {t('reports.downloadSuccess')}!`);
+      toast.success(`${report.name} ${t('reports.downloadSuccess')}!`);
     } catch (error) {
       console.error('Failed to download report:', error);
       toast.error(t('reports.downloadFailed'));
@@ -311,6 +249,32 @@ const Reports = ({ user, tenant, onLogout }) => {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   };
+
+  if (isReportsLite) {
+    return (
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
+        <div className="p-6 max-w-4xl mx-auto space-y-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Raporlar (PMS Lite)</h1>
+            <p className="mt-1 text-sm text-gray-600">Son 7 ve 30 güne ait doluluk ve ciro özetlerini görebilirsiniz.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              ['Doluluk (7 Gün)', 'Son 7 gün ortalama doluluk oranı', '%--'],
+              ['Ciro (7 Gün)', 'Son 7 gün toplam oda geliri', '—'],
+              ['Doluluk (30 Gün)', 'Son 30 gün ortalama doluluk oranı', '%--'],
+              ['Ciro (30 Gün)', 'Son 30 gün toplam oda geliri', '—'],
+            ].map(([title, description, value]) => (
+              <Card key={title}>
+                <CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
+                <CardContent><div className="text-3xl font-bold text-gray-900">{value}</div></CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
