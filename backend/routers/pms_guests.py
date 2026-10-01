@@ -3,7 +3,7 @@ PMS Guests Router — Extracted from routers/pms.py (Stage 1 decomposition)
 Guest CRUD and search with field-level PII encryption.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from core.database import db
 from core.helpers import require_module
@@ -156,6 +156,7 @@ async def create_guest(
 
 @router.get("/pms/guests", response_model=list[Guest])
 async def get_guests(
+    response: Response,
     # v97 perf — default 1000 → 50. 373 guest x _decrypt_guest sırf
     # liste için 940ms harcıyordu. Frontend zaten paginate ediyor;
     # max_limit 5000 olarak duruyor (export gibi nadir durumlar için).
@@ -165,7 +166,16 @@ async def get_guests(
     _perm=Depends(require_op("view_guest_list")),  # v71 Bug DH (PII)
 ):
     limit, offset = p.limit, p.offset
-    guests_raw = await db.guests.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).skip(offset).limit(limit).to_list(limit)
+    query = {
+        "tenant_id": current_user.tenant_id,
+        "archived": {"$ne": True},
+        "status": {"$ne": "deleted"},
+    }
+    total = await db.guests.count_documents(query)
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Limit"] = str(limit)
+    response.headers["X-Offset"] = str(offset)
+    guests_raw = await db.guests.find(query, {"_id": 0}).sort("name", 1).skip(offset).limit(limit).to_list(limit)
 
     # Map database fields to model fields
     guests = []
@@ -296,15 +306,18 @@ async def search_guests(
     results = []
     for g in deduplicate_guest_records(decrypted_results)[:limit]:
         results.append(
-            _protect_guest_for_user({
-                "id": g.get("id", ""),
-                "name": g.get("name", ""),
-                "email": g.get("email", ""),
-                "phone": g.get("phone", ""),
-                "id_number": g.get("id_number", ""),
-                "vip_status": g.get("vip_status", False),
-                "total_stays": g.get("total_stays", 0),
-            }, current_user)
+            _protect_guest_for_user(
+                {
+                    "id": g.get("id", ""),
+                    "name": g.get("name", ""),
+                    "email": g.get("email", ""),
+                    "phone": g.get("phone", ""),
+                    "id_number": g.get("id_number", ""),
+                    "vip_status": g.get("vip_status", False),
+                    "total_stays": g.get("total_stays", 0),
+                },
+                current_user,
+            )
         )
     return results
 

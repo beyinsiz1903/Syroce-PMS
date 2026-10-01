@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,9 +32,9 @@ class LoyaltyProgram(BaseModel):
 
 class LoyaltyTransactionCreate(BaseModel):
     guest_id: str
-    points: int
-    transaction_type: str
-    description: str
+    points: int = Field(..., gt=0, le=10_000_000)
+    transaction_type: Literal["earned", "redeemed"]
+    description: str = Field(..., min_length=2, max_length=500)
 
 
 class LoyaltyTransaction(BaseModel):
