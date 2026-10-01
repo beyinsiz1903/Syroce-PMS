@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '@/api/axios';
 import { toast } from 'sonner';
-import { ArrowDownLeft, ArrowUpRight, BedDouble, BellRing, ClipboardCheck, Handshake, RefreshCw, Send, ShieldCheck, WalletCards } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BedDouble, ClipboardCheck, Handshake, RefreshCw, Send, ShieldCheck, WalletCards } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,8 +16,12 @@ const summaryMoney = (summary, key) => Object.entries(summary?.totals_by_currenc
   .filter(([, totals]) => Math.abs(Number(totals?.[key] || 0)) > 0.001)
   .map(([currency, totals]) => money(totals[key], currency))
   .join(' · ') || money(0);
-const statusText = { pending: 'Bekliyor', active: 'Aktif', accepted: 'Kabul edildi', rejected: 'Reddedildi', open: 'Açık' };
+const statusText = {
+  pending: 'Bekliyor', active: 'Aktif', accepted: 'Kabul edildi', rejected: 'Reddedildi', open: 'Açık',
+  needs_review: 'İnceleme gerekli', settlement_pending: 'Mahsuplaşma onayı bekliyor', settled: 'Mahsuplaşıldı',
+};
 const blankListing = { room_type: '', date_start: '', date_end: '', nightly_rate: '', allotment: 1, visibility: 'network', approval_mode: 'manual', amenities: [], meal_plan: '', notes: '' };
+const blankRequest = { check_in: '', check_out: '', guest_name: '', guest_email: '', guest_phone: '', adults: 2, children: 0, child_ages_text: '', collect_by: 'target_hotel', note: '', source_booking_id: '' };
 
 export default function HotelNetwork() {
   const [data, setData] = useState({ feed: [], mine: [], requests: [], contracts: [], ledger: [], summary: {} });
@@ -26,20 +30,21 @@ export default function HotelNetwork() {
   const [contract, setContract] = useState({ partner_tenant_id: '', valid_from: '', valid_to: '', approval_mode: 'automatic', settlement_model: 'net_rate', commission_pct: 0, payment_terms_days: 15, allowed_room_types: [], special_terms: '' });
   const [partners, setPartners] = useState([]);
   const [audit, setAudit] = useState([]);
+  const [bookingCandidates, setBookingCandidates] = useState([]);
   const [requestListing, setRequestListing] = useState(null);
-  const [request, setRequest] = useState({ check_in: '', check_out: '', guest_name: '', guest_email: '', guest_phone: '', adults: 2, children: 0, child_ages_text: '', collect_by: 'target_hotel', note: '' });
+  const [request, setRequest] = useState(blankRequest);
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [feed, mine, requests, contracts, ledger, partnerResult, auditResult] = await Promise.all([
+      const [feed, mine, requests, contracts, ledger, partnerResult, auditResult, candidateResult] = await Promise.all([
         api.get('/hotel-network/feed'), api.get('/hotel-network/listings/mine'),
         api.get('/hotel-network/requests'), api.get('/hotel-network/contracts'), api.get('/hotel-network/ledger'),
-        api.get('/hotel-network/partners'), api.get('/hotel-network/audit'),
+        api.get('/hotel-network/partners'), api.get('/hotel-network/audit'), api.get('/hotel-network/booking-candidates'),
       ]);
       setData({ feed: feed.data.listings || [], mine: mine.data.listings || [], requests: requests.data.requests || [], contracts: contracts.data.contracts || [], ledger: ledger.data.entries || [], summary: ledger.data.summary || {} });
-      setPartners(partnerResult.data.partners || []); setAudit(auditResult.data.events || []);
+      setPartners(partnerResult.data.partners || []); setAudit(auditResult.data.events || []); setBookingCandidates(candidateResult.data.bookings || []);
     } catch (error) { toast.error(error.response?.data?.detail || 'Otel ağı verileri alınamadı'); }
     finally { setLoading(false); }
   }, []);
@@ -72,7 +77,7 @@ export default function HotelNetwork() {
       const childAges = child_ages_text.trim() ? child_ages_text.split(',').map(value => Number(value.trim())) : [];
       await api.post('/hotel-network/requests', { ...payload, listing_id: requestListing.id, adults: Number(request.adults), children: Number(request.children), child_ages: childAges });
       toast.success('Yönlendirme talebi gönderildi; hedef tesis bildirildi.');
-      setRequestListing(null); setRequest({ check_in: '', check_out: '', guest_name: '', guest_email: '', guest_phone: '', adults: 2, children: 0, child_ages_text: '', collect_by: 'target_hotel', note: '' }); load();
+      setRequestListing(null); setRequest(blankRequest); load();
     } catch (error) { toast.error(error.response?.data?.detail || 'Talep gönderilemedi'); }
     finally { setSubmitting(false); }
   };
@@ -86,6 +91,15 @@ export default function HotelNetwork() {
     finally { setSubmitting(false); }
   };
   const pendingIncoming = useMemo(() => data.requests.filter(row => row.direction === 'incoming' && row.status === 'pending').length, [data.requests]);
+  const selectSourceBooking = bookingId => {
+    const booking = bookingCandidates.find(item => item.id === bookingId);
+    if (!booking) { setRequest(blankRequest); return; }
+    setRequest({
+      ...request, source_booking_id: booking.id, guest_name: booking.guest_name || '', guest_email: booking.guest_email || '', guest_phone: booking.guest_phone || '',
+      check_in: String(booking.check_in || '').slice(0, 10), check_out: String(booking.check_out || '').slice(0, 10), adults: booking.adults || 2,
+      children: booking.children || 0, child_ages_text: (booking.child_ages || []).join(', '),
+    });
+  };
 
   return <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold">Otel Ağı</h1><p className="text-sm text-muted-foreground">Anlaşmalı tesislerle sürekli paylaşım, spot yönlendirme ve tesisler arası cari hesap.</p></div><Button variant="outline" onClick={load} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Yenile</Button></div>
@@ -98,7 +112,7 @@ export default function HotelNetwork() {
       <TabsContent value="ledger" className="space-y-3">{data.ledger.length === 0 ? <Empty text="Henüz tesisler arası cari hareket yok." /> : data.ledger.map(row => <Card key={row.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 pt-5"><div className="flex items-center gap-2"><WalletCards className="h-4 w-4" /><div><div className="font-medium">{row.counterparty_name}</div><div className="text-xs text-muted-foreground">{row.transfer_reference} · {row.reason} · {row.status === 'settlement_pending' ? 'Onay bekleyen mahsuplaşma' : row.status === 'settled' ? 'Kapatıldı' : 'Açık'}</div></div></div><div className="flex items-center gap-3"><div className={row.entry_type === 'receivable' ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>{row.entry_type === 'receivable' ? '+' : '-'}{money(row.amount, row.currency)}</div>{row.entry_type === 'payable' && row.status === 'open' && <Button disabled={submitting} size="sm" onClick={() => settle(row)}><Send className="mr-2 h-4 w-4" />Ödeme bildir</Button>}{row.entry_type === 'receivable' && row.status === 'settlement_pending' && <div className="flex gap-2"><Button disabled={submitting} variant="outline" size="sm" onClick={() => settle(row, false)}>İade et</Button><Button disabled={submitting} size="sm" onClick={() => settle(row, true)}><ShieldCheck className="mr-2 h-4 w-4" />Onayla</Button></div>}</div></CardContent></Card>)}</TabsContent>
       <TabsContent value="audit" className="space-y-3">{audit.length === 0 ? <Empty text="Henüz kayıtlı Otel Ağı işlemi yok." /> : audit.map(event => <Card key={event.id}><CardContent className="flex items-center gap-3 pt-4 text-sm"><ClipboardCheck className="h-4 w-4 text-muted-foreground" /><div><div className="font-medium">{event.action}</div><div className="text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString('tr-TR')} · Referans: {event.entity_id}</div></div></CardContent></Card>)}</TabsContent>
     </Tabs>
-    <Dialog open={Boolean(requestListing)} onOpenChange={open => !open && setRequestListing(null)}><DialogContent><DialogHeader><DialogTitle>Otel Ağı yönlendirme talebi</DialogTitle><DialogDescription>{requestListing?.seller_name} · {requestListing?.room_type} · {requestListing ? money(requestListing.nightly_rate, requestListing.currency) : ''} / gece. Hedef tesis, kabul edene kadar misafir iletişim bilgisini görmez.</DialogDescription></DialogHeader><form onSubmit={submitRequest} className="grid gap-3"><div className="grid grid-cols-2 gap-3"><Field label="Giriş"><Input required type="date" min={requestListing?.date_start} max={requestListing?.date_end} value={request.check_in} onChange={e => setRequest({ ...request, check_in: e.target.value })} /></Field><Field label="Çıkış"><Input required type="date" min={request.check_in || requestListing?.date_start} value={request.check_out} onChange={e => setRequest({ ...request, check_out: e.target.value })} /></Field></div><Field label="Misafir adı"><Input required value={request.guest_name} onChange={e => setRequest({ ...request, guest_name: e.target.value })} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Yetişkin"><Input required min="1" max="20" type="number" value={request.adults} onChange={e => setRequest({ ...request, adults: e.target.value })} /></Field><Field label="Çocuk"><Input required min="0" max="20" type="number" value={request.children} onChange={e => setRequest({ ...request, children: e.target.value })} /></Field></div>{Number(request.children) > 0 && <Field label="Çocuk yaşları"><Input required placeholder="Örn. 4, 9" value={request.child_ages_text} onChange={e => setRequest({ ...request, child_ages_text: e.target.value })} /></Field>}<label className="space-y-2 text-sm font-medium">Tahsilatı kim alacak?<select className="h-10 w-full rounded-md border bg-background px-3" value={request.collect_by} onChange={e => setRequest({ ...request, collect_by: e.target.value })}><option value="target_hotel">Konaklayan tesis</option><option value="source_hotel">Yönlendiren tesis</option></select></label><Field label="Operasyon notu"><Input value={request.note} onChange={e => setRequest({ ...request, note: e.target.value })} /></Field><DialogFooter><Button type="button" variant="outline" onClick={() => setRequestListing(null)}>Vazgeç</Button><Button disabled={submitting} type="submit">Talebi gönder</Button></DialogFooter></form></DialogContent></Dialog>
+    <Dialog open={Boolean(requestListing)} onOpenChange={open => !open && setRequestListing(null)}><DialogContent><DialogHeader><DialogTitle>Otel Ağı yönlendirme talebi</DialogTitle><DialogDescription>{requestListing?.seller_name} · {requestListing?.room_type} · {requestListing ? money(requestListing.nightly_rate, requestListing.currency) : ''} / gece. Hedef tesis, kabul edene kadar misafir iletişim bilgisini görmez.</DialogDescription></DialogHeader><form onSubmit={submitRequest} className="grid gap-3"><label className="space-y-2 text-sm font-medium">Mevcut rezervasyondan aktar (isteğe bağlı)<select className="h-10 w-full rounded-md border bg-background px-3" value={request.source_booking_id || ''} onChange={e => selectSourceBooking(e.target.value)}><option value="">Yeni talep / misafiri elle gir</option>{bookingCandidates.map(booking => <option key={booking.id} value={booking.id}>{booking.guest_name} · {String(booking.check_in).slice(0, 10)} – {String(booking.check_out).slice(0, 10)} · {booking.room_type || 'Oda'}</option>)}</select></label>{request.source_booking_id && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Kaynak rezervasyon seçildi: misafir ve tarih bilgileri güvenli olarak kaynak kayıttan alınır.</p>}<div className="grid grid-cols-2 gap-3"><Field label="Giriş"><Input required disabled={Boolean(request.source_booking_id)} type="date" min={requestListing?.date_start} max={requestListing?.date_end} value={request.check_in} onChange={e => setRequest({ ...request, check_in: e.target.value })} /></Field><Field label="Çıkış"><Input required disabled={Boolean(request.source_booking_id)} type="date" min={request.check_in || requestListing?.date_start} value={request.check_out} onChange={e => setRequest({ ...request, check_out: e.target.value })} /></Field></div><Field label="Misafir adı"><Input required disabled={Boolean(request.source_booking_id)} value={request.guest_name} onChange={e => setRequest({ ...request, guest_name: e.target.value })} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Yetişkin"><Input required disabled={Boolean(request.source_booking_id)} min="1" max="20" type="number" value={request.adults} onChange={e => setRequest({ ...request, adults: e.target.value })} /></Field><Field label="Çocuk"><Input required disabled={Boolean(request.source_booking_id)} min="0" max="20" type="number" value={request.children} onChange={e => setRequest({ ...request, children: e.target.value })} /></Field></div>{Number(request.children) > 0 && <Field label="Çocuk yaşları"><Input required disabled={Boolean(request.source_booking_id)} placeholder="Örn. 4, 9" value={request.child_ages_text} onChange={e => setRequest({ ...request, child_ages_text: e.target.value })} /></Field>}<label className="space-y-2 text-sm font-medium">Tahsilatı kim alacak?<select className="h-10 w-full rounded-md border bg-background px-3" value={request.collect_by} onChange={e => setRequest({ ...request, collect_by: e.target.value })}><option value="target_hotel">Konaklayan tesis</option><option value="source_hotel">Yönlendiren tesis</option></select></label><Field label="Operasyon notu"><Input value={request.note} onChange={e => setRequest({ ...request, note: e.target.value })} /></Field><DialogFooter><Button type="button" variant="outline" onClick={() => setRequestListing(null)}>Vazgeç</Button><Button disabled={submitting} type="submit">Talebi gönder</Button></DialogFooter></form></DialogContent></Dialog>
   </div>;
 }
 

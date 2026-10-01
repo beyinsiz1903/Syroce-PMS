@@ -311,6 +311,31 @@ async def my_listings(user: User = Depends(get_current_user)):
     return {"listings": rows}
 
 
+@router.get("/booking-candidates")
+async def booking_candidates(user: User = Depends(get_current_user)):
+    """Reservations that can be transferred before check-in.
+
+    The source tenant receives only its own bookings.  A confirmed reservation
+    is deliberately required: moving an in-house stay is an operational room
+    move, not an inventory-network transaction.
+    """
+    tenant_id = _tenant(user)
+    rows = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+            "property_transfer_status": {"$ne": "accepted"},
+        },
+        {
+            "_id": 0, "id": 1, "guest_name": 1, "guest_email": 1,
+            "guest_phone": 1, "adults": 1, "children": 1, "child_ages": 1,
+            "check_in": 1, "check_out": 1, "room_type": 1, "currency": 1,
+            "total_amount": 1,
+        },
+    ).sort("check_in", 1).limit(200).to_list(200)
+    return {"bookings": rows}
+
+
 async def _create_target_booking(sysdb, request_doc: dict, actor_id: str) -> dict:
     target = request_doc["target_tenant_id"]
     with tenant_context(target):
@@ -447,11 +472,39 @@ async def create_request(data: NetworkRequestCreate, user: User = Depends(get_cu
     source_booking = None
     if data.source_booking_id:
         with tenant_context(source):
-            source_booking = await db.bookings.find_one({"tenant_id": source, "id": data.source_booking_id}, {"_id": 0, "id": 1})
+            source_booking = await db.bookings.find_one(
+                {
+                    "tenant_id": source, "id": data.source_booking_id,
+                    "status": {"$in": ["confirmed", "guaranteed"]},
+                    "property_transfer_status": {"$ne": "accepted"},
+                },
+                {
+                    "_id": 0, "id": 1, "guest_name": 1, "guest_email": 1,
+                    "guest_phone": 1, "adults": 1, "children": 1,
+                    "child_ages": 1, "check_in": 1, "check_out": 1,
+                },
+            )
         if not source_booking:
             raise HTTPException(404, "Kaynak rezervasyon bulunamadı")
     nights = (datetime.fromisoformat(data.check_out) - datetime.fromisoformat(data.check_in)).days
     commission_pct = float((contract or {}).get("commission_pct", 0))
+    request_fields = data.model_dump(exclude={"listing_id"})
+    if source_booking:
+        # The source record, not editable browser fields, is the immutable
+        # origin for personal details and stay dates of a transfer.
+        request_fields.update({
+            "guest_name": source_booking.get("guest_name") or data.guest_name,
+            "guest_email": source_booking.get("guest_email") or data.guest_email,
+            "guest_phone": source_booking.get("guest_phone") or data.guest_phone,
+            "adults": source_booking.get("adults") or data.adults,
+            "children": source_booking.get("children") if source_booking.get("children") is not None else data.children,
+            "child_ages": source_booking.get("child_ages") or data.child_ages,
+            "check_in": str(source_booking.get("check_in") or data.check_in)[:10],
+            "check_out": str(source_booking.get("check_out") or data.check_out)[:10],
+        })
+        if not (listing["date_start"] <= request_fields["check_in"] and listing["date_end"] >= request_fields["check_out"]):
+            raise HTTPException(409, "Kaynak rezervasyon tarihleri paylaşım aralığı dışında")
+        nights = (datetime.fromisoformat(request_fields["check_out"]) - datetime.fromisoformat(request_fields["check_in"])).days
     doc = {
         "id": _id(), "listing_id": listing["id"], "source_tenant_id": source,
         "target_tenant_id": listing["seller_tenant_id"], "room_type": listing["room_type"],
@@ -459,7 +512,7 @@ async def create_request(data: NetworkRequestCreate, user: User = Depends(get_cu
         "currency": listing.get("currency") or "TRY",
         "allotment": listing["allotment"], "commission_pct": commission_pct,
         "relationship": "contracted" if contract else "spot", "status": "pending",
-        **data.model_dump(exclude={"listing_id"}), "created_by": user.id, "created_at": _now(), "updated_at": _now(),
+        **request_fields, "created_by": user.id, "created_at": _now(), "updated_at": _now(),
     }
     await sysdb.hotel_network_requests.insert_one(doc)
     await _audit(sysdb, source, user.id, "request.created", doc["id"], {"target_tenant_id": doc["target_tenant_id"], "relationship": doc["relationship"]})
