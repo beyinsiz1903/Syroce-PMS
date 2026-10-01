@@ -247,6 +247,31 @@ async def test_payment_reconciliation_reports_booking_enrichment_failure():
 
 
 @pytest.mark.asyncio
+async def test_payment_reconciliation_keeps_folio_data_when_high_balance_enrichment_fails():
+    """A guest/room display lookup must not hide financial reconciliation data."""
+    database = SimpleNamespace(
+        folio_charges=_find_collection(AsyncCursor()),
+        payments=_find_collection(AsyncCursor()),
+        folios=_find_collection(
+            AsyncCursor([{"id": "folio-1", "folio_number": "F-1", "balance": 1500.0}])
+        ),
+        bookings=_find_collection(AsyncCursor()),
+    )
+    service = _service(database)
+    service._enrich_with_guest_room = AsyncMock(
+        side_effect=[[], RuntimeError("guest lookup unavailable")]
+    )
+
+    result = await service.get_payment_reconciliation(_ctx(), "2026-08-25")
+
+    assert result.ok is True
+    assert result.data["high_balance_count"] == 1
+    assert result.data["high_balance_folios"][0]["folio_number"] == "F-1"
+    assert result.data["degraded"] is True
+    assert result.data["degraded_subqueries"] == ["high_balance_folios_enrich"]
+
+
+@pytest.mark.asyncio
 async def test_financial_report_aggregates_revenue_payments_audits_and_occupancy():
     database = SimpleNamespace(
         folio_charges=_aggregate_collection(

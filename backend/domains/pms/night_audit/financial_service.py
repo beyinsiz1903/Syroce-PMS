@@ -558,8 +558,20 @@ class FinancialService:
                 if g != "İsimsiz" or r != "?":
                     d["message"] = f"Sahipsiz masraf ({r} - {g})"
 
-        # Enrich high balance folios as well
-        high_balance_folios = await self._enrich_with_guest_room(ctx.tenant_id, high_balance_folios)
+        # Enrich high balance folios as well.  This is presentation data, so a
+        # guest/room lookup failure must not turn an otherwise usable
+        # reconciliation into a 500 response (nor make the numbers look
+        # complete).  Keep the original folio records and expose the degraded
+        # source to the operator.
+        try:
+            high_balance_folios = await self._enrich_with_guest_room(
+                ctx.tenant_id, high_balance_folios
+            )
+        except Exception as exc:  # noqa: BLE001 — reconciliation stays readable
+            logger.warning(
+                "payment_reconciliation high_balance_enrich failed: %s", exc
+            )
+            degraded_subqueries.append("high_balance_folios_enrich")
 
         return ServiceResult.success(
             {
