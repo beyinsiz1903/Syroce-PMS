@@ -272,6 +272,12 @@ def _safe_decimal(value: object) -> Decimal:
         return Decimal("0")
 
 
+def _business_date_alignment(properties: list[dict]) -> tuple[list[str], bool]:
+    """Return canonical open PMS dates and whether chain KPIs are comparable."""
+    dates = sorted({str(prop.get("business_date") or "") for prop in properties if prop.get("business_date")})
+    return dates, len(dates) <= 1
+
+
 async def _chain_scope(current_user: User) -> tuple[dict, list[dict]]:
     """Resolve a central-office chain scope; members never see siblings."""
     from modules.pms_core.chain_access import resolve_chain_properties
@@ -284,7 +290,16 @@ async def _chain_scope(current_user: User) -> tuple[dict, list[dict]]:
 
 async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorrow_start: str) -> dict:
     tenant_id = tenant["id"]
-    business_date = today_start[:10]
+    tenant_settings = await sys_db.tenant_settings.find_one(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "business_date": 1, "nilvera.enabled": 1, "nilvera.api_key_enc": 1},
+    )
+    # Chain reporting must follow each property's open PMS day.  Using the
+    # server's UTC date makes a property that has not completed night audit
+    # appear on the wrong operating day and corrupts cross-property KPIs.
+    business_date = str((tenant_settings or {}).get("business_date") or today_start[:10])[:10]
+    business_day_start = f"{business_date}T00:00:00"
+    business_day_end = f"{business_date}T23:59:59.999999"
     pickup_cutoff = (datetime.fromisoformat(today_start.replace("Z", "+00:00")) - timedelta(days=7)).isoformat()
     total_rooms = int(tenant.get("total_rooms") or 0)
     if total_rooms <= 0:
@@ -328,9 +343,12 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
             "voided": {"$ne": True},
             "status": {"$nin": ["voided", "refunded", "cancelled"]},
             "$or": [
-                {"processed_at": {"$gte": today_start, "$lt": tomorrow_start}},
-                {"created_at": {"$gte": today_start, "$lt": tomorrow_start}},
-                {"payment_date": {"$gte": today_start[:10], "$lt": tomorrow_start[:10]}},
+                {"business_date": business_date},
+                {"date": business_date},
+                {"payment_date": business_date},
+                {"payment_date": {"$gte": business_day_start, "$lte": business_day_end}},
+                {"processed_at": {"$gte": business_day_start, "$lte": business_day_end}},
+                {"created_at": {"$gte": business_day_start, "$lte": business_day_end}},
             ],
         },
         {"_id": 0, "amount": 1, "total": 1, "currency": 1},
@@ -351,7 +369,7 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
                     "$or": [
                         {"business_date": business_date},
                         {"date": business_date},
-                        {"posted_at": {"$gte": today_start, "$lt": tomorrow_start}},
+                        {"posted_at": {"$gte": business_day_start, "$lte": business_day_end}},
                     ]
                 },
             ],
@@ -383,10 +401,6 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
             {"tenant_id": tenant_id, "provider": provider, "property_id": "default"},
             {"_id": 0, "status": 1, "last_successful_sync": 1, "last_error": 1},
         )
-    nilvera = await sys_db.tenant_settings.find_one(
-        {"tenant_id": tenant_id},
-        {"_id": 0, "nilvera.enabled": 1, "nilvera.api_key_enc": 1},
-    )
     occupancy = round((occupied_rooms / total_rooms * 100) if total_rooms else 0, 1)
     return {
         "property_id": tenant_id,
@@ -434,8 +448,8 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
                 "has_error": bool((connection or {}).get("last_error")),
             },
             "nilvera": {
-                "enabled": bool(((nilvera or {}).get("nilvera") or {}).get("enabled")),
-                "api_key_set": bool(((nilvera or {}).get("nilvera") or {}).get("api_key_enc")),
+                "enabled": bool(((tenant_settings or {}).get("nilvera") or {}).get("enabled")),
+                "api_key_set": bool(((tenant_settings or {}).get("nilvera") or {}).get("api_key_enc")),
             },
         },
     }
@@ -483,6 +497,7 @@ async def get_multi_property_dashboard(property_id: str | None = None, current_u
     total_revenue = round(sum(total_revenue_by_currency.values()), 2)
     total_guests = sum(p["total_guests"] for p in properties)
     avg_occupancy = round((occupied_rooms / total_rooms * 100) if total_rooms else 0, 1)
+    business_dates, business_dates_aligned = _business_date_alignment(properties)
     summary = {
         "total_properties": len(properties),
         "total_rooms": total_rooms,
@@ -497,12 +512,18 @@ async def get_multi_property_dashboard(property_id: str | None = None, current_u
         "housekeeping_pending": sum(p["housekeeping_pending"] for p in properties),
         "out_of_order_rooms": sum(p["out_of_order_rooms"] for p in properties),
         "open_folios": sum(p["open_folios"] for p in properties),
+        "business_dates": business_dates,
+        "business_dates_aligned": business_dates_aligned,
     }
     return {
         "chain_id": own.get("chain_id"),
         "is_chain": bool(own.get("chain_id")),
         "current_property_id": current_user.tenant_id,
-        "business_date": today.date().isoformat(),
+        # A single date is only authoritative when every property is on that
+        # same PMS day.  Consumers must not label mixed operating days as one.
+        "business_date": business_dates[0] if business_dates_aligned and business_dates else None,
+        "business_dates": business_dates,
+        "business_dates_aligned": business_dates_aligned,
         "generated_at": datetime.now(UTC).isoformat(),
         "summary": summary,
         "properties": properties,

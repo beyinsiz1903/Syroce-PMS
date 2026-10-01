@@ -4,7 +4,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from domains.pms.enterprise_router import _chain_property_metrics, _chain_scope, _safe_decimal
+from domains.pms.enterprise_router import (
+    _business_date_alignment,
+    _chain_property_metrics,
+    _chain_scope,
+    _safe_decimal,
+)
 from modules.pms_core.chain_access import resolve_chain_properties
 
 
@@ -114,16 +119,27 @@ def test_safe_decimal_does_not_propagate_invalid_stored_values():
     assert _safe_decimal("not-a-number") == Decimal("0")
 
 
+def test_chain_business_date_alignment_is_explicit():
+    assert _business_date_alignment(
+        [{"business_date": "2026-09-30"}, {"business_date": "2026-09-30"}]
+    ) == (["2026-09-30"], True)
+    assert _business_date_alignment(
+        [{"business_date": "2026-09-29"}, {"business_date": "2026-09-30"}]
+    ) == (["2026-09-29", "2026-09-30"], False)
+
+
 class _MetricCollection:
     def __init__(self, docs=None, count=None, one=None):
         self.docs = docs or []
         self.count = count
         self.one = one
+        self.last_find_query = None
 
     async def count_documents(self, query):
         return self.count(query) if callable(self.count) else int(self.count or 0)
 
     def find(self, _query, _projection):
+        self.last_find_query = _query
         return _Cursor(self.docs)
 
     async def find_one(self, _query, _projection):
@@ -154,7 +170,12 @@ async def test_chain_property_metrics_preserve_currency_and_operational_sources(
         folio_charges=_MetricCollection(docs=[{"total": 300, "currency": "EUR"}]),
         hotel_settings=_MetricCollection(one={"currency": "EUR"}),
         provider_connections=_MetricCollection(one=None),
-        tenant_settings=_MetricCollection(one={"nilvera": {"enabled": True, "api_key_enc": "set"}}),
+        tenant_settings=_MetricCollection(
+            one={
+                "business_date": "2026-09-29",
+                "nilvera": {"enabled": True, "api_key_enc": "set"},
+            }
+        ),
     )
 
     result = await _chain_property_metrics(
@@ -165,6 +186,7 @@ async def test_chain_property_metrics_preserve_currency_and_operational_sources(
     )
 
     assert result["occupancy_pct"] == 40.0
+    assert result["business_date"] == "2026-09-29"
     assert result["arrivals_today"] == 2
     assert result["departures_today"] == 1
     assert result["pickup_7d"] == 3
@@ -174,3 +196,5 @@ async def test_chain_property_metrics_preserve_currency_and_operational_sources(
     assert result["today_revenue_by_currency"] == {"EUR": 500.0}
     assert result["room_revenue_by_currency"] == {"EUR": 300.0}
     assert result["adr_by_currency"] == {"EUR": 75.0}
+
+    assert {"business_date": "2026-09-29"} in database.payments.last_find_query["$or"]
