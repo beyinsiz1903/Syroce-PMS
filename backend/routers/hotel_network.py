@@ -7,6 +7,8 @@ are permitted only after an explicit contract or an accepted spot request.
 
 from __future__ import annotations
 
+import logging
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -22,6 +24,7 @@ from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
 
 router = APIRouter(prefix="/api/hotel-network", tags=["Hotel Network"])
+logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -60,6 +63,27 @@ async def _audit(sysdb, tenant_id: str, actor_id: str, action: str, entity_id: s
         "action": action, "entity_id": entity_id, "details": details or {},
         "created_at": _now(),
     })
+
+
+async def _notify(tenant_id: str, *, title: str, message: str, priority: str = "normal", metadata: dict | None = None) -> None:
+    """Persist a tenant-local, privacy-safe in-app notification.
+
+    Hotel-network events cross tenant boundaries, but their notifications do
+    not.  Only a commercial reference is sent; guest contact data is never put
+    in a notification and stays behind the destination property's acceptance
+    workflow.
+    """
+    try:
+        with tenant_context(tenant_id):
+            await db.notifications.insert_one({
+                "id": _id(), "tenant_id": tenant_id, "user_id": None,
+                "type": "hotel_network", "title": title, "message": message,
+                "priority": priority, "read": False,
+                "action_url": "/app/hotel-network", "metadata": metadata or {},
+                "created_at": _now(),
+            })
+    except Exception as exc:  # A notification failure must never duplicate a booking.
+        logger.warning("Hotel-network notification was not stored: %s", type(exc).__name__)
 
 
 class NetworkContractCreate(BaseModel):
@@ -131,13 +155,23 @@ class NetworkRequestDecision(BaseModel):
     alternative_rate: float | None = Field(default=None, gt=0)
 
 
+class SettlementDecision(BaseModel):
+    accept: bool
+    note: str = Field(default="", max_length=1000)
+
+
 @router.post("/contracts")
 async def propose_contract(data: NetworkContractCreate, user: User = Depends(get_current_user)):
     tenant_id = _tenant(user)
     if data.partner_tenant_id == tenant_id:
         raise HTTPException(400, "Tesis kendi kendisiyle sözleşme yapamaz")
     sysdb = get_system_db()
-    await _hotel_name(sysdb, data.partner_tenant_id)  # existence is deliberately not leaked
+    partner = await sysdb.tenants.find_one(
+        {"$or": [{"id": data.partner_tenant_id}, {"tenant_id": data.partner_tenant_id}]},
+        {"_id": 0, "id": 1},
+    )
+    if not partner:
+        raise HTTPException(404, "Karşı tesis bulunamadı")
     pair = sorted([tenant_id, data.partner_tenant_id])
     existing = await sysdb.hotel_network_contracts.find_one(
         {"tenant_pair": pair, "status": {"$in": ["pending", "active"]}}, {"_id": 0, "id": 1}
@@ -168,6 +202,32 @@ async def list_contracts(user: User = Depends(get_current_user)):
         row["partner_name"] = await _hotel_name(sysdb, other)
         row["direction"] = "outgoing" if row.get("proposer_tenant_id") == tenant_id else "incoming"
     return {"contracts": rows}
+
+
+@router.get("/partners")
+async def list_network_partners(query: str | None = Query(None, max_length=100), user: User = Depends(get_current_user)):
+    """Return a minimal property directory for an explicit network contract."""
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    filters: list[dict] = [{"id": {"$ne": tenant_id}}, {"tenant_id": {"$ne": tenant_id}}]
+    if query and query.strip():
+        term = re.escape(query.strip())
+        filters.append({"$or": [
+            {"property_name": {"$regex": term, "$options": "i"}},
+            {"hotel_name": {"$regex": term, "$options": "i"}},
+            {"name": {"$regex": term, "$options": "i"}},
+            {"id": {"$regex": term, "$options": "i"}},
+        ]})
+    rows = await sysdb.tenants.find(
+        {"$and": filters},
+        {"_id": 0, "id": 1, "tenant_id": 1, "property_name": 1, "hotel_name": 1, "name": 1},
+    ).limit(50).to_list(50)
+    partners = []
+    for row in rows:
+        partner_id = row.get("id") or row.get("tenant_id")
+        if partner_id and partner_id != tenant_id:
+            partners.append({"id": partner_id, "name": row.get("property_name") or row.get("hotel_name") or row.get("name") or "Tesis"})
+    return {"partners": partners}
 
 
 @router.post("/contracts/{contract_id}/decision")
@@ -346,6 +406,14 @@ async def _accept_request(sysdb, request_doc: dict, actor_id: str) -> dict:
             {"$set": {"status": "accepted", "target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"], "accepted_by": actor_id, "accepted_at": _now(), "updated_at": _now()}},
         )
         await _audit(sysdb, claimed["target_tenant_id"], actor_id, "request.accepted", claimed["id"], {"target_booking_id": target_booking["id"]})
+        await _audit(sysdb, claimed["source_tenant_id"], actor_id, "request.accepted", claimed["id"], {"target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"]})
+        await _notify(
+            claimed["source_tenant_id"],
+            title="Otel Ağı yönlendirmesi kabul edildi",
+            message=f"{await _hotel_name(sysdb, claimed['target_tenant_id'])} rezervasyonu kabul etti. Cari kayıt {ledger[0]['transfer_reference']} ile oluşturuldu.",
+            priority="high",
+            metadata={"request_id": claimed["id"], "target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"], "event": "request.accepted"},
+        )
         return {"ok": True, "status": "accepted", "target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"]}
     except Exception:
         if listing_claimed and target_booking is None:
@@ -395,6 +463,13 @@ async def create_request(data: NetworkRequestCreate, user: User = Depends(get_cu
     }
     await sysdb.hotel_network_requests.insert_one(doc)
     await _audit(sysdb, source, user.id, "request.created", doc["id"], {"target_tenant_id": doc["target_tenant_id"], "relationship": doc["relationship"]})
+    await _notify(
+        doc["target_tenant_id"],
+        title="Yeni Otel Ağı talebi",
+        message=f"{await _hotel_name(sysdb, source)} tesisinden onay bekleyen bir yönlendirme talebi var.",
+        priority="high",
+        metadata={"request_id": doc["id"], "event": "request.created"},
+    )
     doc.pop("_id", None)
     automatic = bool(contract and contract.get("approval_mode") == "automatic" and listing.get("approval_mode") == "automatic")
     if automatic:
@@ -437,6 +512,12 @@ async def decide_request(request_id: str, data: NetworkRequestDecision, user: Us
             {"$set": {"status": "rejected", "decision_reason": data.reason.strip(), "decided_by": user.id, "decided_at": _now(), "updated_at": _now()}},
         )
         await _audit(sysdb, tenant_id, user.id, "request.rejected", request_id, {"reason": data.reason.strip()})
+        await _notify(
+            request_doc["source_tenant_id"],
+            title="Otel Ağı yönlendirmesi reddedildi",
+            message=f"Yönlendirme talebi reddedildi: {data.reason.strip()}",
+            metadata={"request_id": request_id, "event": "request.rejected"},
+        )
         return {"ok": True, "status": "rejected"}
     if data.alternative_rate:
         request_doc["nightly_rate"] = data.alternative_rate
@@ -483,3 +564,58 @@ async def network_ledger(status: str | None = Query(None), user: User = Depends(
             "totals_by_currency": totals_by_currency,
         },
     }
+
+
+@router.post("/ledger/{entry_id}/settlements")
+async def request_settlement(entry_id: str, user: User = Depends(get_current_user)):
+    """The owing property requests settlement; the counterparty must confirm."""
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    entry = await sysdb.hotel_network_ledger.find_one(
+        {"id": entry_id, "tenant_id": tenant_id, "entry_type": "payable", "status": "open"}, {"_id": 0}
+    )
+    if not entry:
+        raise HTTPException(404, "Açık borç kaydı bulunamadı")
+    now = _now()
+    result = await sysdb.hotel_network_ledger.update_many(
+        {"transfer_reference": entry["transfer_reference"], "request_id": entry["request_id"], "status": "open"},
+        {"$set": {"status": "settlement_pending", "settlement_requested_by": user.id, "settlement_requested_at": now, "updated_at": now}},
+    )
+    if getattr(result, "modified_count", 0) != 2:
+        raise HTTPException(409, "Cari kayıt eşleşmedi; mutabakat başlatılamadı")
+    await _audit(sysdb, tenant_id, user.id, "ledger.settlement_requested", entry_id, {"transfer_reference": entry["transfer_reference"]})
+    await _notify(entry["counterparty_tenant_id"], title="Tesisler arası mahsuplaşma onayı", message=f"{entry['transfer_reference']} numaralı {entry['amount']:.2f} {entry['currency']} cari kayıt için ödeme bildirildi.", priority="high", metadata={"entry_id": entry_id, "transfer_reference": entry["transfer_reference"], "event": "ledger.settlement_requested"})
+    return {"ok": True, "status": "settlement_pending"}
+
+
+@router.post("/ledger/{entry_id}/settlements/decision")
+async def decide_settlement(entry_id: str, data: SettlementDecision, user: User = Depends(get_current_user)):
+    """Only the receivable property can close or return a settlement request."""
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    entry = await sysdb.hotel_network_ledger.find_one(
+        {"id": entry_id, "tenant_id": tenant_id, "entry_type": "receivable", "status": "settlement_pending"}, {"_id": 0}
+    )
+    if not entry:
+        raise HTTPException(404, "Onay bekleyen alacak kaydı bulunamadı")
+    now = _now()
+    new_status = "settled" if data.accept else "open"
+    result = await sysdb.hotel_network_ledger.update_many(
+        {"transfer_reference": entry["transfer_reference"], "request_id": entry["request_id"], "status": "settlement_pending"},
+        {"$set": {"status": new_status, "settlement_decided_by": user.id, "settlement_decided_at": now, "settlement_note": data.note.strip(), "updated_at": now}},
+    )
+    if getattr(result, "modified_count", 0) != 2:
+        raise HTTPException(409, "Cari kayıt eşleşmedi; mutabakat sonuçlandırılamadı")
+    action = "ledger.settled" if data.accept else "ledger.settlement_returned"
+    await _audit(sysdb, tenant_id, user.id, action, entry_id, {"transfer_reference": entry["transfer_reference"], "note": data.note.strip()})
+    await _notify(entry["counterparty_tenant_id"], title="Tesisler arası mahsuplaşma sonucu", message=f"{entry['transfer_reference']} numaralı cari kayıt {'kapatıldı' if data.accept else 'yeniden açık duruma alındı'}.", priority="high" if not data.accept else "normal", metadata={"entry_id": entry_id, "transfer_reference": entry["transfer_reference"], "event": action})
+    return {"ok": True, "status": new_status}
+
+
+@router.get("/audit")
+async def network_audit(limit: int = Query(50, ge=1, le=200), user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    rows = await get_system_db().hotel_network_audit_logs.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return {"events": rows}
