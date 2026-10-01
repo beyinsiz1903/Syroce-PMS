@@ -22,7 +22,11 @@ const OverviewSection = ({
   const labelSuffix = isDaily ? '(Seçili Gün)' : '(30 Gün)';
   const prevLabelSuffix = isDaily ? 'Önceki gün: ' : 'Önceki 30 gün: ';
   const metrics = periodMetrics || s;
-  const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
+  const revenueTrendCurrencies = new Set((data?.revenue_trend || []).flatMap((row) => Object.entries(row.revenue_by_currency || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const hasMixedRevenueTrend = revenueTrendCurrencies.size > 1;
+  const revenueTrendCurrency = [...revenueTrendCurrencies][0] || 'TRY';
   const hasMultipleCurrencies = [
     pc.month_revenue_by_currency,
     metrics.adr_by_currency,
@@ -69,7 +73,7 @@ const OverviewSection = ({
               <YAxis tick={{
                 fontSize: 9
               }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-              <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
+              <Tooltip content={<CustomTooltip formatter={(value) => formatCurrency(value, revenueTrendCurrency)} />} />
               <Area type="monotone" dataKey="revenue" stroke="#059669" fill="url(#rvG)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>}
