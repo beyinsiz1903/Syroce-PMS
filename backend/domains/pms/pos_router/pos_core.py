@@ -10,16 +10,19 @@ Domain Router: POS & F&B
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
+
+logger = logging.getLogger(__name__)
 
 # ============= POS / F&B ENDPOINTS =============
 
@@ -40,10 +43,12 @@ async def _query_pos_transactions(
 ) -> list[dict]:
     """Canonical POS transaction query.
 
-    Orders created by the waiter terminal live in ``pos_orders`` and carry the
-    PMS ``business_date``. Older integrations wrote to ``pos_menu_transactions``
-    or ``transactions`` with ``transaction_date``. Read and de-duplicate all
-    three collections so reports cannot silently miss one write path.
+    Finalized payments live in ``pos_transactions``. Older integrations wrote
+    to ``pos_menu_transactions`` or the shared ``transactions`` collection.
+    ``pos_orders`` is an operational order source, not a payment ledger, but is
+    retained as a last-resort legacy fallback when no finalized transaction for
+    that order exists. Read every source and de-duplicate by transaction and
+    order identity so the same check cannot be counted twice.
     """
     common_q: dict[str, Any] = {"tenant_id": tenant_id}
     if outlet_id:
@@ -69,26 +74,41 @@ async def _query_pos_transactions(
     tx_q = dict(legacy_q)
     tx_q["$or"] = [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]
 
-    try:
-        source_rows = await asyncio.gather(
-            db.pos_orders.find(order_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-            db.pos_menu_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-            db.transactions.find(tx_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
-        )
-        merged: list[dict] = []
-        seen_ids: set[str] = set()
-        for rows in source_rows:
-            for row in rows:
-                row_id = str(row.get("id") or "")
-                if row_id and row_id in seen_ids:
+    source_rows = await asyncio.gather(
+        db.pos_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        db.pos_menu_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        db.transactions.find(tx_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        db.pos_orders.find(order_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+    )
+
+    financial_rows = [*source_rows[0], *source_rows[1], *source_rows[2]]
+    settled_order_ids = {
+        str(row.get("order_id"))
+        for row in financial_rows
+        if row.get("order_id")
+    }
+    merged: list[dict] = []
+    seen_ids: set[str] = set()
+    financial_order_source: dict[str, int] = {}
+    for source_index, rows in enumerate(source_rows):
+        is_order_source = source_index == 3
+        for row in rows:
+            row_id = str(row.get("id") or row.get("transaction_id") or "")
+            order_id = str(row.get("order_id") or (row_id if is_order_source else ""))
+            if is_order_source and order_id and order_id in settled_order_ids:
+                continue
+            if not is_order_source and order_id:
+                prior_source = financial_order_source.get(order_id)
+                if prior_source is not None and prior_source != source_index:
                     continue
-                if row_id:
-                    seen_ids.add(row_id)
-                merged.append(row)
-        merged.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-        return merged[:limit]
-    except Exception:
-        return []
+                financial_order_source.setdefault(order_id, source_index)
+            if row_id and row_id in seen_ids:
+                continue
+            if row_id:
+                seen_ids.add(row_id)
+            merged.append(row)
+    merged.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    return merged[:limit]
 
 
 async def get_anomaly_detection(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -411,8 +431,9 @@ async def get_z_report(
 ):
     """Z raporu — gun sonu (gercek hesaplama).
 
-    Kaynak: pos_menu_transactions. Gecerli tarih (date) veya bugun.
-    Sahte oranlar yerine gercek odeme/kategori dagilimi.
+    Kaynak: kesinleşmiş POS tahsilatları ve uyumlu eski kayıtlar. Geçerli
+    tarih (date) veya tesis iş günü kullanılır. Sahte oranlar yerine gerçek
+    ödeme/kategori dağılımı döndürülür.
     """
     try:
         if date:
@@ -445,11 +466,18 @@ async def get_z_report(
         refunds = sum(float(t.get("total_amount", 0) or 0) for t in void_tx)
         net_sales = max(gross_sales - discounts, 0)
 
-        # Odeme yontemi dagilimi (gercek)
+        # Odeme yontemi dagilimi (gercek). Karma odemelerde toplam tutari
+        # "mixed" kovasina atmak yerine kasada tahsil edilen parcalari koru.
         payment_methods: dict[str, float] = {}
         for t in valid_tx:
-            pm = t.get("payment_method") or "unknown"
-            payment_methods[pm] = payment_methods.get(pm, 0) + float(t.get("total_amount", 0) or 0)
+            breakdown = t.get("payment_breakdown") or []
+            if breakdown:
+                for part in breakdown:
+                    pm = str(part.get("method") or "unknown").strip().lower()
+                    payment_methods[pm] = payment_methods.get(pm, 0) + float(part.get("amount", 0) or 0)
+            else:
+                pm = str(t.get("payment_method") or "unknown").strip().lower()
+                payment_methods[pm] = payment_methods.get(pm, 0) + float(t.get("total_amount", 0) or 0)
 
         # Kategori dagilimi (gercek — items[].category)
         category_sales: dict[str, float] = {}
@@ -486,14 +514,14 @@ async def get_z_report(
             "category_sales": {k: round(v, 2) for k, v in category_sales.items()},
             "outlet_breakdown": {k: round(v, 2) for k, v in outlet_breakdown.items()},
         }
-    except Exception as e:
-        return {
-            "report_date": date,
-            "gross_sales": 0,
-            "net_sales": 0,
-            "transaction_count": 0,
-            "error": str(e),
-        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("POS Z report failed tenant=%s date=%s outlet=%s", current_user.tenant_id, date, outlet_id)
+        raise HTTPException(
+            status_code=503,
+            detail="POS raporu şu anda hesaplanamıyor; sıfır satış olarak kaydedilmedi.",
+        ) from exc
 
 
 # ── GET /pos/void-transactions ──
@@ -515,11 +543,15 @@ async def get_void_transactions(
             start_date=start_date,
             end_date=end_date,
         )
-        void_statuses = {"void", "voided", "cancelled", "canceled"}
-        voids = [row for row in rows if str(row.get("status") or "").lower() in void_statuses]
-        return {"void_transactions": voids, "count": len(voids)}
-    except Exception:
-        return {"void_transactions": [], "count": 0}
+    except Exception as exc:
+        logger.exception("POS void report failed tenant=%s date=%s outlet=%s", current_user.tenant_id, date, outlet_id)
+        raise HTTPException(
+            status_code=503,
+            detail="POS iptal kayıtları şu anda hesaplanamıyor.",
+        ) from exc
+    void_statuses = {"void", "voided", "cancelled", "canceled"}
+    voids = [row for row in rows if str(row.get("status") or "").lower() in void_statuses]
+    return {"void_transactions": voids, "count": len(voids)}
 
 
 # ── GET /pos/void-report ──
