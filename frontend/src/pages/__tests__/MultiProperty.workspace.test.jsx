@@ -29,6 +29,9 @@ const dashboard = {
     arrivals_today: 2,
     departures_today: 1,
   },
+  business_date: '2026-09-30',
+  business_dates: ['2026-09-30'],
+  business_dates_aligned: true,
   properties: [
     { property_id: 'hotel-denizli', property_name: 'Denizli Oteli', total_rooms: 120, occupied_rooms: 40, occupancy_pct: 33.3, pickup_7d: 3, arrivals_today: 2, departures_today: 1, currency: 'TRY', today_revenue_by_currency: { TRY: 1000 }, room_revenue_by_currency: { TRY: 900 }, adr_by_currency: { TRY: 22.5 }, integrations: {} },
     { property_id: 'hotel-fethiye', property_name: 'Fethiye Oteli', total_rooms: 120, occupied_rooms: 20, occupancy_pct: 16.7, pickup_7d: 1, arrivals_today: 0, departures_today: 0, currency: 'EUR', today_revenue_by_currency: { EUR: 100 }, room_revenue_by_currency: { EUR: 80 }, adr_by_currency: { EUR: 4 }, integrations: {} },
@@ -72,5 +75,29 @@ describe('MultiProperty workspace switching', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Hızlı görünüm/i })[0]);
     expect(await screen.findByRole('dialog')).toHaveTextContent('Denizli Oteli');
     expect(screen.getByRole('dialog')).toHaveTextContent('Bugünkü operasyon');
+  });
+
+  it('uses room revenue terminology and blocks mixed-day chain ADR/RevPAR', async () => {
+    axiosMock.get.mockImplementation((url) => {
+      if (url === '/multi-property/dashboard') {
+        return Promise.resolve({
+          data: {
+            ...dashboard,
+            business_date: null,
+            business_dates: ['2026-09-29', '2026-09-30'],
+            business_dates_aligned: false,
+          },
+        });
+      }
+      return Promise.resolve({ data: { properties: [], users: [] } });
+    });
+
+    render(<MemoryRouter><MultiProperty /></MemoryRouter>);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Tesislerin açık PMS iş günleri farklı');
+    expect(screen.queryByText('Oda geliri / satılan oda')).not.toBeInTheDocument();
+    expect(screen.getAllByText('İş günleri eşitlenmeli')).toHaveLength(2);
+    expect(screen.queryByText('Tahsilat / dolu oda')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tahsilat / toplam oda')).not.toBeInTheDocument();
   });
 });
