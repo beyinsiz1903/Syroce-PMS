@@ -233,6 +233,12 @@ def _daily_revenue_summary(metric_rows: list[dict], charges_by_cat: list[dict]) 
 
     posted_rooms = round(sum(value for key, value in posted_by_category.items() if key in ROOM_REVENUE_CATEGORIES), 2)
     occupied_room_nights = sum(int(row.get("occupied_rooms") or 0) for row in metric_rows)
+    # ADR measures the achieved rate of *sold* room nights. Complimentary
+    # stays consume inventory and therefore belong in occupancy, but their
+    # zero-priced nights must not dilute ADR.  ``stay_night_metrics`` exposes
+    # this denominator separately so every daily financial report can use the
+    # same commercial definition.
+    sold_room_nights = sum(int(row.get("sold_rooms") or 0) for row in metric_rows)
     available_room_nights = sum(int(row.get("total_rooms") or 0) for row in metric_rows)
     accrued_rooms = round(sum(float(row.get("revenue") or 0) for row in metric_rows), 2)
     has_posting_gap = occupied_room_nights > 0 and posted_rooms == 0
@@ -256,7 +262,7 @@ def _daily_revenue_summary(metric_rows: list[dict], charges_by_cat: list[dict]) 
         "other": other,
         "by_category": non_room_by_category,
         "total": round(rooms + fnb + other, 2),
-        "adr": round(rooms / occupied_room_nights, 2) if occupied_room_nights else 0.0,
+        "adr": round(rooms / sold_room_nights, 2) if sold_room_nights else 0.0,
         "revpar": round(rooms / available_room_nights, 2) if available_room_nights else 0.0,
     }
 
