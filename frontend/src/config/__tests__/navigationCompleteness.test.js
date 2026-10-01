@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { NAV_GROUPS, NAV_ITEMS } from '@/config/navItems';
 import { getRouteConfigs } from '@/routes/routeDefinitions';
 import { orderedNavigationGroups } from '@/components/Layout';
+import { PRODUCT_MODULES } from '@/lib/moduleCatalog';
 
 const routePath = (value = '') => value.split('?')[0].split('#')[0];
 
@@ -31,5 +32,8 @@ describe('complete module navigation', () => {
     expect(new Set(ordered.map(({ id }) => id))).toEqual(new Set(NAV_GROUPS.map(({ id }) => id)));
     expect(ordered.slice(0, 3).map(({ id }) => id)).toEqual(['frontdesk', 'guest', 'operations']);
   });
-});
 
+  it('gives every licensed product module a launch destination', () => {
+    expect(PRODUCT_MODULES.filter(({ path }) => !path).map(({ key }) => key)).toEqual([]);
+  });
+});
