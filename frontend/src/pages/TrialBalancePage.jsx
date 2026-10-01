@@ -176,7 +176,7 @@ export default function TrialBalancePage({ reportDate }) {
               icon={TrendingUp}
               label="ADR"
               value={money(data.revenue.adr, data.revenue.currency || data.currency)}
-              sub={`RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency)} · ${data.revenue.room_revenue_source === 'accrued' ? 'Tahakkuk eden' : 'Folyoya işlenen'}`}
+              sub={`Ücretli satılan oda başına · RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency)} · ${data.revenue.room_revenue_source === 'accrued' ? 'Tahakkuk eden' : 'Folyoya işlenen'}`}
             />
             <MetricCard
               icon={Wallet}
