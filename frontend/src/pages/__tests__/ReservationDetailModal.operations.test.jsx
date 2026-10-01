@@ -475,6 +475,33 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByText('Rezervasyon toplamından kalan')).not.toBeInTheDocument();
   });
 
+  it('shows a reconciled historical Comp adjustment without blocking checkout', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', total_amount: 0, is_complimentary: true },
+        summary: {
+          ...detail.summary,
+          balance: 0,
+          reservation_total_due: 0,
+          accommodation_total: 4800,
+          gross_total: 4800,
+          total_discounts: 4800,
+          complimentary_adjustment_total: 4800,
+          pricing_reconciliation_required: false,
+          pricing_reconciliation_difference: 0,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('financial-summary-card')).toHaveTextContent('Comp indirimi');
+    expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Tahsilat tamamlandı');
+    expect(screen.queryByTestId('pricing-reconciliation-alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('btn-checkout')).not.toHaveTextContent('mutabakat');
+  });
+
   it('repairs an unpaid double-taxed channel charge without cancelling the booking', async () => {
     get.mockResolvedValue({
       data: {

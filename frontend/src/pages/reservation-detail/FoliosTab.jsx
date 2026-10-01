@@ -339,7 +339,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.total_payments} color="emerald" />
         <SummaryCard currency={currency} label="Kalan Bakiye" value={reservationTotalDue} color={reservationTotalDue > 0 ? 'red' : 'green'} />
         {(summary?.total_discounts || 0) > 0 && (
-          <SummaryCard currency={currency} label="İndirimler" value={summary?.total_discounts} color="rose" />
+          <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
         )}
       </div>
       {prepaymentTotal > 0 && (
