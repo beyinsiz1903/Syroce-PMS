@@ -10,7 +10,11 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 describe('AdminModuleControlCenter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    axios.get.mockResolvedValue({ data: { tenants: [{ id: 'hotel-1', property_name: 'Denizli Oteli', subscription_tier: 'mini', modules: { pms: true, hr: false } }] } });
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/entitlements')) return Promise.resolve({ data: { plan_name: 'Mini', subscription_status: 'active' } });
+      if (url.endsWith('/usage')) return Promise.resolve({ data: { period_days: 30, events: { reservation_created: 4 }, current_resources: { users: 3, active_users: 2 }, last_activity_at: '2026-10-01T09:15:00Z' } });
+      return Promise.resolve({ data: { tenants: [{ id: 'hotel-1', property_name: 'Denizli Oteli', subscription_tier: 'mini', modules: { pms: true, hr: false } }] } });
+    });
     axios.patch.mockResolvedValue({ data: { modules: { pms: true, hr: true } } });
   });
 
@@ -24,5 +28,15 @@ describe('AdminModuleControlCenter', () => {
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/admin/tenants/hotel-1/modules', expect.objectContaining({
       modules: expect.objectContaining({ pms: true, hr: true }),
     })));
+  });
+
+  it('shows separate license, setup, integration and usage evidence', async () => {
+    render(<AdminModuleControlCenter />);
+    await screen.findByText('Denizli Oteli');
+    expect(await screen.findByText('2')).toBeInTheDocument();
+    expect(screen.getAllByText('Lisans').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Kurulum').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Entegrasyon').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Son 30 günde 4 işlem/).length).toBeGreaterThan(0);
   });
 });

@@ -45,6 +45,7 @@ import {
 } from '@/utils/moduleAccess';
 import { persistExitedTenantContext } from '@/lib/adminTenantContext';
 import { accessibleNavigationItems, navigationItemsByGroup } from '@/lib/navigationCatalog';
+import { userAccessScopeLabel, userIdentityLabel, userRoleLabel } from '@/lib/userRolePresentation';
 
 const ICON_BY_KEY = {
   dashboard: Home,
@@ -196,6 +197,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   const [exitingTenantContext, setExitingTenantContext] = useState(false);
 
   const { isSuperAdmin, hasModule } = useEntitlements();
+  const identityLabel = userIdentityLabel(user);
+  const roleLabel = userRoleLabel(user?.role, t);
+  const accessScopeLabel = userAccessScopeLabel(user?.role);
   const navRef = useRef(null);
   const mainRef = useRef(null);
 
@@ -571,17 +575,22 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 px-2 text-xs dark:border-gray-600 dark:text-gray-100">
+                  <Button variant="outline" size="sm" className="h-8 px-2 text-xs dark:border-gray-600 dark:text-gray-100" aria-label={`${identityLabel}; ${roleLabel}; ${accessScopeLabel}`}>
                     <User className="w-3.5 h-3.5 mr-1" />
-                    <span className="hidden sm:inline max-w-[70px] truncate">{user?.name || 'User'}</span>
+                    <span className="hidden sm:inline max-w-[110px] truncate">{identityLabel}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem className="text-sm font-medium truncate max-w-[240px]">{user?.email || user?.name}</DropdownMenuItem>
-                  <DropdownMenuItem className="text-sm text-gray-600">
-                    <span className="text-gray-500 mr-1">Rol:</span>
-                    <span className="font-semibold">{user?.role || '—'}</span>
-                    {isSuperAdmin && <span className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">Super Admin</span>}
+                  <DropdownMenuLabel className="max-w-[280px] space-y-0.5">
+                    <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Kullanıcı</span>
+                    <span className="block truncate text-sm font-semibold">{identityLabel}</span>
+                    {user?.email && <span className="block truncate text-xs font-normal text-gray-500">{user.email}</span>}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-sm text-gray-600" aria-label={`Yetki rolü: ${roleLabel}`}>
+                    <span className="text-gray-500 mr-1">Yetki rolü:</span>
+                    <span className="font-semibold">{roleLabel}</span>
+                    {isSuperAdmin && <span className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{accessScopeLabel}</span>}
                   </DropdownMenuItem>
                   {!isSuperAdmin && (
                     <DropdownMenuItem className="text-sm text-gray-600">

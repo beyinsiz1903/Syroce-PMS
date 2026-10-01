@@ -5480,18 +5480,38 @@ async def list_all_deposits(current_user: User = Depends(get_current_user)):
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    deposits = []
-    async for d in db.deposits.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
-        # Enrich with booking info
-        booking = await db.bookings.find_one({"id": d.get("booking_id"), "tenant_id": tid}, {"_id": 0, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "currency": 1})
-        if booking:
-            d["guest_name"] = booking.get("guest_name")
-            d["room_number"] = booking.get("room_number")
-            # Legacy deposit rows did not persist currency. Enrich them from
-            # their reservation so foreign-currency deposits are never shown
-            # or aggregated as TRY.
-            d["currency"] = str(d.get("currency") or booking.get("currency") or "TRY").upper()
-        deposits.append(d)
+    from core.guest_name_utils import canonical_guest_name, display_guest_name
+
+    deposits = await db.deposits.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    booking_ids = list({d.get("booking_id") for d in deposits if d.get("booking_id")})
+    bookings = await db.bookings.find(
+        {"id": {"$in": booking_ids}, "tenant_id": tid},
+        {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "currency": 1},
+    ).to_list(len(booking_ids) or 1)
+    bookings_by_id = {booking.get("id"): booking for booking in bookings}
+
+    guest_ids = list({booking.get("guest_id") for booking in bookings if booking.get("guest_id")})
+    guests = await db.guests.find(
+        {"id": {"$in": guest_ids}, "tenant_id": tid},
+        {"_id": 0, "id": 1, "name": 1, "full_name": 1, "first_name": 1, "last_name": 1},
+    ).to_list(len(guest_ids) or 1)
+    guests_by_id = {guest.get("id"): guest for guest in guests}
+
+    for deposit in deposits:
+        booking = bookings_by_id.get(deposit.get("booking_id"))
+        if not booking:
+            deposit["guest_name"] = display_guest_name(deposit.get("guest_name"), None)
+            deposit["currency"] = str(deposit.get("currency") or "TRY").upper()
+            continue
+
+        guest_id = booking.get("guest_id")
+        guest_name = canonical_guest_name(guests_by_id.get(guest_id)) or booking.get("guest_name")
+        deposit["guest_name"] = display_guest_name(guest_name, guest_id)
+        deposit["room_number"] = booking.get("room_number")
+        # Legacy deposit rows did not persist currency. Enrich them from
+        # their reservation so foreign-currency deposits are never shown
+        # or aggregated as TRY.
+        deposit["currency"] = str(deposit.get("currency") or booking.get("currency") or "TRY").upper()
 
     return {"deposits": deposits}
 
