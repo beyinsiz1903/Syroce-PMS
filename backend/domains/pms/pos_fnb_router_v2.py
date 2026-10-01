@@ -161,7 +161,7 @@ async def close_order(
     )
     if not result.ok:
         # Terminal-state conflicts → 409; everything else → 400.
-        status_code = 409 if result.code in {"ORDER_VOIDED", "FOLIO_NOT_OPEN"} else 400
+        status_code = 409 if result.code in {"ORDER_VOIDED", "FOLIO_NOT_OPEN", "BOOKING_NOT_IN_HOUSE"} else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 

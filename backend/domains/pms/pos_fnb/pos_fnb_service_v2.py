@@ -286,6 +286,19 @@ class PosFnbServiceV2:
         if post_to_folio and not booking_id:
             return ServiceResult.fail("Room charge requires a booking", "BOOKING_REQUIRED")
         if post_to_folio and booking_id:
+            booking = await self._db.bookings.find_one(
+                {
+                    "id": booking_id,
+                    "tenant_id": ctx.tenant_id,
+                    "status": {"$in": ["checked_in", "in_house"]},
+                },
+                {"_id": 0, "id": 1, "status": 1},
+            )
+            if not booking:
+                return ServiceResult.fail(
+                    "Oda hesabına yalnızca giriş yapmış misafirlerin adisyonu aktarılabilir",
+                    "BOOKING_NOT_IN_HOUSE",
+                )
             folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
             if not folio:
                 return ServiceResult.fail("Open guest folio not found", "FOLIO_NOT_OPEN")
@@ -393,6 +406,7 @@ class PosFnbServiceV2:
                 "payment_breakdown": payment_breakdown,
                 "folio_charge_id": folio_charge_id,
                 "posted_to_folio": post_to_folio and folio_charge_id is not None,
+                "folio_posting_status": "queued" if outbox_payload else None,
             }
         )
 
