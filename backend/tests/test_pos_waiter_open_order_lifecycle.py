@@ -203,6 +203,9 @@ async def test_room_charge_fails_closed_when_open_folio_is_missing():
             "id": "order-1", "tenant_id": "tenant-1", "status": "pending",
             "payment_status": "unpaid", "grand_total": 120, "order_items": [],
         }]),
+        bookings=MemoryCollection([{
+            "id": "booking-1", "tenant_id": "tenant-1", "status": "checked_in",
+        }]),
         folios=MemoryCollection(),
     )
 
@@ -216,6 +219,80 @@ async def test_room_charge_fails_closed_when_open_folio_is_missing():
     assert result.code == "FOLIO_NOT_OPEN"
     assert service._db.pos_transactions.docs == []
     assert service._db.pos_orders.docs[0]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_room_charge_rejects_booking_that_is_not_in_house():
+    service = PosFnbServiceV2()
+    service._db = SimpleNamespace(
+        pos_transactions=MemoryCollection(),
+        pos_orders=MemoryCollection([{
+            "id": "order-1", "tenant_id": "tenant-1", "status": "pending",
+            "payment_status": "unpaid", "grand_total": 120, "order_items": [],
+        }]),
+        bookings=MemoryCollection([{
+            "id": "booking-1", "tenant_id": "tenant-1", "status": "confirmed",
+        }]),
+        folios=MemoryCollection([{
+            "id": "folio-1", "tenant_id": "tenant-1", "booking_id": "booking-1",
+            "folio_type": "guest", "status": "open",
+        }]),
+    )
+
+    method = PosFnbServiceV2.close_order.__wrapped__
+    result = await method(
+        service, ctx(), "order-1", payment_method="room_charge",
+        post_to_folio=True, booking_id="booking-1",
+    )
+
+    assert result.ok is False
+    assert result.code == "BOOKING_NOT_IN_HOUSE"
+    assert service._db.pos_transactions.docs == []
+    assert service._db.pos_orders.docs[0]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_room_charge_reports_durable_folio_queue_status(monkeypatch):
+    service = PosFnbServiceV2()
+    service._db = SimpleNamespace(
+        pos_transactions=MemoryCollection(),
+        pos_orders=MemoryCollection([{
+            "id": "order-1", "tenant_id": "tenant-1", "status": "pending",
+            "payment_status": "unpaid", "grand_total": 120, "tax_amount": 10,
+            "order_number": "ORD-1", "order_items": [],
+        }]),
+        bookings=MemoryCollection([{
+            "id": "booking-1", "tenant_id": "tenant-1", "status": "checked_in",
+        }]),
+        folios=MemoryCollection([{
+            "id": "folio-1", "tenant_id": "tenant-1", "booking_id": "booking-1",
+            "folio_type": "guest", "status": "open",
+        }]),
+        table_layouts=MemoryCollection(),
+    )
+    persisted = {}
+
+    async def persist(_tenant_id, _transaction, _order_id, outbox_payload):
+        persisted["outbox_payload"] = outbox_payload
+
+    monkeypatch.setattr(service, "_persist_txn_and_intent", persist)
+    monkeypatch.setattr(service, "_consume_recipe_stock", lambda _ctx, _order: _async_none())
+    monkeypatch.setattr(
+        "core.integrations.operational_gl_bridge.post_direct_pos_to_gl",
+        lambda *_args, **_kwargs: _async_none(),
+    )
+
+    method = PosFnbServiceV2.close_order.__wrapped__
+    result = await method(
+        service, ctx(), "order-1", payment_method="room_charge",
+        post_to_folio=True, booking_id="booking-1", guest_signature="data:image/png;base64,test",
+    )
+
+    assert result.ok is True
+    assert result.data["posted_to_folio"] is True
+    assert result.data["folio_posting_status"] == "queued"
+    assert result.data["folio_charge_id"]
+    assert persisted["outbox_payload"]["folio_id"] == "folio-1"
 
 
 async def _async_none():

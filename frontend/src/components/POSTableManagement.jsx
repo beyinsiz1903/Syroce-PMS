@@ -15,6 +15,14 @@ const STATUS_LABELS = {
   dirty: 'Temizlenecek',
 };
 
+const posErrorMessage = (error, fallback) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (typeof detail?.message === 'string' && detail.message.trim()) return detail.message;
+  if (typeof error?.response?.data?.message === 'string' && error.response.data.message.trim()) return error.response.data.message;
+  return fallback;
+};
+
 const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
   const [tables, setTables] = useState([]);
   const [statusCounts, setStatusCounts] = useState({});
@@ -102,7 +110,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       setReservationFormOpen(false);
       await loadReservations();
     } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Masa rezervasyonu oluşturulamadı');
+      toast.error(posErrorMessage(error, 'Masa rezervasyonu oluşturulamadı'));
     } finally {
       setSavingReservation(false);
     }
@@ -115,7 +123,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       toast.success(status === 'seated' ? 'Misafir masaya alındı' : status === 'completed' ? 'Rezervasyon tamamlandı' : 'Rezervasyon iptal edildi');
       await Promise.all([loadReservations(), loadTables()]);
     } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Rezervasyon durumu güncellenemedi');
+      toast.error(posErrorMessage(error, 'Rezervasyon durumu güncellenemedi'));
     } finally {
       setUpdating(null);
     }
@@ -134,16 +142,12 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       toast.success(`Masa ${table.table_number} durumu güncellendi`);
       await loadTables();
     } catch (error) {
-      const detail = error?.response?.data?.detail;
-      if (typeof detail === 'string') {
-        toast.error(detail);
-      } else if (error?.response?.status === 404) {
-        toast.error('POS masa modülü henüz aktif değil');
-      } else if (error?.response?.status === 409) {
-        toast.error(error.response.data?.detail || 'Açık adisyon bulunan masa müsait yapılamaz');
-      } else {
-        toast.error('Masa durumu güncellenemedi');
-      }
+      const fallback = error?.response?.status === 404
+        ? 'POS masa modülü henüz aktif değil'
+        : error?.response?.status === 409
+          ? 'Açık adisyon bulunan masa müsait yapılamaz'
+          : 'Masa durumu güncellenemedi';
+      toast.error(posErrorMessage(error, fallback));
     } finally {
       setUpdating(null);
     }
@@ -179,7 +183,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       toast.success(`Adisyon Masa ${target} üzerine aktarıldı`);
       await loadTables();
     } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Masa aktarımı tamamlanamadı');
+      toast.error(posErrorMessage(error, 'Masa aktarımı tamamlanamadı'));
     } finally {
       setUpdating(null);
     }

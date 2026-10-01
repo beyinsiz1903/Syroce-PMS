@@ -14,7 +14,7 @@ vi.mock('axios', () => ({
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-import POSWaiterTerminal, { normalizeWaiterMenuItems } from '@/pages/POSWaiterTerminal';
+import POSWaiterTerminal, { normalizeWaiterMenuItems, posErrorMessage } from '@/pages/POSWaiterTerminal';
 
 describe('POS waiter menu regressions', () => {
   beforeEach(() => {
@@ -35,6 +35,12 @@ describe('POS waiter menu regressions', () => {
       unit_price: 120,
       available: false,
     });
+  });
+
+  it('shows the backend message from normalized service errors', () => {
+    expect(posErrorMessage({
+      response: { data: { detail: { status: 'error', message: 'Hedef masa dolu' } } },
+    }, 'İşlem tamamlanamadı')).toBe('Hedef masa dolu');
   });
 
   it('opens a persisted check and keeps it available after sending to kitchen', async () => {
@@ -91,5 +97,42 @@ describe('POS waiter menu regressions', () => {
       order_id: 'order-1', payment_method: 'mixed',
       payments: [{ method: 'cash', amount: 59 }, { method: 'card', amount: 59.01 }],
     })));
+  });
+
+  it('keeps the destination table identity after transferring an open check', async () => {
+    let tableLoads = 0;
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
+      if (url === '/pos/table-layout/outlet-1') {
+        tableLoads += 1;
+        return Promise.resolve({ data: { tables: tableLoads === 1 ? [
+          { id: 'table-1', table_number: '1', seats: 4, status: 'occupied', current_order_id: 'order-1' },
+          { id: 'table-2', table_number: '2', seats: 4, status: 'available' },
+        ] : [
+          { id: 'table-1', table_number: '1', seats: 4, status: 'available' },
+          { id: 'table-2', table_number: '2', seats: 4, status: 'occupied', current_order_id: 'order-1' },
+        ] } });
+      }
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
+      if (url === '/pos/v2/orders/order-1') return Promise.resolve({ data: { order: {
+        id: 'order-1', order_number: 'ORD-1', status: 'pending', payment_status: 'unpaid',
+        table_number: '1', grand_total: 100, order_items: [],
+      } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockResolvedValue({ data: { order_id: 'order-1', to_table: '2' } });
+
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.change(await screen.findByLabelText('Hedef masa'), { target: { value: '2' } });
+    fireEvent.click(screen.getByTestId('transfer-table'));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pos/v2/orders/order-1/transfer-table',
+      { to_table_number: '2' },
+    ));
+    expect(await screen.findByRole('option', { name: 'Masa 1' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Masa 2' })).not.toBeInTheDocument();
   });
 });

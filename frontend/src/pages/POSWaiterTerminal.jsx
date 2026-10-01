@@ -29,6 +29,16 @@ export const normalizeWaiterMenuItems = list => list
     tax_rate: Number(item.tax_rate ?? 0.18),
   }));
 
+export const posErrorMessage = (error, fallback) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (typeof detail?.message === 'string' && detail.message.trim()) return detail.message;
+  if (typeof error?.response?.data?.message === 'string' && error.response.data.message.trim()) {
+    return error.response.data.message;
+  }
+  return fallback;
+};
+
 const POSWaiterTerminal = () => {
   const {
     t
@@ -83,10 +93,13 @@ const POSWaiterTerminal = () => {
     try {
       setLoadingTables(true);
       const res = await axios.get(`/pos/table-layout/${outletId}`);
-      setTables(res.data.tables || []);
+      const nextTables = res.data.tables || [];
+      setTables(nextTables);
+      return nextTables;
     } catch (err) {
       console.error('Masalar yüklenemedi:', err); toast.error('Masalar yüklenemedi');
       setTables([]);
+      return [];
     } finally {
       setLoadingTables(false);
     }
@@ -294,8 +307,7 @@ const POSWaiterTerminal = () => {
       await ensureOpenOrder();
       toast.success('Sipariş mutfağa gönderildi ve adisyon açık bırakıldı');
     } catch (error) {
-      const detail = error?.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'Sipariş mutfağa gönderilemedi');
+      toast.error(posErrorMessage(error, 'Sipariş mutfağa gönderilemedi'));
     } finally {
       setLoading(false);
     }
@@ -346,7 +358,9 @@ const POSWaiterTerminal = () => {
         } else {
           alertDialog({
             message: paymentMethod === 'room_charge'
-              ? 'Adisyon kapatıldı ve oda folyosuna gönderildi.'
+              ? data.folio_posting_status === 'queued'
+                ? 'Adisyon kapatıldı. Oda folyosuna aktarım güvenli işlem kuyruğuna alındı.'
+                : 'Adisyon kapatıldı ve oda folyosuna aktarıldı.'
               : 'Adisyon kapatıldı ve ödeme kaydedildi.'
           });
         }
@@ -361,11 +375,8 @@ const POSWaiterTerminal = () => {
       console.error('Sipariş hatası:', err);
       const status = err?.response?.status;
       if (status && status < 500) pendingKeyRef.current = null;
-      const detail = err?.response?.data?.detail;
       alertDialog({
-        message: typeof detail === 'string'
-          ? detail
-          : 'Sipariş oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.'
+        message: posErrorMessage(err, 'Sipariş oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.')
       });
     } finally {
       setLoading(false);
@@ -401,8 +412,7 @@ const POSWaiterTerminal = () => {
       await refreshActiveOrder(activeOrder.id);
       toast.success('Kalem iptal edildi; mutfak ekranı güncellendi');
     } catch (error) {
-      const detail = error?.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'Kalem iptal edilemedi');
+      toast.error(posErrorMessage(error, 'Kalem iptal edilemedi'));
     } finally {
       setLoading(false);
     }
@@ -420,27 +430,32 @@ const POSWaiterTerminal = () => {
       setLastOrder(previous => ({ ...previous, refunded: true }));
       toast.success('İade kaydedildi');
     } catch (error) {
-      const detail = error?.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'İade kaydedilemedi');
+      toast.error(posErrorMessage(error, 'İade kaydedilemedi'));
     } finally {
       setLoading(false);
     }
   };
   const transferOrder = async () => {
     if (!activeOrder?.id || !transferTarget) return;
+    const destinationTable = tables.find(item => String(item.table_number) === String(transferTarget));
     setLoading(true);
     try {
       await axios.post(`/pos/v2/orders/${activeOrder.id}/transfer-table`, {
         to_table_number: transferTarget,
       });
       toast.success(`Adisyon Masa ${transferTarget} üzerine aktarıldı`);
-      await loadTables(outlet.id);
-      setTable(prev => ({ ...prev, table_number: transferTarget }));
+      const nextTables = await loadTables(outlet.id);
+      const persistedTarget = nextTables.find(item => String(item.table_number) === String(transferTarget));
+      setTable({
+        ...(persistedTarget || destinationTable),
+        table_number: transferTarget,
+        status: 'occupied',
+        current_order_id: activeOrder.id,
+      });
       setActiveOrder(prev => ({ ...prev, table_number: transferTarget }));
       setTransferTarget('');
     } catch (error) {
-      const detail = error?.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'Masa transferi yapılamadı');
+      toast.error(posErrorMessage(error, 'Masa transferi yapılamadı'));
     } finally {
       setLoading(false);
     }
@@ -458,8 +473,7 @@ const POSWaiterTerminal = () => {
       setTable(null);
       setStep(STEPS.TABLE);
     } catch (error) {
-      const detail = error?.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'Adisyon iptal edilemedi');
+      toast.error(posErrorMessage(error, 'Adisyon iptal edilemedi'));
     } finally {
       setLoading(false);
     }
