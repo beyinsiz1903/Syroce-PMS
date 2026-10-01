@@ -12,7 +12,15 @@ export const ChannelsSection = ({
 }) => {
   const [filter, setFilter] = React.useState('all');
   const filteredData = filter === 'all' ? sourceData : sourceData.filter(d => d.name === filter);
-  const hasMixedRevenue = filteredData.some((row) => Object.keys(row.revenueByCurrency || {}).length > 1);
+  // A channel can have one currency while another channel has a different one.
+  // Checking each row separately allowed EUR and TRY bars on the same numeric
+  // axis, which is a financial comparison error.  Compare only when the whole
+  // selected set has one non-zero currency.
+  const revenueCurrencies = new Set(filteredData.flatMap((row) => Object.entries(row.revenueByCurrency || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const canCompareRevenue = revenueCurrencies.size <= 1;
+  const revenueCurrency = [...revenueCurrencies][0] || 'TRY';
 
   return (
     <div className="space-y-6" data-testid="section-channels">
@@ -36,7 +44,7 @@ export const ChannelsSection = ({
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Kaynak Dağılımı</CardTitle></CardHeader>
           <CardContent>
-            {hasMixedRevenue ? <div className="h-[300px] flex items-center justify-center px-6 text-center text-sm text-slate-500">Farklı para birimleri tek eksende toplanmaz. Kesin tutarlar aşağıdaki tabloda para birimi bazında gösterilir.</div> : filteredData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
+            {filteredData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie 
                     data={filteredData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} 
@@ -55,17 +63,17 @@ export const ChannelsSection = ({
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Kaynak Bazlı Gelir</CardTitle></CardHeader>
           <CardContent>
-            {filteredData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
+            {filteredData.length > 0 && canCompareRevenue ? <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={filteredData} margin={{ bottom: 25 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-                  <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
+                  <Tooltip content={<CustomTooltip formatter={value => formatCurrency(value, revenueCurrency)} />} />
                   <Bar dataKey="revenue" name="Gelir" radius={[4, 4, 0, 0]}>
                     {filteredData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer> : <EmptyState icon={BarChart3} message="Kaynak gelir verisi yok" />}
+              </ResponsiveContainer> : filteredData.length > 0 ? <div className="h-[300px] flex items-center justify-center px-6 text-center text-sm text-slate-600" data-testid="mixed-currency-revenue-warning"><div><p className="font-medium">Farklı para birimleri tek gelir grafiğinde karşılaştırılmadı.</p><p className="mt-1 text-xs text-slate-500">Kesin tutarlar aşağıdaki tabloda para birimi bazında gösterilir.</p></div></div> : <EmptyState icon={BarChart3} message="Kaynak gelir verisi yok" />}
           </CardContent>
         </Card>
       </div>
