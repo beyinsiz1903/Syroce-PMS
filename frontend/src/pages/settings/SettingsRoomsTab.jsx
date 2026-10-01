@@ -51,7 +51,7 @@ const ROOM_STATUS_LABELS = {
   blocked: 'Blokeli',
 };
 
-export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkRoomsDialog, setShowAddRoomDialog, roomsList, handleDeleteRoom, onEditRoom }) {
+export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkRoomsDialog, setShowAddRoomDialog, roomsList, configuredRoomCapacity, handleDeleteRoom, onEditRoom }) {
     const navigate = useNavigate();
     return (
         <TabsContent value="rooms" className="space-y-4" data-testid="rooms-settings-content">
@@ -86,7 +86,12 @@ export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkR
                       <p className="text-lg font-medium">Henüz oda eklenmemiş</p>
                       <p className="text-sm mt-1">Yukarıdaki butonlarla oda ekleyebilirsiniz</p>
                     </div> : <div className="space-y-2">
-                      <div className="text-sm text-slate-500 mb-3">Toplam {roomsList.length} oda</div>
+                      <div className="text-sm text-slate-500 mb-3">
+                        {roomsList.length} fiziksel oda · Tanımlı kapasite: {configuredRoomCapacity ?? '—'}
+                      </div>
+                      {Number.isFinite(Number(configuredRoomCapacity)) && roomsList.length > Number(configuredRoomCapacity) && <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
+                        Fiziksel oda sayısı tanımlı kapasiteyi {roomsList.length - Number(configuredRoomCapacity)} oda aşıyor. Kapasiteyi Otel sekmesinden yükseltin veya kullanılmayan oda kayıtlarını pasife alın.
+                      </div>}
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         {roomsList.map(room => <div key={room.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors" data-testid={`settings-room-${room.room_number}`}>
                             <div className="flex items-center gap-3">

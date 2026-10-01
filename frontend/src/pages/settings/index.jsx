@@ -37,12 +37,25 @@ import SettingsB2bTab from './SettingsB2bTab';
 // Plan ücretleri base EUR cinsinden tutulur (subscription tarafı EUR);
 // gösterimde useCurrency.format ile aktif tenant para birimine çevrilir.
 const PLAN_CONFIG = {
+  mini: {
+    key: 'mini',
+    priceEUR: 35,
+    priceYearlyEUR: 350,
+    maxRooms: 15,
+    maxUsers: 2,
+    icon: Building2,
+    iconBg: 'bg-teal-100',
+    iconText: 'text-teal-700',
+    lightBg: 'bg-teal-50',
+    borderColor: 'border-teal-200',
+    pillIntent: 'success'
+  },
   basic: {
     key: 'basic',
     priceEUR: 79,
     priceYearlyEUR: 790,
-    maxRooms: 15,
-    maxUsers: 3,
+    maxRooms: 30,
+    maxUsers: 4,
     icon: Building2,
     iconBg: 'bg-emerald-100',
     iconText: 'text-emerald-700',
@@ -133,30 +146,52 @@ const Settings = ({
     format: formatCurrencyTenant,
     refresh: refreshCurrency
   } = useCurrency();
+  const [planCatalog, setPlanCatalog] = useState([]);
   const getRoleLabel = useCallback(role => ({
     label: t(`settings.roles.${role}`, { defaultValue: role }),
     color: ROLE_COLORS[role] || 'bg-slate-100 text-slate-700 ring-1 ring-slate-300'
   }), [t]);
+  const catalogByTier = useMemo(() => Object.fromEntries(
+    planCatalog.map(plan => [plan.tier, plan])
+  ), [planCatalog]);
+  const withCatalog = useCallback((tier, display) => {
+    const catalogPlan = catalogByTier[tier];
+    if (!catalogPlan) return display;
+    return {
+      ...display,
+      priceEUR: catalogPlan.price_monthly,
+      priceYearlyEUR: catalogPlan.price_yearly,
+      maxRooms: catalogPlan.max_rooms,
+      maxUsers: catalogPlan.max_users,
+      description: catalogPlan.description_tr || display.description
+    };
+  }, [catalogByTier]);
   const PLANS = useMemo(() => ({
+    mini: withCatalog('mini', {
+      ...PLAN_CONFIG.mini,
+      label: 'Mini',
+      features: ['PMS Çekirdek', t('calendar.title'), t('guest.title'), t('housekeeping.title'), t('reports.title'), t('mobile.title')],
+      description: 'Pansiyon / butik tesisler için (1-15 oda)'
+    }),
     basic: {
-      ...PLAN_CONFIG.basic,
+      ...withCatalog('basic', PLAN_CONFIG.basic),
       label: t('settings.basic'),
       features: ['PMS Core', t('calendar.title'), 'Dashboard', t('guest.title'), t('housekeeping.title'), t('reports.title'), t('mobile.title'), t('invoice.title')],
-      description: t('settings.basic') + ' - ' + (PLAN_CONFIG.basic.maxRooms ? `1-${PLAN_CONFIG.basic.maxRooms} ${t('common.rooms')}` : '')
+      description: catalogByTier.basic?.description_tr || `${t('settings.basic')} - 16-30 ${t('common.rooms')}`
     },
     professional: {
-      ...PLAN_CONFIG.professional,
+      ...withCatalog('professional', PLAN_CONFIG.professional),
       label: t('settings.professional'),
       features: [t('settings.basic') + ' +', 'Channel Manager', t('folio.title'), t('nightAudit.title'), t('finance.title'), t('dashboard.costManagement'), t('reports.title'), 'Rate Management', 'Booking Engine'],
-      description: t('settings.professional') + ' - ' + (PLAN_CONFIG.professional.maxRooms ? `15-${PLAN_CONFIG.professional.maxRooms} ${t('common.rooms')}` : '')
+      description: catalogByTier.professional?.description_tr || `${t('settings.professional')} - 31-80 ${t('common.rooms')}`
     },
     enterprise: {
-      ...PLAN_CONFIG.enterprise,
+      ...withCatalog('enterprise', PLAN_CONFIG.enterprise),
       label: t('settings.enterprise'),
       features: [t('settings.professional') + ' +', 'Revenue Management (RMS)', t('aiModule.title'), t('dashboard.multiProperty'), t('dashboard.groupSales'), t('dashboard.salesCRM'), t('loyalty.title'), 'GM Dashboard', 'API', 'White Label', 'Audit Trail'],
-      description: t('settings.enterprise') + ' - 80+ ' + t('common.rooms')
+      description: catalogByTier.enterprise?.description_tr || `${t('settings.enterprise')} - 81+ ${t('common.rooms')}`
     }
-  }), [t]);
+  }), [catalogByTier, t, withCatalog]);
 
   // Plan değişimi sonrası activeTab'ı koru (window.location.reload state kaybını önler).
   const [activeTab, setActiveTab] = useState(() => {
@@ -301,8 +336,12 @@ const Settings = ({
   }, []);
   const loadSubscription = useCallback(async () => {
     try {
-      const res = await axios.get('/subscription/current');
-      setSubscription(res.data);
+      const [subscriptionRes, plansRes] = await Promise.all([
+        axios.get('/subscription/current'),
+        axios.get('/subscription/plans')
+      ]);
+      setSubscription(subscriptionRes.data);
+      setPlanCatalog(plansRes.data?.plans || []);
     } catch (err) {
       console.error('Sub load failed', err);
       toast.error(err?.response?.data?.detail || 'Abonelik bilgisi alınamadı');
@@ -599,12 +638,17 @@ const Settings = ({
   // ─── Hotel Info Handler ────────────────────────
   const overRoomLimit = useMemo(() => {
     const limit = currentPlan.maxRooms;
-    if (!limit) return false;
-    return Number(hotelForm.total_rooms) > Number(limit);
-  }, [currentPlan.maxRooms, hotelForm.total_rooms]);
+    const requested = Number(hotelForm.total_rooms);
+    const physicalRooms = Number(subscription?.rooms_count || 0);
+    return (Boolean(limit) && requested > Number(limit)) || requested < physicalRooms;
+  }, [currentPlan.maxRooms, hotelForm.total_rooms, subscription?.rooms_count]);
   const handleSaveHotelInfo = async () => {
     if (overRoomLimit) {
-      toast.error(`Mevcut planınızda en fazla ${currentPlan.maxRooms} oda tanımlanabilir. Önce planınızı yükseltin.`);
+      const requested = Number(hotelForm.total_rooms);
+      const physicalRooms = Number(subscription?.rooms_count || 0);
+      toast.error(requested < physicalRooms
+        ? `Tanımlı oda kapasitesi mevcut ${physicalRooms} fiziksel odadan düşük olamaz.`
+        : `Mevcut planınızda en fazla ${currentPlan.maxRooms} oda tanımlanabilir. Önce planınızı yükseltin.`);
       return;
     }
     setHotelSaving(true);
@@ -765,7 +809,7 @@ const Settings = ({
   };
 
   // Plan tiers for upgrade/downgrade
-  const tierOrder = ['basic', 'professional', 'enterprise'];
+  const tierOrder = ['mini', 'basic', 'professional', 'enterprise'];
   const currentIdx = tierOrder.indexOf(currentTier);
   const upgradeTiers = tierOrder.filter((_, i) => i > currentIdx);
   const downgradeTiers = tierOrder.filter((_, i) => i < currentIdx);
@@ -837,7 +881,7 @@ const Settings = ({
           <SettingsInvoiceTab loadInvoiceSettings={loadInvoiceSettings} invoiceLoading={invoiceLoading} handleSaveInvoiceSettings={handleSaveInvoiceSettings} invoiceSaving={invoiceSaving} invoiceSettings={invoiceSettings} setInvoiceSettings={setInvoiceSettings} handleLogoUpload={handleLogoUpload} CURRENCY_OPTIONS={CURRENCY_OPTIONS} />
 
           {/* ═══════════ ROOMS MANAGEMENT TAB (admin + super_admin) ═══════════ */}
-          {isAdmin && <SettingsRoomsTab loadRooms={loadRooms} roomsLoading={roomsLoading} setShowBulkRoomsDialog={setShowBulkRoomsDialog} setShowAddRoomDialog={setShowAddRoomDialog} roomsList={roomsList} handleDeleteRoom={handleDeleteRoom} onEditRoom={openRoomEditor} />}
+          {isAdmin && <SettingsRoomsTab loadRooms={loadRooms} roomsLoading={roomsLoading} setShowBulkRoomsDialog={setShowBulkRoomsDialog} setShowAddRoomDialog={setShowAddRoomDialog} roomsList={roomsList} configuredRoomCapacity={tenant?.total_rooms} handleDeleteRoom={handleDeleteRoom} onEditRoom={openRoomEditor} />}
 
           {/* ═══════════ B2B ENTEGRASYON TAB ═══════════ */}
           {isAdmin && <SettingsB2bTab b2bInfo={b2bInfo} copyToClipboard={copyToClipboard} b2bCodeOnce={b2bCodeOnce} setB2bCodeOnce={setB2bCodeOnce} handleRegenerateCode={handleRegenerateCode} b2bBusy={b2bBusy} loadB2B={loadB2B} b2bLoading={b2bLoading} b2bRequests={b2bRequests} handleApproveRequest={handleApproveRequest} handleRejectRequest={handleRejectRequest} />}

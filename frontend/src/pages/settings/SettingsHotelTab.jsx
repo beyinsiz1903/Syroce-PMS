@@ -98,14 +98,20 @@ export default function SettingsHotelTab({ editMode, setEditMode, setHotelForm, 
           })} />
                   </div>
                   <div>
-                    <Label>Toplam Oda Sayısı</Label>
+                    <Label>Tanımlı oda kapasitesi</Label>
                     <Input type="number" min={0} value={hotelForm.total_rooms ?? ''} readOnly={!editMode} className={`${!editMode ? 'bg-slate-50' : ''} ${overRoomLimit ? 'border-rose-400 focus-visible:ring-rose-400' : ''}`} onChange={e => setHotelForm({
             ...hotelForm,
             total_rooms: parseInt(e.target.value) || 0
           })} />
+                    <p className={`text-[11px] mt-1 ${overRoomLimit ? 'text-rose-600 font-medium' : 'text-slate-500'}`}>
+                        Sistemde {subscription?.rooms_count ?? 0} fiziksel oda tanımlı. Bu alan oda ekleme üst sınırıdır.
+                    </p>
                     {editMode && currentPlan.maxRooms && <p className={`text-[11px] mt-1 ${overRoomLimit ? 'text-rose-600 font-medium' : 'text-slate-500'}`}>
-                        Plan limiti: max {currentPlan.maxRooms} oda
+                        Paket limiti: en fazla {currentPlan.maxRooms} oda
                         {overRoomLimit && ' — Kaydetmek için planı yükseltin.'}
+                      </p>}
+                    {Number(hotelForm.total_rooms) < Number(subscription?.rooms_count || 0) && <p className="text-[11px] mt-1 text-rose-600 font-medium">
+                        Kapasite, mevcut fiziksel oda sayısından düşük olamaz.
                       </p>}
                   </div>
                 </div>
