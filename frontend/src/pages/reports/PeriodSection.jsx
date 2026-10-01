@@ -21,7 +21,11 @@ const PeriodSection = ({ data, pc }) => {
   }));
   const revChange = calcChange(pc.month_revenue, pc.prev_month_revenue);
   const bookChange = calcChange(pc.month_bookings, pc.prev_month_bookings);
-  const hasMixedRevenueTrend = (data?.revenue_trend || []).some((row) => Object.keys(row.revenue_by_currency || {}).length > 1);
+  const revenueTrendCurrencies = new Set((data?.revenue_trend || []).flatMap((row) => Object.entries(row.revenue_by_currency || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const hasMixedRevenueTrend = revenueTrendCurrencies.size > 1;
+  const revenueTrendCurrency = [...revenueTrendCurrencies][0] || 'TRY';
   const changeClasses = change => change.direction === 'up'
     ? 'border-emerald-200 bg-emerald-50/30 text-emerald-700'
     : change.direction === 'down'
@@ -63,7 +67,7 @@ const PeriodSection = ({ data, pc }) => {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
               <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-              <Tooltip content={<CustomTooltip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+              <Tooltip content={<CustomTooltip formatter={(value) => formatCurrency(value, revenueTrendCurrency)} />} /><Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar yAxisId="left" dataKey="revenue" name="Gelir" fill="#0284C7" opacity={0.6} radius={[2, 2, 0, 0]} />
               <Line yAxisId="left" type="monotone" dataKey="revenue" name="Trend" stroke="#D97706" strokeWidth={2} dot={{ r: 2 }} />
             </ComposedChart>
