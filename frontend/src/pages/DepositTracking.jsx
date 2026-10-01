@@ -19,6 +19,7 @@ import {
   formatDepositTotals,
   normalizeDepositCurrency
 } from '@/lib/depositCurrency';
+import { depositGuestLabel, formatDepositDate } from '@/lib/depositDisplay';
 const API = "";
 export default function DepositTracking({
   user,
@@ -28,6 +29,7 @@ export default function DepositTracking({
   const { t, i18n } = useTranslation();
   const [deposits, setDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
 
@@ -62,13 +64,15 @@ export default function DepositTracking({
   const [generatingInvoice, setGeneratingInvoice] = useState(false);
   const headers = {};
   const loadDeposits = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
     try {
       const res = await axios.get(`/pms/deposits/all`, {
         headers
       });
       setDeposits(res.data.deposits || []);
     } catch (e) {
-      console.error(e);
+      setLoadError(e.response?.data?.detail || 'Depozito kayıtları yüklenemedi.');
     }
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
@@ -253,8 +257,15 @@ export default function DepositTracking({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <KpiCard icon={ArrowDownCircle} label={t('cm.pages_DepositTracking.aktif_depozitolar')} value={formatDepositTotals(activeTotals, i18n.language)} sub={`${deposits.filter(d => d.status === 'received').length} kayıt`} intent="success" />
           <KpiCard icon={ArrowUpCircle} label={t('cm.pages_DepositTracking.iade_edilen')} value={formatDepositTotals(refundedTotals, i18n.language)} sub={`${deposits.filter(d => d.status === 'refunded').length} iade`} intent="warning" />
-          <KpiCard icon={Receipt} label={t('cm.pages_DepositTracking.toplam_islem')} value={deposits.length} sub="depozito kaydı" intent="info" />
+          <KpiCard icon={Receipt} label="Toplam depozito kaydı" value={deposits.length} sub={`${deposits.length} işlem`} intent="info" />
         </div>
+
+        {loadError && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+            <span>{loadError}</span>
+            <Button type="button" variant="outline" size="sm" onClick={loadDeposits}>Yeniden dene</Button>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
@@ -297,7 +308,10 @@ export default function DepositTracking({
               </thead>
               <tbody>
                 {filtered.map((d, i) => <tr key={d.id || i} className="border-t hover:bg-gray-50" data-testid={`deposit-row-${d.id || i}`}>
-                    <td className="py-3 px-4 font-medium text-gray-800">{d.guest_name || '-'}</td>
+                    <td className="py-3 px-4 font-medium text-gray-800">
+                      <span className={d.guest_name ? '' : 'text-amber-700'}>{depositGuestLabel(d)}</span>
+                      {!d.guest_name && d.booking_id && <span className="mt-0.5 block text-[11px] font-normal text-gray-500">Rezervasyon: {d.booking_id}</span>}
+                    </td>
                     <td className="py-3 px-4">{d.room_number || '-'}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1.5">
@@ -311,7 +325,7 @@ export default function DepositTracking({
                         {d.status === 'refunded' ? 'İade Edildi' : d.status === 'partially_refunded' ? 'Kısmi İade' : 'Aktif'}
                       </Badge>
                     </td>
-                    <td className="py-3 px-4 text-xs text-gray-500">{(d.created_at || '').toString().slice(0, 16).replace('T', ' ')}</td>
+                    <td className="py-3 px-4 text-xs text-gray-500">{formatDepositDate(d.created_at, i18n.language)}</td>
                     <td className="py-3 px-4 text-xs text-gray-500">{d.recorded_by || '-'}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-center gap-1">
@@ -326,7 +340,7 @@ export default function DepositTracking({
                   }} data-testid={`refund-btn-${d.id}`} aria-label={`Depozito iade işlemini aç - ${d.guest_name || 'misafir'}`}>
                             <RotateCcw className="w-3 h-3 mr-1" /> {t('cm.pages_DepositTracking.iade')}
                           </Button>}
-                        {d.booking_id && <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleGenerateInvoice(d)} data-testid={`invoice-btn-${d.id}`}>
+                        {d.booking_id && <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleGenerateInvoice(d)} data-testid={`invoice-btn-${d.id}`} aria-label={`Rezervasyon faturasını aç - ${depositGuestLabel(d)}`}>
                             <FileText className="w-3 h-3 mr-1" /> Fatura
                           </Button>}
                       </div>
@@ -373,7 +387,7 @@ export default function DepositTracking({
                     {t('cm.pages_DepositTracking.oda_99a58')} {selectedBooking.room_number || '-'} {t('cm.pages_DepositTracking.tutar_48fcf')} {formatDepositAmount(selectedBooking.total_amount, selectedBooking.currency, i18n.language)}
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setSelectedBooking(null)}>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setSelectedBooking(null)} aria-label="Seçili rezervasyonu kaldır">
                   <X className="w-4 h-4" />
                 </Button>
               </div>}

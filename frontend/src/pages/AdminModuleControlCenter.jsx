@@ -4,12 +4,14 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, ArrowLeftRight, Building2, Check, ChevronRight, CircleAlert,
-  PackageCheck, RotateCcw, Search, ShieldCheck, SlidersHorizontal,
+  Clock3, PackageCheck, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { PRODUCT_MODULES, moduleCounts, resolveModuleState } from '@/lib/moduleCatalog';
+import {
+  PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleUsageLabel, resolveModuleState,
+} from '@/lib/moduleCatalog';
 import { persistEnteredTenantContext } from '@/lib/adminTenantContext';
 
 const tenantId = (tenant) => tenant?.id || tenant?._id;
@@ -26,6 +28,9 @@ export default function AdminModuleControlCenter() {
   const [saving, setSaving] = useState(false);
   const [openingModule, setOpeningModule] = useState('');
   const [error, setError] = useState('');
+  const [statusData, setStatusData] = useState({ entitlements: null, usage: null });
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -54,6 +59,30 @@ export default function AdminModuleControlCenter() {
     setDraft(next);
     setBaseline(next);
   }, [selected]);
+
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    let active = true;
+    setStatusLoading(true);
+    setStatusError('');
+    Promise.all([
+      axios.get(`/admin/tenants/${selectedId}/entitlements`),
+      axios.get(`/admin/tenants/${selectedId}/usage`, { params: { days: 30 } }),
+    ]).then(([entitlementsResponse, usageResponse]) => {
+      if (!active) return;
+      setStatusData({
+        entitlements: entitlementsResponse.data || null,
+        usage: usageResponse.data || null,
+      });
+    }).catch((err) => {
+      if (!active) return;
+      setStatusData({ entitlements: null, usage: null });
+      setStatusError(err.response?.data?.detail || 'Lisans ve kullanım durumu alınamadı.');
+    }).finally(() => {
+      if (active) setStatusLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedId]);
 
   const changes = useMemo(() => PRODUCT_MODULES.filter((item) => (
     Boolean(draft[item.key]) !== Boolean(baseline[item.key])
@@ -175,6 +204,38 @@ export default function AdminModuleControlCenter() {
             </div>
           )}
 
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Seçili tesisin lisans ve kullanım özeti">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-950">Tesis lisans ve kullanım özeti</h2>
+                <p className="mt-1 text-xs text-slate-500">Paket, kullanıcı ve kullanım bilgileri yetkilendirme servisinden canlı okunur.</p>
+              </div>
+              {statusError && <span className="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">{statusError}</span>}
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="flex items-center gap-1.5 text-xs text-slate-500"><PackageCheck className="h-3.5 w-3.5" /> Lisans ve paket</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{statusLoading ? 'Yükleniyor…' : statusData.entitlements?.plan_name || selected?.subscription_tier || 'Bilgi yok'}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">Durum: {statusData.entitlements?.subscription_status || 'bilinmiyor'}</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="flex items-center gap-1.5 text-xs text-slate-500"><Users className="h-3.5 w-3.5" /> Aktif kullanıcı</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{statusLoading ? '—' : statusData.usage?.current_resources?.active_users ?? 'Ölçülmüyor'}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">Toplam: {statusData.usage?.current_resources?.users ?? '—'}</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="flex items-center gap-1.5 text-xs text-slate-500"><Activity className="h-3.5 w-3.5" /> Son 30 gün</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{statusLoading ? '—' : Object.values(statusData.usage?.events || {}).reduce((sum, value) => sum + Number(value || 0), 0)} işlem</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">Ölçümlenen sistem olayları</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="flex items-center gap-1.5 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" /> Son etkinlik</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{statusLoading ? '—' : statusData.usage?.last_activity_at ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(statusData.usage.last_activity_at)) : 'Kayıt yok'}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">Kullanım ölçüm kaydı</p>
+              </div>
+            </div>
+          </section>
+
           <div className="grid gap-3 xl:grid-cols-2">
             {visibleModules.map((item) => {
               const state = resolveModuleState(item, previewTenant || {});
@@ -195,6 +256,14 @@ export default function AdminModuleControlCenter() {
                         <span className={`rounded-full px-2 py-1 ${state.path ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-800'}`}>{state.path ? 'Çalışma alanı bağlı' : 'Giriş noktası tanımsız'}</span>
                         {changed && <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800">Taslak</span>}
                       </div>
+                      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-[11px]">
+                        <div><dt className="text-slate-500">Lisans</dt><dd className="mt-0.5 font-semibold text-slate-800">{state.licensed ? 'Etkin' : 'Lisans gerekli'}</dd></div>
+                        <div><dt className="text-slate-500">Kurulum</dt><dd className="mt-0.5 font-semibold text-slate-800">{state.path ? 'Çalışma alanı hazır' : 'Giriş noktası eksik'}</dd></div>
+                        <div><dt className="text-slate-500">Entegrasyon</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleIntegrationLabel(item, state)}</dd></div>
+                        <div><dt className="text-slate-500">Kullanım</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleUsageLabel(item, statusData.usage || {})}</dd></div>
+                        <div><dt className="text-slate-500">Kullanıcı kapsamı</dt><dd className="mt-0.5 font-semibold text-slate-800">Tesis: {statusData.usage?.current_resources?.active_users ?? 'ölçülmüyor'} aktif</dd></div>
+                        <div><dt className="text-slate-500">Yetkilendirme</dt><dd className="mt-0.5 font-semibold text-slate-800">Rol ve kullanıcı izni ayrıca uygulanır</dd></div>
+                      </dl>
                       {state.launchable && (
                         <Button type="button" size="sm" variant="outline" className="mt-3 h-8" onClick={() => openInHotel(item)} disabled={Boolean(openingModule)}>
                           {openingModule === item.key ? 'Otel açılıyor...' : 'Otelde görüntüle'}
