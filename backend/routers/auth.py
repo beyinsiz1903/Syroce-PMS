@@ -30,7 +30,9 @@ from core.security import (
     get_current_user,
     hash_password,
     invalidate_user_doc_cache,
+    is_session_revoked,
     revoke_jti,
+    revoke_session,
     verify_password,
 )
 from core.tenant_db import clear_tenant_context, get_system_db, set_tenant_context
@@ -315,8 +317,11 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
     Centralising this prevents path drift (e.g. a 2FA-verified login
     silently degrading to a refresh-less response).
     """
-    access = create_token(user.id, user.tenant_id)
-    refresh, _ = create_refresh_token(user.id, user.tenant_id)
+    # One login == one device session. Both token types carry the same sid so
+    # a normal logout closes only this browser, never another computer.
+    session_id = __import__("secrets").token_urlsafe(24)
+    access = create_token(user.id, user.tenant_id, session_id=session_id)
+    refresh, _ = create_refresh_token(user.id, user.tenant_id, session_id=session_id)
 
     if response:
         response.set_cookie(
@@ -1227,14 +1232,17 @@ async def change_password(
 
 
 def _decode_bearer_payload(request: Request) -> dict:
-    """Decode the bearer token attached to the request, no exp check needed
-    here (already validated upstream by get_current_user)."""
+    """Decode the current access token after dependency validation.
+
+    Header wins during an account switch; cookie fallback covers ordinary
+    HttpOnly-cookie sessions after a page reload.
+    """
     import jwt as _jwt
 
     auth = request.headers.get("authorization") or ""
-    if not auth.lower().startswith("bearer "):
+    token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else request.cookies.get("access_token")
+    if not token:
         return {}
-    token = auth.split(" ", 1)[1].strip()
     try:
         return _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
@@ -1340,6 +1348,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     user_email: str = ""
     old_jti: str | None = None
     old_exp: int | None = None
+    session_id: str | None = None
     rotation_kind: str = "access"
 
     payload = None
@@ -1379,11 +1388,15 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     tenant_id = payload.get("tenant_id")
     old_jti = payload.get("jti")
     old_exp = payload.get("exp")
+    session_id = payload.get("sid")
     if not user_id or not tenant_id:
         raise HTTPException(status_code=401, detail="Malformed refresh token" if rotation_kind == "refresh" else "Malformed access token")
 
     set_tenant_context(tenant_id)
     try:
+        if session_id and await is_session_revoked(session_id):
+            raise HTTPException(status_code=401, detail="Oturum kapatıldı. Lütfen tekrar giriş yapın.")
+
         # Resolve user (no Depends → tolerates missing/expired access token).
         user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user_doc:
@@ -1413,10 +1426,14 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
             if not won:
                 raise HTTPException(status_code=401, detail="Refresh replay rejected — please login again")
 
-        new_access = create_token(user_id, tenant_id)
+        # Rotation keeps the login's device-session id. A legacy token gets a
+        # single new family id during migration. A refresh must never create
+        # a second family that survives device logout.
+        session_id = session_id or __import__("secrets").token_urlsafe(24)
+        new_access = create_token(user_id, tenant_id, session_id=session_id)
         new_refresh: str | None = None
         if rotation_kind == "refresh":
-            new_refresh, _ = create_refresh_token(user_id, tenant_id)
+            new_refresh, _ = create_refresh_token(user_id, tenant_id, session_id=session_id)
 
         # Audit log
         await db.audit_logs.insert_one(
@@ -1508,34 +1525,25 @@ async def logout(
             logger.error("logout: revoke_jti raised: %s", e)
             raise HTTPException(status_code=503, detail="Logout failed, please retry")
 
-    # F8U P0 fix — mass-revoke watermark. Even when the client does NOT
-    # submit its refresh_token in the body, /auth/logout MUST invalidate
-    # ALL outstanding tokens for this user — otherwise a stolen refresh
-    # token survives the explicit logout and can be exchanged for fresh
-    # access tokens. We bump `tokens_invalid_before` to now+1s so every
-    # access AND refresh token whose `iat` precedes this moment is
-    # rejected by `get_current_user` (access) and `_enforce_refresh_invariants`
-    # (refresh). Trade-off: this terminates the user's other live sessions
-    # too — acceptable single-button-logout semantics for a staff PMS
-    # (matches typical enterprise behaviour; matches threat_model.md
-    # § Spoofing "enforce revocation/invalid-before semantics").
-    # Fail-closed: a watermark write failure means we cannot guarantee
-    # refresh-token revocation. Match the access-token revocation contract
-    # above (503 on failure) so the client never sees a 2xx that doesn't
-    # actually invalidate the session.
-    try:
-        invalid_before_ts = datetime.now(UTC).timestamp()
-        await db.users.update_one(
-            {"id": current_user.id},
-            {"$set": {"tokens_invalid_before": invalid_before_ts}},
-        )
+    # Close this login's complete token family. Previous behaviour updated a
+    # user-wide watermark here, which logged the employee out on every other
+    # computer and made independent hotel workstations affect one another.
+    # Password changes / administrative force-logout continue to use the
+    # user-wide watermark; ordinary logout is deliberately device-scoped.
+    session_id = payload.get("sid")
+    if session_id:
         try:
-            invalidate_user_doc_cache(current_user.id)
-        except Exception:
-            pass
-    except Exception as e:
-        logger.error("logout: watermark update failed: %s", e)
-        raise HTTPException(status_code=503, detail="Logout failed, please retry")
+            session_exp = int(datetime.now(UTC).timestamp()) + REFRESH_TOKEN_EXPIRATION_DAYS * 86400
+            await revoke_session(
+                session_id,
+                session_exp,
+                user_id=current_user.id,
+                tenant_id=current_user.tenant_id,
+                reason="logout",
+            )
+        except Exception as e:
+            logger.error("logout: session revoke failed: %s", e)
+            raise HTTPException(status_code=503, detail="Logout failed, please retry")
 
     # V3: revoke the submitted refresh token if any.
     refresh_jti: str | None = None
@@ -1574,7 +1582,11 @@ async def logout(
             "user_email": current_user.email,
             "action": "logout",
             "resource_type": "auth",
-            "details": (f"Logout (jti={jti or 'legacy'}" + (f", refresh_jti={refresh_jti}" if refresh_jti else "") + ")"),
+            "details": (
+                f"Device logout (sid={session_id or 'legacy'}, jti={jti or 'legacy'}"
+                + (f", refresh_jti={refresh_jti}" if refresh_jti else "")
+                + ")"
+            ),
             "ip_address": "",
             "timestamp": datetime.now(UTC).isoformat(),
         }

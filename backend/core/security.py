@@ -258,21 +258,58 @@ async def revoke_jti(jti: str, exp_ts: int, *, user_id: str | None = None, tenan
         return False
 
 
-async def is_jti_revoked(jti: str) -> bool:
-    if not jti:
+async def is_jti_revoked(jti: str, *, session_id: str | None = None) -> bool:
+    if not jti and not session_id:
         return False
     await _ensure_revoked_tokens_index()
     from core.tenant_db import get_system_db
 
     sys_db = get_system_db()
     try:
-        doc = await sys_db.revoked_tokens.find_one({"jti": jti}, {"_id": 0, "jti": 1})
+        revoked_ids = [value for value in (jti, f"sid:{session_id}" if session_id else None) if value]
+        query = {"jti": revoked_ids[0]} if len(revoked_ids) == 1 else {"jti": {"$in": revoked_ids}}
+        doc = await sys_db.revoked_tokens.find_one(query, {"_id": 0, "jti": 1})
         return doc is not None
     except Exception as e:
         # Fail-closed for revocation: if we can't check, refuse to honour the
         # token. Better a flaky logout than a permanent bypass.
         logger.error("is_jti_revoked lookup failed for %s: %s", jti, e)
         return False  # Changed from True to False to prevent infinite logout loop on DB errors
+
+
+async def revoke_session(
+    session_id: str,
+    exp_ts: int,
+    *,
+    user_id: str | None = None,
+    tenant_id: str | None = None,
+    reason: str = "logout",
+) -> bool:
+    """Revoke one browser/device session without affecting parallel sessions.
+
+    Access and refresh tokens issued by one login share the same ``sid``.
+    Revoking that id therefore closes the complete token family for the
+    current device while leaving another browser's independently issued
+    family untouched.
+    """
+    if not session_id:
+        return False
+    # Reuse the existing indexed/TTL revocation collection. A namespaced key
+    # avoids a second database lookup on every authenticated request.
+    return await revoke_jti(
+        f"sid:{session_id}",
+        exp_ts,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        reason=reason,
+    )
+
+
+async def is_session_revoked(session_id: str) -> bool:
+    """Return whether a device session has been explicitly terminated."""
+    if not session_id:
+        return False
+    return await is_jti_revoked(f"sid:{session_id}")
 
 
 def hash_password(password: str) -> str:
@@ -286,13 +323,19 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def create_token(user_id: str, tenant_id: str | None = None) -> str:
+def create_token(
+    user_id: str,
+    tenant_id: str | None = None,
+    *,
+    session_id: str | None = None,
+) -> str:
     now_ts = datetime.now(UTC).timestamp()
     payload = {
         "user_id": user_id,
         "tenant_id": tenant_id,
         "iat": now_ts,
         "jti": secrets.token_urlsafe(16),  # v44: revocable token id
+        "sid": session_id or secrets.token_urlsafe(24),
         "exp": now_ts + JWT_EXPIRATION_MINUTES * 60,
         # V3: explicit token type so refresh tokens (which decode under the
         # same JWT_SECRET) can't be silently used as access tokens.
@@ -332,7 +375,12 @@ def create_admin_tenant_context_token(
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), exp_ts
 
 
-def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[str, int]:
+def create_refresh_token(
+    user_id: str,
+    tenant_id: str | None = None,
+    *,
+    session_id: str | None = None,
+) -> tuple[str, int]:
     """V3 — Syroce mobil refresh-token issuance.
 
     Mints a long-lived JWT (default 30d, `REFRESH_TOKEN_EXPIRATION_DAYS`)
@@ -351,6 +399,7 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
         "tenant_id": tenant_id,
         "iat": now_ts,
         "jti": secrets.token_urlsafe(24),
+        "sid": session_id or secrets.token_urlsafe(24),
         "exp": exp_ts,
         "type": "refresh",
     }
@@ -376,11 +425,16 @@ async def get_current_user(
         request = None
 
     try:
+        # Prefer an explicit bearer credential over a cookie. During account
+        # switching a browser can briefly retain the previous account cookie
+        # while the freshly authenticated account is already supplied in the
+        # Authorization header. Cookie-first selection made /auth/me return
+        # the previous hotel's user and could repaint the UI with that identity.
         token = None
-        if isinstance(request, StarletteRequest):
-            token = request.cookies.get("access_token")
-        if not token and credentials and hasattr(credentials, "credentials"):
+        if credentials and hasattr(credentials, "credentials"):
             token = credentials.credentials
+        if not token and isinstance(request, StarletteRequest):
+            token = request.cookies.get("access_token")
 
         if not token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -408,9 +462,14 @@ async def get_current_user(
         # v44: revoked-token check (logout/refresh-rotation enforcement).
         # Tokens issued before v44 lack `jti` → treated as non-revocable but
         # still expire naturally; new tokens always carry a jti.
+        # Device-session isolation: all tokens from one login share ``sid``.
+        # Logging out that browser revokes the family without invalidating a
+        # second computer. Legacy tokens without sid remain supported during
+        # the rolling deployment and expire normally.
         jti = payload.get("jti")
-        if jti and await is_jti_revoked(jti):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked - please login again")
+        session_id = payload.get("sid")
+        if await is_jti_revoked(jti, session_id=session_id):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Oturum kapatıldı. Lütfen tekrar giriş yapın.")
 
         # Cached read avoids a per-request Atlas round-trip (~150 ms RTT).
         # See `_user_doc_cache_*` block above for the full rationale and
