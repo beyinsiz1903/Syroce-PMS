@@ -23,6 +23,7 @@ from routers.reports_pkg.dashboard_lists import (
     _payment_method,
     _period_performance,
     _received_payment_amount,
+    _single_currency_amount,
 )
 from routers.reports_pkg.flash_email import _report_date
 
@@ -136,6 +137,11 @@ def test_report_currency_breakdowns_merge_only_matching_currencies():
         "EUR": 125,
         "USD": 80,
     }
+
+
+def test_legacy_scalar_is_zero_when_breakdown_contains_multiple_currencies():
+    assert _single_currency_amount({"TRY": 10_000, "EUR": 200}) == 0
+    assert _single_currency_amount({"TRY": 10_000}) == 10_000
 
 
 def test_night_audit_money_breakdown_keeps_postings_in_original_currency():
