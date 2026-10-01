@@ -1494,7 +1494,15 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     for booking in all_bk:
         if booking.get("id") not in occupied_booking_ids:
             continue
-        agreed_rate = _nightly_booking_rate(booking, target_day, daily_rates_by_booking.get(str(booking.get("id"))))
+        booking_id = str(booking.get("id"))
+        daily_rate = daily_rates_by_booking.get(booking_id)
+        agreed_rate = _nightly_booking_rate(booking, target_day, daily_rate)
+        comp_info = _complimentary_night_info(
+            booking,
+            target_day,
+            daily_rate,
+            payments_by_booking.get(booking_id),
+        )
         room = next((r for r in rooms if str(r.get("id")) == str(booking.get("room_id"))), {})
         posted_rate = round(
             sum(
@@ -1515,7 +1523,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "posted_rate": posted_rate,
                 "variance": round(posted_rate - agreed_rate, 2),
                 "currency": str(booking.get("currency") or "TRY").upper(),
-                "posting_status": "posted" if posted_rate else "pending",
+                "posting_status": "complimentary" if comp_info["is_complimentary_night"] else ("posted" if posted_rate else "pending"),
+                **comp_info,
             }
         )
 

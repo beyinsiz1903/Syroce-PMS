@@ -1036,6 +1036,7 @@ async def revenue_by_category(
         "vat_amount": 1,
         "tax_amount": 1,
         "total": 1,
+        "currency": 1,
     }
     date_fields = ("business_date", "charge_date", "date", "posted_at", "created_at")
     string_start = dt_from.date().isoformat()
@@ -1070,7 +1071,7 @@ async def revenue_by_category(
             return None
 
     start_day, end_day = dt_from.date(), dt_to.date()
-    grouped: dict[str, dict[str, float | int | str]] = {}
+    grouped: dict[str, dict[str, Any]] = {}
     for row, is_extra in [*((item, False) for item in folio_rows), *((item, True) for item in extra_rows)]:
         row_day = report_day(row)
         if row_day is None or not start_day <= row_day <= end_day:
@@ -1081,22 +1082,33 @@ async def revenue_by_category(
         total = float(row.get("total") if row.get("total") is not None else unit_amount * quantity)
         subtotal = float(row.get("subtotal") if row.get("subtotal") is not None else (total if is_extra else unit_amount))
         net = total if is_extra else float(row.get("amount") or total)
+        currency = _normalize_currency(row.get("currency"))
         bucket = grouped.setdefault(
             category,
-            {"_id": category, "count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
+            {"_id": category, "count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0, "by_currency": {}},
         )
+        currency_bucket = bucket["by_currency"].setdefault(
+            currency,
+            {"subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
+        )
+        values = {
+            "subtotal": subtotal,
+            "discount": float(row.get("discount_amount") or 0),
+            "net": net,
+            "vat": float(row.get("vat_amount") or 0),
+            "city_tax": float(row.get("tax_amount") or 0),
+            "total": total,
+        }
         bucket["count"] = int(bucket["count"]) + 1
-        bucket["subtotal"] = float(bucket["subtotal"]) + subtotal
-        bucket["discount"] = float(bucket["discount"]) + float(row.get("discount_amount") or 0)
-        bucket["net"] = float(bucket["net"]) + net
-        bucket["vat"] = float(bucket["vat"]) + float(row.get("vat_amount") or 0)
-        bucket["city_tax"] = float(bucket["city_tax"]) + float(row.get("tax_amount") or 0)
-        bucket["total"] = float(bucket["total"]) + total
+        for field, amount in values.items():
+            bucket[field] = float(bucket[field]) + amount
+            currency_bucket[field] = float(currency_bucket[field]) + amount
 
     rows_raw = list(grouped.values())
 
     rows = []
     totals = {"count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0}
+    totals_by_currency: dict[str, dict[str, float]] = {}
     for r in rows_raw:
         item = {
             "category": r["_id"] or "other",
@@ -1107,11 +1119,22 @@ async def revenue_by_category(
             "vat": round(float(r.get("vat") or 0.0), 2),
             "city_tax": round(float(r.get("city_tax") or 0.0), 2),
             "total": round(float(r.get("total") or 0.0), 2),
+            "by_currency": {
+                currency: {field: round(float(amount or 0), 2) for field, amount in values.items()}
+                for currency, values in sorted((r.get("by_currency") or {}).items())
+            },
         }
         rows.append(item)
         totals["count"] += item["count"]
         for k in ("subtotal", "discount", "net", "vat", "city_tax", "total"):
             totals[k] = round(totals[k] + item[k], 2)
+        for currency, values in item["by_currency"].items():
+            currency_totals = totals_by_currency.setdefault(
+                currency,
+                {"subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
+            )
+            for field, amount in values.items():
+                currency_totals[field] = round(currency_totals[field] + amount, 2)
 
     rows.sort(key=lambda x: x["total"], reverse=True)
     return {
@@ -1119,6 +1142,7 @@ async def revenue_by_category(
         "date_to": date_to,
         "rows": rows,
         "totals": totals,
+        "totals_by_currency": totals_by_currency,
     }
 
 

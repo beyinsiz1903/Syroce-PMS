@@ -35,10 +35,16 @@ const CATEGORY_LABELS = {
   service_charge: 'Servis Bedeli',
   other: 'Diğer'
 };
-const fmt = n => Number(n || 0).toLocaleString('tr-TR', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2
-});
+const CategoryMoney = ({ breakdown, field, fallback = 0, discount = false }) => {
+  const entries = Object.entries(breakdown || {})
+    .map(([currency, values]) => [currency, Number(values?.[field] || 0)])
+    .filter(([, amount]) => amount !== 0);
+  if (!entries.length && Object.keys(breakdown || {}).length) return <>{discount ? '0,00' : '—'}</>;
+  if (!entries.length) return <>{discount ? '0,00' : formatCurrency(fallback)}</>;
+  return <div className="space-y-0.5">{entries.map(([currency, amount]) => (
+    <div key={currency}>{discount ? `−${formatCurrency(Math.abs(amount), currency)}` : formatCurrency(amount, currency)}</div>
+  ))}</div>;
+};
 const localIsoDate = value => {
   const date = value || new Date();
   const year = date.getFullYear();
@@ -128,24 +134,24 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
               {rows.length === 0 ? <tr><td colSpan={8} className="text-center p-6 text-gray-400">{t('cm.pages_reports_RevenueSection.bu_tarih_araliginda_islem_yok')}</td></tr> : rows.map(r => <tr key={r.category} className="border-t">
                   <td className="p-2 font-medium">{CATEGORY_LABELS[r.category] || r.category}</td>
                   <td className="p-2 text-right">{r.count}</td>
-                  <td className="p-2 text-right">{fmt(r.subtotal)}</td>
-                  <td className="p-2 text-right text-amber-700">{r.discount > 0 ? `−${fmt(r.discount)}` : '0,00'}</td>
-                  <td className="p-2 text-right">{fmt(r.net)}</td>
-                  <td className="p-2 text-right">{fmt(r.vat)}</td>
-                  <td className="p-2 text-right">{fmt(r.city_tax)}</td>
-                  <td className="p-2 text-right font-semibold">{formatCurrency(r.total)}</td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="subtotal" fallback={r.subtotal} /></td>
+                  <td className="p-2 text-right text-amber-700"><CategoryMoney breakdown={r.by_currency} field="discount" fallback={r.discount} discount /></td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="net" fallback={r.net} /></td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="vat" fallback={r.vat} /></td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="city_tax" fallback={r.city_tax} /></td>
+                  <td className="p-2 text-right font-semibold"><CategoryMoney breakdown={r.by_currency} field="total" fallback={r.total} /></td>
                 </tr>)}
             </tbody>
             {totals && rows.length > 0 && <tfoot className="bg-gray-100 font-semibold">
                 <tr>
                   <td className="p-2">TOPLAM</td>
                   <td className="p-2 text-right">{totals.count}</td>
-                  <td className="p-2 text-right">{fmt(totals.subtotal)}</td>
-                  <td className="p-2 text-right text-amber-700">{totals.discount > 0 ? `−${fmt(totals.discount)}` : '0,00'}</td>
-                  <td className="p-2 text-right">{fmt(totals.net)}</td>
-                  <td className="p-2 text-right">{fmt(totals.vat)}</td>
-                  <td className="p-2 text-right">{fmt(totals.city_tax)}</td>
-                  <td className="p-2 text-right">{formatCurrency(totals.total)}</td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="subtotal" fallback={totals.subtotal} /></td>
+                  <td className="p-2 text-right text-amber-700"><CategoryMoney breakdown={data?.totals_by_currency} field="discount" fallback={totals.discount} discount /></td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="net" fallback={totals.net} /></td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="vat" fallback={totals.vat} /></td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="city_tax" fallback={totals.city_tax} /></td>
+                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="total" fallback={totals.total} /></td>
                 </tr>
               </tfoot>}
           </table>

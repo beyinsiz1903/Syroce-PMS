@@ -130,7 +130,13 @@ export default function TrialBalancePage({ reportDate }) {
 
       {data && (
         <>
-          {/* Balans alarmı */}
+          {data.revenue.posting_pending && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="room-revenue-source-notice">
+              Oda geliri henüz folyoya işlenmediği için dolu odaların tahakkuk eden konaklama tutarı kullanılıyor. Gün sonu tamamlandığında rapor otomatik olarak folyo kayıtlarını esas alır.
+            </div>
+          )}
+
+          {/* Günlük gelir / tahsilat karşılaştırması */}
           <Card className={data.balance_check.in_balance ? "border-emerald-500" : "border-amber-500"}>
             <CardContent className="pt-6 flex items-center gap-3">
               {data.balance_check.in_balance ? (
@@ -141,12 +147,12 @@ export default function TrialBalancePage({ reportDate }) {
               <div className="flex-1">
                 <div className="font-medium">
                   {data.balance_check.in_balance
-                    ? "Gelir ve ödemeler dengeli"
-                    : "Gelir ve tahsilat arasında fark var"}
+                    ? "Günlük gelir ve tahsilat eşit"
+                    : "Günlük gelir ve tahsilat farklı"}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Fark: {money(data.balance_check.revenue_minus_payments, data.currency)}
-                  {" · "}Tahsil edilmeyen bölüm cari hesaba veya açık folyoya yansıyabilir
+                  {" · "}Bu bir muhasebe dengesizliği değildir; ön ödeme, açık folyo ve farklı gün tahsilatları nedeniyle oluşabilir
                 </div>
               </div>
               {data.last_night_audit && (
@@ -170,7 +176,7 @@ export default function TrialBalancePage({ reportDate }) {
               icon={TrendingUp}
               label="ADR"
               value={money(data.revenue.adr, data.revenue.currency || data.currency)}
-              sub={`RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency)}`}
+              sub={`RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency)} · ${data.revenue.room_revenue_source === 'accrued' ? 'Tahakkuk eden' : 'Folyoya işlenen'}`}
             />
             <MetricCard
               icon={Wallet}
@@ -222,7 +228,7 @@ export default function TrialBalancePage({ reportDate }) {
             <Card>
               <CardHeader>
                 <CardTitle>{t('cm.pages_TrialBalancePage.gelir_kategori_bazli')}</CardTitle>
-                <CardDescription>Seçili gündeki folyo hareketlerinin gelir kategorilerine göre dağılımı.</CardDescription>
+                <CardDescription>Oda geliri gün sonu öncesinde tahakkuktan, diğer gelirler folyo hareketlerinden alınır.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
