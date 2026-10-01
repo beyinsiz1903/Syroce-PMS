@@ -94,7 +94,7 @@ describe('CreateTenantModal professional module wizard', () => {
     expect(screen.getByText('Enterprise Modüller')).toBeInTheDocument();
     expect(screen.getByText('İK & Ek Operasyon Modülleri')).toBeInTheDocument();
     expect(screen.getByText('AI Modülleri')).toBeInTheDocument();
-    expect(screen.getByText('Add-on Modüller (Ekstra Ücretli)')).toBeInTheDocument();
+    expect(screen.getByText('Ek Ücretli Modüller')).toBeInTheDocument();
 
     expect(screen.queryByText('PMS Alt Sekmeleri')).not.toBeInTheDocument();
     expect(screen.queryByText('Rapor Listesi (Excel Raporları)')).not.toBeInTheDocument();
@@ -107,7 +107,7 @@ describe('CreateTenantModal professional module wizard', () => {
 
     fireEvent.click(screen.getByTestId('tenant-module-customize-toggle'));
     fireEvent.click(screen.getByRole('button', { name: /AI Modülleri/ }));
-    fireEvent.click(screen.getByLabelText(/AI Chatbot/));
+    fireEvent.click(screen.getByLabelText(/Yapay Zekâ Misafir Asistanı/));
 
     expect(screen.getByTestId('commercial-quote-summary')).toHaveTextContent('€128/ay');
     axios.post.mockResolvedValue({ data: { success: true } });
