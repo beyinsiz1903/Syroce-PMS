@@ -21,6 +21,10 @@ export default function ReconciliationTab(props) {
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
             <strong>Mutabakat iş günü:</strong> {reconciliation.business_date || reconciliation.date || reportingDate || '-'} · Masraflar, tahsilatlar ve açık folyo riskleri birlikte değerlendirilir
           </div>
+          {reconciliation.degraded && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            <strong>Eksik veri uyarısı:</strong> Mutabakatın bazı kaynakları okunamadı. Bu ekrandaki tutarları kesin kayıt olarak kullanmadan önce yenileyin.
+            {Array.isArray(reconciliation.degraded_subqueries) && reconciliation.degraded_subqueries.length > 0 && <span className="ml-1 text-amber-800">Etkilenen kaynaklar: {reconciliation.degraded_subqueries.join(', ')}.</span>}
+          </div>}
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard icon={Receipt} label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')} value={breakdown(reconciliation.charges_by_currency, reconciliation.charges_total)} subValue={`${reconciliation.charges_count || 0} masraf`} color="text-blue-600" />
