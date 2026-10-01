@@ -1441,7 +1441,9 @@
       "manager": "Müdür",
       "gm": "Genel Müdür",
       "staff": "Personel",
-      "super_admin": "Süper Yönetici"
+      "super_admin": "Süper Yönetici",
+      "agency_admin": "Acente Yöneticisi",
+      "agency_agent": "Acente Temsilcisi"
     },
     "teamTitle": "Ekip Üyeleri",
     "subscriptionTitle": "Abonelik Planı",

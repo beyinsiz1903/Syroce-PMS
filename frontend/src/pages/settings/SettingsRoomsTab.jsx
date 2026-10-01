@@ -30,6 +30,27 @@ const BED_TYPE_LABELS = {
   sofa_bed: 'Çekyat',
 };
 
+const VIEW_LABELS = {
+  city: 'Şehir',
+  sea: 'Deniz',
+  garden: 'Bahçe',
+  pool: 'Havuz',
+  mountain: 'Dağ',
+  courtyard: 'Avlu',
+  none: 'Manzarasız',
+};
+
+const ROOM_STATUS_LABELS = {
+  available: 'Müsait',
+  occupied: 'Dolu',
+  dirty: 'Kirli',
+  clean: 'Temiz',
+  inspected: 'Kontrol Edildi',
+  maintenance: 'Bakımda',
+  out_of_order: 'Kullanım Dışı',
+  blocked: 'Blokeli',
+};
+
 export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkRoomsDialog, setShowAddRoomDialog, roomsList, handleDeleteRoom, onEditRoom }) {
     const navigate = useNavigate();
     return (
@@ -76,12 +97,12 @@ export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkR
                                 <p className="text-sm font-medium">{room.room_type}</p>
                                 <p className="text-xs text-slate-500">Kat {room.floor} - {room.capacity} kişi</p>
                                 {(room.view || room.bed_type) && <p className="mt-0.5 text-xs text-slate-500">
-                                  {[room.view, BED_TYPE_LABELS[room.bed_type] || room.bed_type].filter(Boolean).join(' · ')}
+                                  {[VIEW_LABELS[room.view] || room.view, BED_TYPE_LABELS[room.bed_type] || room.bed_type].filter(Boolean).join(' · ')}
                                 </p>}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-xs">{room.status}</Badge>
+                              <Badge variant="outline" className="text-xs">{ROOM_STATUS_LABELS[room.status] || room.status}</Badge>
                               <Button variant="ghost" size="sm" onClick={() => onEditRoom(room)} aria-label={`${room.room_number} numaralı odayı düzenle`} data-testid={`edit-room-${room.room_number}`}>
                                 <Pencil className="w-4 h-4" />
                               </Button>

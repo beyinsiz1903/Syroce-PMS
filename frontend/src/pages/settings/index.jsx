@@ -134,7 +134,7 @@ const Settings = ({
     refresh: refreshCurrency
   } = useCurrency();
   const getRoleLabel = useCallback(role => ({
-    label: t(`settings.roles.${role}`) || role,
+    label: t(`settings.roles.${role}`, { defaultValue: role }),
     color: ROLE_COLORS[role] || 'bg-slate-100 text-slate-700 ring-1 ring-slate-300'
   }), [t]);
   const PLANS = useMemo(() => ({
@@ -249,6 +249,11 @@ const Settings = ({
   });
   const [grLoading, setGrLoading] = useState(false);
   const [grSaving, setGrSaving] = useState(false);
+  const [grLoaded, setGrLoaded] = useState(false);
+  useEffect(() => {
+    setGrLoaded(false);
+    setGrSettings({ visible_roles: [], available_roles: [], always_allowed: [] });
+  }, [tenant?.id, tenant?._id]);
   const currentTier = useMemo(() => {
     const t = tenant?.subscription_tier || 'basic';
     if (t === 'pro') return 'professional';
@@ -423,6 +428,7 @@ const Settings = ({
         available_roles: res.data?.available_roles || [],
         always_allowed: res.data?.always_allowed || []
       });
+      setGrLoaded(true);
     } catch (err) {
       console.error('Guest request settings load failed', err);
       toast.error(err?.response?.data?.detail || 'Misafir talep ayarları alınamadı');
@@ -465,6 +471,7 @@ const Settings = ({
     }
     if (activeTab === 'team') {
       if (team.length === 0) loadTeam();
+      if (isAdmin && !grLoaded) loadGuestRequestSettings();
     }
     if (activeTab === 'billing') {
       if (billingHistory.length === 0) loadBillingHistory();
@@ -475,11 +482,7 @@ const Settings = ({
     if (activeTab === 'rooms') {
       if (roomsList.length === 0) loadRooms();
     }
-    if (activeTab === 'guest-requests') {
-      if (grSettings.visible_roles.length === 0) loadGuestRequestSettings();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, billingHistory.length, grLoaded, invoiceSettings, isAdmin, loadBillingHistory, loadB2B, loadGuestRequestSettings, loadInvoiceSettings, loadRooms, loadSubscription, loadTeam, roomsList.length, subscription, team.length]);
 
   // Init hotel form from tenant
   useEffect(() => {
@@ -775,8 +778,11 @@ const Settings = ({
 
   // ─── Yenile butonu (her tab için) ───────────
   const refreshActiveTab = useCallback(() => {
-    if (activeTab === 'team') loadTeam();else if (activeTab === 'plan') loadSubscription();else if (activeTab === 'billing') loadBillingHistory();else if (activeTab === 'hotel') loadSubscription();else if (activeTab === 'invoice') loadInvoiceSettings();else if (activeTab === 'rooms') loadRooms();else if (activeTab === 'b2b') loadB2B();
-  }, [activeTab, loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms, loadB2B]);
+    if (activeTab === 'team') {
+      loadTeam();
+      if (isAdmin) loadGuestRequestSettings();
+    } else if (activeTab === 'plan') loadSubscription();else if (activeTab === 'billing') loadBillingHistory();else if (activeTab === 'hotel') loadSubscription();else if (activeTab === 'invoice') loadInvoiceSettings();else if (activeTab === 'rooms') loadRooms();else if (activeTab === 'b2b') loadB2B();
+  }, [activeTab, isAdmin, loadTeam, loadGuestRequestSettings, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms, loadB2B]);
   const tabBusy = activeTab === 'team' && teamLoading || activeTab === 'billing' && billingLoading || activeTab === 'invoice' && invoiceLoading || activeTab === 'rooms' && roomsLoading;
   return <>
       <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">

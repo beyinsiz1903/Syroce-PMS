@@ -1391,7 +1391,9 @@
       "manager": "Manager",
       "gm": "General Manager",
       "staff": "Staff",
-      "super_admin": "Super Admin"
+      "super_admin": "Super Admin",
+      "agency_admin": "Agency Admin",
+      "agency_agent": "Agency Agent"
     },
     "teamTitle": "Team Members",
     "subscriptionTitle": "Subscription Plan",
