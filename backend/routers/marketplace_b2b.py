@@ -106,7 +106,11 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest, request: Requ
     }
 
 
-async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-API-Key"), authorization: str | None = Header(None)) -> dict:
+async def get_marketplace_agency(
+    request: Request,
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    authorization: str | None = Header(None),
+) -> dict:
     """Cross-tenant API key veya JWT doğrulama.
     Acenteler Syroce Agency otomasyonu için X-API-Key,
     Global Extranet UI üzerinden giriş için JWT Bearer token kullanabilir."""
@@ -160,7 +164,13 @@ async def get_marketplace_agency(x_api_key: str | None = Header(None, alias="X-A
 
         await sysdb.marketplace_api_keys.update_one(
             {"key_hash": key_hash},
-            {"$set": {"last_used_at": _now_iso()}, "$inc": {"usage_count": 1}},
+            {
+                "$set": {
+                    "last_used_at": _now_iso(),
+                    "last_used_ip": request.client.host if request.client else None,
+                },
+                "$inc": {"usage_count": 1},
+            },
         )
     else:
         raise HTTPException(401, "Kimlik doğrulama gereklidir (X-API-Key veya JWT)")
@@ -415,6 +425,25 @@ def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
+async def _create_marketplace_api_key(sysdb, agency_id: str, *, label: str) -> tuple[str, dict]:
+    """Create one recoverable-once credential while persisting only its hash."""
+    raw_key = f"syroce_mkt_{secrets.token_urlsafe(32)}"
+    key_doc = {
+        "id": _uuid(),
+        "agency_id": agency_id,
+        "label": label.strip(),
+        "key_hash": _hash_key(raw_key),
+        "key_prefix": raw_key[:18] + "...",
+        "is_active": True,
+        "usage_count": 0,
+        "created_at": _now_iso(),
+        "last_used_at": None,
+        "last_used_ip": None,
+    }
+    await sysdb.marketplace_api_keys.insert_one(key_doc)
+    return raw_key, key_doc
+
+
 def _require_hotel_admin(user: User) -> str:
     """Otel admin/sahibi rollerini doğrular ve tenant_id döner. Super_admin always allowed."""
     if _is_super_admin(user):
@@ -635,6 +664,10 @@ class MarketplaceAgencyCreate(BaseModel):
     country: str = "TR"
     default_commission_pct: float = Field(default=12.0, ge=0, le=100)
     platform_fee_pct: float | None = Field(default=None, ge=0, le=100)
+    # Keep direct API clients backward compatible; the admin UI always sends
+    # an explicit choice and defaults to the safer portal-only mode.
+    issue_api_key: bool = True
+    api_key_label: str = Field(default="Ana entegrasyon", min_length=2, max_length=80)
 
 
 class MarketplaceAgencyUpdate(BaseModel):
@@ -645,6 +678,10 @@ class MarketplaceAgencyUpdate(BaseModel):
     default_commission_pct: float | None = Field(default=None, ge=0, le=100)
     platform_fee_pct: float | None = Field(default=None, ge=0, le=100)
     status: str | None = Field(default=None, pattern="^(active|disabled)$")
+
+
+class MarketplaceApiKeyRotate(BaseModel):
+    label: str = Field(default="Ana entegrasyon", min_length=2, max_length=80)
 
 
 class MarketplaceListingCreate(BaseModel):
@@ -780,9 +817,10 @@ async def admin_create_agency(
     data: MarketplaceAgencyCreate,
     _: bool = Depends(_require_system_admin),
 ):
-    """Yeni marketplace acentesi oluştur ve ilk API key'i döndür.
+    """Yeni marketplace acentesi oluştur.
 
-    API key sadece bir kez gösterilir; saklanması acentenin sorumluluğundadır.
+    API erişimi açıkça istenirse ilk anahtar yalnızca bu yanıtta gösterilir.
+    Portal kullanan acenteler için gereksiz bir teknik sır üretilmez.
     """
     sysdb = get_system_db()
 
@@ -801,25 +839,26 @@ async def admin_create_agency(
         agency_doc["platform_fee_pct"] = data.platform_fee_pct
     await sysdb.marketplace_agencies.insert_one(agency_doc)
 
-    raw_key = f"syroce_mkt_{secrets.token_urlsafe(32)}"
-    key_doc = {
-        "id": _uuid(),
-        "agency_id": agency_id,
-        "key_hash": _hash_key(raw_key),
-        "key_prefix": raw_key[:18] + "...",
-        "is_active": True,
-        "usage_count": 0,
-        "created_at": _now_iso(),
-        "last_used_at": None,
-    }
-    await sysdb.marketplace_api_keys.insert_one(key_doc)
-
-    return {
+    response = {
         "agency": {k: v for k, v in agency_doc.items() if k != "_id"},
-        "api_key": raw_key,
-        "key_prefix": key_doc["key_prefix"],
-        "warning": "Bu API key sadece bir kez gösterilir. Güvenli bir yerde saklayın.",
+        "api_key": None,
+        "key_prefix": None,
+        "warning": None,
     }
+    if data.issue_api_key:
+        raw_key, key_doc = await _create_marketplace_api_key(
+            sysdb,
+            agency_id,
+            label=data.api_key_label,
+        )
+        response.update(
+            {
+                "api_key": raw_key,
+                "key_prefix": key_doc["key_prefix"],
+                "warning": "Bu API anahtarı yalnızca bir kez gösterilir. Güvenli bir parola kasasına kaydedin.",
+            }
+        )
+    return response
 
 
 @router.get("/admin/agencies")
@@ -827,7 +866,7 @@ async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
     sysdb = get_system_db()
     # These snapshots are independent. Awaiting them one by one multiplied
     # database latency and made every Hotels <-> Agencies switch feel blocked.
-    docs, contract_rows, booking_rows = await asyncio.gather(
+    docs, contract_rows, booking_rows, key_rows, portal_user_rows = await asyncio.gather(
         sysdb.marketplace_agencies.find({}, {"_id": 0}).sort("created_at", -1).to_list(500),
         sysdb.agency_contracts.aggregate([
             {"$match": {"status": "approved"}},
@@ -837,9 +876,36 @@ async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
             {"$match": {"status": {"$ne": "cancelled"}}},
             {"$group": {"_id": "$agency_id", "booking_count": {"$sum": 1}, "gross_volume": {"$sum": "$total_amount"}, "platform_revenue": {"$sum": "$syroce_b2b_fee_amount"}}},
         ]).to_list(500),
+        sysdb.marketplace_api_keys.find(
+            {"is_active": True},
+            {
+                "_id": 0,
+                "agency_id": 1,
+                "id": 1,
+                "label": 1,
+                "key_prefix": 1,
+                "created_at": 1,
+                "last_used_at": 1,
+                "last_used_ip": 1,
+                "usage_count": 1,
+            },
+        ).to_list(1000),
+        sysdb.users.find(
+            {"agency_id": {"$exists": True}, "is_active": {"$ne": False}},
+            {"_id": 0, "agency_id": 1, "last_login": 1},
+        ).to_list(5000),
     )
     contract_stats = {row["_id"]: len(row.get("connected_hotels") or []) for row in contract_rows}
     booking_stats = {row["_id"]: row for row in booking_rows}
+    active_keys: dict[str, dict] = {}
+    for key in sorted(key_rows, key=lambda item: item.get("created_at") or "", reverse=True):
+        active_keys.setdefault(key.get("agency_id"), key)
+    portal_users: dict[str, dict] = {}
+    for user in portal_user_rows:
+        agency_users = portal_users.setdefault(user.get("agency_id"), {"count": 0, "last_login": None})
+        agency_users["count"] += 1
+        if user.get("last_login") and (not agency_users["last_login"] or user["last_login"] > agency_users["last_login"]):
+            agency_users["last_login"] = user["last_login"]
     for agency in docs:
         agency_id = agency.get("id")
         stats = booking_stats.get(agency_id, {})
@@ -847,6 +913,18 @@ async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
         agency["booking_count"] = int(stats.get("booking_count", 0) or 0)
         agency["gross_volume"] = round(float(stats.get("gross_volume", 0) or 0), 2)
         agency["platform_revenue"] = round(float(stats.get("platform_revenue", 0) or 0), 2)
+        key = active_keys.get(agency_id)
+        agency["api_access"] = {
+            "active": bool(key),
+            "key_id": key.get("id") if key else None,
+            "label": key.get("label") if key else None,
+            "key_prefix": key.get("key_prefix") if key else None,
+            "created_at": key.get("created_at") if key else None,
+            "last_used_at": key.get("last_used_at") if key else None,
+            "last_used_ip": key.get("last_used_ip") if key else None,
+            "usage_count": int(key.get("usage_count", 0) or 0) if key else 0,
+        }
+        agency["portal_access"] = portal_users.get(agency_id, {"count": 0, "last_login": None})
     return {"agencies": docs, "total": len(docs)}
 
 
@@ -895,31 +973,52 @@ async def admin_disable_agency(
 @router.post("/admin/agencies/{agency_id}/api-keys/regenerate")
 async def admin_regenerate_key(
     agency_id: str,
+    data: MarketplaceApiKeyRotate | None = None,
     _: bool = Depends(_require_system_admin),
 ):
     sysdb = get_system_db()
-    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id}, {"_id": 0})
+    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id, "status": "active"}, {"_id": 0})
+    if not agency:
+        raise HTTPException(409, "Yalnızca aktif bir acente için API anahtarı oluşturulabilir")
+
+    # Availability-safe rotation: persist the new credential first. If that
+    # write fails the currently active integration remains usable. Only after
+    # success are the older credentials revoked.
+    raw_key, key_doc = await _create_marketplace_api_key(
+        sysdb,
+        agency_id,
+        label=(data.label if data else "Ana entegrasyon"),
+    )
+    await sysdb.marketplace_api_keys.update_many(
+        {"agency_id": agency_id, "id": {"$ne": key_doc["id"]}, "is_active": True},
+        {"$set": {"is_active": False, "revoked_at": _now_iso()}},
+    )
+    return {
+        "api_key": raw_key,
+        "key_prefix": key_doc["key_prefix"],
+        "warning": "Bu API anahtarı yalnızca bir kez gösterilir. Eski anahtar artık geçersizdir.",
+    }
+
+
+@router.delete("/admin/agencies/{agency_id}/api-keys")
+async def admin_revoke_api_keys(
+    agency_id: str,
+    _: bool = Depends(_require_system_admin),
+):
+    """Acentenin teknik API erişimini portal erişimini etkilemeden kapat."""
+    sysdb = get_system_db()
+    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id}, {"_id": 0, "id": 1})
     if not agency:
         raise HTTPException(404, "Acente bulunamadı")
-
-    await sysdb.marketplace_api_keys.update_many(
+    result = await sysdb.marketplace_api_keys.update_many(
         {"agency_id": agency_id, "is_active": True},
         {"$set": {"is_active": False, "revoked_at": _now_iso()}},
     )
-    raw_key = f"syroce_mkt_{secrets.token_urlsafe(32)}"
-    await sysdb.marketplace_api_keys.insert_one(
-        {
-            "id": _uuid(),
-            "agency_id": agency_id,
-            "key_hash": _hash_key(raw_key),
-            "key_prefix": raw_key[:18] + "...",
-            "is_active": True,
-            "usage_count": 0,
-            "created_at": _now_iso(),
-            "last_used_at": None,
-        }
-    )
-    return {"api_key": raw_key, "warning": "Bu key sadece bir kez gösterilir"}
+    return {
+        "ok": True,
+        "revoked_count": int(result.modified_count or 0),
+        "message": "API erişimi kapatıldı. Acente portalı kullanıcıları etkilenmedi.",
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════
