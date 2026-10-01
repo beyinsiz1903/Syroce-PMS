@@ -53,13 +53,13 @@ export default function RevenueHub({ user, tenant, onLogout }) {
   const tabConfig = [
     { value: 'overview',     icon: TrendingUp,       labelKey: 'revenueHub.tabs.overview',     fallback: 'Genel' },
     { value: 'autopilot',    icon: Sparkles,         labelKey: 'revenueHub.tabs.autopilot',    fallback: 'Autopilot' },
-    { value: 'rates',        icon: DollarSign,       labelKey: 'revenueHub.tabs.rates',        fallback: 'Rate Manager' },
+    { value: 'rates',        icon: DollarSign,       labelKey: 'revenueHub.tabs.rates',        fallback: 'Fiyat Yönetimi' },
     { value: 'dynamic',      icon: Zap,              labelKey: 'revenueHub.tabs.dynamic',      fallback: 'Dinamik Fiyat' },
     { value: 'central',      icon: Globe,            labelKey: 'revenueHub.tabs.central',      fallback: 'Merkezi Fiyat' },
-    { value: 'engine',       icon: Cog,              labelKey: 'revenueHub.tabs.engine',       fallback: 'Engine' },
+    { value: 'engine',       icon: Cog,              labelKey: 'revenueHub.tabs.engine',       fallback: 'Fiyat Motoru' },
     { value: 'predictive',   icon: BrainCircuit,     labelKey: 'revenueHub.tabs.predictive',   fallback: 'Tahmin' },
-    { value: 'displacement', icon: GitCompareArrows, labelKey: 'revenueHub.tabs.displacement', fallback: 'Displacement' },
-    { value: 'noshow',       icon: AlertTriangle,    labelKey: 'revenueHub.tabs.noshow',       fallback: 'No-Show' },
+    { value: 'displacement', icon: GitCompareArrows, labelKey: 'revenueHub.tabs.displacement', fallback: 'Kapasite Analizi' },
+    { value: 'noshow',       icon: AlertTriangle,    labelKey: 'revenueHub.tabs.noshow',       fallback: 'Gelmeyen Misafir' },
   ];
 
   return (

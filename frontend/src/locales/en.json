@@ -3918,6 +3918,7 @@
     "rec_pending": "{{count}} pending",
     "rec_generate": "Generate",
     "rec_apply_all": "Apply All ({{count}})",
+    "rec_apply_all_confirm": "Apply {{count}} pricing recommendations to future selling rates? This action changes future prices.",
     "rec_empty": "No pending recommendations. Click \"Generate\" to create new ones.",
     "rec_col_date": "Date",
     "rec_col_room_type": "Room Type",

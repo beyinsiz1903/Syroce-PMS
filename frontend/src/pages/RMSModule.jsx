@@ -30,6 +30,7 @@ import {
   RefreshCw, Loader2, AlertTriangle, Info, FlaskConical, BarChart3
 } from 'lucide-react';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -39,6 +40,17 @@ ChartJS.register(
 function fmt(val) {
   if (val == null) return '0';
   return Number(val).toLocaleString('tr-TR');
+}
+
+function confidenceLabel(value) {
+  return {
+    Yuksek: 'Yüksek',
+    High: 'Yüksek',
+    Orta: 'Orta',
+    Medium: 'Orta',
+    Dusuk: 'Düşük',
+    Low: 'Düşük',
+  }[value] || value;
 }
 
 function DeltaBadge({ current, previous }) {
@@ -207,6 +219,14 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   };
 
   const handleApplyAll = async () => {
+    if (!await confirmDialog({
+      title: t('rmsModule.rec_apply_all_title', 'Bekleyen fiyat önerilerini uygula'),
+      message: t('rmsModule.rec_apply_all_confirm', {
+        count: recommendations.length,
+        defaultValue: `${recommendations.length} gün/oda tipi için fiyat takvimi güncellenecek. Devam etmek istiyor musunuz?`,
+      }),
+      confirmText: t('rmsModule.rec_apply_all_action', 'Fiyatları Uygula'),
+    })) return;
     try {
       const res = await axios.post('/rms/apply-recommendations');
       toast.success(res.data.message || t('rmsModule.apply_success'));
@@ -301,8 +321,10 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   // Show "—" instead of misleading 0 when there's literally no data.
   const dash = '—';
   const occVal = hasBookings ? `%${k.occupancy || 0}` : dash;
-  const adrVal = hasBookings ? `${fmt(k.adr)}` : dash;
-  const revparVal = hasBookings ? `${fmt(k.revpar)}` : dash;
+  // `formatCurrency` sayısal değer bekler. Yerelleştirilmiş "1.315" metnini
+  // yeniden Number'a çevirmek 1315 TL'yi 1,315 TL olarak gösteriyordu.
+  const adrVal = hasBookings ? Number(k.adr || 0) : dash;
+  const revparVal = hasBookings ? Number(k.revpar || 0) : dash;
   const cancelVal = hasBookings ? `%${k.cancel_rate || 0}` : dash;
 
   const headerActions = (
@@ -598,8 +620,8 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                     const up = r.change_pct > 0;
                     const down = r.change_pct < 0;
                     return (
-                      <tr key={r.id} className="border-b last:border-0 hover:bg-slate-50/50">
-                        <td className="py-2">{r.date}</td>
+                      <tr key={r.id || `${r.date}-${r.room_type}`} className="border-b last:border-0 hover:bg-slate-50/50">
+                        <td className="py-2">{new Date(`${r.date}T00:00:00`).toLocaleDateString('tr-TR')}</td>
                         <td className="py-2">{r.room_type}</td>
                         <td className="py-2">{formatCurrency(r.current_rate, r.currency || currency)}</td>
                         <td className="py-2 font-semibold">{formatCurrency(r.suggested_rate, r.currency || currency)}</td>
@@ -611,9 +633,9 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                         </td>
                         <td className="py-2">%{r.occupancy}</td>
                         <td className="py-2">
-                          <Badge variant={r.confidence_level === 'Yüksek' ? 'default' : r.confidence_level === 'Orta' ? 'secondary' : 'outline'}
+                          <Badge variant={confidenceLabel(r.confidence_level) === 'Yüksek' ? 'default' : confidenceLabel(r.confidence_level) === 'Orta' ? 'secondary' : 'outline'}
                             className="text-xs">
-                            {r.confidence_level}
+                            {confidenceLabel(r.confidence_level)}
                           </Badge>
                         </td>
                       </tr>

@@ -3949,7 +3949,7 @@
     "retry": "Tekrar dene"
   },
   "rmsModule": {
-    "title": "RMS Dashboard",
+    "title": "Gelir Yönetimi Özeti",
     "subtitle": "İç veriye dayalı dinamik fiyatlama ve analiz",
     "period_7d": "Son 7 gün",
     "period_30d": "Son 30 gün",
@@ -3971,6 +3971,7 @@
     "rec_pending": "{{count}} bekleyen",
     "rec_generate": "Öneri Üret",
     "rec_apply_all": "Tümünü Uygula ({{count}})",
+    "rec_apply_all_confirm": "{{count}} fiyat önerisi satış fiyatlarına uygulansın mı? Bu işlem gelecekteki fiyatları değiştirir.",
     "rec_empty": "Bekleyen öneri yok. \"Öneri Üret\" ile yeni öneriler oluşturabilirsiniz.",
     "rec_col_date": "Tarih",
     "rec_col_room_type": "Oda Tipi",
@@ -3998,7 +3999,7 @@
     "dq_no_bookings": "Bu dönemde rezervasyon yok",
     "dq_insufficient_history": "Yetersiz geçmiş veri (en az {{days}} gün gerekli)",
     "dq_insufficient_pricing": "Fiyat motoru için yetersiz rezervasyon (en az {{count}} gerekli)",
-    "dq_no_yield_rules": "Yield kuralı tanımlanmamış (varsayılan algoritma uygulanır)",
+    "dq_no_yield_rules": "Gelir kuralı tanımlanmamış (varsayılan algoritma uygulanır)",
     "dq_no_seasons": "Sezon takvimi tanımlanmamış (varsayılan mevsimsellik uygulanır)",
     "generate_disabled_tooltip": "Yeterli veri biriktiğinde aktif olur",
     "generate_error_insufficient": "Fiyat önerisi üretmek için yeterli veri yok. Demo modunu açabilir veya önce oda tipi/rezervasyon ekleyebilirsiniz.",
