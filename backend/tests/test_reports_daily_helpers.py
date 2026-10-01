@@ -232,6 +232,25 @@ def test_period_performance_uses_posted_revenue_when_period_is_complete():
     assert result["revpar"] == 240
 
 
+def test_period_performance_excludes_comp_rooms_from_adr_denominator():
+    metrics = [
+        {
+            "date": "2026-10-01",
+            "occupied_rooms": 5,
+            "sold_rooms": 2,
+            "total_rooms": 17,
+            "revenue": 5000,
+        }
+    ]
+
+    result = _period_performance(metrics, {})
+
+    assert result["occupied_room_nights"] == 5
+    assert result["sold_room_nights"] == 2
+    assert result["adr"] == 2500
+    assert result["revpar"] == 294.12
+
+
 def test_room_status_normalization_keeps_report_buckets_consistent():
     assert _normalized_room_status("checked_in") == "occupied"
     assert _normalized_room_status("Kirli") == "dirty"

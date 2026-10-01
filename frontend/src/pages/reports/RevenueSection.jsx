@@ -121,7 +121,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
             <thead className="bg-gray-50 text-gray-600">
               <tr>
                 <th className="text-left p-2">Kategori</th>
-                <th className="text-right p-2">Adet</th>
+                <th className="text-right p-2">İşlem Sayısı</th>
                 <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.ara_toplam')}</th>
                 <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.indirim')}</th>
                 <th className="text-right p-2">Net</th>
@@ -176,10 +176,13 @@ const RevenueSection = ({
   return <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Seçili Gün Toplam Geliri" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={ReceiptText} color="green" />
-      <KPICard title={isDaily ? 'Seçili Gün Oda Geliri' : t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
-      <KPICard title={isDaily ? 'Önceki Gün Geliri' : t('cm.pages_reports_RevenueSection.aylik_gelir')} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} icon={TrendingUp} color="purple" />
+      <KPICard title="Seçili Gün Folyoya İşlenen Gelir" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={ReceiptText} color="green" />
+      <KPICard title={isDaily ? `Seçili Gün Oda Geliri (${s.room_revenue_source === 'posted' ? 'Folyoya İşlenen' : 'Tahakkuk'})` : 'Son 7 Gün Folyoya İşlenen Gelir'} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
+      <KPICard title={isDaily ? 'Önceki Gün Folyoya İşlenen Gelir' : 'Son 30 Gün Folyoya İşlenen Gelir'} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} icon={TrendingUp} color="purple" />
       <KPICard title="Yiyecek ve İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
+    </div>
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+      Gelir kartları ve kategori tablosu yalnızca folyoya veya POS'a kesinleşmiş olarak işlenen, iptal edilmemiş hareketleri gösterir. Gece denetimi öncesindeki tahakkuklar oda gelir performansında ayrıca belirtilir.
     </div>
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">{isDaily ? 'Seçili Gün Gelir Trendi' : t('cm.pages_reports_RevenueSection.30_gunluk_gelir_trendi')}</CardTitle></CardHeader>

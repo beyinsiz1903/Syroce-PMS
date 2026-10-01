@@ -131,6 +131,11 @@ def calculate_stay_night_metrics(
         if not check_in or not check_out or check_out <= check_in or not room_key:
             continue
         nights = (check_out - check_in).days
+        nightly_revenue = (
+            Decimal("0")
+            if booking.get("is_complimentary")
+            else _money(booking.get("total_amount")) / nights
+        )
         parsed.append(
             (
                 check_in,
@@ -138,7 +143,7 @@ def calculate_stay_night_metrics(
                 as_date(booking.get("checked_in_at")),
                 as_date(booking.get("checked_out_at")),
                 room_key,
-                _money(booking.get("total_amount")) / nights,
+                nightly_revenue,
             )
         )
 
@@ -156,21 +161,28 @@ def calculate_stay_night_metrics(
                     blocked_room_keys.add(f"id:{room_id}")
         total_rooms = len(active_room_keys - blocked_room_keys)
         occupied_rooms: set[str] = set()
+        sold_rooms: set[str] = set()
         revenue = Decimal("0")
         for check_in, check_out, actual_in, actual_out, room_key, nightly_revenue in parsed:
             actual_window_ok = not actual_only or ((not actual_in or actual_in <= day) and (not actual_out or day < actual_out))
             if check_in <= day < check_out and actual_window_ok:
                 occupied_rooms.add(room_key)
                 revenue += nightly_revenue
+                if nightly_revenue > 0:
+                    sold_rooms.add(room_key)
         occupied = len(occupied_rooms)
+        sold = len(sold_rooms)
         revenue_value = round(float(revenue), 2)
         occupancy_rate = round(min((occupied / total_rooms * 100), 100.0), 2) if total_rooms else 0
-        adr = round(revenue_value / occupied, 2) if occupied else 0
+        # Complimentary rooms contribute to occupancy but are not sold rooms;
+        # including them in ADR understated the achieved selling price.
+        adr = round(revenue_value / sold, 2) if sold else 0
         revpar = round(revenue_value / total_rooms, 2) if total_rooms else 0
         result.append(
             {
                 "date": day.isoformat(),
                 "occupied_rooms": occupied,
+                "sold_rooms": sold,
                 "total_rooms": total_rooms,
                 "occupancy_rate": occupancy_rate,
                 "revenue": revenue_value,
@@ -214,6 +226,7 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
             "check_out": 1,
             "status": 1,
             "total_amount": 1,
+            "is_complimentary": 1,
             "checked_in_at": 1,
             "checked_out_at": 1,
         },

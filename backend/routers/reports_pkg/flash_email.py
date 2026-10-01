@@ -80,6 +80,23 @@ def _report_date(value: str | None, field: str = "date"):
         raise HTTPException(status_code=422, detail=f"{field} YYYY-MM-DD formatında olmalı") from exc
 
 
+def _currency(row: dict) -> str:
+    return str(row.get("currency") or "TRY").strip().upper() or "TRY"
+
+
+def _add_currency(total: dict[str, float], currency: str, amount: float) -> None:
+    total[currency] = total.get(currency, 0.0) + float(amount or 0)
+
+
+def _rounded_currency(total: dict[str, float]) -> dict[str, float]:
+    return {currency: round(amount, 2) for currency, amount in total.items()}
+
+
+def _single_currency(total: dict[str, float]) -> float | None:
+    values = [amount for amount in total.values() if amount != 0]
+    return round(values[0], 2) if len(values) == 1 else (0.0 if not values else None)
+
+
 @sub_router.get("/reports/migration-observability")
 async def get_migration_observability(
     current_user: User = Depends(get_current_user),
@@ -125,7 +142,7 @@ async def get_flash_report(
     next_key = (target_day + timedelta(days=1)).isoformat()
 
     metrics = await load_stay_night_metrics(db, current_user.tenant_id, target_day, target_day, actual_only=True)
-    metric = metrics[0] if metrics else {"occupied_rooms": 0, "total_rooms": 0, "occupancy_rate": 0}
+    metric = metrics[0] if metrics else {"occupied_rooms": 0, "sold_rooms": 0, "total_rooms": 0, "occupancy_rate": 0}
     total_rooms = metric["total_rooms"]
     occupied_today = metric["occupied_rooms"]
     occupancy_rate = metric["occupancy_rate"]
@@ -545,6 +562,7 @@ async def get_daily_flash_report(
     metric = metrics[0] if metrics else {"occupied_rooms": 0, "total_rooms": 0, "occupancy_rate": 0}
     total_rooms = metric["total_rooms"]
     occupied_rooms = metric["occupied_rooms"]
+    sold_rooms = metric.get("sold_rooms", occupied_rooms)
     occupancy_rate = metric["occupancy_rate"]
     movement_bookings = await db.bookings.find(
         {"tenant_id": current_user.tenant_id, "$or": [{"check_in": {"$gte": day_key, "$lt": next_key}}, {"check_out": {"$gte": day_key, "$lt": next_key}}]},
@@ -570,19 +588,21 @@ async def get_daily_flash_report(
         }
     ).to_list(10000)
 
-    posted_total = sum(float(c.get("total") or c.get("amount") or 0) for c in charges)
-
-    # Revenue breakdown by category
-    room_revenue = sum(
-        float(c.get("total") or c.get("amount") or 0)
-        for c in charges
-        if str(c.get("charge_category") or c.get("charge_type") or "").lower() in {"room", "accommodation", "room_charge"}
-    )
-    posted_fb_revenue = sum(
-        float(c.get("total") or c.get("amount") or 0)
-        for c in charges
-        if str(c.get("charge_category") or c.get("charge_type") or "").lower() in FNB_CATEGORIES
-    )
+    total_by_currency: dict[str, float] = {}
+    room_by_currency: dict[str, float] = {}
+    fb_by_currency: dict[str, float] = {}
+    represented_pos_ids = set()
+    for charge in charges:
+        amount = float(charge.get("total") or charge.get("amount") or 0)
+        currency = _currency(charge)
+        category = str(charge.get("charge_category") or charge.get("charge_type") or "").lower()
+        _add_currency(total_by_currency, currency, amount)
+        if category in {"room", "accommodation", "room_charge"}:
+            _add_currency(room_by_currency, currency, amount)
+        if category in FNB_CATEGORIES:
+            _add_currency(fb_by_currency, currency, amount)
+        if charge.get("source_pos_order_id"):
+            represented_pos_ids.add(str(charge["source_pos_order_id"]))
     pos_orders = await db.pos_orders.find(
         {
             "tenant_id": current_user.tenant_id,
@@ -593,29 +613,47 @@ async def get_daily_flash_report(
                 {"created_at": {"$regex": f"^{day_key}"}},
             ),
         },
-        {"_id": 0, "total_amount": 1, "grand_total": 1},
+        {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1},
     ).to_list(5000)
-    pos_fb_revenue = sum(float(order.get("grand_total") or order.get("total_amount") or 0) for order in pos_orders)
-    fb_revenue = posted_fb_revenue if posted_fb_revenue else pos_fb_revenue
-    total_revenue = posted_total if posted_fb_revenue else posted_total + pos_fb_revenue
-    other_revenue = max(total_revenue - room_revenue - fb_revenue, 0)
+    for order in pos_orders:
+        if str(order.get("id") or "") in represented_pos_ids:
+            continue
+        amount = float(order.get("grand_total") or order.get("total_amount") or 0)
+        currency = _currency(order)
+        _add_currency(total_by_currency, currency, amount)
+        _add_currency(fb_by_currency, currency, amount)
+
+    total_by_currency = _rounded_currency(total_by_currency)
+    room_by_currency = _rounded_currency(room_by_currency)
+    fb_by_currency = _rounded_currency(fb_by_currency)
+    other_by_currency = _rounded_currency({
+        currency: max(amount - room_by_currency.get(currency, 0) - fb_by_currency.get(currency, 0), 0)
+        for currency, amount in total_by_currency.items()
+    })
 
     # Calculate ADR and RevPAR
-    adr = round(room_revenue / occupied_rooms, 2) if occupied_rooms > 0 else 0
-    rev_par = round(room_revenue / total_rooms, 2) if total_rooms > 0 else 0
+    adr_by_currency = _rounded_currency({currency: amount / sold_rooms if sold_rooms else 0 for currency, amount in room_by_currency.items()})
+    rev_par_by_currency = _rounded_currency({currency: amount / total_rooms if total_rooms else 0 for currency, amount in room_by_currency.items()})
 
     return {
         "date": day_key,
         "occupancy": {"occupied_rooms": occupied_rooms, "total_rooms": total_rooms, "occupancy_rate": occupancy_rate},
         "movements": {"arrivals": arrivals, "departures": departures, "stayovers": max(occupied_rooms - arrivals, 0)},
         "revenue": {
-            "total_revenue": round(total_revenue, 2),
-            "room_revenue": round(room_revenue, 2),
-            "fb_revenue": round(fb_revenue, 2),
-            "other_revenue": round(other_revenue, 2),
-            "adr": adr,
-            "rev_par": rev_par,
-            "basis": "posted_folio_charges" if posted_fb_revenue or not pos_fb_revenue else "posted_folio_charges_plus_pos",
+            "total_revenue": _single_currency(total_by_currency),
+            "total_revenue_by_currency": total_by_currency,
+            "room_revenue": _single_currency(room_by_currency),
+            "room_revenue_by_currency": room_by_currency,
+            "fb_revenue": _single_currency(fb_by_currency),
+            "fb_revenue_by_currency": fb_by_currency,
+            "other_revenue": _single_currency(other_by_currency),
+            "other_revenue_by_currency": other_by_currency,
+            "adr": _single_currency(adr_by_currency),
+            "adr_by_currency": adr_by_currency,
+            "rev_par": _single_currency(rev_par_by_currency),
+            "rev_par_by_currency": rev_par_by_currency,
+            "sold_rooms": sold_rooms,
+            "basis": "posted_folio_charges_plus_untransferred_pos",
         },
     }
 
