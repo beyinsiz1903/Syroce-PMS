@@ -265,7 +265,7 @@ const NightAuditModule = () => {
                   <span className="font-medium">Statistikler:</span>{' '}
                   {startResult.statistics && (
                     <>
-                      Odalar: {startResult.statistics.total_rooms} | Doluluk: {startResult.statistics.occupancy_pct}{t('cm.components_NightAuditModule.toplam_gelir_bd4d6')}{startResult.statistics.total_revenue}
+                      Odalar: {startResult.statistics.total_rooms} | Doluluk: {startResult.statistics.occupancy_pct}{t('cm.components_NightAuditModule.toplam_gelir_bd4d6')}{formatCurrencyBreakdown(startResult.statistics.total_revenue_by_currency, startResult.statistics.total_revenue)}
                     </>
                   )}
                 </div>

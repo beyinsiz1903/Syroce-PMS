@@ -9,11 +9,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security = HTTPBearer()
 
+from core.business_date_service import ensure_business_date_initialized
+from core.channel_room_charge_pricing import calculate_room_charge
 from core.database import db
 from core.security import get_current_user
 from models.enums import ChargeCategory
 from models.schemas import FolioCharge, User
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
 try:
     from domains.pms.night_audit_module import AuditStatus, AutomaticPosting, NightAuditRecord
@@ -62,7 +65,8 @@ async def post_room_charges(
     start_time = time.time()
 
     logging_service = get_logging_service(db)
-    audit_date = datetime.now(UTC).date().isoformat()
+    business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    audit_date = str(business_state["business_date"])[:10]
     errors = []
 
     try:
@@ -71,6 +75,7 @@ async def post_room_charges(
 
         charges_posted = 0
         total_amount = 0.0
+        total_amount_by_currency: dict[str, float] = {}
 
         # N+1 fix: tum folios tek $in
         na_booking_ids = [b["id"] for b in bookings if b.get("id")]
@@ -92,24 +97,45 @@ async def post_room_charges(
                 folio = na_folios_map.get(booking["id"])
 
                 if folio:
-                    # Post room charge
-                    charge_amount = booking.get("base_rate", booking.get("total_amount", 0))
+                    existing_charge = await db.folio_charges.find_one(
+                        {
+                            "tenant_id": current_user.tenant_id,
+                            "booking_id": booking["id"],
+                            "business_date": audit_date,
+                            "charge_category": "room",
+                            "voided": {"$ne": True},
+                        },
+                        {"_id": 0, "id": 1},
+                    )
+                    if existing_charge:
+                        continue
+                    pricing = calculate_room_charge(booking, audit_date)
+                    currency = str(booking.get("currency") or "TRY").strip().upper() or "TRY"
                     charge = FolioCharge(
                         tenant_id=current_user.tenant_id,
                         folio_id=folio["id"],
                         booking_id=booking["id"],
                         charge_category=ChargeCategory.ROOM,
                         description=f"Room {booking.get('room_id', 'N/A')} - Night Charge",
-                        unit_price=charge_amount,
+                        unit_price=pricing["unit_price"],
                         quantity=1.0,
-                        amount=charge_amount,
-                        tax_amount=0.0,
-                        total=charge_amount,
+                        amount=pricing["amount"],
+                        tax_amount=pricing["tax_amount"],
+                        total=pricing["total"],
                         posted_by="SYSTEM",
                     )
 
                     charge_dict = charge.model_dump()
                     charge_dict["date"] = charge_dict["date"].isoformat()
+                    charge_dict.update(
+                        {
+                            "business_date": audit_date,
+                            "night_audit_date": audit_date,
+                            "charge_type": "room_charge",
+                            "currency": currency,
+                            "tax_breakdown": pricing["tax_breakdown"],
+                        }
+                    )
                     await db.folio_charges.insert_one(charge_dict)
 
                     # Update folio balance — v109 round-9 IDOR (defense-in-depth).
@@ -124,12 +150,13 @@ async def post_room_charges(
                         action="post_charge",
                         entity_type="folio",
                         entity_id=folio["id"],
-                        details=f"Night Audit: Added Room Charge of {charge_amount}",
+                        details=f"Night Audit: Added Room Charge of {pricing['total']} {currency}",
                         after_value=charge_dict,
                     )
 
                     charges_posted += 1
-                    total_amount += charge_amount
+                    total_amount += pricing["total"]
+                    total_amount_by_currency[currency] = total_amount_by_currency.get(currency, 0.0) + pricing["total"]
             except Exception as e:
                 errors.append(f"Booking {booking.get('id')}: {str(e)}")
 
@@ -145,12 +172,21 @@ async def post_room_charges(
             status=status,
             rooms_processed=len(bookings),
             charges_posted=charges_posted,
-            total_amount=total_amount,
+            total_amount=round(total_amount, 2) if len(total_amount_by_currency) <= 1 else 0.0,
             duration_seconds=duration,
             errors=errors if errors else None,
+            metadata={"total_amount_by_currency": {currency: round(amount, 2) for currency, amount in total_amount_by_currency.items()}},
         )
 
-        return {"message": "Night audit completed", "charges_posted": charges_posted, "bookings_processed": len(bookings), "status": status, "errors": errors if errors else None}
+        return {
+            "message": "Night audit completed",
+            "charges_posted": charges_posted,
+            "bookings_processed": len(bookings),
+            "total_amount": round(total_amount, 2) if len(total_amount_by_currency) <= 1 else None,
+            "total_amount_by_currency": {currency: round(amount, 2) for currency, amount in total_amount_by_currency.items()},
+            "status": status,
+            "errors": errors if errors else None,
+        }
     except Exception as e:
         duration = time.time() - start_time
 
@@ -251,35 +287,41 @@ async def start_night_audit(
     # Create audit record
     audit = NightAuditRecord(tenant_id=current_user.tenant_id, audit_date=audit_date, started_by=current_user.name, status=AuditStatus.IN_PROGRESS)
 
-    # Calculate statistics
-    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
-
-    datetime.fromisoformat(audit_date).replace(tzinfo=UTC)
-    # Whitelist: gece denetimi icin gercekten odayi isgal eden statuler.
-    # checked_out da sayilmali (denetim gunu icinde cikis yapanlar gecede dolu sayilir).
-    occupied_rooms = await db.bookings.count_documents(
-        {"tenant_id": current_user.tenant_id, "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}, "check_in": {"$lte": audit_date}, "check_out": {"$gt": audit_date}}
-    )
+    # Use the same stay-night engine as occupancy, ADR and RevPAR reports.
+    # This prevents duplicate room assignments from inflating occupancy and
+    # keeps complimentary rooms occupied but outside sold-room denominators.
+    target_day = datetime.fromisoformat(audit_date).date()
+    metric_rows = await load_stay_night_metrics(db, current_user.tenant_id, target_day, target_day, actual_only=True)
+    metric = metric_rows[0] if metric_rows else {"total_rooms": 0, "occupied_rooms": 0, "sold_rooms": 0}
+    total_rooms = int(metric.get("total_rooms") or 0)
+    occupied_rooms = int(metric.get("occupied_rooms") or 0)
 
     audit.total_rooms = total_rooms
     audit.occupied_rooms = occupied_rooms
     audit.vacant_rooms = total_rooms - occupied_rooms
 
-    # Calculate revenue
-    bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "check_in": {"$lte": audit_date}, "check_out": {"$gt": audit_date}, "status": {"$in": ["checked_in", "checked_out"]}}
-    ).to_list(10000)
-
-    total_revenue = sum(b.get("total_amount", 0) for b in bookings)
-    room_revenue = sum(b.get("base_rate", 0) for b in bookings)
-
-    audit.total_revenue = round(total_revenue, 2)
-    audit.room_revenue = round(room_revenue, 2)
-    audit.tax_revenue = round(total_revenue * 0.1, 2)
-    audit.other_revenue = round(total_revenue - room_revenue, 2)
+    revenue = await night_audit_calculate_revenue(current_user.tenant_id, audit_date)
+    # Legacy scalar model fields are retained only for single-currency clients.
+    # Mixed-currency reports use the explicit breakdown fields below.
+    audit.total_revenue = float(revenue.get("total_revenue") or 0)
+    audit.room_revenue = float(revenue.get("room_revenue") or 0)
+    audit.tax_revenue = float(revenue.get("tax_revenue") or 0)
+    audit.other_revenue = float(revenue.get("other_revenue") or 0)
 
     # Save audit record
-    await db.night_audits.insert_one(audit.model_dump())
+    audit_doc = audit.model_dump()
+    audit_doc.update(
+        {
+            "sold_rooms": int(metric.get("sold_rooms") or 0),
+            "total_revenue_by_currency": revenue.get("total_revenue_by_currency", {}),
+            "room_revenue_by_currency": revenue.get("room_revenue_by_currency", {}),
+            "tax_revenue_by_currency": revenue.get("tax_revenue_by_currency", {}),
+            "other_revenue_by_currency": revenue.get("other_revenue_by_currency", {}),
+            "mixed_currency": revenue.get("mixed_currency", False),
+            "revenue_basis": revenue.get("basis"),
+        }
+    )
+    await db.night_audits.insert_one(audit_doc)
 
     return {
         "success": True,
@@ -291,7 +333,11 @@ async def start_night_audit(
             "occupied_rooms": audit.occupied_rooms,
             "occupancy_pct": round(min((occupied_rooms / total_rooms * 100), 100.0), 1) if total_rooms > 0 else 0,
             "total_revenue": audit.total_revenue,
+            "total_revenue_by_currency": revenue.get("total_revenue_by_currency", {}),
             "room_revenue": audit.room_revenue,
+            "room_revenue_by_currency": revenue.get("room_revenue_by_currency", {}),
+            "sold_rooms": int(metric.get("sold_rooms") or 0),
+            "revenue_basis": revenue.get("basis"),
         },
     }
 
@@ -324,7 +370,13 @@ async def end_of_day_audit(
         "success": True,
         "audit_id": audit_id,
         "completed_at": datetime.now(UTC).isoformat(),
-        "summary": {"total_revenue": audit.get("total_revenue", 0), "no_shows": no_shows, "occupied_rooms": audit.get("occupied_rooms", 0)},
+        "summary": {
+            "total_revenue": audit.get("total_revenue", 0),
+            "total_revenue_by_currency": audit.get("total_revenue_by_currency", {}),
+            "revenue_basis": audit.get("revenue_basis"),
+            "no_shows": no_shows,
+            "occupied_rooms": audit.get("occupied_rooms", 0),
+        },
     }
 
 
@@ -334,12 +386,13 @@ async def automatic_posting(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _perm=Depends(require_op("manage_night_audit")),  # v88 DW
 ):
-    """Automatically post room charges and taxes for all in-house guests"""
+    """Post tax-inclusive nightly room charges for all in-house guests."""
     current_user = await get_current_user(credentials)
 
     posted_count = 0
     failed_count = 0
     total_posted = 0.0
+    total_posted_by_currency: dict[str, float] = {}
 
     # Get all checked-in bookings for this date
     bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "status": "checked_in", "check_in": {"$lte": audit_date}, "check_out": {"$gt": audit_date}}).to_list(10000)
@@ -360,6 +413,18 @@ async def automatic_posting(
         try:
             if booking.get("is_complimentary"):
                 continue
+            existing_charge = await db.folio_charges.find_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "booking_id": booking["id"],
+                    "business_date": audit_date,
+                    "charge_category": "room",
+                    "voided": {"$ne": True},
+                },
+                {"_id": 0, "id": 1},
+            )
+            if existing_charge:
+                continue
             folio = na2_folios_map.get(booking["id"])
 
             if not folio:
@@ -374,8 +439,10 @@ async def automatic_posting(
                 }
                 await db.folios.insert_one(folio)
 
-            # Post room charge
-            amount = booking.get("base_rate", booking.get("total_amount", 0) / max(1, booking.get("nights", 1)))
+            # Reservation total is the confirmed guest-payable amount. Extract
+            # taxes from that total; never add a second hard-coded tax posting.
+            pricing = calculate_room_charge(booking, audit_date)
+            currency = str(booking.get("currency") or "TRY").strip().upper() or "TRY"
             room_charge = {
                 "id": str(uuid.uuid4()),
                 "tenant_id": current_user.tenant_id,
@@ -383,11 +450,16 @@ async def automatic_posting(
                 "booking_id": booking["id"],
                 "charge_category": "room",
                 "description": f"Room {booking.get('room_number', 'TBD')} - {audit_date}",
-                "unit_price": amount,
+                "unit_price": pricing["unit_price"],
                 "quantity": 1.0,
-                "amount": amount,
-                "tax_amount": 0.0,
-                "total": amount,
+                "amount": pricing["amount"],
+                "tax_amount": pricing["tax_amount"],
+                "tax_breakdown": pricing["tax_breakdown"],
+                "total": pricing["total"],
+                "currency": currency,
+                "business_date": audit_date,
+                "night_audit_date": audit_date,
+                "charge_type": "room_charge",
                 "date": datetime.now(UTC).isoformat(),
                 "posted_at": datetime.now(UTC).isoformat(),
                 "posted_by": "night_audit_system",
@@ -408,30 +480,13 @@ async def automatic_posting(
                 action="post_charge",
                 entity_type="folio",
                 entity_id=folio["id"],
-                details=f"Night Audit: Added Room Charge of {amount}",
+                details=f"Night Audit: Added Room Charge of {pricing['total']} {currency}",
                 after_value=room_charge,
             )
 
-            # Post tax
-            tax_amount = room_charge["amount"] * 0.10
-            tax_charge = {
-                "id": str(uuid.uuid4()),
-                "tenant_id": current_user.tenant_id,
-                "folio_id": folio["id"],
-                "booking_id": booking["id"],
-                "charge_category": "tax",
-                "description": f"Room Tax - {audit_date}",
-                "amount": tax_amount,
-                "quantity": 1,
-                "posted_at": datetime.now(UTC).isoformat(),
-                "posted_by": "night_audit_system",
-                "voided": False,
-            }
-
-            await db.folio_charges.insert_one(tax_charge)
-
             posted_count += 1
-            total_posted += room_charge["amount"] + tax_amount
+            total_posted += room_charge["total"]
+            total_posted_by_currency[currency] = total_posted_by_currency.get(currency, 0.0) + room_charge["total"]
 
         except Exception:
             failed_count += 1
@@ -441,7 +496,8 @@ async def automatic_posting(
         "audit_date": audit_date,
         "posted_count": posted_count,
         "failed_count": failed_count,
-        "total_amount_posted": round(total_posted, 2),
+        "total_amount_posted": round(total_posted, 2) if len(total_posted_by_currency) <= 1 else None,
+        "total_amount_posted_by_currency": {currency: round(amount, 2) for currency, amount in total_posted_by_currency.items()},
         "message": f"Automatic posting completed: {posted_count} bookings processed",
     }
 

@@ -1037,6 +1037,7 @@ async def revenue_by_category(
         "tax_amount": 1,
         "total": 1,
         "currency": 1,
+        "source_pos_order_id": 1,
     }
     date_fields = ("business_date", "charge_date", "date", "posted_at", "created_at")
     string_start = dt_from.date().isoformat()
@@ -1054,10 +1055,59 @@ async def revenue_by_category(
         "voided": {"$ne": True},
         "$or": date_clauses,
     }
-    folio_rows, extra_rows = await asyncio.gather(
+    pos_date_clauses = []
+    for field in ("business_date", "closed_at", "created_at"):
+        pos_date_clauses.extend(
+            [
+                {field: {"$gte": string_start, "$lt": string_end}},
+                {field: {"$gte": dt_from, "$lte": dt_to}},
+            ]
+        )
+    folio_rows, extra_rows, pos_rows = await asyncio.gather(
         db.folio_charges.find(query, projection).to_list(None),
         db.extra_charges.find(query, projection).to_list(None),
+        db.pos_orders.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
+                "$or": pos_date_clauses,
+            },
+            {
+                "_id": 0,
+                "id": 1,
+                "business_date": 1,
+                "closed_at": 1,
+                "created_at": 1,
+                "total_amount": 1,
+                "grand_total": 1,
+                "currency": 1,
+                "status": 1,
+            },
+        ).to_list(None),
     )
+
+    # A POS order may already have been posted to a folio. Include direct POS
+    # revenue only when no folio row represents that order, preventing both
+    # missing restaurant revenue and double counting.
+    represented_pos_order_ids = {
+        str(row.get("source_pos_order_id"))
+        for row in folio_rows
+        if row.get("source_pos_order_id")
+    }
+    direct_pos_rows = [
+        {
+            "business_date": row.get("business_date"),
+            "date": row.get("closed_at") or row.get("created_at"),
+            "category": "fnb",
+            "total": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
+            "subtotal": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
+            "amount": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
+            "currency": row.get("currency") or "TRY",
+        }
+        for row in pos_rows
+        if str(row.get("id") or "") not in represented_pos_order_ids
+        and str(row.get("status") or "").lower() in {"closed", "completed", "served", "paid"}
+    ]
 
     def report_day(row: dict) -> date | None:
         value = row.get("business_date") or row.get("charge_date") or row.get("date") or row.get("posted_at") or row.get("created_at")
@@ -1072,7 +1122,11 @@ async def revenue_by_category(
 
     start_day, end_day = dt_from.date(), dt_to.date()
     grouped: dict[str, dict[str, Any]] = {}
-    for row, is_extra in [*((item, False) for item in folio_rows), *((item, True) for item in extra_rows)]:
+    for row, is_extra in [
+        *((item, False) for item in folio_rows),
+        *((item, True) for item in extra_rows),
+        *((item, True) for item in direct_pos_rows),
+    ]:
         row_day = report_day(row)
         if row_day is None or not start_day <= row_day <= end_day:
             continue

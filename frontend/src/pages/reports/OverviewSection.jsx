@@ -32,7 +32,7 @@ const OverviewSection = ({
   return <div className="space-y-6" data-testid="section-overview">
     <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Seçili rapor dönemi ile güncel operasyon durumunun özeti" icon={LayoutDashboard} actions={<StatusBadge intent="info">Seçili dönem</StatusBadge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      <KPICard title={`Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} currencyBreakdown={pc.month_revenue_by_currency} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrencyBreakdown(pc.prev_month_revenue_by_currency, pc.prev_month_revenue)} icon={ReceiptText} color="success" />
+      <KPICard title={`Folyoya İşlenen Toplam Gelir ${labelSuffix}`} value={pc.month_revenue} currencyBreakdown={pc.month_revenue_by_currency} prevValue={pc.prev_month_revenue} prevLabel={prevLabelSuffix + formatCurrencyBreakdown(pc.prev_month_revenue_by_currency, pc.prev_month_revenue)} icon={ReceiptText} color="success" />
       <KPICard title={`Satılan Oda Başına Ortalama Fiyat ${labelSuffix}`} value={metrics.adr} currencyBreakdown={metrics.adr_by_currency} prevValue={pc.prev_month_adr} prevLabel={hasMultipleCurrencies ? 'Her para birimi kendi oda geliri içinde hesaplanır' : prevLabelSuffix + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
       <KPICard title={`Satılabilir Oda Başına Gelir ${labelSuffix}`} value={metrics.revpar} currencyBreakdown={metrics.revpar_by_currency} icon={BarChart3} color="warning" />
       <KPICard title={`Doluluk Oranı ${labelSuffix}`} value={formatPercent(metrics.occupancy_percentage)} icon={Hotel} color="info" />

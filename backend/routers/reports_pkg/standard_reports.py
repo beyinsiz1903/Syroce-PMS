@@ -1,5 +1,6 @@
 """Auto-split from reports.py — backward-compatible sub-router."""
 
+import asyncio
 import logging
 from datetime import date, timedelta
 
@@ -72,6 +73,78 @@ def _effective_payment(payment: dict) -> float:
     return amount
 
 
+def _currency_code(row: dict) -> str:
+    return str(row.get("currency") or "TRY").strip().upper() or "TRY"
+
+
+def _charge_amount(row: dict) -> float:
+    for field in ("total", "charge_amount", "amount"):
+        if row.get(field) is not None:
+            return float(row[field] or 0)
+    return 0.0
+
+
+def _single_currency_value(totals: dict[str, float]) -> float | None:
+    nonzero = [float(value) for value in totals.values() if float(value) != 0]
+    return round(nonzero[0], 2) if len(nonzero) == 1 else (0.0 if not nonzero else None)
+
+
+async def _posted_revenue_rows(tenant_id: str, start: date, end: date) -> list[dict]:
+    """Return posted folio, manual-extra and untransferred POS revenue once."""
+    start_text = start.isoformat()
+    next_day = (end + timedelta(days=1)).isoformat()
+    charge_query = {
+        "tenant_id": tenant_id,
+        "voided": {"$ne": True},
+        "$or": [
+            {"business_date": {"$gte": start_text, "$lt": next_day}},
+            {"business_date": {"$exists": False}, "date": {"$gte": start_text, "$lt": next_day}},
+            {"business_date": None, "date": {"$gte": start_text, "$lt": next_day}},
+            {"business_date": {"$exists": False}, "charge_date": {"$gte": start_text, "$lt": next_day}},
+            {"business_date": {"$exists": False}, "created_at": {"$gte": start_text, "$lt": next_day}},
+            {"business_date": None, "created_at": {"$gte": start_text, "$lt": next_day}},
+        ],
+    }
+    projection = {
+        "_id": 0,
+        "charge_category": 1,
+        "category": 1,
+        "charge_type": 1,
+        "total": 1,
+        "charge_amount": 1,
+        "amount": 1,
+        "currency": 1,
+        "source_pos_order_id": 1,
+    }
+    folio_rows, extra_rows, pos_rows = await asyncio.gather(
+        db.folio_charges.find(charge_query, projection).to_list(10000),
+        db.extra_charges.find(charge_query, projection).to_list(10000),
+        db.pos_orders.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["closed", "completed", "served", "paid"]},
+                "$or": [
+                    {"business_date": {"$gte": start_text, "$lt": next_day}},
+                    {"closed_at": {"$gte": start_text, "$lt": next_day}},
+                    {"created_at": {"$gte": start_text, "$lt": next_day}},
+                ],
+            },
+            {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1},
+        ).to_list(10000),
+    )
+    represented_pos_ids = {str(row["source_pos_order_id"]) for row in folio_rows if row.get("source_pos_order_id")}
+    direct_pos_rows = [
+        {
+            "category": "fnb",
+            "total": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
+            "currency": row.get("currency") or "TRY",
+        }
+        for row in pos_rows
+        if str(row.get("id") or "") not in represented_pos_ids
+    ]
+    return [*folio_rows, *extra_rows, *direct_pos_rows]
+
+
 @sub_router.get("/reports/occupancy")
 @cached(ttl=600, key_prefix="report_occupancy")  # Cache for 10 minutes
 async def get_occupancy_report(
@@ -121,57 +194,61 @@ async def get_revenue_report(
         raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
     start_date, end_date = start.isoformat(), end.isoformat()
     metrics = await load_stay_night_metrics(db, current_user.tenant_id, start, end, actual_only=True)
-    room_nights = sum(row["occupied_rooms"] for row in metrics)
+    sold_room_nights = sum(row.get("sold_rooms", row["occupied_rooms"]) for row in metrics)
     available_room_nights = sum(row["total_rooms"] for row in metrics)
-    folio_charges = await db.folio_charges.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "voided": {"$ne": True},
-            "$or": [
-                {"business_date": {"$gte": start_date, "$lte": end_date}},
-                {"business_date": {"$exists": False}, "date": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
-                {"business_date": None, "date": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
-            ],
-        },
-        {"_id": 0},
-    ).to_list(1000)
-    extra_charges = await db.extra_charges.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "voided": {"$ne": True},
-            "$or": [
-                {"business_date": {"$gte": start_date, "$lte": end_date}},
-                {"business_date": {"$exists": False}, "charge_date": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
-                {"business_date": {"$exists": False}, "date": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
-                {"business_date": {"$exists": False}, "created_at": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
-                {"business_date": None, "created_at": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}},
-            ],
-        },
-        {"_id": 0},
-    ).to_list(1000)
+    revenue_rows = await _posted_revenue_rows(current_user.tenant_id, start, end)
     revenue_by_type: dict[str, float] = {}
-    for charge in [*folio_charges, *extra_charges]:
+    revenue_by_type_currency: dict[str, dict[str, float]] = {}
+    total_revenue_by_currency: dict[str, float] = {}
+    room_revenue_by_currency: dict[str, float] = {}
+    for charge in revenue_rows:
         charge_type = charge.get("charge_category") or charge.get("category") or charge.get("charge_type") or "other"
-        amount = charge.get("total")
-        if amount is None:
-            amount = charge.get("charge_amount")
-        if amount is None:
-            amount = charge.get("amount") or 0
-        revenue_by_type[charge_type] = revenue_by_type.get(charge_type, 0.0) + float(amount)
+        amount = _charge_amount(charge)
+        currency = _currency_code(charge)
+        revenue_by_type_currency.setdefault(charge_type, {})[currency] = revenue_by_type_currency.setdefault(charge_type, {}).get(currency, 0.0) + amount
+        total_revenue_by_currency[currency] = total_revenue_by_currency.get(currency, 0.0) + amount
+        if charge_type in {"room", "accommodation", "room_charge"}:
+            room_revenue_by_currency[currency] = room_revenue_by_currency.get(currency, 0.0) + amount
+    revenue_by_type_currency = {
+        category: {currency: round(amount, 2) for currency, amount in totals.items()}
+        for category, totals in revenue_by_type_currency.items()
+    }
+    # Legacy scalar fields are populated only for a true single-currency report.
+    # They must never be the arithmetic sum of unlike currencies.
+    for charge_type, totals in revenue_by_type_currency.items():
+        value = _single_currency_value(totals)
+        revenue_by_type[charge_type] = value if value is not None else 0.0
     revenue_by_type = {key: round(value, 2) for key, value in revenue_by_type.items()}
-    total_revenue = round(sum(revenue_by_type.values()), 2)
-    room_revenue = sum(value for key, value in revenue_by_type.items() if key in {"room", "accommodation", "room_charge"})
+    total_revenue_by_currency = {key: round(value, 2) for key, value in total_revenue_by_currency.items()}
+    room_revenue_by_currency = {key: round(value, 2) for key, value in room_revenue_by_currency.items()}
+    total_revenue = _single_currency_value(total_revenue_by_currency)
+    room_revenue = _single_currency_value(room_revenue_by_currency)
+    adr_by_currency = {
+        currency: round(amount / sold_room_nights, 2) if sold_room_nights else 0.0
+        for currency, amount in room_revenue_by_currency.items()
+    }
+    rev_par_by_currency = {
+        currency: round(amount / available_room_nights, 2) if available_room_nights else 0.0
+        for currency, amount in room_revenue_by_currency.items()
+    }
     arrivals = await db.bookings.count_documents(
         {"tenant_id": current_user.tenant_id, "check_in": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}, "status": {"$nin": list(NON_COMMERCIAL_STATUSES)}}
     )
     return {
         "start_date": start_date,
         "end_date": end_date,
-        "total_revenue": round(total_revenue, 2),
-        "room_nights_sold": room_nights,
-        "adr": round(room_revenue / room_nights, 2) if room_nights else 0,
-        "rev_par": round(room_revenue / available_room_nights, 2) if available_room_nights else 0,
+        "total_revenue": total_revenue,
+        "total_revenue_by_currency": total_revenue_by_currency,
+        "room_revenue": room_revenue,
+        "room_revenue_by_currency": room_revenue_by_currency,
+        "room_nights_sold": sold_room_nights,
+        "adr": _single_currency_value(adr_by_currency),
+        "adr_by_currency": adr_by_currency,
+        "rev_par": _single_currency_value(rev_par_by_currency),
+        "rev_par_by_currency": rev_par_by_currency,
         "revenue_by_type": revenue_by_type,
+        "revenue_by_type_currency": revenue_by_type_currency,
+        "mixed_currency": len([value for value in total_revenue_by_currency.values() if value]) > 1,
         "bookings_count": arrivals,
         "revenue_basis": "posted_folio_and_reservation_charges",
     }
@@ -211,7 +288,17 @@ async def get_daily_summary(
         },
         {"_id": 0},
     ).to_list(10000)
-    collections = sum(_effective_payment(payment) for payment in payments)
+    collections_by_currency: dict[str, float] = {}
+    for payment in payments:
+        currency = _currency_code(payment)
+        collections_by_currency[currency] = collections_by_currency.get(currency, 0.0) + _effective_payment(payment)
+    collections_by_currency = {currency: round(amount, 2) for currency, amount in collections_by_currency.items()}
+    posted_rows = await _posted_revenue_rows(current_user.tenant_id, target_date, target_date)
+    posted_revenue_by_currency: dict[str, float] = {}
+    for row in posted_rows:
+        currency = _currency_code(row)
+        posted_revenue_by_currency[currency] = posted_revenue_by_currency.get(currency, 0.0) + _charge_amount(row)
+    posted_revenue_by_currency = {currency: round(amount, 2) for currency, amount in posted_revenue_by_currency.items()}
     return {
         "date": target_date.isoformat(),
         "arrivals": arrivals,
@@ -219,9 +306,11 @@ async def get_daily_summary(
         "inhouse": inhouse,
         "total_rooms": total_rooms,
         "occupancy_rate": round(min((inhouse / total_rooms * 100), 100.0) if total_rooms > 0 else 0, 2),
-        "collections": round(collections, 2),
-        "daily_revenue": round(collections, 2),
-        "daily_revenue_deprecated": True,
+        "collections": _single_currency_value(collections_by_currency),
+        "collections_by_currency": collections_by_currency,
+        "daily_revenue": _single_currency_value(posted_revenue_by_currency),
+        "daily_revenue_by_currency": posted_revenue_by_currency,
+        "daily_revenue_basis": "posted_folio_and_pos_charges",
     }
 
 

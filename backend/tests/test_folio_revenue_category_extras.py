@@ -64,6 +64,7 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
                 },
             ]
         ),
+        pos_orders=_Collection([]),
     )
     monkeypatch.setattr(folio_router, "db", fake_db)
 
@@ -87,3 +88,56 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
         "TRY": {"subtotal": 1000.0, "discount": 0.0, "net": 1000.0, "vat": 0.0, "city_tax": 0.0, "total": 1000.0},
         "EUR": {"subtotal": 200.0, "discount": 0.0, "net": 200.0, "vat": 0.0, "city_tax": 0.0, "total": 200.0},
     }
+
+
+@pytest.mark.asyncio
+async def test_category_report_includes_direct_pos_once_and_deduplicates_posted_order(monkeypatch):
+    fake_db = SimpleNamespace(
+        folio_charges=_Collection(
+            [
+                {
+                    "tenant_id": "tenant-1",
+                    "business_date": "2026-09-23",
+                    "charge_category": "fnb",
+                    "amount": 250,
+                    "total": 250,
+                    "currency": "TRY",
+                    "source_pos_order_id": "posted-order",
+                }
+            ]
+        ),
+        extra_charges=_Collection([]),
+        pos_orders=_Collection(
+            [
+                {
+                    "tenant_id": "tenant-1",
+                    "id": "posted-order",
+                    "business_date": "2026-09-23",
+                    "total_amount": 250,
+                    "currency": "TRY",
+                    "status": "paid",
+                },
+                {
+                    "tenant_id": "tenant-1",
+                    "id": "direct-order",
+                    "business_date": "2026-09-23",
+                    "total_amount": 400,
+                    "currency": "TRY",
+                    "status": "paid",
+                },
+            ]
+        ),
+    )
+    monkeypatch.setattr(folio_router, "db", fake_db)
+
+    result = await folio_router.revenue_by_category.__wrapped__(
+        date_from="2026-09-23",
+        date_to="2026-09-23",
+        current_user=SimpleNamespace(tenant_id="tenant-1"),
+        _perm=None,
+    )
+
+    fnb = next(row for row in result["rows"] if row["category"] == "fnb")
+    assert fnb["count"] == 2
+    assert fnb["total"] == 650
+    assert result["totals_by_currency"]["TRY"]["total"] == 650
