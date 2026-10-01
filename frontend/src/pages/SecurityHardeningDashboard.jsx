@@ -74,6 +74,70 @@ const VAULT_LABEL = {
   critical: "Kritik",
   unknown: "Bilinmiyor"
 };
+const COLLECTION_LABELS = {
+  bookings: "Rezervasyonlar",
+  guests: "Misafirler",
+  rooms: "Odalar",
+  folios: "Folyolar",
+  tasks: "Görevler",
+  users: "Kullanıcılar",
+  invoices: "Faturalar",
+  audit_logs: "İşlem kayıtları",
+  messaging_delivery_logs: "Mesaj teslim kayıtları",
+  ml_predictions: "Tahmin kayıtları",
+  pipeline_runs: "Veri işleme çalışmaları",
+  revenue_approval_queue: "Gelir onay kuyruğu",
+  feature_store: "Özellik deposu",
+  ml_datasets: "Model veri kümeleri",
+  model_registry: "Model kayıtları",
+  event_bus_log: "Sistem olayları",
+  messaging_provider_configs: "Mesaj sağlayıcı ayarları"
+};
+const AUDIT_CATEGORY_LABELS = {
+  auth: "Oturum ve kimlik",
+  booking: "Rezervasyon",
+  folio: "Folyo",
+  rate: "Fiyat",
+  guest: "Misafir",
+  messaging: "Mesajlaşma",
+  pipeline: "Veri işleme",
+  security: "Güvenlik",
+  system: "Sistem"
+};
+const AUDIT_ACTION_LABELS = {
+  login: "Oturum açma",
+  logout: "Oturum kapatma",
+  token_refresh: "Oturum yenileme",
+  password_change: "Parola değişikliği",
+  create: "Oluşturma",
+  modify: "Değiştirme",
+  update: "Güncelleme",
+  cancel: "İptal",
+  delete: "Silme",
+  merge: "Birleştirme",
+  check_in: "Giriş işlemi",
+  check_out: "Çıkış işlemi",
+  charge: "Harcama kaydı",
+  payment: "Tahsilat",
+  close: "Kapatma",
+  split: "Bölme",
+  rate_change: "Fiyat değişikliği",
+  autopilot_apply: "Otomatik fiyat uygulama",
+  rate_override: "Fiyat geçersiz kılma",
+  gdpr_request: "KVKK talebi",
+  send: "Gönderme",
+  retry: "Yeniden deneme",
+  provider_change: "Sağlayıcı değişikliği",
+  pipeline_run: "Veri işleme çalışması",
+  model_deploy: "Model yayını",
+  prediction: "Tahmin",
+  permission_change: "Yetki değişikliği",
+  credential_rotation: "Gizli bilgi yenileme",
+  isolation_check: "İzolasyon kontrolü",
+  config_change: "Ayar değişikliği",
+  module_enable: "Modül etkinleştirme",
+  module_disable: "Modül devre dışı bırakma"
+};
 function pluralizeUsers(n) {
   return n === 1 ? "1 kullanıcı" : `${n} kullanıcı`;
 }
@@ -199,9 +263,9 @@ export default function SecurityHardeningDashboard({
                 {[0, 1, 2, 3].map(i => <div key={i} className="h-24 rounded-lg bg-slate-100 animate-pulse" />)}
               </> : <>
                 <KpiCard data-testid="card-isolation" icon={Database} intent={errors.isolation ? "danger" : intentForScore(isoScore)} label="Tenant İzolasyonu" value={errors.isolation ? "—" : `${(isoScore * 100).toFixed(0)}%`} sub={errors.isolation ? "Veri alınamadı" : `${isolation?.clean_collections ?? 0}/${isolation?.collections_checked ?? 0} koleksiyon temiz`} />
-                <KpiCard data-testid="card-audit" icon={ClipboardCheck} intent={errors.audit ? "danger" : intentForScore(auditScore)} label="Audit Tamlığı" value={errors.audit ? "—" : `${(auditScore * 100).toFixed(0)}%`} sub={errors.audit ? "Veri alınamadı" : `${audit?.total_audit_entries ?? 0} kayıt (24 saat)`} />
-                <KpiCard data-testid="card-vault" icon={KeyRound} intent={errors.vault ? "danger" : vaultIntent} label="Credential Vault" value={errors.vault ? "—" : vaultLabel} sub={errors.vault ? "Veri alınamadı" : `${vault?.total_credentials ?? 0} credential · ${rotationOverdue} rotasyon bekliyor`} />
-                <KpiCard data-testid="card-properties" icon={Users} intent={errors.permissions ? "danger" : "info"} label="Property RBAC" value={errors.permissions ? "—" : Object.keys(properties).length} sub={errors.permissions ? "Veri alınamadı" : "property grupları"} />
+                <KpiCard data-testid="card-audit" icon={ClipboardCheck} intent={errors.audit ? "danger" : intentForScore(auditScore)} label="Olay Türü Kapsamı" value={errors.audit ? "—" : `${(auditScore * 100).toFixed(0)}%`} sub={errors.audit ? "Veri alınamadı" : `${audit?.total_audit_entries ?? 0} kayıt · son 24 saat`} />
+                <KpiCard data-testid="card-vault" icon={KeyRound} intent={errors.vault ? "danger" : vaultIntent} label="Gizli Bilgi Kasası" value={errors.vault ? "—" : vaultLabel} sub={errors.vault ? "Veri alınamadı" : `${vault?.total_credentials ?? 0} gizli bilgi · ${rotationOverdue} rotasyon bekliyor`} />
+                <KpiCard data-testid="card-properties" icon={Users} intent={errors.permissions ? "danger" : "info"} label="Tesis Yetkileri" value={errors.permissions ? "—" : Object.keys(properties).length} sub={errors.permissions ? "Veri alınamadı" : "tesis grubu"} />
               </>}
           </div>
 
@@ -211,13 +275,13 @@ export default function SecurityHardeningDashboard({
                 İzolasyon
               </TabsTrigger>
               <TabsTrigger value="permissions" data-testid="tab-permissions">
-                RBAC
+                Tesis Yetkileri
               </TabsTrigger>
               <TabsTrigger value="vault" data-testid="tab-vault">
-                Vault
+                Gizli Bilgiler
               </TabsTrigger>
               <TabsTrigger value="audit" data-testid="tab-audit">
-                Audit
+                İşlem Kapsamı
               </TabsTrigger>
             </TabsList>
 
@@ -230,13 +294,13 @@ export default function SecurityHardeningDashboard({
                   {loading && !isolation ? <PanelSkeleton /> : errors.isolation ? <ErrorBlock message={errors.isolation} onRetry={handleRefresh} /> : (isolation?.details || []).length === 0 ? <EmptyState message="Hiç koleksiyon raporlanmadı." /> : <div className="space-y-2">
                       {(isolation?.details || []).map((d, i) => <div key={d.id || i} data-testid={`iso-collection-${i}`} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200">
                           <div>
-                            <p className="text-sm text-slate-900 font-medium">{d.collection}</p>
+                            <p className="text-sm text-slate-900 font-medium">{COLLECTION_LABELS[d.collection] || d.collection}</p>
                             <p className="text-xs text-slate-500">
-                              {d.tenant_documents ?? 0} tenant doc · {d.unscoped_documents ?? 0} unscoped
+                              {d.tenant_documents ?? 0} tesise bağlı kayıt · {d.unscoped_documents ?? 0} tesis alanı olmayan kayıt
                             </p>
                           </div>
                           <StatusBadge intent={d.isolation_status === "clean" ? "success" : "warning"}>
-                            {d.isolation_status === "clean" ? "Temiz" : d.isolation_status || "kontrol edilmedi"}
+                            {d.isolation_status === "clean" ? "Temiz" : "İncelenmeli"}
                           </StatusBadge>
                         </div>)}
                     </div>}
@@ -247,13 +311,13 @@ export default function SecurityHardeningDashboard({
             <TabsContent value="permissions">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-slate-900 text-base">Property Bazlı İzinler</CardTitle>
+                  <CardTitle className="text-slate-900 text-base">Tesis Bazlı İzinler</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {loading && !permissions ? <PanelSkeleton /> : errors.permissions ? <ErrorBlock message={errors.permissions} onRetry={handleRefresh} /> : Object.keys(properties).length === 0 ? <EmptyState message="Kullanıcı bilgisi bulunamadı." /> : <div className="space-y-3">
                       {Object.entries(properties).map(([pid, pdata]) => <div key={pid} data-testid={`property-${pid}`} className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm font-medium text-slate-900">Property: {pid}</p>
+                            <p className="text-sm font-medium text-slate-900">Tesis: {pid}</p>
                             <StatusBadge intent="info">
                               {pluralizeUsers(pdata?.user_count ?? 0)}
                             </StatusBadge>
@@ -272,13 +336,13 @@ export default function SecurityHardeningDashboard({
             <TabsContent value="vault">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-slate-900 text-base">Credential Vault Durumu</CardTitle>
+                  <CardTitle className="text-slate-900 text-base">Gizli Bilgi Kasası Durumu</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {loading && !vault ? <PanelSkeleton /> : errors.vault ? <ErrorBlock message={errors.vault} onRetry={handleRefresh} /> : <>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                         <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-center">
-                          <p className="text-xs text-slate-500">Toplam Credential</p>
+                          <p className="text-xs text-slate-500">Toplam Gizli Bilgi</p>
                           <p className="text-2xl font-bold text-slate-900">
                             {vault?.total_credentials ?? 0}
                           </p>
@@ -292,7 +356,7 @@ export default function SecurityHardeningDashboard({
                       </div>
                       {(vault?.needs_rotation || []).length > 0 ? <div className="space-y-2">
                           <p className="text-sm font-medium text-amber-800 mb-2">
-                            Rotasyon gereken credentialler:
+                            Yenilenmesi gereken gizli bilgiler:
                           </p>
                           {vault.needs_rotation.map((c, i) => <div key={c.id || i} className="flex items-center justify-between p-2 rounded bg-amber-50 border border-amber-200">
                               <span className="text-sm text-amber-900">
@@ -302,7 +366,7 @@ export default function SecurityHardeningDashboard({
                                 {c.days_overdue ?? 0} gün geçmiş
                               </StatusBadge>
                             </div>)}
-                        </div> : <p className="text-sm text-emerald-700">Tüm credentialler güncel.</p>}
+                        </div> : <p className="text-sm text-emerald-700">Tüm gizli bilgiler güncel.</p>}
                     </>}
                 </CardContent>
               </Card>
@@ -311,7 +375,7 @@ export default function SecurityHardeningDashboard({
             <TabsContent value="audit">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-slate-900 text-base">Audit Tamlığı (24 Saat)</CardTitle>
+                  <CardTitle className="text-slate-900 text-base">Beklenen Olay Türü Kapsamı (24 Saat)</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {loading && !audit ? <PanelSkeleton /> : errors.audit ? <ErrorBlock message={errors.audit} onRetry={handleRefresh} /> : (audit?.categories || []).length === 0 ? <EmptyState message="Bu pencerede audit kategorisi yok." /> : <div className="space-y-3">
@@ -320,17 +384,17 @@ export default function SecurityHardeningDashboard({
                     const coverage = typeof cat?.coverage === "number" ? cat.coverage : 0;
                     return <div key={cat.id || i} data-testid={`audit-cat-${i}`} className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                             <div className="flex items-center justify-between mb-2">
-                              <p className="text-sm font-medium text-slate-900 capitalize">
-                                {cat?.category || "—"}
+                              <p className="text-sm font-medium text-slate-900">
+                                {AUDIT_CATEGORY_LABELS[cat?.category] || cat?.category || "—"}
                               </p>
                               <ScoreBadge score={coverage} label={`${(coverage * 100).toFixed(0)}%`} />
                             </div>
                             {missing.length > 0 ? <div className="flex flex-wrap gap-1">
                                 {missing.map(a => <StatusBadge key={a} intent="danger">
-                                    {a}
+                                    {AUDIT_ACTION_LABELS[a] || a.replace(/_/g, " ")}
                                   </StatusBadge>)}
                               </div> : <p className="text-xs text-emerald-700">
-                                Tüm aksiyonlar audit edilmiş.
+                                Beklenen tüm işlem türleri kaydedilmiş.
                               </p>}
                           </div>;
                   })}

@@ -23,6 +23,11 @@ AUDITABLE_OPERATIONS = {
 }
 
 
+def _audit_entry_category(entry: dict[str, Any]) -> str:
+    """Yeni `resource_type` ve eski `entity_type` audit şemalarını birlikte destekle."""
+    return str(entry.get("resource_type") or entry.get("entity_type") or "unknown")
+
+
 class AuditCompletenessService:
     """Checks and enforces audit trail completeness."""
 
@@ -33,13 +38,13 @@ class AuditCompletenessService:
         # Get all audit entries for the period
         audit_entries = await db.audit_logs.find(
             {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}},
-            {"_id": 0, "action": 1, "entity_type": 1, "timestamp": 1},
+            {"_id": 0, "action": 1, "entity_type": 1, "resource_type": 1, "timestamp": 1},
         ).to_list(10000)
 
         # Group by entity type
         covered_actions: dict[str, set] = {}
         for entry in audit_entries:
-            etype = entry.get("entity_type", "unknown")
+            etype = _audit_entry_category(entry)
             action = entry.get("action", "unknown")
             covered_actions.setdefault(etype, set()).add(action)
 
@@ -71,6 +76,7 @@ class AuditCompletenessService:
             "period_hours": hours,
             "total_audit_entries": len(audit_entries),
             "completeness_score": score,
+            "metric_definition": "observed_expected_action_types",
             "status": "complete" if score >= 0.9 else "attention_needed" if score >= 0.7 else "incomplete",
             "categories": results,
             "checked_at": datetime.now(UTC).isoformat(),
