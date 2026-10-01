@@ -53,7 +53,13 @@ jobs:
             # Replace only services whose image/config changed, then wait for
             # every Compose healthcheck. Nginx remains online throughout the
             # image build instead of exposing a multi-minute hard outage.
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans --wait --wait-timeout 180
+            if ! docker compose -f docker-compose.prod.yml up -d --remove-orphans --wait --wait-timeout 180; then
+              echo "::error::Production services did not become healthy within the deployment window"
+              docker compose -f docker-compose.prod.yml ps || true
+              echo "--- backend startup diagnostics (last 250 lines) ---"
+              docker compose -f docker-compose.prod.yml logs --no-color --tail=250 backend || true
+              exit 1
+            fi
 
             # Verify both local service topology and the public route before
             # considering the deployment successful.

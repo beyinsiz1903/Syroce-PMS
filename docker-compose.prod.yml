@@ -1,7 +1,5 @@
 # ── Production Docker Compose ──────────────────────────────────────
 # Optimized for production deployment
-version: "3.9"
-
 x-backend-env: &backend-env
   MONGO_URL: ${MONGO_URL}
   DB_NAME: ${DB_NAME}
@@ -11,7 +9,7 @@ x-backend-env: &backend-env
   MESSAGING_MODE: ${MESSAGING_MODE:-sandbox}
   SECRETS_PROVIDER: ${SECRETS_PROVIDER:-env}
   SENTRY_DSN: ${SENTRY_DSN}
-  OTEL_EXPORTER_ENDPOINT: ${OTEL_EXPORTER_ENDPOINT}
+  OTEL_EXPORTER_ENDPOINT: ${OTEL_EXPORTER_ENDPOINT:-}
   BACKUP_ENABLED: "true"
   BACKUP_CRON: "0 2 * * *"
   JWT_SECRET: ${JWT_SECRET}
@@ -72,8 +70,11 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8001/api/health/liveness"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 20s
+      # The full PMS router graph takes about 45-55 seconds to import on the
+      # 4 GiB production Droplet. Do not spend healthcheck retries while the
+      # application is still in its normal cold-start window.
+      retries: 4
+      start_period: 60s
     logging: *default-logging
 
   # ── Frontend (scalable) ──
