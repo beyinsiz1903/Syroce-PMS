@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from routers import marketplace_b2b
 from routers.marketplace_b2b import (
+    MarketplaceAgencyCreate,
     MarketplacePortalSettingsUpdate,
     MarketplaceReservationCreate,
     _last_occupied_date,
@@ -86,6 +87,33 @@ class _SettingsCollection:
 
     async def insert_one(self, document):
         self.inserted.append(document)
+        self.rows.append(document)
+
+
+class _RevokeCollection(_SettingsCollection):
+    async def update_many(self, query, update):
+        modified = 0
+        for row in self.rows:
+            if row.get("agency_id") == query.get("agency_id") and row.get("is_active") == query.get("is_active"):
+                row.update(update.get("$set", {}))
+                modified += 1
+        return SimpleNamespace(modified_count=modified)
+
+
+class _AdminCursor(_Cursor):
+    def sort(self, *_args, **_kwargs):
+        return self
+
+
+class _AdminCollection:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def find(self, *_args, **_kwargs):
+        return _AdminCursor(self.rows)
+
+    def aggregate(self, *_args, **_kwargs):
+        return _AdminCursor(self.rows)
 
 
 def test_marketplace_listing_management_rejects_guest_and_staff_roles():
@@ -144,6 +172,95 @@ def test_marketplace_booking_payload_rejects_invalid_capacity_and_identity():
             adults=0,
             children=99,
         )
+
+
+@pytest.mark.asyncio
+async def test_admin_create_agency_does_not_issue_unrequested_api_secret(monkeypatch):
+    agencies = _SettingsCollection()
+    keys = _SettingsCollection()
+    monkeypatch.setattr(
+        marketplace_b2b,
+        "get_system_db",
+        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys),
+    )
+
+    result = await marketplace_b2b.admin_create_agency(
+        MarketplaceAgencyCreate(name="Portal Travel", contact_email="portal@example.com", issue_api_key=False),
+        True,
+    )
+
+    assert result["api_key"] is None
+    assert keys.inserted == []
+    assert agencies.inserted[0]["name"] == "Portal Travel"
+
+
+@pytest.mark.asyncio
+async def test_admin_create_agency_api_secret_is_recoverable_once_and_stored_as_hash(monkeypatch):
+    agencies = _SettingsCollection()
+    keys = _SettingsCollection()
+    monkeypatch.setattr(
+        marketplace_b2b,
+        "get_system_db",
+        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys),
+    )
+
+    result = await marketplace_b2b.admin_create_agency(
+        MarketplaceAgencyCreate(
+            name="API Travel",
+            contact_email="api@example.com",
+            issue_api_key=True,
+            api_key_label="Rezervasyon sunucusu",
+        ),
+        True,
+    )
+
+    assert result["api_key"].startswith("syroce_mkt_")
+    assert keys.inserted[0]["label"] == "Rezervasyon sunucusu"
+    assert keys.inserted[0]["key_hash"] == marketplace_b2b._hash_key(result["api_key"])
+    assert result["api_key"] not in str(keys.inserted[0])
+
+
+@pytest.mark.asyncio
+async def test_admin_revoke_api_access_does_not_disable_agency(monkeypatch):
+    agencies = _SettingsCollection([{"id": "agency-1", "status": "active"}])
+    keys = _RevokeCollection([{"id": "key-1", "agency_id": "agency-1", "is_active": True}])
+    monkeypatch.setattr(
+        marketplace_b2b,
+        "get_system_db",
+        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys),
+    )
+
+    result = await marketplace_b2b.admin_revoke_api_keys("agency-1", True)
+
+    assert result["revoked_count"] == 1
+    assert keys.rows[0]["is_active"] is False
+    assert agencies.rows[0]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_admin_agency_list_separates_portal_and_api_access_evidence(monkeypatch):
+    fake_db = SimpleNamespace(
+        marketplace_agencies=_AdminCollection([{"id": "agency-1", "name": "Test Travel"}]),
+        agency_contracts=_AdminCollection([{"_id": "agency-1", "connected_hotels": ["hotel-1"]}]),
+        marketplace_bookings=_AdminCollection([{"_id": "agency-1", "booking_count": 2, "gross_volume": 1000, "platform_revenue": 10}]),
+        marketplace_api_keys=_AdminCollection([{
+            "id": "key-1", "agency_id": "agency-1", "is_active": True,
+            "key_prefix": "syroce_mkt_example...", "usage_count": 7,
+            "last_used_at": "2026-10-01T10:00:00+00:00", "last_used_ip": "10.0.0.5",
+        }]),
+        users=_AdminCollection([
+            {"id": "user-1", "agency_id": "agency-1", "last_login": "2026-10-01T09:00:00+00:00"},
+        ]),
+    )
+    monkeypatch.setattr(marketplace_b2b, "get_system_db", lambda: fake_db)
+
+    result = await marketplace_b2b.admin_list_agencies(True)
+    agency = result["agencies"][0]
+
+    assert agency["api_access"]["active"] is True
+    assert agency["api_access"]["usage_count"] == 7
+    assert agency["api_access"]["last_used_ip"] == "10.0.0.5"
+    assert agency["portal_access"] == {"count": 1, "last_login": "2026-10-01T09:00:00+00:00"}
 
 
 @pytest.mark.asyncio
