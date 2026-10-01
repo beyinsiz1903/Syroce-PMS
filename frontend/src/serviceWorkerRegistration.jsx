@@ -127,7 +127,7 @@ function showUpdateNotification() {
       align-items: center;
       gap: 12px;
     ">
-      <span>New version available!</span>
+      <span>Yeni sürüm hazır.</span>
       <button 
         onclick="window.location.reload()"
         style="
@@ -140,9 +140,10 @@ function showUpdateNotification() {
           font-weight: 600;
         "
       >
-        Refresh
+        Yenile
       </button>
-      <button 
+      <button
+        aria-label="Bildirimi kapat"
         onclick="this.parentElement.remove()"
         style="
           background: transparent;

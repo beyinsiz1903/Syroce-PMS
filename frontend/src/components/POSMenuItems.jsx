@@ -18,7 +18,7 @@ import {
   AlertDialogTrigger,
 } from './ui/alert-dialog';
 import { UtensilsCrossed, RefreshCw, Search, Plus, Pencil, Trash2, Loader2, TrendingUp, Tag } from 'lucide-react';
-import { cachedTenantCurrency, currencySymbol, formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 /* ── constants ── */
 const DEFAULT_CATEGORIES = ['food', 'appetizer', 'dessert', 'beverage', 'alcohol'];
@@ -304,6 +304,11 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
 
       {/* Search + category filter */}
       <div className="space-y-3">
+        {!outletId && allowEdit && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
+            Tüm satış noktalarındaki ürünleri görüntülüyorsunuz. Yeni ürün eklemek için üst bölümden bir satış noktası seçin.
+          </div>
+        )}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
@@ -449,8 +454,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                   <div className="flex items-end justify-between pt-3 border-t border-gray-100">
                     <div>
                       <p className="text-xl font-extrabold text-gray-900">
-                        {price.toFixed(2)}
-                        <span className="text-sm font-normal text-gray-400 ml-1">{currencySymbol(currency)}</span>
+                        {formatCurrency(price, currency, { decimals: 2 })}
                       </p>
                       {cost > 0 && (
                         <p className="text-xs text-gray-400 mt-0.5">

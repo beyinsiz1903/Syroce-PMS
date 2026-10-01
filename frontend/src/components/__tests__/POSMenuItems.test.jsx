@@ -57,4 +57,12 @@ describe('POSMenuItems', () => {
       expect.objectContaining({ outlet_id: 'outlet-1', available: false }),
     );
   });
+
+  it('explains aggregate scope and formats menu prices in tenant currency', async () => {
+    render(<POSMenuItems outletId={null} />);
+
+    expect(await screen.findByText(/Tüm satış noktalarındaki ürünleri görüntülüyorsunuz/)).toBeInTheDocument();
+    expect(screen.getByText(/₺120,00|120,00\s*₺/)).toBeInTheDocument();
+    expect(screen.getByTestId('button-new-menu-item')).toBeDisabled();
+  });
 });
