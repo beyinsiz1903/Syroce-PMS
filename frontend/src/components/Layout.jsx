@@ -37,17 +37,14 @@ import ThemeToggle from '@/components/ThemeToggle';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
 import PMSDateBadge from '@/components/PMSDateBadge';
 import WakeUpAlarmMonitor from '@/components/WakeUpAlarmMonitor';
-import { NAV_ITEMS, NAV_GROUPS, NAV_GROUP_SECTIONS } from '@/config/navItems';
+import { NAV_GROUPS, NAV_GROUP_SECTIONS } from '@/config/navItems';
 import { UpgradeBanner } from '@/components/UpgradeBanner';
 import SimulationOverlay from '@/components/academy/SimulationOverlay';
 import {
-  hasAnyModuleAccess,
-  canAccessNavItem,
   canAccessPmsTab,
-  moduleScopesForNavItem,
-  supplementalModuleNavItems,
 } from '@/utils/moduleAccess';
 import { persistExitedTenantContext } from '@/lib/adminTenantContext';
+import { accessibleNavigationItems, navigationItemsByGroup } from '@/lib/navigationCatalog';
 
 const ICON_BY_KEY = {
   dashboard: Home,
@@ -155,6 +152,16 @@ export const primaryNavigationGroupIds = (user, isSuperAdmin = false) => {
   return ['frontdesk', 'guest', 'operations'];
 };
 
+export const orderedNavigationGroups = (groups, user, isSuperAdmin = false) => {
+  const preferred = primaryNavigationGroupIds(user, isSuperAdmin);
+  const priority = new Map(preferred.map((id, index) => [id, index]));
+  return [...groups].sort((left, right) => {
+    const leftRank = priority.has(left.id) ? priority.get(left.id) : preferred.length + NAV_GROUPS.findIndex(({ id }) => id === left.id);
+    const rightRank = priority.has(right.id) ? priority.get(right.id) : preferred.length + NAV_GROUPS.findIndex(({ id }) => id === right.id);
+    return leftRank - rightRank;
+  });
+};
+
 const TIER_CONFIG = {
   basic: { label: 'Basic', icon: Building2, cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   professional: { label: 'Pro', icon: Zap, cls: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -202,7 +209,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     }
   }, [location.pathname, location.hash]);
   const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
-  const hiddenNavItems = useMemo(() => new Set(tenant?.hidden_nav_items || []), [tenant]);
 
   const currentTier = useMemo(() => {
     const tier = tenant?.subscription_tier || 'basic';
@@ -228,76 +234,32 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   const normalizeKey = (key) => key ? key.replace(/-/g, '_') : '';
   const normalizedCurrentModule = normalizeKey(currentModule);
 
-  const navCandidates = useMemo(
-    () => [...NAV_ITEMS, ...supplementalModuleNavItems(user)],
-    [user],
-  );
-
-  const { visibleNav } = useMemo(() => {
-    const visible = [];
-    const userRoles = new Set([
-      user?.role,
-      ...(Array.isArray(user?.roles) ? user.roles : []),
-    ].filter(Boolean).map((role) => String(role).toLowerCase()));
-
-    navCandidates.forEach((item) => {
-      if (!canAccessNavItem(user, item)) return;
-      if (!isSuperAdmin && hiddenNavItems.has(item.key)) return;
-      if (!isSuperAdmin && item.navGroup && hiddenNavGroups.has(item.navGroup)) return;
-      if (item.requireSuperAdmin) {
-        if (isSuperAdmin) visible.push(item);
-        return;
-      }
-      if (item.requireChain && !tenant?.chain_id) {
-        return;
-      }
-      if (
-        Array.isArray(item.allowedRoles)
-        && !isSuperAdmin
-        && !item.allowedRoles.some((role) => userRoles.has(String(role).toLowerCase()))
-      ) {
-        return;
-      }
-      if (item.moduleKey && !hasModule(item.moduleKey)) {
-        return;
-      }
-      const moduleScopes = moduleScopesForNavItem(item);
-      if (moduleScopes.length > 0 && !hasAnyModuleAccess(user, moduleScopes)) {
-        return;
-      }
-      visible.push(item);
-    });
-
-    return { visibleNav: visible };
-  }, [hasModule, isSuperAdmin, hiddenNavGroups, hiddenNavItems, navCandidates, user, tenant]);
+  const visibleNav = useMemo(() => accessibleNavigationItems({
+    user,
+    tenant,
+    isSuperAdmin,
+    hasModule,
+  }), [hasModule, isSuperAdmin, tenant, user]);
 
   const { standaloneItems, groupedItems } = useMemo(() => {
     const standalone = [];
-    const grouped = {};
+    const grouped = navigationItemsByGroup(visibleNav);
 
     visibleNav.forEach((item) => {
       if (!item.navGroup) {
         standalone.push(item);
-      } else {
-        if (!grouped[item.navGroup]) grouped[item.navGroup] = [];
-        grouped[item.navGroup].push(item);
       }
     });
 
     return { standaloneItems: standalone, groupedItems: grouped };
   }, [visibleNav]);
 
-  const { primaryGroups, applicationGroups } = useMemo(() => {
+  const navigationGroups = useMemo(() => {
     const availableGroups = NAV_GROUPS.filter((group) => (
       (!hiddenNavGroups.has(group.id) || isSuperAdmin)
       && (groupedItems[group.id]?.length || 0) > 0
     ));
-    const preferred = primaryNavigationGroupIds(user, isSuperAdmin);
-    const primaryIds = new Set(preferred.filter((id) => availableGroups.some((group) => group.id === id)).slice(0, 4));
-    return {
-      primaryGroups: availableGroups.filter((group) => primaryIds.has(group.id)),
-      applicationGroups: availableGroups.filter((group) => !primaryIds.has(group.id)),
-    };
+    return orderedNavigationGroups(availableGroups, user, isSuperAdmin);
   }, [groupedItems, hiddenNavGroups, isSuperAdmin, user]);
 
   const roleWorkspace = useMemo(() => {
@@ -381,6 +343,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                   data-testid={`nav-group-${groupDef.id}-button`}
+                  aria-label={`${label} menüsünü aç`}
+                  title={label}
                 >
                   <GroupIcon className="w-3.5 h-3.5 shrink-0" />
                   <span className="hidden lg:inline font-medium">{label}</span>
@@ -429,70 +393,34 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     );
   };
 
-  const renderApplicationsDropdown = () => {
-    if (applicationGroups.length === 0) return null;
-    const active = applicationGroups.some((group) => isGroupActive(group.id));
+  const renderApplicationsButton = () => {
+    const active = location.pathname === '/app/applications';
     return (
-      <DropdownMenu key="applications">
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md transition-all duration-150 h-8 ${
-              active
-                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-            data-testid="nav-applications-button"
-            aria-label="Uygulamalar"
-          >
-            <Grid3X3 className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden lg:inline font-medium">Uygulamalar</span>
-            <ChevronDown className={`w-2.5 h-2.5 shrink-0 ${active ? 'text-white/70' : 'text-gray-400'}`} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[min(680px,calc(100vw-2rem))] max-h-[75vh] overflow-y-auto p-3">
-          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-950">
-            <DropdownMenuLabel className="px-1 text-xs font-semibold text-slate-500">Tüm çalışma alanları</DropdownMenuLabel>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleNavigate('/app/applications')} data-testid="open-application-center">
-              Uygulama merkezini aç
+      <TooltipProvider key="applications" delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleNavigate('/app/applications')}
+              onMouseEnter={() => preloadRoute('/app/applications')}
+              onFocus={() => preloadRoute('/app/applications')}
+              className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md transition-all duration-150 h-8 ${
+                active
+                  ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+              data-testid="nav-applications-button"
+              aria-label="Tüm uygulamalar"
+              title="Tüm uygulamalar"
+            >
+              <Grid3X3 className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden lg:inline font-medium">Tüm Uygulamalar</span>
             </Button>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {applicationGroups.map((group) => {
-              const GroupIcon = GROUP_ICONS[group.id] || Home;
-              const items = groupedItems[group.id] || [];
-              return (
-                <section key={group.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-2 dark:border-slate-700 dark:bg-slate-900/70" aria-label={group.label}>
-                  <div className="mb-1.5 flex items-center gap-2 px-1 text-xs font-bold text-slate-700">
-                    <GroupIcon className="h-3.5 w-3.5 text-blue-600" />
-                    {t(`navGroups.${group.id}`, group.label)}
-                  </div>
-                  <div className="space-y-0.5">
-                    {items.map((item) => {
-                      const Icon = ICON_BY_KEY[item.key] || Home;
-                      const itemActive = isItemPathActive(item);
-                      return (
-                        <DropdownMenuItem
-                          key={item.key}
-                          onClick={() => handleNavigate(item.path)}
-                          onMouseEnter={() => preloadRoute(item.path)}
-                          onFocus={() => preloadRoute(item.path)}
-                          className={`cursor-pointer gap-2 rounded-lg ${itemActive ? 'bg-blue-50 font-semibold text-blue-700' : ''}`}
-                          data-testid={`nav-${item.key}-button`}
-                        >
-                          <Icon className={`h-3.5 w-3.5 ${itemActive ? 'text-blue-600' : 'text-slate-400'}`} />
-                          <span className="truncate text-xs">{t(`navKeys.${item.key}`, item.label)}</span>
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="lg:hidden"><p>Tüm uygulamalar</p></TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   };
 
@@ -537,6 +465,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           }`}
                           data-nav-key={item.key}
                           data-testid={`nav-${item.key}-button`}
+                          aria-label={label}
+                          title={label}
                         >
                           <Icon className="w-3.5 h-3.5 shrink-0" />
                           <span className="hidden lg:inline font-medium">{label}</span>
@@ -570,6 +500,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           }`}
                           data-nav-key="rooms-shortcut"
                           data-testid="nav-rooms-shortcut-button"
+                          aria-label="Odalar"
+                          title="Odalar"
                         >
                           <BedDouble className="w-3.5 h-3.5 shrink-0" />
                           <span className="hidden lg:inline font-medium">Odalar</span>
@@ -582,11 +514,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   </TooltipProvider>
                 );
               })()}
-              {primaryGroups.map((groupDef) => renderGroupDropdown(groupDef))}
-              {renderApplicationsDropdown()}
+              {navigationGroups.map((groupDef) => renderGroupDropdown(groupDef))}
             </nav>
 
             <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              {renderApplicationsButton()}
               {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
@@ -605,6 +537,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           }`}
                           data-nav-key={item.key}
                           data-testid={`nav-${item.key}-button`}
+                          aria-label={t(`navKeys.${item.key}`, item.label)}
+                          title={t(`navKeys.${item.key}`, item.label)}
                         >
                           <Icon className="w-3.5 h-3.5 shrink-0" />
                         </Button>
