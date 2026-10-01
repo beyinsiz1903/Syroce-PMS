@@ -40,7 +40,7 @@ export default function SettingsB2bTab({ b2bInfo, copyToClipboard, b2bCodeOnce, 
                       <Label>Otel ID</Label>
                       <div className="flex items-center gap-2">
                         <Input value={b2bInfo?.hotel_id ?? ''} readOnly className="bg-slate-50 font-mono" />
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(String(b2bInfo?.hotel_id ?? ''), 'Otel ID')} disabled={!b2bInfo?.hotel_id}>
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(String(b2bInfo?.hotel_id ?? ''), 'Otel ID')} disabled={!b2bInfo?.hotel_id} aria-label="Otel kimliğini kopyala">
                           <Copy className="w-4 h-4" />
                         </Button>
                       </div>
@@ -49,7 +49,7 @@ export default function SettingsB2bTab({ b2bInfo, copyToClipboard, b2bCodeOnce, 
                       <Label>Tenant ID</Label>
                       <div className="flex items-center gap-2">
                         <Input value={b2bInfo?.tenant_id ?? ''} readOnly className="bg-slate-50 font-mono text-xs" />
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(String(b2bInfo?.tenant_id ?? ''), 'Tenant ID')} disabled={!b2bInfo?.tenant_id}>
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(String(b2bInfo?.tenant_id ?? ''), 'Tenant ID')} disabled={!b2bInfo?.tenant_id} aria-label="Tesis kimliğini kopyala">
                           <Copy className="w-4 h-4" />
                         </Button>
                       </div>
@@ -64,7 +64,7 @@ export default function SettingsB2bTab({ b2bInfo, copyToClipboard, b2bCodeOnce, 
                         </div>
                         <div className="flex items-center gap-2">
                           <Input value={b2bCodeOnce} readOnly className="bg-white font-mono text-xs" data-testid="b2b-connect-code-once" />
-                          <Button variant="outline" size="sm" onClick={() => copyToClipboard(b2bCodeOnce, 'Bağlantı Kodu')}>
+                          <Button variant="outline" size="sm" onClick={() => copyToClipboard(b2bCodeOnce, 'Bağlantı Kodu')} aria-label="Bağlantı kodunu kopyala">
                             <Copy className="w-4 h-4" />
                           </Button>
                         </div>

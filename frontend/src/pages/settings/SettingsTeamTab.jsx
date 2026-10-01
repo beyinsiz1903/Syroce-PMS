@@ -101,7 +101,7 @@ export default function SettingsTeamTab({ Users, team, UserCheck, teamMeta, Shie
                                   {allowedForSelect.map(r => <SelectItem key={r} value={r} className="text-[13px] font-medium focus:bg-slate-50">{getRoleLabel(r).label}</SelectItem>)}
                                 </SelectContent>
                               </Select>}
-                            {!isMe && member.role !== 'super_admin' && <Button variant="ghost" size="icon" className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 h-9 w-9 rounded-lg transition-colors" onClick={() => handleRemoveMember(member.id, member.name)}>
+                            {!isMe && member.role !== 'super_admin' && <Button variant="ghost" size="icon" className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 h-9 w-9 rounded-lg transition-colors" onClick={() => handleRemoveMember(member.id, member.name)} aria-label={`${member.name} kullanıcısını sil`}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>}
                           </div>

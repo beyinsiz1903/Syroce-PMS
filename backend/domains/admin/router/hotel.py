@@ -271,6 +271,15 @@ async def update_hotel_info(
     if payload.description is not None:
         update_data["description"] = payload.description
     if payload.total_rooms is not None:
+        active_room_count = await db.rooms.count_documents({
+            "tenant_id": current_user.tenant_id,
+            "is_active": True,
+        })
+        if payload.total_rooms < active_room_count:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tanımlı oda kapasitesi mevcut {active_room_count} aktif odadan düşük olamaz.",
+            )
         # Check plan limit
         tier = (tenant.get("subscription_tier", "basic")).lower()
         if tier == "pro":

@@ -35,6 +35,15 @@ class _TenantCollection:
         return SimpleNamespace(matched_count=1, modified_count=1)
 
 
+class _RoomCollection:
+    def __init__(self, active_count: int):
+        self.active_count = active_count
+
+    async def count_documents(self, query):
+        assert query["is_active"] is True
+        return self.active_count
+
+
 @pytest.mark.asyncio
 async def test_hotel_admin_can_update_legal_fields_and_aliases(monkeypatch):
     tenants = _TenantCollection({"id": "tenant-1", "subscription_tier": "enterprise"})
@@ -76,6 +85,25 @@ async def test_legal_update_rejects_invalid_tax_number(monkeypatch):
 
     assert exc.value.status_code == 422
     assert "VKN" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_room_capacity_cannot_be_lower_than_active_inventory(monkeypatch):
+    tenants = _TenantCollection({"id": "tenant-1", "subscription_tier": "enterprise"})
+    monkeypatch.setattr(
+        hotel_router,
+        "db",
+        SimpleNamespace(tenants=tenants, rooms=_RoomCollection(active_count=31)),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await hotel_router.update_hotel_info(
+            UpdateHotelInfoRequest(total_rooms=30),
+            SimpleNamespace(tenant_id="tenant-1", role=UserRole.ADMIN),
+        )
+
+    assert exc.value.status_code == 400
+    assert "31 aktif odadan düşük olamaz" in exc.value.detail
 
 
 def test_regulatory_profile_accepts_current_tenant_field_names():
