@@ -34,11 +34,14 @@ async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
       ödenmemiş folyoların kapatılmasına yol açıyordu.
     """
     ch_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        # Older ledger rows may not have a `voided` field. They are valid
+        # unless explicitly voided; matching only `False` silently drops
+        # those legitimate charges from AR and checkout balances.
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$total", "$amount"]}}}},
     ]
     pay_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
     ]
     ch_doc = await db.folio_charges.aggregate(ch_pipe).to_list(1)
