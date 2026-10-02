@@ -31,7 +31,6 @@ from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api/golf", tags=["golf"])
 
@@ -125,7 +124,7 @@ async def _seed_default_course(tenant_id: str) -> list[dict]:
 async def create_course(
     body: CourseIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -146,7 +145,7 @@ async def update_course(
     course_id: str,
     body: CourseIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -164,7 +163,7 @@ async def update_course(
 async def delete_course(
     course_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -205,7 +204,7 @@ async def list_players(
 async def create_player(
     body: PlayerIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -225,7 +224,7 @@ async def update_player(
     player_id: str,
     body: PlayerIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -420,7 +419,7 @@ async def _player_double_booked(
 async def create_booking(
     body: TeeBookingIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_spa_ops(current_user)
     await _ensure_indexes()
@@ -537,7 +536,7 @@ async def change_booking_status(
     booking_id: str,
     body: GolfStatusUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_spa_ops(current_user)
     if body.status == "completed":
@@ -585,7 +584,7 @@ async def change_booking_status(
 async def delete_booking(
     booking_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()
@@ -711,7 +710,7 @@ async def post_booking_to_folio(
     booking_id: str,
     body: FolioPostIn = FolioPostIn(),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
 ) -> dict:
     require_finance(current_user)  # folio-impacting
     db = get_system_db()
