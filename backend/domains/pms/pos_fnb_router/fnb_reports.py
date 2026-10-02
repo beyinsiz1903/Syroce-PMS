@@ -476,7 +476,14 @@ async def get_fnb_dashboard(date: str | None = None, credentials: HTTPAuthorizat
 
     # Get F&B charges
     charges = await db.folio_charges.find(
-        {"tenant_id": current_user.tenant_id, "voided": False, "charge_category": {"$in": ["food", "beverage"]}, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}
+        {
+            "tenant_id": current_user.tenant_id,
+            "voided": {"$ne": True},
+            "charge_category": {"$in": ["food", "beverage"]},
+            # Use a half-open range: a charge at tomorrow 00:00 belongs to
+            # tomorrow, not to both the current and previous dashboards.
+            "date": {"$gte": start.isoformat(), "$lt": end.isoformat()},
+        }
     ).to_list(10000)
 
     food_revenue = sum(c.get("total", 0) for c in charges if c.get("charge_category") == "food")
@@ -497,7 +504,12 @@ async def get_fnb_dashboard(date: str | None = None, credentials: HTTPAuthorizat
     prev_end = start
 
     prev_charges = await db.folio_charges.find(
-        {"tenant_id": current_user.tenant_id, "voided": False, "charge_category": {"$in": ["food", "beverage"]}, "date": {"$gte": prev_start.isoformat(), "$lte": prev_end.isoformat()}}
+        {
+            "tenant_id": current_user.tenant_id,
+            "voided": {"$ne": True},
+            "charge_category": {"$in": ["food", "beverage"]},
+            "date": {"$gte": prev_start.isoformat(), "$lt": prev_end.isoformat()},
+        }
     ).to_list(10000)
 
     prev_revenue = sum(c.get("total", 0) for c in prev_charges)
