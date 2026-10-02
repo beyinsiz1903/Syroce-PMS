@@ -2,12 +2,32 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCityLedgerCandidateAccount,
+  getCityLedgerCreditStatus,
   getCityLedgerPaymentAllocations,
   validateCityLedgerPayment,
   validateCityLedgerPaymentAllocations,
 } from '@/pages/CityLedgerAccounts';
 
 describe('CityLedgerAccounts payment guards', () => {
+  it('does not calculate a negative available amount for an unlimited credit account', () => {
+    expect(getCityLedgerCreditStatus(0, 11440)).toEqual({
+      creditLimit: 0,
+      balance: 11440,
+      hasCreditLimit: false,
+      available: null,
+      utilization: null,
+    });
+  });
+
+  it('calculates the available amount only when a finite credit limit exists', () => {
+    expect(getCityLedgerCreditStatus(50000, 11440)).toMatchObject({
+      creditLimit: 50000,
+      balance: 11440,
+      hasCreditLimit: true,
+      available: 38560,
+    });
+  });
+
   it('prefills a city-ledger account from a pending company', () => {
     expect(buildCityLedgerCandidateAccount({
       source_company_id: 'company-1',
