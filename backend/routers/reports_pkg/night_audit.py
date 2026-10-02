@@ -54,6 +54,28 @@ logger = logging.getLogger(__name__)
 sub_router = APIRouter()
 
 
+def _night_audit_charge_query(
+    tenant_id: str,
+    booking_id: str,
+    folio_id: str,
+    audit_date: str,
+    charge_category: str,
+) -> dict:
+    """Build the idempotency key for a nightly folio posting.
+
+    Each booking/folio/category can have one active posting per PMS business
+    date.  A voided entry deliberately does not block a replacement posting.
+    """
+    return {
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+        "folio_id": folio_id,
+        "business_date": audit_date,
+        "charge_category": charge_category,
+        "voided": {"$ne": True},
+    }
+
+
 @sub_router.post("/night-audit/post-room-charges")
 async def post_room_charges(
     current_user: User = Depends(get_current_user),
@@ -403,6 +425,7 @@ async def automatic_posting(
     if na2_booking_ids:
         async for f in db.folios.find(
             {
+                "tenant_id": current_user.tenant_id,
                 "booking_id": {"$in": na2_booking_ids},
                 "folio_type": "guest",
             }
@@ -412,18 +435,6 @@ async def automatic_posting(
     for booking in bookings:
         try:
             if booking.get("is_complimentary"):
-                continue
-            existing_charge = await db.folio_charges.find_one(
-                {
-                    "tenant_id": current_user.tenant_id,
-                    "booking_id": booking["id"],
-                    "business_date": audit_date,
-                    "charge_category": "room",
-                    "voided": {"$ne": True},
-                },
-                {"_id": 0, "id": 1},
-            )
-            if existing_charge:
                 continue
             folio = na2_folios_map.get(booking["id"])
 
@@ -438,6 +449,15 @@ async def automatic_posting(
                     "created_at": datetime.now(UTC).isoformat(),
                 }
                 await db.folios.insert_one(folio)
+
+            existing_charge = await db.folio_charges.find_one(
+                _night_audit_charge_query(
+                    current_user.tenant_id, booking["id"], folio["id"], audit_date, "room"
+                ),
+                {"_id": 0, "id": 1},
+            )
+            if existing_charge:
+                continue
 
             # Reservation total is the confirmed guest-payable amount. Extract
             # taxes from that total; never add a second hard-coded tax posting.
@@ -704,13 +724,23 @@ async def post_room_rates(
     na3_ids = [b["id"] for b in bookings if b.get("id")]
     na3_folios_map: dict = {}
     if na3_ids:
-        async for f in db.folios.find({"booking_id": {"$in": na3_ids}, "folio_type": "guest"}):
+        async for f in db.folios.find(
+            {"tenant_id": current_user.tenant_id, "booking_id": {"$in": na3_ids}, "folio_type": "guest"}
+        ):
             na3_folios_map[f["booking_id"]] = f
 
     for booking in bookings:
         folio = na3_folios_map.get(booking["id"])
 
         if folio:
+            existing_charge = await db.folio_charges.find_one(
+                _night_audit_charge_query(
+                    current_user.tenant_id, booking["id"], folio["id"], audit_date, "room"
+                ),
+                {"_id": 0, "id": 1},
+            )
+            if existing_charge:
+                continue
             rate = booking.get("base_rate", 0)
             charge = {
                 "id": str(uuid.uuid4()),
@@ -724,6 +754,8 @@ async def post_room_rates(
                 "amount": rate,
                 "tax_amount": 0.0,
                 "total": rate,
+                "business_date": audit_date,
+                "night_audit_date": audit_date,
                 "date": datetime.now(UTC).isoformat(),
                 "posted_at": datetime.now(UTC).isoformat(),
                 "posted_by": "night_audit_system",
@@ -772,13 +804,23 @@ async def post_taxes(
     na4_ids = [b["id"] for b in bookings if b.get("id")]
     na4_folios_map: dict = {}
     if na4_ids:
-        async for f in db.folios.find({"booking_id": {"$in": na4_ids}, "folio_type": "guest"}):
+        async for f in db.folios.find(
+            {"tenant_id": current_user.tenant_id, "booking_id": {"$in": na4_ids}, "folio_type": "guest"}
+        ):
             na4_folios_map[f["booking_id"]] = f
 
     for booking in bookings:
         folio = na4_folios_map.get(booking["id"])
 
         if folio:
+            existing_charge = await db.folio_charges.find_one(
+                _night_audit_charge_query(
+                    current_user.tenant_id, booking["id"], folio["id"], audit_date, "tax"
+                ),
+                {"_id": 0, "id": 1},
+            )
+            if existing_charge:
+                continue
             rate = booking.get("base_rate", 0)
             tax_amount = rate * tax_rate
 
@@ -794,6 +836,8 @@ async def post_taxes(
                 "amount": tax_amount,
                 "tax_amount": 0.0,
                 "total": tax_amount,
+                "business_date": audit_date,
+                "night_audit_date": audit_date,
                 "date": datetime.now(UTC).isoformat(),
                 "posted_at": datetime.now(UTC).isoformat(),
                 "posted_by": "night_audit_system",
