@@ -298,11 +298,11 @@ async def _folio_balance_in_session(folio_id: str, tenant_id: str, session=None)
     kaynağıdır — $inc YOK, her zaman ledger'dan türetilir.
     """
     ch_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$total", "$amount"]}}}},
     ]
     pay_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
     ]
     ch_doc = await db.folio_charges.aggregate(ch_pipe, session=session).to_list(1)
