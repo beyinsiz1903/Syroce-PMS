@@ -16,6 +16,7 @@ from core.email import send_email
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.reporting_financials import effective_collection, effective_revenue_adjustment
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, booking_occupies_night, load_stay_night_metrics
 
@@ -241,14 +242,10 @@ async def get_flash_report(
         {"_id": 0},
     ).to_list(10000)
     collected = 0.0
+    rate_corrections = 0.0
     for payment in payments:
-        status = str(payment.get("status") or "paid").lower()
-        if payment.get("voided") or status in {"void", "voided", "failed", "cancelled", "rejected"}:
-            continue
-        amount = float(payment.get("amount") or 0)
-        if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
-            amount = -amount
-        collected += amount
+        collected += effective_collection(payment)
+        rate_corrections += effective_revenue_adjustment(payment)
 
     no_show_bookings = [
         booking for booking in day_bookings
@@ -316,6 +313,11 @@ async def get_flash_report(
     minibar_revenue = charges_by_cat.get("minibar", 0)
     laundry_revenue = charges_by_cat.get("laundry", 0)
 
+    # An audited rate correction is a non-cash accommodation revenue offset,
+    # never a collection. It is posted on the correction business day.
+    room_revenue -= rate_corrections
+    total_revenue -= rate_corrections
+
     grand_total = total_revenue if posted_charges else total_revenue + fnb_revenue
     other_revenue = max(0, grand_total - room_revenue - fnb_revenue - spa_revenue - minibar_revenue - laundry_revenue)
     # ADR and RevPAR are room-revenue metrics; ancillary revenue must not
@@ -343,6 +345,7 @@ async def get_flash_report(
             "minibar": round(minibar_revenue, 2),
             "laundry": round(laundry_revenue, 2),
             "other": round(other_revenue, 2),
+            "rate_corrections": round(rate_corrections, 2),
             "collected": round(collected, 2),
             "outstanding": round(grand_total - collected, 2),
             "room_revenue_breakdown": room_revenue_breakdown,
