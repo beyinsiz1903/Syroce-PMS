@@ -4095,6 +4095,25 @@ async def reconcile_posted_stay_total(
     stay_dates = [(check_in + timedelta(days=offset)).isoformat() for offset in range((check_out - check_in).days)]
     folios = [row async for row in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1})]
     financial_scope = _booking_or_folio_scope_query(tid, booking_id, [row.get("id") for row in folios])
+    existing_rate_correction = await db.payments.find_one(
+        {
+            "$and": [
+                financial_scope,
+                {"voided": {"$ne": True}},
+                {"method": "discount"},
+                {"payment_type": "rate_correction"},
+            ]
+        },
+        {"_id": 0, "id": 1},
+    )
+    if existing_rate_correction:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Bu rezervasyonda onaylı bir fiyat düzeltmesi var. Eşitleme "
+                "işlemi bu düzeltmeyi geri alabileceği için uygulanamaz."
+            ),
+        )
     room_charges = [
         row async for row in db.folio_charges.find(
             {
