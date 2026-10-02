@@ -3,10 +3,13 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+import routers.hotel_network as hotel_network
 from routers.hotel_network import (
     NetworkContractCreate,
     NetworkRequestCreate,
+    _financial_transfer_block_message,
     _post_interhotel_ledger,
+    _source_booking_financial_activity,
     _tenant,
 )
 
@@ -17,6 +20,26 @@ class InsertManyCollection:
 
     async def insert_many(self, documents):
         self.documents.extend(documents)
+
+
+class Cursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def to_list(self, _limit):
+        return self.rows
+
+
+class FinancialCollection:
+    def __init__(self, record=None, rows=None):
+        self.record = record
+        self.rows = rows or []
+
+    def find(self, *_args, **_kwargs):
+        return Cursor(self.rows)
+
+    async def find_one(self, *_args, **_kwargs):
+        return self.record
 
 
 @pytest.mark.asyncio
@@ -59,3 +82,22 @@ def test_hotel_context_is_required():
     with pytest.raises(Exception) as error:
         _tenant(SimpleNamespace(tenant_id=None))
     assert error.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_source_booking_financial_activity_detects_posted_charge(monkeypatch):
+    monkeypatch.setattr(
+        hotel_network,
+        "db",
+        SimpleNamespace(
+            folios=FinancialCollection(rows=[{"id": "folio-1"}]),
+            payments=FinancialCollection(),
+            folio_charges=FinancialCollection({"id": "charge-1"}),
+            invoices=FinancialCollection(),
+        ),
+    )
+
+    activity = await _source_booking_financial_activity("hotel-a", "booking-a")
+
+    assert activity == ["tahakkuk"]
+    assert "tahakkuk bulundu" in _financial_transfer_block_message(activity)

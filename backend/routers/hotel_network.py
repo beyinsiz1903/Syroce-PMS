@@ -86,6 +86,47 @@ async def _notify(tenant_id: str, *, title: str, message: str, priority: str = "
         logger.warning("Hotel-network notification was not stored: %s", type(exc).__name__)
 
 
+async def _source_booking_financial_activity(tenant_id: str, booking_id: str) -> list[str]:
+    """Return posted financial activity that makes a simple network move unsafe.
+
+    A hotel-network request creates a fresh reservation in another property.
+    It must never quietly move a reservation that already has a payment, posted
+    charge, or invoice: those records require the explicit cross-property
+    transfer and settlement workflow instead.
+    """
+    with tenant_context(tenant_id):
+        folios = await db.folios.find(
+            {"tenant_id": tenant_id, "booking_id": booking_id}, {"_id": 0, "id": 1}
+        ).to_list(100)
+        folio_ids = [row["id"] for row in folios if row.get("id")]
+        scope = {"tenant_id": tenant_id, "$or": [{"booking_id": booking_id}]}
+        if folio_ids:
+            scope["$or"].append({"folio_id": {"$in": folio_ids}})
+
+        payments = await db.payments.find_one(
+            {"$and": [scope, {"voided": {"$ne": True}}, {"status": {"$nin": ["void", "voided", "failed", "cancelled", "rejected"]}}]},
+            {"_id": 0, "id": 1},
+        )
+        charges = await db.folio_charges.find_one(
+            {"$and": [scope, {"voided": {"$ne": True}}, {"status": {"$nin": ["void", "voided", "cancelled"]}}]},
+            {"_id": 0, "id": 1},
+        )
+        invoices = await db.invoices.find_one(
+            {"tenant_id": tenant_id, "booking_id": booking_id, "status": {"$nin": ["draft", "cancelled", "voided"]}},
+            {"_id": 0, "id": 1},
+        )
+
+    return [name for name, record in (("tahsilat", payments), ("tahakkuk", charges), ("fatura", invoices)) if record]
+
+
+def _financial_transfer_block_message(activity: list[str]) -> str:
+    return (
+        f"Kaynak rezervasyonda {', '.join(activity)} bulundu. "
+        "Finansal hareket içeren rezervasyonlar Otel Ağı üzerinden aktarılamaz; "
+        "önce tesisler arası transfer ve mahsuplaşma akışını kullanın."
+    )
+
+
 class NetworkContractCreate(BaseModel):
     partner_tenant_id: str = Field(..., min_length=1, max_length=128)
     valid_from: str
@@ -407,6 +448,12 @@ async def _accept_request(sysdb, request_doc: dict, actor_id: str) -> dict:
     listing_claimed = False
     target_booking = None
     try:
+        if claimed.get("source_booking_id"):
+            activity = await _source_booking_financial_activity(
+                claimed["source_tenant_id"], claimed["source_booking_id"]
+            )
+            if activity:
+                raise HTTPException(409, _financial_transfer_block_message(activity))
         listing = await sysdb.hotel_network_listings.find_one_and_update(
             {
                 "id": claimed["listing_id"], "status": "active",
@@ -422,10 +469,24 @@ async def _accept_request(sysdb, request_doc: dict, actor_id: str) -> dict:
         ledger = await _post_interhotel_ledger(sysdb, claimed, target_booking)
         if claimed.get("source_booking_id"):
             with tenant_context(claimed["source_tenant_id"]):
-                await db.bookings.update_one(
-                    {"tenant_id": claimed["source_tenant_id"], "id": claimed["source_booking_id"]},
-                    {"$set": {"property_transfer_status": "accepted", "transferred_to_tenant_id": claimed["target_tenant_id"], "transferred_to_booking_id": target_booking["id"], "hotel_network_request_id": claimed["id"], "updated_at": _now()}},
+                source_result = await db.bookings.update_one(
+                    {
+                        "tenant_id": claimed["source_tenant_id"], "id": claimed["source_booking_id"],
+                        "status": {"$in": ["confirmed", "guaranteed"]},
+                        "property_transfer_status": {"$ne": "accepted"},
+                    },
+                    {"$set": {
+                        "status": "cancelled", "cancelled_at": _now(),
+                        "cancellation_reason_code": "hotel_network_transfer",
+                        "cancellation_reason": "Otel Ağı üzerinden hedef tesise aktarıldı",
+                        "property_transfer_status": "accepted",
+                        "transferred_to_tenant_id": claimed["target_tenant_id"],
+                        "transferred_to_booking_id": target_booking["id"],
+                        "hotel_network_request_id": claimed["id"], "updated_at": _now(),
+                    }},
                 )
+            if source_result.modified_count != 1:
+                raise HTTPException(409, "Kaynak rezervasyon değişti; aktarım incelemeye alındı")
         await sysdb.hotel_network_requests.update_one(
             {"id": claimed["id"], "status": "processing"},
             {"$set": {"status": "accepted", "target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"], "accepted_by": actor_id, "accepted_at": _now(), "updated_at": _now()}},
@@ -486,6 +547,9 @@ async def create_request(data: NetworkRequestCreate, user: User = Depends(get_cu
             )
         if not source_booking:
             raise HTTPException(404, "Kaynak rezervasyon bulunamadı")
+        activity = await _source_booking_financial_activity(source, data.source_booking_id)
+        if activity:
+            raise HTTPException(409, _financial_transfer_block_message(activity))
     nights = (datetime.fromisoformat(data.check_out) - datetime.fromisoformat(data.check_in)).days
     commission_pct = float((contract or {}).get("commission_pct", 0))
     request_fields = data.model_dump(exclude={"listing_id"})
