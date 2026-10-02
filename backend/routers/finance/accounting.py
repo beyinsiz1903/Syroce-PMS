@@ -1467,6 +1467,21 @@ class AccountingInvoiceCreateRequest(BaseModel):
     currency: str | None = None
     exchange_rate: float | None = Field(default=None, gt=0)
 
+    @field_validator("invoice_type")
+    @classmethod
+    def _validate_invoice_type(cls, value: str) -> str:
+        # ``standard`` was used by older clients for a normal sales invoice.
+        # Normalize it at the API boundary so reports never have to guess what
+        # an arbitrary document type means.
+        normalized = str(value or "").strip().lower().replace("-", "_")
+        aliases = {"standard": InvoiceType.SALES.value, "einvoice": InvoiceType.E_INVOICE.value, "earchive": InvoiceType.E_ARCHIVE.value}
+        normalized = aliases.get(normalized, normalized)
+        try:
+            return InvoiceType(normalized).value
+        except ValueError as exc:
+            allowed = ", ".join(invoice_type.value for invoice_type in InvoiceType)
+            raise ValueError(f"invoice_type geçerli bir belge türü olmalıdır: {allowed}") from exc
+
     @field_validator("customer_tax_number")
     @classmethod
     def _validate_customer_tax_number(cls, v: str | None) -> str | None:
