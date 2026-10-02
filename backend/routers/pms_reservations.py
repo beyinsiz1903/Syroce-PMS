@@ -317,6 +317,20 @@ async def create_rate_override_with_panel(
         raise HTTPException(status_code=404, detail="Booking not found")
 
     original_rate = booking.get("total_amount", 0)
+    terminal_statuses = {"checked_out", "cancelled", "no_show", "archived"}
+    if str(booking.get("status") or "").lower() in terminal_statuses:
+        raise HTTPException(
+            status_code=409,
+            detail="Çıkışı tamamlanmış, iptal edilmiş veya no-show rezervasyonun fiyatı bu ekrandan değiştirilemez.",
+        )
+
+    try:
+        original_rate_number = float(original_rate)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=409, detail="Rezervasyonun mevcut fiyatı doğrulanamadı; fiyat değişikliği yapılamaz.")
+
+    if abs(original_rate_number - new_rate) < 0.005:
+        raise HTTPException(status_code=409, detail="Yeni fiyat mevcut fiyatla aynı; değişiklik uygulanmadı.")
 
     # Create override log — authorized_by is always the authenticated user
     override_log = {
