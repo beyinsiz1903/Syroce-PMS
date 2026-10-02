@@ -75,11 +75,11 @@ async def _recalc_folio_balance(db, tenant_id: str, folio_id: str) -> float:
     source of truth. NEVER ``$inc``.
     """
     ch_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$total", "$amount"]}}}},
     ]
     pay_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
     ]
     ch_doc = await db.folio_charges.aggregate(ch_pipe).to_list(1)

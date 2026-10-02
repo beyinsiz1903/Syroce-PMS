@@ -259,6 +259,21 @@ async def test_posted_balance_nets_payments(_patch):
     assert _patch.folios.docs[0]["balance"] == 70.0
 
 
+async def test_recalc_includes_legacy_ledger_rows_without_voided_flag(_patch):
+    _seed_open_folio(_patch)
+    _patch.folio_charges.docs.append(
+        {"id": "C1", "tenant_id": "tenant-A", "folio_id": "F1", "total": 100.0}
+    )
+    _patch.payments.docs.append(
+        {"id": "P1", "tenant_id": "tenant-A", "folio_id": "F1", "amount": 30.0}
+    )
+
+    balance = await cons._recalc_folio_balance(_patch, "tenant-A", "F1")
+
+    assert balance == 70.0
+    assert _patch.folios.docs[0]["balance"] == 70.0
+
+
 async def test_posted_redelivery_is_idempotent(_patch):
     _seed_open_folio(_patch)
     ev = _posted_event()
