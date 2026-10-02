@@ -178,10 +178,11 @@ def test_marketplace_booking_payload_rejects_invalid_capacity_and_identity():
 async def test_admin_create_agency_does_not_issue_unrequested_api_secret(monkeypatch):
     agencies = _SettingsCollection()
     keys = _SettingsCollection()
+    audits = _SettingsCollection()
     monkeypatch.setattr(
         marketplace_b2b,
         "get_system_db",
-        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys),
+        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys, marketplace_audit_logs=audits),
     )
 
     result = await marketplace_b2b.admin_create_agency(
@@ -192,16 +193,19 @@ async def test_admin_create_agency_does_not_issue_unrequested_api_secret(monkeyp
     assert result["api_key"] is None
     assert keys.inserted == []
     assert agencies.inserted[0]["name"] == "Portal Travel"
+    assert audits.inserted[0]["action"] == "agency_created"
+    assert audits.inserted[0]["details"] == {"api_access_requested": False}
 
 
 @pytest.mark.asyncio
 async def test_admin_create_agency_api_secret_is_recoverable_once_and_stored_as_hash(monkeypatch):
     agencies = _SettingsCollection()
     keys = _SettingsCollection()
+    audits = _SettingsCollection()
     monkeypatch.setattr(
         marketplace_b2b,
         "get_system_db",
-        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys),
+        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys, marketplace_audit_logs=audits),
     )
 
     result = await marketplace_b2b.admin_create_agency(
@@ -218,16 +222,22 @@ async def test_admin_create_agency_api_secret_is_recoverable_once_and_stored_as_
     assert keys.inserted[0]["label"] == "Rezervasyon sunucusu"
     assert keys.inserted[0]["key_hash"] == marketplace_b2b._hash_key(result["api_key"])
     assert result["api_key"] not in str(keys.inserted[0])
+    api_audit = audits.inserted[1]
+    assert api_audit["action"] == "api_key_created"
+    assert api_audit["details"]["key_prefix"] == keys.inserted[0]["key_prefix"]
+    assert result["api_key"] not in str(api_audit)
+    assert keys.inserted[0]["key_hash"] not in str(api_audit)
 
 
 @pytest.mark.asyncio
 async def test_admin_revoke_api_access_does_not_disable_agency(monkeypatch):
     agencies = _SettingsCollection([{"id": "agency-1", "status": "active"}])
     keys = _RevokeCollection([{"id": "key-1", "agency_id": "agency-1", "is_active": True}])
+    audits = _SettingsCollection()
     monkeypatch.setattr(
         marketplace_b2b,
         "get_system_db",
-        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys),
+        lambda: SimpleNamespace(marketplace_agencies=agencies, marketplace_api_keys=keys, marketplace_audit_logs=audits),
     )
 
     result = await marketplace_b2b.admin_revoke_api_keys("agency-1", True)
@@ -235,6 +245,8 @@ async def test_admin_revoke_api_access_does_not_disable_agency(monkeypatch):
     assert result["revoked_count"] == 1
     assert keys.rows[0]["is_active"] is False
     assert agencies.rows[0]["status"] == "active"
+    assert audits.inserted[0]["action"] == "api_key_revoked"
+    assert audits.inserted[0]["details"] == {"revoked_count": 1}
 
 
 @pytest.mark.asyncio
