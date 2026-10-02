@@ -1485,8 +1485,32 @@ async def update_accounting_invoice(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
+    editable_fields = {
+        "status",
+        "payment_date",
+        "customer_name",
+        "customer_email",
+        "customer_tax_office",
+        "customer_tax_number",
+        "customer_address",
+        "due_date",
+        "notes",
+    }
+    if set(updates) - editable_fields:
+        raise HTTPException(status_code=422, detail="Faturanın mali ve tesis alanları değiştirilemez")
+    if "status" in updates:
+        try:
+            updates["status"] = PaymentStatus(str(updates["status"])).value
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Geçersiz fatura durumu") from exc
     if "status" in updates and updates["status"] == "paid" and "payment_date" not in updates:
         updates["payment_date"] = datetime.now(UTC).isoformat()
+
+    if "due_date" in updates:
+        try:
+            updates["due_date"] = _normalize_accounting_invoice_due_date(str(updates["due_date"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     for f in ("customer_name", "customer_tax_office", "customer_address", "customer_tax_number"):
         if f in updates and isinstance(updates[f], str):
