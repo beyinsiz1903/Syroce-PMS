@@ -120,6 +120,17 @@ def test_received_payment_prefers_structured_currency_fields():
     assert _received_payment_amount(payment) == {"amount": 138.1, "currency": "USD"}
 
 
+def test_received_payment_marks_refund_negative_in_received_currency():
+    payment = {
+        "amount": 121.21,
+        "currency": "EUR",
+        "received_amount": 138.1,
+        "received_currency": "USD",
+        "payment_type": "refund",
+    }
+    assert _received_payment_amount(payment) == {"amount": -138.1, "currency": "USD"}
+
+
 def test_report_currency_breakdown_never_adds_unlike_currencies():
     rows = [
         {"total": 100, "currency": "eur"},
