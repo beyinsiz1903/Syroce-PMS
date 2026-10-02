@@ -524,22 +524,25 @@ async def create_expense(
             {"$inc": balance_updates},
         )
 
-    cash_flow = CashFlow(
-        tenant_id=current_user.tenant_id,
-        transaction_type="expense",
-        category=payload.category,
-        amount=total_amount,
-        currency=currency,
-        description=expense.description,
-        reference_id=expense.id,
-        reference_type="expense",
-        date=datetime.fromisoformat(payload.date),
-        created_by=current_user.name,
-    )
-    cf_dict = cash_flow.model_dump()
-    cf_dict["date"] = cf_dict["date"].isoformat()
-    cf_dict["created_at"] = cf_dict["created_at"].isoformat()
-    await db.cash_flow.insert_one(cf_dict)
+    # An expense is an accrual until it is paid.  Recording it in cash flow at
+    # creation would overstate cash outflows and make AP look like a payment.
+    if expense.payment_status == PaymentStatus.PAID:
+        cash_flow = CashFlow(
+            tenant_id=current_user.tenant_id,
+            transaction_type="expense",
+            category=payload.category,
+            amount=total_amount,
+            currency=currency,
+            description=expense.description,
+            reference_id=expense.id,
+            reference_type="expense",
+            date=datetime.fromisoformat(payload.date),
+            created_by=current_user.name,
+        )
+        cf_dict = cash_flow.model_dump()
+        cf_dict["date"] = cf_dict["date"].isoformat()
+        cf_dict["created_at"] = cf_dict["created_at"].isoformat()
+        await db.cash_flow.insert_one(cf_dict)
 
     _invalidate_accounting_caches(
         current_user.tenant_id,
@@ -653,6 +656,11 @@ async def update_expense(
             await apply_supplier_delta(old_supplier_id, old_currency, -old_total)
             await apply_supplier_delta(new_supplier_id, new_currency, new_total)
 
+    cash_flow_filter = {
+        "tenant_id": current_user.tenant_id,
+        "reference_type": "expense",
+        "reference_id": expense_id,
+    }
     cash_flow_patch = {
         "transaction_type": "expense",
         "category": expense_for_cash_flow.get("category"),
@@ -661,24 +669,29 @@ async def update_expense(
         "description": expense_for_cash_flow.get("description"),
         "date": expense_for_cash_flow.get("date"),
     }
-    await db.cash_flow.update_one(
-        {
-            "tenant_id": current_user.tenant_id,
-            "reference_type": "expense",
-            "reference_id": expense_id,
-        },
-        {
-            "$set": cash_flow_patch,
-            "$setOnInsert": {
-                "tenant_id": current_user.tenant_id,
-                "reference_type": "expense",
-                "reference_id": expense_id,
-                "created_by": getattr(current_user, "name", None),
-                "created_at": datetime.now(UTC).isoformat(),
+    payment_status = expense_for_cash_flow.get("payment_status", PaymentStatus.PENDING)
+    if isinstance(payment_status, PaymentStatus):
+        payment_status = payment_status.value
+    payment_status = str(payment_status).lower()
+    if payment_status == PaymentStatus.PAID.value:
+        await db.cash_flow.update_one(
+            cash_flow_filter,
+            {
+                "$set": cash_flow_patch,
+                "$setOnInsert": {
+                    "tenant_id": current_user.tenant_id,
+                    "reference_type": "expense",
+                    "reference_id": expense_id,
+                    "created_by": getattr(current_user, "name", None),
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
             },
-        },
-        upsert=True,
-    )
+            upsert=True,
+        )
+    else:
+        # Remove entries written by older versions while the expense is unpaid,
+        # partial, or refunded; these are AP states, not cash movements.
+        await db.cash_flow.delete_one(cash_flow_filter)
     _invalidate_accounting_caches(
         current_user.tenant_id,
         "accounting_dashboard",
