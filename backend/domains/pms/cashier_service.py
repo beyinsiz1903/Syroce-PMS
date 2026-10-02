@@ -165,7 +165,7 @@ async def reconcile_open_shift_payments(tenant_id: str) -> int:
             ],
         },
         {"_id": 0},
-    ).to_list(10000)
+    ).to_list(None)
 
     opened_at = _event_datetime(shift.get("opened_at"))
     existing_keys = {
