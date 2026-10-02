@@ -67,7 +67,10 @@ GUEST_DATA_FIELDS: dict[str, dict[str, Any]] = {
     "notes": {
         "label": "Misafir notları",
         "description": "Serbest metin notlar, tercihler ve özel istekler",
-        "aliases": {"notes", "guest_notes", "special_requests", "preferences"},
+        "aliases": {
+            "notes", "guest_notes", "special_requests", "preferences",
+            "pillow_preference", "spa_preference", "minibar_preference",
+        },
         "default": "hidden",
     },
     "financial": {

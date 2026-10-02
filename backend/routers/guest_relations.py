@@ -20,16 +20,17 @@ from core.helpers import create_audit_log
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from security.guest_data_visibility import protect_guest_row
 
 router = APIRouter(prefix="/api/guest-relations", tags=["Guest Relations Smart Engine"])
 
 
 class GuestAnalysisResponse(BaseModel):
     guest_id: str
-    guest_name: str
-    pillow_preference: str
-    spa_preference: str
-    minibar_preference: str
+    guest_name: str | None
+    pillow_preference: str | None
+    spa_preference: str | None
+    minibar_preference: str | None
 
 
 async def _resolve_guest(tenant_id: str, reference: str) -> tuple[dict[str, Any], str]:
@@ -125,7 +126,10 @@ async def get_guest_profile_analysis(
     guest, resolved_guest_id = await _resolve_guest(tenant_id, guest_id)
 
     pref = await _analyze_guest_preferences(db, tenant_id, resolved_guest_id, guest["name"])
-    return {"guest_id": resolved_guest_id, "guest_name": guest["name"], **pref}
+    return protect_guest_row(
+        {"guest_id": resolved_guest_id, "guest_name": guest["name"], **pref},
+        current_user,
+    )
 
 
 @router.get("/preparations/directives")
@@ -135,7 +139,7 @@ async def list_preparation_directives(
 ):
     """List generated guest room preparation directives."""
     directives = await db.guest_prep_directives.find({"tenant_id": current_user.tenant_id}).sort("created_at", -1).to_list(200)
-    return {"directives": directives}
+    return {"directives": [protect_guest_row(directive, current_user) for directive in directives]}
 
 
 @router.post("/preparations/trigger")

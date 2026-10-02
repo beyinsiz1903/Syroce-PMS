@@ -135,17 +135,17 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                     <div className="space-y-3">
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">Yastık Tercihi</span>
-                        <p className="text-sm font-medium text-gray-800">{analysis.pillow_preference}</p>
+                        <p className="text-sm font-medium text-gray-800">{analysis.pillow_preference || 'Gizlilik profiliniz nedeniyle gizli'}</p>
                       </div>
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">SPA Tercihleri</span>
-                        <p className="text-sm font-medium text-gray-800">{analysis.spa_preference}</p>
+                        <p className="text-sm font-medium text-gray-800">{analysis.spa_preference || 'Gizlilik profiliniz nedeniyle gizli'}</p>
                       </div>
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">Minibar Alışkanlığı</span>
                         <p className="text-sm font-medium text-gray-800 flex items-center gap-1">
                           <Coffee className="w-4 h-4 text-amber-600" />
-                          {analysis.minibar_preference}
+                          {analysis.minibar_preference || 'Gizlilik profiliniz nedeniyle gizli'}
                         </p>
                       </div>
                     </div>

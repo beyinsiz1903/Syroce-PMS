@@ -252,6 +252,27 @@ def test_guest_profile_analysis_resolves_tenant_local_booking_number(env):
     assert r.json()["guest_id"] == _GUEST_ID
 
 
+def test_guest_profile_analysis_enforces_explicit_visibility_profile(env):
+    from core.security import get_current_user
+
+    async def _masked_user():
+        return SimpleNamespace(
+            id="u3", username="masked-user", tenant_id=TENANT_ID, role="admin",
+            granted_permissions=None,
+            guest_data_visibility={"name": "masked", "notes": "hidden"},
+        )
+
+    env.app.dependency_overrides[get_current_user] = _masked_user
+    r = env.client.get(f"/api/guest-relations/profiles/{_GUEST_ID}/analysis")
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["guest_name"] == "J*** D**"
+    assert data["pillow_preference"] is None
+    assert data["spa_preference"] is None
+    assert data["minibar_preference"] is None
+
+
 def test_complete_preparation_directive_closes_linked_housekeeping_task(env, monkeypatch):
     env.db.guest_prep_directives.docs["directive-1"] = {
         "id": "directive-1",
