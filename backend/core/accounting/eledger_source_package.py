@@ -75,7 +75,7 @@ async def preflight_eledger_source(db, tenant_id: str, period: str, settings: di
         .sort("entry_no", 1)
         .to_list(100000)
     )
-    accounts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
+    accounts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(None)
     period_doc = await db.gl_periods.find_one(
         {"tenant_id": tenant_id, "fiscal_year": year, "period_no": month},
         {"_id": 0},
@@ -214,7 +214,7 @@ async def build_eledger_source_package(db, tenant_id: str, period: str, settings
         .sort("entry_no", 1)
         .to_list(100000)
     )
-    accounts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
+    accounts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(None)
     account_by_code = {item.get("code"): item for item in accounts}
 
     journal_rows: list[list[object]] = []
