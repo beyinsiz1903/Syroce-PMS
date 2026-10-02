@@ -106,7 +106,7 @@ async def get_market_segment_report(
             "check_in": {"$gte": start.date().isoformat(), "$lt": (end.date() + timedelta(days=1)).isoformat()},
             "status": {"$nin": list(NON_COMMERCIAL_STATUSES)},
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     # Aggregate by market segment
     segment_data = {}
@@ -588,7 +588,7 @@ async def export_revenue_detail_excel(
             "market_segment": 1,
             "room_number": 1,
         },
-    ).to_list(10000)
+    ).to_list(None)
 
     rows: dict[tuple[str, str, str], dict[str, Any]] = {}
     for b in bookings:
@@ -688,7 +688,7 @@ async def export_operations_daily_summary_excel(
     bookings = await db.bookings.find(
         {"tenant_id": current_user.tenant_id, "$or": [{"check_in": {"$gte": day_key, "$lt": next_key}}, {"check_out": {"$gte": day_key, "$lt": next_key}}, {"check_in": {"$lte": day_key}, "check_out": {"$gt": day_key}}]},
         {"_id": 0},
-    ).to_list(10000)
+    ).to_list(None)
     arrivals = sum(1 for booking in bookings if as_date(booking.get("check_in")) == target.date() and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
     departures = sum(1 for booking in bookings if as_date(booking.get("check_out")) == target.date() and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
     metrics = await load_stay_night_metrics(db, current_user.tenant_id, target.date(), target.date(), actual_only=True)
@@ -752,7 +752,7 @@ async def export_channel_distribution_excel(
             "ota_channel": 1,
             "market_segment": 1,
         },
-    ).to_list(20000)
+    ).to_list(None)
 
     channel_stats: dict[str, dict[str, Any]] = {}
 
