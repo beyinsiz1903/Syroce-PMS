@@ -9,8 +9,10 @@ from routers.reports_pkg import standard_reports
 class _Cursor:
     def __init__(self, rows):
         self.rows = rows
+        self.limits = []
 
     async def to_list(self, _limit):
+        self.limits.append(_limit)
         return self.rows
 
 
@@ -90,3 +92,29 @@ async def test_revenue_report_never_adds_unlike_currencies_and_excludes_comp_fro
     assert result["room_nights_sold"] == 2
     assert result["adr_by_currency"] == {"TRY": 2500.0, "EUR": 50.0}
     assert result["mixed_currency"] is True
+
+
+@pytest.mark.asyncio
+async def test_posted_revenue_rows_never_silently_caps_financial_ledger_rows(monkeypatch):
+    folio_cursor = _Cursor([])
+    extra_cursor = _Cursor([])
+    pos_cursor = _Cursor([])
+    monkeypatch.setattr(
+        standard_reports,
+        "db",
+        SimpleNamespace(
+            folio_charges=SimpleNamespace(find=lambda *_args, **_kwargs: folio_cursor),
+            extra_charges=SimpleNamespace(find=lambda *_args, **_kwargs: extra_cursor),
+            pos_orders=SimpleNamespace(find=lambda *_args, **_kwargs: pos_cursor),
+        ),
+    )
+
+    await standard_reports._posted_revenue_rows(
+        "tenant-a",
+        standard_reports.date(2026, 10, 1),
+        standard_reports.date(2026, 10, 2),
+    )
+
+    assert folio_cursor.limits == [None]
+    assert extra_cursor.limits == [None]
+    assert pos_cursor.limits == [None]
