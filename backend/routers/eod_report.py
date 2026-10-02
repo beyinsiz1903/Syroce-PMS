@@ -96,6 +96,19 @@ async def _report_business_date(tenant_id: str, requested: str | None) -> str:
     return str(state["business_date"])[:10]
 
 
+def _active_extra_charge_query(tenant_id: str, business_date: str) -> dict:
+    """Select active extras for one PMS business day, including legacy rows."""
+    return {
+        "tenant_id": tenant_id,
+        "voided": {"$ne": True},
+        **accounting_day_match(
+            business_date,
+            {"created_at": {"$regex": f"^{business_date}"}},
+            {"date": {"$regex": f"^{business_date}"}},
+        ),
+    }
+
+
 async def _collect(tenant_id: str, business_date: str) -> dict:
     """Tek bir is gunu icin gun sonu metriklerini topla."""
     # Date araligi
@@ -195,7 +208,7 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     payments_total = sum(payments_by_method.values())
 
     extra_charges = await db.extra_charges.find(
-        {"tenant_id": tenant_id, "created_at": {"$regex": f"^{business_date}"}},
+        _active_extra_charge_query(tenant_id, business_date),
         {"_id": 0, "charge_amount": 1, "amount": 1, "currency": 1, "booking_id": 1, "folio_id": 1},
     ).to_list(10000)
     extra_booking_currency, extra_folio_booking = await _currency_context(tenant_id, extra_charges, tenant_currency)
