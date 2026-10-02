@@ -32,7 +32,6 @@ from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from shared_kernel.idempotency import (
     claim_idempotency,
     complete_idempotency,
@@ -143,7 +142,7 @@ async def _seed_default_catalog(tenant_id: str) -> list[dict]:
 async def create_service(
     body: ServiceIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -164,7 +163,7 @@ async def update_service(
     service_id: str,
     body: ServiceIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -182,7 +181,7 @@ async def update_service(
 async def delete_service(
     service_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -218,7 +217,7 @@ async def create_therapist(
     request: Request,
     body: TherapistIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -277,7 +276,7 @@ async def update_therapist(
     therapist_id: str,
     body: TherapistIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -294,7 +293,7 @@ async def update_therapist(
 async def delete_therapist(
     therapist_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -325,7 +324,7 @@ async def create_room(
     request: Request,
     body: TreatmentRoomIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -384,7 +383,7 @@ async def update_room(
     room_id: str,
     body: TreatmentRoomIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -401,7 +400,7 @@ async def update_room(
 async def delete_room(
     room_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
@@ -477,7 +476,7 @@ async def list_appointments(
 async def create_appointment(
     body: AppointmentIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_spa_ops(current_user)
     await _ensure_indexes()
@@ -594,7 +593,7 @@ async def change_status(
     appt_id: str,
     body: StatusUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_spa_ops(current_user)
     if body.status == "completed":
@@ -720,7 +719,7 @@ async def _post_to_folio(tenant_id: str, appt: dict) -> None:
 async def delete_appointment(
     appt_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+    _perm: object = None,
 ) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()
@@ -962,7 +961,7 @@ async def list_waitlist(
 async def add_to_waitlist(
     body: WaitlistEntryIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
     _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     require_spa_ops(current_user)
@@ -989,7 +988,7 @@ async def add_to_waitlist(
 async def remove_waitlist(
     entry_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
     _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     require_spa_ops(current_user)
@@ -1016,7 +1015,7 @@ async def update_waitlist(
     entry_id: str,
     body: WaitlistUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm: object = None,
     _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     require_spa_ops(current_user)
