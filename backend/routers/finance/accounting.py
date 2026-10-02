@@ -1536,27 +1536,18 @@ async def create_accounting_invoice(
         item_dict = {k: v for k, v in item_data.items() if k != "additional_taxes"}
         item_dict["additional_taxes"] = additional_taxes
 
-        # Auto-compute vat_amount/total if client did not send (avoid 5xx)
+        # Financial line amounts are server-owned.  Never accept a client
+        # supplied VAT or total: those fields would otherwise allow an invoice
+        # whose displayed rate and booked amount disagree.
         try:
             _qty = float(item_dict.get("quantity", 0) or 0)
             _up = float(item_dict.get("unit_price", 0) or 0)
             _vrate = float(item_dict.get("vat_rate", 0) or 0)
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="quantity/unit_price/vat_rate sayisal olmali")
-        _line_net = _qty * _up
-        if "vat_amount" not in item_dict or item_dict.get("vat_amount") in (None, ""):
-            item_dict["vat_amount"] = round(_line_net * (_vrate / 100.0), 2)
-        try:
-            _vat_amount_num = float(item_dict.get("vat_amount", 0) or 0)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail="vat_amount sayisal olmali")
-        if "total" not in item_dict or item_dict.get("total") in (None, ""):
-            item_dict["total"] = round(_line_net + _vat_amount_num, 2)
-        else:
-            try:
-                item_dict["total"] = float(item_dict["total"])
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=422, detail="total sayisal olmali")
+        _line_net = round(_qty * _up, 2)
+        item_dict["vat_amount"] = round(_line_net * (_vrate / 100.0), 2)
+        item_dict["total"] = round(_line_net + item_dict["vat_amount"], 2)
 
         try:
             item = AccountingInvoiceItem(**item_dict)
