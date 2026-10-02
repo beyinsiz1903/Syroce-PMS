@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { preloadRoute } from '@/routes/preload';
+import { shouldPrefetchOnGroupOpen } from '@/lib/navigationPrefetchPolicy';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { Button } from '@/components/ui/button';
 import {
@@ -329,15 +330,15 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     const label = t(`navGroups.${groupDef.id}`, groupDef.label);
     const sections = sectionNavItems(groupDef.id, items);
 
-    const handleOpenChange = (open) => {
-      if (!open) return;
-      for (const it of items) {
-        if (it?.path) preloadRoute(it.path);
-      }
-    };
-
     return (
-      <DropdownMenu key={groupDef.id} onOpenChange={handleOpenChange}>
+      <DropdownMenu
+        key={groupDef.id}
+        onOpenChange={(open) => {
+          // A category can contain dozens of routes. Do not turn one menu
+          // click into a network burst; item hover/focus remains targeted.
+          if (open && shouldPrefetchOnGroupOpen()) preloadRoute(items[0]?.path);
+        }}
+      >
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -655,13 +656,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   <div key={groupDef.id} className="mb-0.5">
                     <Button variant="ghost" size="sm"
                       onClick={() => {
-                        const opening = !isExpanded;
-                        setExpandedMobileGroup(opening ? groupDef.id : null);
-                        if (opening) {
-                          for (const it of items) {
-                            if (it?.path) preloadRoute(it.path);
-                          }
-                        }
+                        setExpandedMobileGroup(!isExpanded ? groupDef.id : null);
                       }}
                       className={`w-full justify-between py-2 ${active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100 dark:text-gray-100'}`}>
                       <div className="flex items-center">
