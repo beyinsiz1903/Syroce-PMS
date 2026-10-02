@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleUsageLabel, resolveModuleState } from '../moduleCatalog';
+import { PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleSetupLabel, moduleUsageLabel, moduleWorkspaceLabel, resolveModuleState } from '../moduleCatalog';
 
 describe('module catalog', () => {
   it('contains unique product keys and omits sub-navigation flags', () => {
@@ -41,5 +41,12 @@ describe('module operational evidence', () => {
   it('summarizes only mapped usage events', () => {
     const item = PRODUCT_MODULES.find((module) => module.key === 'reports');
     expect(moduleUsageLabel(item, { period_days: 30, events: { report_generated: 7 } })).toBe('Son 30 günde 7 işlem');
+  });
+
+  it('does not confuse a workspace route with completed tenant setup', () => {
+    const item = PRODUCT_MODULES.find((module) => module.key === 'folio_management');
+    const state = resolveModuleState(item, { subscription_tier: 'enterprise', modules: { folio_management: true } });
+    expect(moduleWorkspaceLabel(item, state)).toBe('Çalışma alanı bağlı');
+    expect(moduleSetupLabel(item, state)).toBe('Kurulum kanıtı yok');
   });
 });

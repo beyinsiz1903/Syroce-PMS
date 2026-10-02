@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
-  PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleUsageLabel, resolveModuleState,
+  PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleSetupLabel, moduleUsageLabel,
+  moduleWorkspaceLabel, resolveModuleState,
 } from '@/lib/moduleCatalog';
 import { persistEnteredTenantContext } from '@/lib/adminTenantContext';
 
@@ -160,7 +161,7 @@ export default function AdminModuleControlCenter() {
           [Building2, 'Oteller', tenants.length, 'Sistemdeki tesisler'],
           [PackageCheck, 'Açık modül', counts.enabled, `${counts.total} ürün modülü içinde`],
           [Activity, 'Başlatılabilir', counts.launchable, 'Gerçek çalışma alanına bağlı'],
-          [CircleAlert, 'Kurulum gerekli', counts.needsSetup, 'Açık fakat giriş noktası tanımsız'],
+          [CircleAlert, 'Giriş noktası eksik', counts.needsSetup, 'Açık fakat çalışma alanı tanımsız'],
         ].map(([Icon, label, value, note]) => (
           <article key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between"><p className="text-sm font-medium text-slate-600">{label}</p><Icon className="h-4 w-4 text-slate-400" /></div>
@@ -253,12 +254,12 @@ export default function AdminModuleControlCenter() {
                       <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                         <span className={`rounded-full px-2 py-1 font-medium ${state.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{state.enabled ? 'Erişim açık' : 'Erişim kapalı'}</span>
                         <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">{state.included ? 'Pakete dahil' : item.alwaysPaid || item.addon ? 'Ek lisans' : 'Özel seçim'}</span>
-                        <span className={`rounded-full px-2 py-1 ${state.path ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-800'}`}>{state.path ? 'Çalışma alanı bağlı' : 'Giriş noktası tanımsız'}</span>
+                        <span className={`rounded-full px-2 py-1 ${state.path ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-800'}`}>{moduleWorkspaceLabel(item, state)}</span>
                         {changed && <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800">Taslak</span>}
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-[11px]">
                         <div><dt className="text-slate-500">Lisans</dt><dd className="mt-0.5 font-semibold text-slate-800">{state.licensed ? 'Etkin' : 'Lisans gerekli'}</dd></div>
-                        <div><dt className="text-slate-500">Kurulum</dt><dd className="mt-0.5 font-semibold text-slate-800">{state.path ? 'Çalışma alanı hazır' : 'Giriş noktası eksik'}</dd></div>
+                        <div><dt className="text-slate-500">Kurulum</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleSetupLabel(item, state)}</dd></div>
                         <div><dt className="text-slate-500">Entegrasyon</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleIntegrationLabel(item, state)}</dd></div>
                         <div><dt className="text-slate-500">Kullanım</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleUsageLabel(item, statusData.usage || {})}</dd></div>
                         <div><dt className="text-slate-500">Kullanıcı kapsamı</dt><dd className="mt-0.5 font-semibold text-slate-800">Tesis: {statusData.usage?.current_resources?.active_users ?? 'ölçülmüyor'} aktif</dd></div>
