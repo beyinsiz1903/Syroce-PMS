@@ -487,14 +487,14 @@ async def get_fnb_dashboard(date: str | None = None, credentials: HTTPAuthorizat
             # tomorrow, not to both the current and previous dashboards.
             "date": {"$gte": start.isoformat(), "$lt": end.isoformat()},
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     food_revenue = sum(c.get("total", 0) for c in charges if c.get("charge_category") == "food")
     beverage_revenue = sum(c.get("total", 0) for c in charges if c.get("charge_category") == "beverage")
     total_revenue = food_revenue + beverage_revenue
 
     # Get POS orders
-    orders = await db.pos_orders.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(10000)
+    orders = await db.pos_orders.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}}).to_list(None)
 
     orders_count = len(orders)
     avg_order_value = round(total_revenue / orders_count, 2) if orders_count > 0 else 0
@@ -513,7 +513,7 @@ async def get_fnb_dashboard(date: str | None = None, credentials: HTTPAuthorizat
             "charge_category": {"$in": ["food", "beverage"]},
             "date": {"$gte": prev_start.isoformat(), "$lt": prev_end.isoformat()},
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     prev_revenue = sum(c.get("total", 0) for c in prev_charges)
     revenue_change = round(((total_revenue - prev_revenue) / prev_revenue * 100), 2) if prev_revenue > 0 else 0
@@ -549,7 +549,7 @@ async def get_fnb_sales_report(start_date: str | None = None, end_date: str | No
     # Get charges
     charges = await db.folio_charges.find(
         {"tenant_id": current_user.tenant_id, "voided": False, "charge_category": {"$in": ["food", "beverage"]}, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}
-    ).to_list(10000)
+    ).to_list(None)
 
     # Daily breakdown
     daily_sales = {}
@@ -605,7 +605,7 @@ async def get_fnb_menu_performance(start_date: str | None = None, end_date: str 
         start = end - timedelta(days=30)
 
     # Get POS orders with item details
-    orders = await db.pos_orders.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(10000)
+    orders = await db.pos_orders.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(None)
 
     # Aggregate by menu item
     menu_stats = {}
@@ -671,7 +671,7 @@ async def get_fnb_revenue_chart(
     # Get charges
     charges = await db.folio_charges.find(
         {"tenant_id": current_user.tenant_id, "voided": False, "charge_category": {"$in": ["food", "beverage"]}, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}
-    ).to_list(10000)
+    ).to_list(None)
 
     # Group by date
     daily_revenue = {}
