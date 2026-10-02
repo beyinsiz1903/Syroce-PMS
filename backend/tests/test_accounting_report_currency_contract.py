@@ -17,8 +17,10 @@ class _Cursor:
 class _Collection:
     def __init__(self, rows):
         self.rows = rows
+        self.query = None
 
-    def find(self, *_args, **_kwargs):
+    def find(self, query, *_args, **_kwargs):
+        self.query = query
         return _Cursor(self.rows)
 
 
@@ -100,6 +102,25 @@ async def test_vat_report_keeps_sales_and_purchase_vat_currencies_separate(monke
     assert result["mixed_currency"] is True
     assert result["sales_vat"] is None
     assert result["vat_payable"] is None
+
+
+@pytest.mark.asyncio
+async def test_vat_report_excludes_proforma_and_purchase_invoice_vat(monkeypatch, current_user):
+    invoices = _Collection([{"total_vat": 10.0, "currency": "TRY"}])
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(accounting_invoices=invoices, expenses=_Collection([])),
+    )
+
+    result = await accounting.get_vat_report(
+        start_date="2026-09-01",
+        end_date="2026-09-30",
+        current_user=current_user,
+    )
+
+    assert result["sales_vat"] == 10.0
+    assert invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
 
 
 @pytest.mark.asyncio

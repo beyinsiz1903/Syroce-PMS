@@ -1670,7 +1670,16 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
     if not end_date:
         end_date = _d.today().isoformat()
     # Sales VAT (collected)
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
+    # Proforma and purchase invoices are not output VAT.  A proforma is only
+    # an offer, while a purchase invoice belongs to input VAT through AP.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": start_date, "$lte": end_date},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
     from core.tenant_currency import get_tenant_currency
 
