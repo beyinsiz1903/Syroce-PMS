@@ -111,6 +111,17 @@ class MenuPriceUpdateRequest(BaseModel):
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 
+_MAINTENANCE_PRIORITIES = {"low", "normal", "high", "urgent", "emergency"}
+_MAINTENANCE_TASK_STATUSES = {"new", "assigned", "in_progress", "on_hold", "waiting_parts", "completed", "cancelled"}
+_MAINTENANCE_PHOTO_TYPES = {"before", "during", "after"}
+
+
+def _require_maintenance_priority(priority: str) -> str:
+    normalized = priority.strip().lower()
+    if normalized not in _MAINTENANCE_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Invalid maintenance priority")
+    return normalized
+
 
 # ── GET /maintenance/mobile/preventive-maintenance-schedule ──
 @router.get("/maintenance/mobile/preventive-maintenance-schedule")
@@ -158,7 +169,7 @@ async def create_quick_issue_mobile(
     room_id = request.room_id
     issue_type = request.issue_type
     description = request.description
-    priority = request.priority
+    priority = _require_maintenance_priority(request.priority)
 
     # Validate room
     room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})
@@ -260,6 +271,11 @@ async def update_sla_configuration(
 ):
     """Update or create SLA configuration"""
     current_user = await get_current_user(credentials)
+    priority = _require_maintenance_priority(priority)
+    if response_time_minutes <= 0 or resolution_time_minutes <= 0:
+        raise HTTPException(status_code=400, detail="SLA durations must be positive")
+    if response_time_minutes > resolution_time_minutes:
+        raise HTTPException(status_code=400, detail="Response SLA cannot exceed resolution SLA")
 
     # Check if configuration exists
     existing = await db.sla_configurations.find_one({"tenant_id": current_user.tenant_id, "priority": priority})
@@ -301,6 +317,9 @@ async def update_task_status_mobile(
 ):
     """Update task status (complete, on_hold, waiting_parts, in_progress)"""
     current_user = await get_current_user(credentials)
+    new_status = new_status.strip().lower()
+    if new_status not in _MAINTENANCE_TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid maintenance task status")
 
     task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
 
@@ -350,6 +369,9 @@ async def upload_task_photo_mobile(
 ):
     """Upload photo for maintenance task"""
     current_user = await get_current_user(credentials)
+    photo_type = photo_type.strip().lower()
+    if photo_type not in _MAINTENANCE_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid maintenance photo type")
 
     task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
 
@@ -462,6 +484,8 @@ async def use_spare_part_mobile(
 ):
     """Record spare part usage for a task"""
     current_user = await get_current_user(credentials)
+    if quantity <= 0:
+        raise HTTPException(status_code=400, detail="Spare part quantity must be positive")
 
     # Validate task
     task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
