@@ -89,6 +89,19 @@ def _report_date_bounds(start_date: str, end_date: str) -> tuple[str, str]:
     return f"{start.isoformat()}T00:00:00", f"{end.isoformat()}T23:59:59.999999"
 
 
+def _withholding_fraction(value: object) -> float:
+    """Parse a Turkish withholding ratio such as ``7/10`` safely."""
+    try:
+        numerator_text, denominator_text = str(value).strip().split("/")
+        numerator = int(numerator_text.strip())
+        denominator = int(denominator_text.strip())
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Tevkifat oranı 7/10 formatında olmalıdır.") from exc
+    if denominator <= 0 or numerator < 0 or numerator > denominator:
+        raise HTTPException(status_code=422, detail="Tevkifat oranı 0 ile 100% arasında olmalıdır.")
+    return numerator / denominator
+
+
 def _invoice_currency_terms(
     requested_currency: object,
     requested_exchange_rate: object,
@@ -1530,7 +1543,10 @@ async def create_accounting_invoice(
         additional_taxes = []
         if "additional_taxes" in item_data and item_data["additional_taxes"]:
             for tax_data in item_data["additional_taxes"]:
-                additional_taxes.append(AdditionalTax(**tax_data))
+                try:
+                    additional_taxes.append(AdditionalTax(**tax_data))
+                except (TypeError, ValueError) as exc:
+                    raise HTTPException(status_code=422, detail=f"Ek vergi geçersiz: {exc}") from exc
 
         # Create item with parsed additional taxes
         item_dict = {k: v for k, v in item_data.items() if k != "additional_taxes"}
@@ -1574,12 +1590,9 @@ async def create_accounting_invoice(
                     # Withholding tax is deducted from VAT
                     # Calculate based on withholding rate (e.g., "7/10" = 70%)
                     if tax.withholding_rate:
-                        rate_parts = tax.withholding_rate.split("/")
-                        if len(rate_parts) == 2:
-                            rate_percent = (int(rate_parts[0]) / int(rate_parts[1])) * 100
-                            withholding_amount = item.vat_amount * (rate_percent / 100)
-                            vat_withholding += withholding_amount
-                            tax.calculated_amount = withholding_amount
+                        withholding_amount = round(item.vat_amount * _withholding_fraction(tax.withholding_rate), 2)
+                        vat_withholding += withholding_amount
+                        tax.calculated_amount = withholding_amount
                 else:
                     # Other taxes (ÖTV, accommodation, etc.)
                     if tax.is_percentage and tax.rate:

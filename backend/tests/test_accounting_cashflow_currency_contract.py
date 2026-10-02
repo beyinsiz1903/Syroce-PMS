@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from routers.finance import accounting
@@ -12,6 +13,7 @@ from routers.finance.accounting import (
     _accounting_currency,
     _currency_totals,
     _invoice_currency_terms,
+    _withholding_fraction,
 )
 
 
@@ -20,6 +22,15 @@ def test_currency_normalization_supports_tl_alias_and_rejects_unknown_codes():
     assert _accounting_currency(" eur ") == "EUR"
     with pytest.raises(ValueError, match="Unsupported currency"):
         _accounting_currency("XYZ")
+
+
+def test_withholding_ratio_rejects_invalid_or_over_100_percent_values():
+    assert _withholding_fraction("7/10") == 0.7
+    assert _withholding_fraction("0/10") == 0.0
+    for value in ("7", "7/0", "11/10", "-1/10", "seven/ten"):
+        with pytest.raises(HTTPException) as exc_info:
+            _withholding_fraction(value)
+        assert exc_info.value.status_code == 422
 
 
 def test_expense_and_inventory_requests_preserve_selected_currency():
