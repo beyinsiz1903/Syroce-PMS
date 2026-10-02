@@ -421,7 +421,21 @@ async def update_supplier(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    await db.suppliers.update_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    editable_fields = {
+        "name", "tax_office", "tax_number", "email", "phone", "address", "category", "notes",
+    }
+    if not updates or set(updates) - editable_fields:
+        raise HTTPException(status_code=422, detail="Tedarikçinin korunan alanları değiştirilemez")
+    patch = dict(updates)
+    for field, max_length in (("name", 200), ("tax_office", 200), ("tax_number", 50), ("address", 500), ("notes", 1000)):
+        if field in patch:
+            patch[field] = sanitize_plaintext(str(patch[field]), max_length=max_length) if patch[field] else None
+    result = await db.suppliers.update_one(
+        {"id": supplier_id, "tenant_id": current_user.tenant_id},
+        {"$set": patch},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Tedarikçi bulunamadı")
     supplier = await db.suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     return supplier
 
@@ -461,7 +475,23 @@ async def update_bank_account(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    await db.bank_accounts.update_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    # Balances and currency are accounting facts.  They must only be changed
+    # by reconciled bank movements, never through a generic profile edit.
+    editable_fields = {"name", "bank_name", "account_number", "iban", "is_active"}
+    if not updates or set(updates) - editable_fields:
+        raise HTTPException(status_code=422, detail="Banka hesabının korunan mali alanları değiştirilemez")
+    patch = dict(updates)
+    for field, max_length in (("name", 200), ("bank_name", 200), ("account_number", 80), ("iban", 50)):
+        if field in patch:
+            patch[field] = sanitize_plaintext(str(patch[field]), max_length=max_length) if patch[field] else None
+    if "is_active" in patch and not isinstance(patch["is_active"], bool):
+        raise HTTPException(status_code=422, detail="Hesap durumu doğru/yanlış olmalıdır")
+    result = await db.bank_accounts.update_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id},
+        {"$set": patch},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Banka hesabı bulunamadı")
     account = await db.bank_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     _invalidate_accounting_caches(current_user.tenant_id, "accounting_dashboard", "report_balance_sheet")
     return account
