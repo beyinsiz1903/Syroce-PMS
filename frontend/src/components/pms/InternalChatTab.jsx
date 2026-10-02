@@ -804,6 +804,7 @@ const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
                     disabled={markingAllRead || unreadCount === 0}
                     data-testid="button-mark-all-read"
                     title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
+                    aria-label="Tüm okunmamış mesajları okundu olarak işaretle"
                   >
                     <CheckCheck className={`h-4 w-4 ${markingAllRead ? 'animate-pulse' : ''}`} />
                   </Button>
@@ -816,6 +817,7 @@ const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
                     disabled={loadingInbox || loadingConversations}
                     data-testid="button-refresh-inbox"
                     title={t('cm.components_pms_InternalChatTab.yenile')}
+                    aria-label="Mesaj kutusunu yenile"
                   >
                     <RefreshCw className={`h-4 w-4 ${(loadingInbox || loadingConversations) ? 'animate-spin' : ''}`} />
                   </Button>

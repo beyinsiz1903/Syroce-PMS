@@ -206,6 +206,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
             onClick={backToList}
             data-testid="button-gr-back"
             title="Listeye dön"
+            aria-label="Misafir talepleri listesine dön"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -224,6 +225,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
             disabled={loadingThread}
             data-testid="button-gr-refresh-thread"
             title="Yenile"
+            aria-label="Misafir talebi konuşmasını yenile"
           >
             <RefreshCw className={`h-4 w-4 ${loadingThread ? 'animate-spin' : ''}`} />
           </Button>
@@ -297,6 +299,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
               className="h-9 w-9 shrink-0"
               data-testid="button-gr-send"
               title="Gönder"
+              aria-label="Misafir talebine yanıt gönder"
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
@@ -321,6 +324,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
           disabled={loadingThreads}
           data-testid="button-gr-refresh-list"
           title="Yenile"
+          aria-label="Misafir talepleri listesini yenile"
         >
           <RefreshCw className={`h-4 w-4 ${loadingThreads ? 'animate-spin' : ''}`} />
         </Button>
