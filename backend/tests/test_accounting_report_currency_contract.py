@@ -18,9 +18,11 @@ class _Collection:
     def __init__(self, rows):
         self.rows = rows
         self.query = None
+        self.queries = []
 
     def find(self, query, *_args, **_kwargs):
         self.query = query
+        self.queries.append(query)
         return _Cursor(self.rows)
 
 
@@ -123,6 +125,35 @@ async def test_vat_report_excludes_proforma_and_purchase_invoice_vat(monkeypatch
 
     assert result["sales_vat"] == 10.0
     assert invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
+
+
+@pytest.mark.asyncio
+async def test_financial_reports_include_the_complete_final_day(monkeypatch, current_user):
+    invoices = _Collection([])
+    expenses = _Collection([])
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(accounting_invoices=invoices, expenses=expenses),
+    )
+
+    await accounting.get_profit_loss_report.__wrapped__(
+        start_date="2026-09-01",
+        end_date="2026-09-30",
+        current_user=current_user,
+        _perm=None,
+    )
+    await accounting.get_vat_report(
+        start_date="2026-09-01",
+        end_date="2026-09-30",
+        current_user=current_user,
+    )
+
+    expected = {"$gte": "2026-09-01T00:00:00", "$lte": "2026-09-30T23:59:59.999999"}
+    assert invoices.queries[0]["issue_date"] == expected
+    assert invoices.queries[1]["issue_date"] == expected
+    assert expenses.queries[0]["date"] == expected
+    assert expenses.queries[1]["date"] == expected
 
 
 @pytest.mark.asyncio

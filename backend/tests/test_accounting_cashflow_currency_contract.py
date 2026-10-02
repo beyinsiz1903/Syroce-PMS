@@ -106,10 +106,21 @@ async def test_cash_flow_reads_all_rows_before_calculating_totals(monkeypatch):
             return [{"transaction_type": "income", "amount": 10, "currency": "TRY"}]
 
     cursor = Cursor()
-    monkeypatch.setattr(accounting, "db", SimpleNamespace(cash_flow=SimpleNamespace(find=lambda *_args, **_kwargs: cursor)))
+    queries = []
+
+    def find(query, *_args, **_kwargs):
+        queries.append(query)
+        return cursor
+
+    monkeypatch.setattr(accounting, "db", SimpleNamespace(cash_flow=SimpleNamespace(find=find)))
     monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
 
-    result = await accounting.get_cash_flow(current_user=SimpleNamespace(tenant_id="tenant-a"))
+    result = await accounting.get_cash_flow(
+        start_date="2026-09-01",
+        end_date="2026-09-30",
+        current_user=SimpleNamespace(tenant_id="tenant-a"),
+    )
 
     assert cursor.limits == [None]
     assert result["total_income"] == 10.0
+    assert queries == [{"tenant_id": "tenant-a", "date": {"$gte": "2026-09-01T00:00:00", "$lte": "2026-09-30T23:59:59.999999"}}]
