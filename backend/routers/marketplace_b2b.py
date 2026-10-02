@@ -410,6 +410,31 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+async def _record_marketplace_audit(
+    sysdb,
+    *,
+    agency_id: str,
+    action: str,
+    details: dict | None = None,
+) -> None:
+    """Persist an admin-visible marketplace audit record without secrets.
+
+    Raw API keys and hashes must never enter a business/audit collection.  The
+    public prefix and generated key id are enough to trace a credential
+    lifecycle event without turning the audit trail into a credential store.
+    """
+    await sysdb.marketplace_audit_logs.insert_one(
+        {
+            "id": _uuid(),
+            "agency_id": agency_id,
+            "actor_type": "system_admin",
+            "action": action,
+            "details": details or {},
+            "created_at": _now_iso(),
+        }
+    )
+
+
 def _last_occupied_date(check_in: str, check_out: str) -> str:
     """Convert the exclusive checkout boundary to the final sold room-night."""
     from datetime import timedelta
@@ -838,6 +863,12 @@ async def admin_create_agency(
     if data.platform_fee_pct is not None:
         agency_doc["platform_fee_pct"] = data.platform_fee_pct
     await sysdb.marketplace_agencies.insert_one(agency_doc)
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=agency_id,
+        action="agency_created",
+        details={"api_access_requested": bool(data.issue_api_key)},
+    )
 
     response = {
         "agency": {k: v for k, v in agency_doc.items() if k != "_id"},
@@ -857,6 +888,12 @@ async def admin_create_agency(
                 "key_prefix": key_doc["key_prefix"],
                 "warning": "Bu API anahtarı yalnızca bir kez gösterilir. Güvenli bir parola kasasına kaydedin.",
             }
+        )
+        await _record_marketplace_audit(
+            sysdb,
+            agency_id=agency_id,
+            action="api_key_created",
+            details={"key_id": key_doc["id"], "key_prefix": key_doc["key_prefix"], "label": key_doc.get("label")},
         )
     return response
 
@@ -950,6 +987,12 @@ async def admin_update_agency(
     result = await sysdb.marketplace_agencies.update_one({"id": agency_id}, {"$set": updates})
     if result.matched_count == 0:
         raise HTTPException(404, "Acente bulunamadı")
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=agency_id,
+        action="agency_updated",
+        details={"changed_fields": sorted(key for key in updates if key not in {"updated_at"})},
+    )
     agency = await sysdb.marketplace_agencies.find_one({"id": agency_id}, {"_id": 0})
     return {"ok": True, "agency": agency}
 
@@ -966,6 +1009,12 @@ async def admin_disable_agency(
     await sysdb.marketplace_api_keys.update_many(
         {"agency_id": agency_id, "is_active": True},
         {"$set": {"is_active": False, "revoked_at": _now_iso()}},
+    )
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=agency_id,
+        action="agency_disabled",
+        details={"reason": "system_admin"},
     )
     return {"ok": True, "message": "Acente devre dışı bırakıldı, tüm API key'ler iptal edildi"}
 
@@ -989,9 +1038,20 @@ async def admin_regenerate_key(
         agency_id,
         label=(data.label if data else "Ana entegrasyon"),
     )
-    await sysdb.marketplace_api_keys.update_many(
+    revoked = await sysdb.marketplace_api_keys.update_many(
         {"agency_id": agency_id, "id": {"$ne": key_doc["id"]}, "is_active": True},
         {"$set": {"is_active": False, "revoked_at": _now_iso()}},
+    )
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=agency_id,
+        action="api_key_rotated",
+        details={
+            "key_id": key_doc["id"],
+            "key_prefix": key_doc["key_prefix"],
+            "label": key_doc.get("label"),
+            "revoked_count": int(revoked.modified_count or 0),
+        },
     )
     return {
         "api_key": raw_key,
@@ -1013,6 +1073,12 @@ async def admin_revoke_api_keys(
     result = await sysdb.marketplace_api_keys.update_many(
         {"agency_id": agency_id, "is_active": True},
         {"$set": {"is_active": False, "revoked_at": _now_iso()}},
+    )
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=agency_id,
+        action="api_key_revoked",
+        details={"revoked_count": int(result.modified_count or 0)},
     )
     return {
         "ok": True,
