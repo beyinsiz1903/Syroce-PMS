@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { preloadRoute } from '@/routes/preload';
+import { shouldPrefetchOnGroupOpen } from '@/lib/navigationPrefetchPolicy';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { Button } from '@/components/ui/button';
 import {
@@ -329,15 +330,15 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     const label = t(`navGroups.${groupDef.id}`, groupDef.label);
     const sections = sectionNavItems(groupDef.id, items);
 
-    const handleOpenChange = (open) => {
-      if (!open) return;
-      for (const it of items) {
-        if (it?.path) preloadRoute(it.path);
-      }
-    };
-
     return (
-      <DropdownMenu key={groupDef.id} onOpenChange={handleOpenChange}>
+      <DropdownMenu
+        key={groupDef.id}
+        onOpenChange={(open) => {
+          // A category can contain dozens of routes. Do not turn one menu
+          // click into a network burst; item hover/focus remains targeted.
+          if (open && shouldPrefetchOnGroupOpen()) preloadRoute(items[0]?.path);
+        }}
+      >
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -573,8 +574,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 className="md:hidden h-8 w-8 p-0 dark:text-gray-100"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 data-testid="mobile-menu-toggle"
+                aria-label={mobileMenuOpen ? 'Gezinme menüsünü kapat' : 'Gezinme menüsünü aç'}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-navigation"
+                title={mobileMenuOpen ? 'Menüyü kapat' : 'Menüyü aç'}
               >
-                {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+                {mobileMenuOpen ? <X className="w-4 h-4" aria-hidden="true" /> : <Menu className="w-4 h-4" aria-hidden="true" />}
               </Button>
 
               <DropdownMenu>
@@ -619,7 +624,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
           </div>
 
           {mobileMenuOpen && (
-            <nav className="md:hidden mt-2 pb-2 border-t pt-2 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
+            <nav id="mobile-navigation" className="md:hidden mt-2 pb-2 border-t pt-2 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
               <div className="px-2 pb-2 flex items-center gap-2">
                 <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2 py-0.5 rounded-full text-xs font-semibold border`}>
                   <TierIcon className="w-3 h-3" />
@@ -655,13 +660,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   <div key={groupDef.id} className="mb-0.5">
                     <Button variant="ghost" size="sm"
                       onClick={() => {
-                        const opening = !isExpanded;
-                        setExpandedMobileGroup(opening ? groupDef.id : null);
-                        if (opening) {
-                          for (const it of items) {
-                            if (it?.path) preloadRoute(it.path);
-                          }
-                        }
+                        setExpandedMobileGroup(!isExpanded ? groupDef.id : null);
                       }}
                       className={`w-full justify-between py-2 ${active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100 dark:text-gray-100'}`}>
                       <div className="flex items-center">

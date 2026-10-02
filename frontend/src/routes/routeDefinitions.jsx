@@ -13,7 +13,8 @@
  *   "module"     — Auth + module check required
  *   "feature"    — Auth + feature flag required
  *   "memory"     — Auth required, saves redirect path on failure
- *   "redirect"   — Static redirect to another path
+ *   "redirect"   — Static redirect to another path. Set preserveLocation for
+ *                  legacy workspace aliases that must retain query/hash state.
  */
 import React from "react";
 

@@ -11,6 +11,13 @@ describe('ReportFrame', () => {
         reportName="Otelde Konaklayanlar"
         reportDate="2026-09-30"
         periodLabel="Seçili gün"
+        contract={{
+          dataSource: 'Onaylı folyo hareketleri',
+          dateScope: 'Seçili iş günü',
+          financialScope: 'Tahsilat ayrı tutulur',
+          currencyRule: 'Dövizler ayrı gösterilir',
+        }}
+        refreshedAt="02.10.2026 10:39:00"
         tenant={{ property_name: 'Denizli Oteli' }}
         user={{ full_name: 'Murat Zincir' }}
       >
@@ -23,5 +30,7 @@ describe('ReportFrame', () => {
     expect(screen.getByText('Murat Zincir')).toBeInTheDocument();
     expect(screen.getByText('Seçili gün')).toBeInTheDocument();
     expect(screen.getByText('Rapor içeriği')).toBeInTheDocument();
+    expect(screen.getByTestId('report-data-contract')).toHaveTextContent('Bu rapor nasıl hesaplanır?');
+    expect(screen.getByTestId('report-data-contract')).toHaveTextContent('Onaylı folyo hareketleri');
   });
 });
