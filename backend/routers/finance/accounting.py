@@ -1581,8 +1581,17 @@ async def get_profit_loss_report(
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
-    # Get all income
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": "paid", "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
+    # Only paid sales documents are realised revenue in this cash-basis view.
+    # A paid purchase or proforma must never become hotel income.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": "paid",
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": start_date, "$lte": end_date},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
     # Get all expenses
     expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)

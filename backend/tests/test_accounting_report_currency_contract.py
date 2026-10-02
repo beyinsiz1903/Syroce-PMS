@@ -55,10 +55,11 @@ async def test_profit_loss_does_not_add_foreign_currency_invoices(monkeypatch, c
         {"total": 20.0, "currency": "EUR", "items": [{"description": "Room", "total": 20.0}]},
     ]
     expenses = [{"total_amount": 40.0, "currency": "TRY", "category": "supplies"}]
+    accounting_invoices = _Collection(invoices)
     monkeypatch.setattr(
         accounting,
         "db",
-        SimpleNamespace(accounting_invoices=_Collection(invoices), expenses=_Collection(expenses)),
+        SimpleNamespace(accounting_invoices=accounting_invoices, expenses=_Collection(expenses)),
     )
 
     result = await accounting.get_profit_loss_report(
@@ -75,6 +76,7 @@ async def test_profit_loss_does_not_add_foreign_currency_invoices(monkeypatch, c
     assert result["mixed_currency"] is True
     assert result["total_revenue"] is None
     assert result["gross_profit"] is None
+    assert accounting_invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
 
 
 @pytest.mark.asyncio
