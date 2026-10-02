@@ -39,6 +39,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.reporting_financials import is_valid_payment
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import (
     claim_idempotency,
@@ -89,6 +90,42 @@ def _normalize_currency(value: object, fallback: str = "TRY") -> str:
 
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
+
+
+def _folio_export_transactions(charges: list[dict], payments: list[dict]) -> list[dict]:
+    """Return the financially effective transactions for a folio statement.
+
+    An exported statement is an accounting document, not a raw event log.  It
+    must therefore apply the same invalid-payment rule as financial reports:
+    voided, failed, cancelled and rejected payments never reduce the amount
+    due or appear as a successful collection.
+    """
+    transactions: list[dict] = []
+    for charge in charges:
+        if charge.get("voided"):
+            continue
+        transactions.append(
+            {
+                "date": charge.get("business_date") or str(charge.get("created_at") or "")[:10],
+                "desc": charge.get("description", "Charge"),
+                "type": str(charge.get("charge_type", "N/A")).title(),
+                "amount": float(charge.get("amount", 0)),
+                "is_charge": True,
+            }
+        )
+    for payment in payments:
+        if not is_valid_payment(payment):
+            continue
+        transactions.append(
+            {
+                "date": payment.get("payment_date") or payment.get("date") or str(payment.get("created_at") or "")[:10],
+                "desc": payment.get("description", str(payment.get("method", "Payment")).title()),
+                "type": "Payment",
+                "amount": float(payment.get("amount", 0)),
+                "is_charge": False,
+            }
+        )
+    return sorted(transactions, key=lambda transaction: str(transaction["date"]))
 
 
 async def _decrement_booking_paid_amount(tenant_id: str, booking_id: str, amount: float) -> float:
@@ -611,27 +648,7 @@ async def export_folio_excel(
     total_charges = 0.0
     total_payments = 0.0
 
-    transactions = []
-    for c in charges:
-        if c.get("voided"): continue
-        transactions.append({
-            "date": c.get("business_date") or c.get("created_at", "")[:10],
-            "desc": c.get("description", "Charge"),
-            "type": c.get("charge_type", "N/A").title(),
-            "amount": float(c.get("amount", 0)),
-            "is_charge": True
-        })
-    for p in payments:
-        if p.get("voided"): continue
-        transactions.append({
-            "date": p.get("payment_date") or p.get("date") or p.get("created_at", "")[:10],
-            "desc": p.get("description", p.get("method", "Payment").title()),
-            "type": "Payment",
-            "amount": float(p.get("amount", 0)),
-            "is_charge": False
-        })
-
-    transactions.sort(key=lambda x: x["date"])
+    transactions = _folio_export_transactions(charges, payments)
 
     for tx in transactions:
         ws.cell(row=row_num, column=1, value=tx["date"]).border = box_border
