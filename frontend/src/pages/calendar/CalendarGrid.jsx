@@ -736,7 +736,12 @@ const CalendarGrid = ({
                             // ilk kolona kenetle (eskiden böyleleri hiç görünmüyordu).
                             if (startIdx < 0 && checkInStr < rangeStartStr && checkOutStr > rangeStartStr) startIdx = 0;
                             if (startIdx < 0) return null;
-                            const span = calculateBookingSpan(booking, currentDate, daysToShow);
+                            // The card's left edge is derived from `dateRange`. Its width must
+                            // use that exact same visible range as well. `currentDate` may lag
+                            // behind the rendered range after navigation/timezone normalization;
+                            // mixing the two made a stay ending on Friday visually occupy the
+                            // Friday checkout column.
+                            const span = calculateBookingSpan(booking, dateRange[0] || currentDate, dateRange.length);
                             if (span <= 0) return null;
                             const lane = lanes[booking.id] || 0;
                             const cardSurface = getReservationCardSurface(booking);
