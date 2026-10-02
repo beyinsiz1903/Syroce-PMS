@@ -113,6 +113,7 @@ function _hardLogout() {
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
+  localStorage.removeItem("entitlements");
   localStorage.removeItem(ADMIN_TENANT_CONTEXT_KEY);
   // Eski oturum cache'i yeni kullanıcıya sızmasın.
   clearAxiosCache();
