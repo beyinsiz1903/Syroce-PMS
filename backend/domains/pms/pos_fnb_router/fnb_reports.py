@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import (
     get_current_user,
@@ -466,9 +467,11 @@ async def get_fnb_dashboard(date: str | None = None, credentials: HTTPAuthorizat
     """Get F&B dashboard overview"""
     current_user = await get_current_user(credentials)
 
-    # Default to today
+    # A daily F&B report belongs to the hotel's open PMS day. UTC midnight can
+    # differ from the business-day close and would otherwise split a shift.
     if not date:
-        date = datetime.now(UTC).strftime("%Y-%m-%d")
+        business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        date = str(business_state["business_date"])[:10]
 
     target_date = datetime.fromisoformat(date)
     start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
