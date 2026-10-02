@@ -1257,10 +1257,47 @@ async def update_tenant_modules(
       }
     }
     """
-    # Try by logical id first
-    query = {"id": tenant_id}
+    from core.audit import log_audit_event
 
-    update_doc = {"$set": {"modules": payload.modules}}
+    # Read the current effective set first. This makes the published change
+    # auditable at module level rather than leaving a single opaque JSON blob.
+    # Try by logical id first.
+    query = {"id": tenant_id}
+    before = await db.tenants.find_one(query, {"_id": 0})
+    if not before:
+        try:
+            from bson import ObjectId
+
+            before = await db.tenants.find_one({"_id": ObjectId(tenant_id)}, {"_id": 0})
+        except Exception:
+            before = None
+    if not before:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotel not found")
+
+    before_modules = get_tenant_modules(before)
+    after_modules = get_tenant_modules({**before, "modules": payload.modules})
+    changed_keys = sorted({
+        key for key in set(before_modules) | set(after_modules)
+        if bool(before_modules.get(key)) != bool(after_modules.get(key))
+    })
+    now = datetime.now(UTC).isoformat()
+    actor_name = getattr(current_user, "name", None) or getattr(current_user, "email", None) or current_user.id
+    module_change_log = dict(before.get("module_control_changes") or {})
+    for key in changed_keys:
+        module_change_log[key] = {
+            "enabled": bool(after_modules.get(key)),
+            "changed_at": now,
+            "changed_by": current_user.id,
+            "changed_by_name": actor_name,
+        }
+
+    update_doc = {"$set": {
+        "modules": payload.modules,
+        "module_control_changes": module_change_log,
+        "module_control_updated_at": now,
+        "module_control_updated_by": current_user.id,
+        "module_control_updated_by_name": actor_name,
+    }}
     # Kanal yoneticisi altyapisi secimi yalnizca explicit gonderildiyse yazilir
     # (modules yazimini bozmadan). None gonderilirse secim temizlenir -> auto-detect.
     if "channel_manager_provider" in payload.model_fields_set:
@@ -1298,6 +1335,18 @@ async def update_tenant_modules(
         )
 
     tenant_doc["modules"] = get_tenant_modules(tenant_doc)
+    await log_audit_event(
+        tenant_id=tenant_doc.get("id") or tenant_id,
+        user_id=current_user.id,
+        action="tenant_modules_published",
+        entity_type="tenant_modules",
+        entity_id=tenant_doc.get("id") or tenant_id,
+        details=f"Süperadmin {len(changed_keys)} modül değişikliğini yayınladı",
+        before_value={key: bool(before_modules.get(key)) for key in changed_keys},
+        after_value={key: bool(after_modules.get(key)) for key in changed_keys},
+        db=db,
+        severity="warning" if any(not after_modules.get(key) for key in changed_keys) else "info",
+    )
     return tenant_doc
 
 

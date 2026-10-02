@@ -13,7 +13,11 @@ describe('AdminModuleControlCenter', () => {
     axios.get.mockImplementation((url) => {
       if (url.endsWith('/entitlements')) return Promise.resolve({ data: { plan_name: 'Mini', subscription_status: 'active' } });
       if (url.endsWith('/usage')) return Promise.resolve({ data: { period_days: 30, events: { reservation_created: 4 }, current_resources: { users: 3, active_users: 2 }, last_activity_at: '2026-10-01T09:15:00Z' } });
-      return Promise.resolve({ data: { tenants: [{ id: 'hotel-1', property_name: 'Denizli Oteli', subscription_tier: 'mini', modules: { pms: true, hr: false } }] } });
+      return Promise.resolve({ data: { tenants: [{
+        id: 'hotel-1', property_name: 'Denizli Oteli', subscription_tier: 'mini', modules: { pms: true, hr: false },
+        module_control_updated_at: '2026-10-01T09:15:00Z', module_control_updated_by_name: 'Merkez Yönetici',
+        module_control_changes: { hr: { changed_at: '2026-10-01T09:15:00Z', changed_by_name: 'Merkez Yönetici' } },
+      }] } });
     });
     axios.patch.mockResolvedValue({ data: { modules: { pms: true, hr: true } } });
   });
@@ -38,5 +42,7 @@ describe('AdminModuleControlCenter', () => {
     expect(screen.getAllByText('Kurulum').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Entegrasyon').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Son 30 günde 4 işlem/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Son modül yayını')).toBeInTheDocument();
+    expect(screen.getAllByText('Merkez Yönetici').length).toBeGreaterThan(0);
   });
 });
