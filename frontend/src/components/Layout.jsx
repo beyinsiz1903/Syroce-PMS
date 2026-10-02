@@ -291,9 +291,13 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
   const isGroupActive = (groupId) => {
     const items = groupedItems[groupId] || [];
+    // A page may keep its parent module as currentModule (for example
+    // hotel-network keeps PMS context). A concrete URL match must win over
+    // that fallback, otherwise two unrelated top-level groups look selected.
+    const hasExactPathMatch = visibleNav.some((item) => isItemPathActive(item));
     return items.some((item) => {
-      if (normalizedCurrentModule === normalizeKey(item.key)) return true;
       if (isItemPathActive(item)) return true;
+      if (!hasExactPathMatch && normalizedCurrentModule === normalizeKey(item.key)) return true;
       return false;
     });
   };
