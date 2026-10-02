@@ -204,6 +204,23 @@ def _money_cents(value) -> int:
         return 0
 
 
+def _allocate_daily_rates(total: object, stay_dates: list[str]) -> dict[str, float]:
+    """Allocate a reservation total across nights without losing a cent.
+
+    Daily-rate rows are the source used by Night Audit for future room charges.
+    A rounded floating-point division can otherwise make their sum differ from
+    the reservation total (for example 100.01 / 3 becoming 33.34 each).
+    """
+    if not stay_dates:
+        return {}
+
+    nightly_cents, remainder = divmod(_money_cents(total), len(stay_dates))
+    return {
+        date_key: (nightly_cents + (1 if index < remainder else 0)) / 100
+        for index, date_key in enumerate(stay_dates)
+    }
+
+
 def _room_charge_rate_mismatches(
     charges: list[dict],
     expected_rates_by_date: dict[str, float],
@@ -4246,9 +4263,11 @@ async def update_daily_rates(
         # Bug Fix: If daily_rates are missing in DB, they were generated on-the-fly for the frontend.
         # We must recreate them here to allow the frontend to submit the locked unchanged rates without triggering a 409.
         if not existing_rates:
-            nights = len(stay_dates)
-            nightly_rate = round(float(booking.get("total_amount", 0) or 0) / nights, 2)
-            existing_rates = {date_key: {"date": date_key, "rate": nightly_rate} for date_key in stay_dates}
+            generated_rates = _allocate_daily_rates(booking.get("total_amount", 0), stay_dates)
+            existing_rates = {
+                date_key: {"date": date_key, "rate": rate}
+                for date_key, rate in generated_rates.items()
+            }
 
         for rate_date, rate in submitted_rates.items():
             if rate_date < current_business_date:
