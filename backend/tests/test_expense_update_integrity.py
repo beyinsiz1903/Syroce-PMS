@@ -9,14 +9,24 @@ from routers.finance import accounting
 
 @pytest.mark.asyncio
 async def test_expense_update_recalculates_vat_and_total(monkeypatch):
-    existing = {"id": "expense-a", "tenant_id": "tenant-a", "amount": 100, "vat_rate": 20, "currency": "TRY"}
+    existing = {
+        "id": "expense-a",
+        "tenant_id": "tenant-a",
+        "supplier_id": "supplier-a",
+        "amount": 100,
+        "vat_rate": 20,
+        "total_amount": 120,
+        "currency": "TRY",
+    }
     expenses = SimpleNamespace(
         find_one=AsyncMock(side_effect=[existing, {**existing, "amount": 200, "vat_rate": 10, "vat_amount": 20, "total_amount": 220}]),
         update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
     )
     cash_flow = SimpleNamespace(update_one=AsyncMock())
-    monkeypatch.setattr(accounting, "db", SimpleNamespace(expenses=expenses, cash_flow=cash_flow))
+    suppliers = SimpleNamespace(update_one=AsyncMock())
+    monkeypatch.setattr(accounting, "db", SimpleNamespace(expenses=expenses, cash_flow=cash_flow, suppliers=suppliers))
     monkeypatch.setattr(accounting, "_invalidate_accounting_caches", lambda *_args: None)
+    monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
 
     result = await accounting.update_expense(
         "expense-a",
@@ -41,6 +51,10 @@ async def test_expense_update_recalculates_vat_and_total(monkeypatch):
         "date": None,
     }
     assert cash_flow.update_one.await_args.kwargs["upsert"] is True
+    assert suppliers.update_one.await_args.args == (
+        {"id": "supplier-a", "tenant_id": "tenant-a"},
+        {"$inc": {"account_balance_by_currency.TRY": 100.0, "account_balance": 100.0}},
+    )
 
 
 @pytest.mark.asyncio

@@ -595,6 +595,8 @@ async def update_expense(
         raise HTTPException(status_code=404, detail="Gider bulunamadı")
 
     patch = dict(updates)
+    if "supplier_id" in patch:
+        patch["supplier_id"] = _norm(patch["supplier_id"])
     if "currency" in patch:
         try:
             patch["currency"] = _accounting_currency(patch["currency"], current.get("currency") or "TRY")
@@ -625,6 +627,32 @@ async def update_expense(
         raise HTTPException(status_code=404, detail="Gider bulunamadı")
     expense = await db.expenses.find_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     expense_for_cash_flow = {**current, **patch}
+    old_supplier_id = _norm(current.get("supplier_id"))
+    new_supplier_id = _norm(expense_for_cash_flow.get("supplier_id"))
+    old_currency = _accounting_currency(current.get("currency"), "TRY")
+    new_currency = _accounting_currency(expense_for_cash_flow.get("currency"), old_currency)
+    old_total = float(current.get("total_amount") or 0)
+    new_total = float(expense_for_cash_flow.get("total_amount") or 0)
+    if old_supplier_id or new_supplier_id:
+        tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+
+        async def apply_supplier_delta(supplier_id: str | None, currency: str, amount: float) -> None:
+            if not supplier_id or not amount:
+                return
+            increments = {f"account_balance_by_currency.{currency}": round(amount, 2)}
+            if currency == tenant_currency:
+                increments["account_balance"] = round(amount, 2)
+            await db.suppliers.update_one(
+                {"id": supplier_id, "tenant_id": current_user.tenant_id},
+                {"$inc": increments},
+            )
+
+        if old_supplier_id == new_supplier_id and old_currency == new_currency:
+            await apply_supplier_delta(new_supplier_id, new_currency, new_total - old_total)
+        else:
+            await apply_supplier_delta(old_supplier_id, old_currency, -old_total)
+            await apply_supplier_delta(new_supplier_id, new_currency, new_total)
+
     cash_flow_patch = {
         "transaction_type": "expense",
         "category": expense_for_cash_flow.get("category"),
