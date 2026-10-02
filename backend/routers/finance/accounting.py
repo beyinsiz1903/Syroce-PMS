@@ -600,6 +600,27 @@ async def update_expense(
     patch = dict(updates)
     if "supplier_id" in patch:
         patch["supplier_id"] = _norm(patch["supplier_id"])
+    if "payment_status" in patch:
+        try:
+            patch["payment_status"] = PaymentStatus(str(patch["payment_status"]).lower()).value
+        except ValueError as exc:
+            allowed = ", ".join(status.value for status in PaymentStatus)
+            raise HTTPException(status_code=422, detail=f"Geçersiz ödeme durumu. Geçerli değerler: {allowed}") from exc
+    if "category" in patch:
+        try:
+            patch["category"] = ExpenseCategory(str(patch["category"]).lower()).value
+        except ValueError as exc:
+            allowed = ", ".join(category.value for category in ExpenseCategory)
+            raise HTTPException(status_code=422, detail=f"Geçersiz gider kategorisi. Geçerli değerler: {allowed}") from exc
+    if "date" in patch:
+        try:
+            patch["date"] = datetime.fromisoformat(str(patch["date"])).isoformat()
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Gider tarihi geçerli ISO tarih formatında olmalıdır") from exc
+    if "description" in patch:
+        patch["description"] = sanitize_plaintext(str(patch["description"]), max_length=500)
+    if "notes" in patch:
+        patch["notes"] = sanitize_plaintext(str(patch["notes"]), max_length=1000) if patch["notes"] else None
     if "currency" in patch:
         try:
             patch["currency"] = _accounting_currency(patch["currency"], current.get("currency") or "TRY")

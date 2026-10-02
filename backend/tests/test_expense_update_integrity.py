@@ -75,6 +75,32 @@ async def test_expense_update_rejects_tenant_or_total_tampering(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"payment_status": "settled"},
+        {"category": "made_up_category"},
+        {"date": "yarın"},
+    ],
+)
+async def test_expense_update_rejects_invalid_operational_fields(monkeypatch, updates):
+    existing = {"id": "expense-a", "tenant_id": "tenant-a"}
+    expenses = SimpleNamespace(find_one=AsyncMock(return_value=existing), update_one=AsyncMock())
+    monkeypatch.setattr(accounting, "db", SimpleNamespace(expenses=expenses))
+
+    with pytest.raises(HTTPException) as exc:
+        await accounting.update_expense(
+            "expense-a",
+            updates,
+            current_user=SimpleNamespace(tenant_id="tenant-a"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 422
+    expenses.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_unpaid_expense_update_removes_legacy_cash_flow(monkeypatch):
     existing = {
         "id": "expense-a",
