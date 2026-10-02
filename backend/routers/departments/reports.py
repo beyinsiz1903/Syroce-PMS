@@ -26,6 +26,7 @@ from core.helpers import require_module
 from core.security import get_current_user
 from core.utils import _XLSX_MAX_CELL_LEN, calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
+from modules.pms_core.reporting_financials import effective_collection
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
 from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, booking_nights, load_stay_night_metrics
 
@@ -485,11 +486,7 @@ async def get_finance_snapshot(
     ).to_list(10000)
 
     def effective_payment(payment: dict) -> float:
-        status = str(payment.get("status") or "paid").lower()
-        if payment.get("voided") or status in {"void", "voided", "failed", "cancelled", "rejected"}:
-            return 0.0
-        amount = float(payment.get("amount") or 0)
-        return -amount if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0 else amount
+        return effective_collection(payment)
 
     todays_collections = sum(effective_payment(payment) for payment in todays_payments)
     todays_payment_count = sum(1 for payment in todays_payments if effective_payment(payment) != 0)

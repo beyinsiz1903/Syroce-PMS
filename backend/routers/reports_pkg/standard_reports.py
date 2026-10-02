@@ -14,6 +14,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.reporting_financials import effective_collection, effective_revenue_adjustment
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import (
     NON_COMMERCIAL_STATUSES,
@@ -64,13 +65,7 @@ async def _default_business_date(tenant_id: str) -> date:
 
 
 def _effective_payment(payment: dict) -> float:
-    status = str(payment.get("status") or "paid").strip().lower()
-    if payment.get("voided") or status in {"void", "voided", "failed", "cancelled", "rejected"}:
-        return 0.0
-    amount = float(payment.get("amount") or 0)
-    if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
-        amount = -amount
-    return amount
+    return effective_collection(payment)
 
 
 def _currency_code(row: dict) -> str:
@@ -289,15 +284,20 @@ async def get_daily_summary(
         {"_id": 0},
     ).to_list(10000)
     collections_by_currency: dict[str, float] = {}
+    adjustments_by_currency: dict[str, float] = {}
     for payment in payments:
         currency = _currency_code(payment)
         collections_by_currency[currency] = collections_by_currency.get(currency, 0.0) + _effective_payment(payment)
+        adjustments_by_currency[currency] = adjustments_by_currency.get(currency, 0.0) + effective_revenue_adjustment(payment)
     collections_by_currency = {currency: round(amount, 2) for currency, amount in collections_by_currency.items()}
+    adjustments_by_currency = {currency: round(amount, 2) for currency, amount in adjustments_by_currency.items() if amount}
     posted_rows = await _posted_revenue_rows(current_user.tenant_id, target_date, target_date)
     posted_revenue_by_currency: dict[str, float] = {}
     for row in posted_rows:
         currency = _currency_code(row)
         posted_revenue_by_currency[currency] = posted_revenue_by_currency.get(currency, 0.0) + _charge_amount(row)
+    for currency, adjustment in adjustments_by_currency.items():
+        posted_revenue_by_currency[currency] = posted_revenue_by_currency.get(currency, 0.0) - adjustment
     posted_revenue_by_currency = {currency: round(amount, 2) for currency, amount in posted_revenue_by_currency.items()}
     return {
         "date": target_date.isoformat(),
@@ -310,7 +310,8 @@ async def get_daily_summary(
         "collections_by_currency": collections_by_currency,
         "daily_revenue": _single_currency_value(posted_revenue_by_currency),
         "daily_revenue_by_currency": posted_revenue_by_currency,
-        "daily_revenue_basis": "posted_folio_and_pos_charges",
+        "revenue_adjustments_by_currency": adjustments_by_currency,
+        "daily_revenue_basis": "posted_folio_and_pos_charges_net_of_financial_adjustments",
     }
 
 

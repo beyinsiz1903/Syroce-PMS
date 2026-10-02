@@ -17,6 +17,7 @@ from core.helpers import require_module
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from models.schemas import User
+from modules.pms_core.reporting_financials import effective_collection, effective_revenue_adjustment
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
@@ -172,15 +173,20 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     payments_by_method: dict[str, float] = {}
     payments_by_currency: dict[str, float] = {}
     payments_by_method_currency: dict[str, dict[str, float]] = {}
+    revenue_adjustments_by_currency: dict[str, float] = {}
     for payment in payments:
         status = str(payment.get("status") or "paid").lower()
         if payment.get("voided") or status in {"void", "voided", "failed", "cancelled", "rejected"}:
             continue
-        method = str(payment.get("payment_method") or payment.get("method") or "other").lower()
-        amount = float(payment.get("amount") or 0)
-        if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
-            amount = -amount
         currency = _document_currency(payment, payment_booking_currency, payment_folio_booking, tenant_currency)
+        adjustment = effective_revenue_adjustment(payment)
+        if adjustment:
+            _add_currency(revenue_adjustments_by_currency, currency, adjustment, tenant_currency)
+            continue
+        method = str(payment.get("payment_method") or payment.get("method") or "other").lower()
+        amount = effective_collection(payment)
+        if amount == 0:
+            continue
         payments_by_method[method] = payments_by_method.get(method, 0.0) + amount
         _add_currency(payments_by_currency, currency, amount, tenant_currency)
         method_breakdown = payments_by_method_currency.setdefault(method, {})
@@ -218,6 +224,8 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
         amount = float(charge.get("total") or charge.get("amount") or 0)
         currency = _document_currency(charge, revenue_booking_currency, revenue_folio_booking, tenant_currency)
         _add_currency(revenue_by_currency, currency, amount, tenant_currency)
+    for currency, adjustment in revenue_adjustments_by_currency.items():
+        _add_currency(revenue_by_currency, currency, -adjustment, tenant_currency)
     revenue_total = sum(revenue_by_currency.values())
 
     # Acik folyolar (bakiye > 0)
@@ -263,6 +271,7 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
         "extras_by_currency": _rounded_breakdown(extras_by_currency),
         "revenue_total": round(revenue_total, 2),
         "revenue_by_currency": _rounded_breakdown(revenue_by_currency),
+        "revenue_adjustments_by_currency": _rounded_breakdown(revenue_adjustments_by_currency),
         "currency": tenant_currency,
         "revenue_basis": "posted_folio_charges",
         "open_folios": open_folios,
@@ -275,6 +284,7 @@ def _build_html(data: dict, hotel_name: str = "Otel") -> str:
     revenue = _format_breakdown(data.get("revenue_by_currency") or {currency: data.get("revenue_total", 0)})
     payments = _format_breakdown(data.get("payments_by_currency") or {currency: data.get("payments_total", 0)})
     extras = _format_breakdown(data.get("extras_by_currency") or {currency: data.get("extras_total", 0)})
+    adjustments = _format_breakdown(data.get("revenue_adjustments_by_currency") or {})
     method_breakdowns = data.get("payments_by_method_currency") or {
         method: {currency: amount} for method, amount in data.get("payments_by_method", {}).items()
     }
@@ -302,7 +312,7 @@ th {{ background:#f3f4f6; font-weight:600; }}
   <div class="card"><div class="label">Doluluk</div><div class="value">{data["occupancy_rate"]}%</div>
     <div style="font-size:12px;color:#6b7280;margin-top:4px;">{data["occupied"]} / {data["rooms_total"]} oda</div></div>
   <div class="card"><div class="label">Toplam Gelir</div><div class="value">{revenue}</div>
-    <div style="font-size:12px;color:#6b7280;margin-top:4px;">Ödeme: {payments} · Ekstra: {extras}</div></div>
+    <div style="font-size:12px;color:#6b7280;margin-top:4px;">Tahsilat: {payments} · Ekstra: {extras} · Fiyat düzeltmesi: {adjustments}</div></div>
 </div>
 
 <div class="section">
