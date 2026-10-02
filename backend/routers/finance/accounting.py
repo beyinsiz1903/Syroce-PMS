@@ -524,22 +524,25 @@ async def create_expense(
             {"$inc": balance_updates},
         )
 
-    cash_flow = CashFlow(
-        tenant_id=current_user.tenant_id,
-        transaction_type="expense",
-        category=payload.category,
-        amount=total_amount,
-        currency=currency,
-        description=expense.description,
-        reference_id=expense.id,
-        reference_type="expense",
-        date=datetime.fromisoformat(payload.date),
-        created_by=current_user.name,
-    )
-    cf_dict = cash_flow.model_dump()
-    cf_dict["date"] = cf_dict["date"].isoformat()
-    cf_dict["created_at"] = cf_dict["created_at"].isoformat()
-    await db.cash_flow.insert_one(cf_dict)
+    # An expense is an accrual until it is paid.  Recording it in cash flow at
+    # creation would overstate cash outflows and make AP look like a payment.
+    if expense.payment_status == PaymentStatus.PAID:
+        cash_flow = CashFlow(
+            tenant_id=current_user.tenant_id,
+            transaction_type="expense",
+            category=payload.category,
+            amount=total_amount,
+            currency=currency,
+            description=expense.description,
+            reference_id=expense.id,
+            reference_type="expense",
+            date=datetime.fromisoformat(payload.date),
+            created_by=current_user.name,
+        )
+        cf_dict = cash_flow.model_dump()
+        cf_dict["date"] = cf_dict["date"].isoformat()
+        cf_dict["created_at"] = cf_dict["created_at"].isoformat()
+        await db.cash_flow.insert_one(cf_dict)
 
     _invalidate_accounting_caches(
         current_user.tenant_id,
@@ -568,10 +571,148 @@ async def update_expense(
     expense_id: str,
     updates: dict[str, Any],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+    _perm=Depends(require_op("post_charge")),
 ):
-    await db.expenses.update_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    editable_fields = {
+        "supplier_id",
+        "category",
+        "description",
+        "amount",
+        "vat_rate",
+        "date",
+        "payment_status",
+        "payment_method",
+        "receipt_url",
+        "notes",
+        "currency",
+    }
+    unsupported_fields = set(updates) - editable_fields
+    if unsupported_fields:
+        raise HTTPException(status_code=422, detail="Giderin korunan alanları değiştirilemez")
+
+    current = await db.expenses.find_one(
+        {"id": expense_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if not current:
+        raise HTTPException(status_code=404, detail="Gider bulunamadı")
+
+    patch = dict(updates)
+    if "supplier_id" in patch:
+        patch["supplier_id"] = _norm(patch["supplier_id"])
+    if "payment_status" in patch:
+        try:
+            patch["payment_status"] = PaymentStatus(str(patch["payment_status"]).lower()).value
+        except ValueError as exc:
+            allowed = ", ".join(status.value for status in PaymentStatus)
+            raise HTTPException(status_code=422, detail=f"Geçersiz ödeme durumu. Geçerli değerler: {allowed}") from exc
+    if "category" in patch:
+        try:
+            patch["category"] = ExpenseCategory(str(patch["category"]).lower()).value
+        except ValueError as exc:
+            allowed = ", ".join(category.value for category in ExpenseCategory)
+            raise HTTPException(status_code=422, detail=f"Geçersiz gider kategorisi. Geçerli değerler: {allowed}") from exc
+    if "date" in patch:
+        try:
+            patch["date"] = datetime.fromisoformat(str(patch["date"])).isoformat()
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Gider tarihi geçerli ISO tarih formatında olmalıdır") from exc
+    if "description" in patch:
+        patch["description"] = sanitize_plaintext(str(patch["description"]), max_length=500)
+    if "notes" in patch:
+        patch["notes"] = sanitize_plaintext(str(patch["notes"]), max_length=1000) if patch["notes"] else None
+    if "currency" in patch:
+        try:
+            patch["currency"] = _accounting_currency(patch["currency"], current.get("currency") or "TRY")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if "amount" in patch or "vat_rate" in patch:
+        try:
+            amount = float(patch.get("amount", current.get("amount", 0)))
+            vat_rate = float(patch.get("vat_rate", current.get("vat_rate", 0)))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Tutar ve KDV oranı sayısal olmalıdır") from exc
+        if not math.isfinite(amount) or amount < 0 or not math.isfinite(vat_rate) or not 0 <= vat_rate <= 100:
+            raise HTTPException(status_code=422, detail="Tutar negatif olamaz; KDV oranı 0 ile 100 arasında olmalıdır")
+        patch.update(
+            {
+                "amount": round(amount, 2),
+                "vat_rate": round(vat_rate, 2),
+                "vat_amount": round(amount * vat_rate / 100, 2),
+                "total_amount": round(amount * (1 + vat_rate / 100), 2),
+            }
+        )
+
+    result = await db.expenses.update_one(
+        {"id": expense_id, "tenant_id": current_user.tenant_id},
+        {"$set": patch},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Gider bulunamadı")
     expense = await db.expenses.find_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    expense_for_cash_flow = {**current, **patch}
+    old_supplier_id = _norm(current.get("supplier_id"))
+    new_supplier_id = _norm(expense_for_cash_flow.get("supplier_id"))
+    old_currency = _accounting_currency(current.get("currency"), "TRY")
+    new_currency = _accounting_currency(expense_for_cash_flow.get("currency"), old_currency)
+    old_total = float(current.get("total_amount") or 0)
+    new_total = float(expense_for_cash_flow.get("total_amount") or 0)
+    if old_supplier_id or new_supplier_id:
+        tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+
+        async def apply_supplier_delta(supplier_id: str | None, currency: str, amount: float) -> None:
+            if not supplier_id or not amount:
+                return
+            increments = {f"account_balance_by_currency.{currency}": round(amount, 2)}
+            if currency == tenant_currency:
+                increments["account_balance"] = round(amount, 2)
+            await db.suppliers.update_one(
+                {"id": supplier_id, "tenant_id": current_user.tenant_id},
+                {"$inc": increments},
+            )
+
+        if old_supplier_id == new_supplier_id and old_currency == new_currency:
+            await apply_supplier_delta(new_supplier_id, new_currency, new_total - old_total)
+        else:
+            await apply_supplier_delta(old_supplier_id, old_currency, -old_total)
+            await apply_supplier_delta(new_supplier_id, new_currency, new_total)
+
+    cash_flow_filter = {
+        "tenant_id": current_user.tenant_id,
+        "reference_type": "expense",
+        "reference_id": expense_id,
+    }
+    cash_flow_patch = {
+        "transaction_type": "expense",
+        "category": expense_for_cash_flow.get("category"),
+        "amount": float(expense_for_cash_flow.get("total_amount") or 0),
+        "currency": expense_for_cash_flow.get("currency") or "TRY",
+        "description": expense_for_cash_flow.get("description"),
+        "date": expense_for_cash_flow.get("date"),
+    }
+    payment_status = expense_for_cash_flow.get("payment_status", PaymentStatus.PENDING)
+    if isinstance(payment_status, PaymentStatus):
+        payment_status = payment_status.value
+    payment_status = str(payment_status).lower()
+    if payment_status == PaymentStatus.PAID.value:
+        await db.cash_flow.update_one(
+            cash_flow_filter,
+            {
+                "$set": cash_flow_patch,
+                "$setOnInsert": {
+                    "tenant_id": current_user.tenant_id,
+                    "reference_type": "expense",
+                    "reference_id": expense_id,
+                    "created_by": getattr(current_user, "name", None),
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            },
+            upsert=True,
+        )
+    else:
+        # Remove entries written by older versions while the expense is unpaid,
+        # partial, or refunded; these are AP states, not cash movements.
+        await db.cash_flow.delete_one(cash_flow_filter)
     _invalidate_accounting_caches(
         current_user.tenant_id,
         "accounting_dashboard",
