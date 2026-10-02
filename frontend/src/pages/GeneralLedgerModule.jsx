@@ -1708,6 +1708,9 @@ const GeneralLedgerModule = () => {
                             {transfer.guest_name || 'Misafir adı yok'} · Kaynak rezervasyon {transfer.source_booking_id || transfer.booking_id}
                             {' · '}Hedef rezervasyon {transfer.target_booking_id}
                           </p>
+                          <p className="mt-1 text-xs font-medium text-slate-700">
+                            Transfer belgesi: {transfer.transfer_reference || settlement?.transfer_reference || transfer.id}
+                          </p>
                           {transfer.reason && <p className="text-xs text-slate-600 mt-1">Aktarım gerekçesi: {transfer.reason}</p>}
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isOpen ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -1735,7 +1738,7 @@ const GeneralLedgerModule = () => {
                             </div>
                           </div>
                           <p className="text-xs text-amber-700 mt-2">
-                            Bu kayıt tahsilatı hedef tesise ödeme gibi göstermez; finansal mutabakat tamamlanana kadar açık borç/alacak olarak izlenir.
+                            Bu kayıt tahsilatı hedef tesise ödeme gibi göstermez; finansal mutabakat tamamlanana kadar açık borç/alacak olarak izlenir. Aynı transfer belgesini iki tesisin folyo, faaliyet ve muhasebe kayıtlarında arayın.
                           </p>
                           {isOpen ? (
                             <div className="mt-3 grid gap-2 border-t pt-3 md:grid-cols-4">

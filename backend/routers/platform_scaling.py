@@ -458,6 +458,7 @@ async def api_reconcile_transfer_settlement(
     activity_details = {
         "settlement_id": settlement_id,
         "transfer_id": settlement.get("transfer_id"),
+        "transfer_reference": settlement.get("transfer_reference") or settlement.get("transfer_id"),
         **reconciliation,
         "currency_lines": settlement.get("currency_lines") or [],
     }
@@ -477,7 +478,52 @@ async def api_reconcile_transfer_settlement(
                     "created_at": now,
                 }
             )
-    return {"success": True, "settlement_id": settlement_id, "status": "reconciled", "reconciliation": reconciliation}
+
+    # A reconciliation is an accounting event for both properties. Surface it
+    # in both finance inboxes as well as in the immutable reservation trail;
+    # otherwise the target property can remain unaware that its receivable is
+    # closed until it manually opens the general ledger.
+    transfer_reference = activity_details["transfer_reference"]
+    notifications = []
+    for tenant_id, counterparty_name in (
+        (settlement.get("source_property_id"), settlement.get("target_property_name")),
+        (settlement.get("target_property_id"), settlement.get("source_property_name")),
+    ):
+        if tenant_id:
+            notifications.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "user_id": None,
+                    "type": "chain_transfer_settlement_reconciled",
+                    "title": "Zincir içi mahsuplaşma tamamlandı",
+                    "message": f"{counterparty_name or 'Karşı tesis'} ile {transfer_reference} referanslı transfer mutabakatı kapatıldı.",
+                    "priority": "normal",
+                    "target_roles": ["admin", "finance"],
+                    "read": False,
+                    "action_url": "/app/general-ledger",
+                    "related_entity": "chain_transfer_settlement",
+                    "related_id": settlement_id,
+                    "metadata": activity_details,
+                    "created_at": now,
+                }
+            )
+    try:
+        for notification in notifications:
+            await sysdb.notifications.insert_one(notification)
+    except Exception:
+        # Reconciliation remains authoritative once posted. Keep its ledger
+        # state intact if a non-financial inbox write fails.
+        import logging
+        logging.getLogger(__name__).exception("Transfer settlement notification write failed settlement=%s", settlement_id)
+
+    return {
+        "success": True,
+        "settlement_id": settlement_id,
+        "transfer_reference": transfer_reference,
+        "status": "reconciled",
+        "reconciliation": reconciliation,
+    }
 
 
 @router.get("/multi-property/revenue")

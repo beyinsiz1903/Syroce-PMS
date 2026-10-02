@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from modules.platform_scaling import multi_property_platform as service_module
+from routers import platform_scaling as router_module
 
 
 class _Cursor:
@@ -82,6 +83,7 @@ async def test_chain_transfer_creates_target_booking_then_closes_source(monkeypa
     assert target_payload["tenant_id"] == "fethiye"
     assert target_payload["room_id"] == "room-204"
     assert target_payload["source_booking_id"] == "source-booking"
+    assert target_payload["transfer_reference"].startswith("TRF-")
     source_update = bookings.update_one.await_args.args[1]["$set"]
     assert source_update["status"] == "cancelled"
     assert source_update["transferred_to_tenant_id"] == "fethiye"
@@ -95,6 +97,7 @@ async def test_chain_transfer_creates_target_booking_then_closes_source(monkeypa
     assert target_notification["tenant_id"] == "fethiye"
     assert target_notification["related_id"] == result["target_booking_id"]
     assert target_payload["source_property_name"] == "Denizli Oteli"
+    assert target_notification["metadata"]["transfer_reference"] == result["transfer_reference"]
 
 
 @pytest.mark.asyncio
@@ -202,6 +205,7 @@ async def test_chain_transfer_retains_prepayment_and_creates_two_sided_settlemen
     settlement = fake_db.chain_transfer_settlements.insert_one.await_args.args[0]
     assert settlement["collection_property_id"] == "denizli"
     assert settlement["service_property_id"] == "fethiye"
+    assert settlement["transfer_reference"] == result["transfer_reference"]
     assert settlement["currency_lines"] == [{
         "currency": "TRY",
         "amount": 1000.0,
@@ -210,4 +214,48 @@ async def test_chain_transfer_retains_prepayment_and_creates_two_sided_settlemen
     }]
     target_payload = atomic_create.await_args.kwargs["booking_doc"]
     assert target_payload["transferred_prepayments"] == [{"currency": "TRY", "amount": 1000.0}]
+    assert target_payload["transfer_reference"] == result["transfer_reference"]
     assert fake_db.notifications.insert_one.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_notifies_both_properties_with_transfer_reference(monkeypatch):
+    settlement = {
+        "id": "settlement-1",
+        "transfer_id": "transfer-1",
+        "transfer_reference": "TRF-20261002-TRANSFER",
+        "status": "open",
+        "source_property_id": "denizli",
+        "source_property_name": "Denizli Oteli",
+        "target_property_id": "fethiye",
+        "target_property_name": "Fethiye Oteli",
+        "source_booking_id": "source-booking",
+        "target_booking_id": "target-booking",
+        "currency_lines": [{"currency": "TRY", "amount": 1000}],
+    }
+    fake_db = SimpleNamespace(
+        chain_transfer_settlements=_collection(find_one=settlement),
+        reservation_transfers=_collection(),
+        reservation_activity_log=_collection(),
+        notifications=_collection(),
+    )
+    monkeypatch.setattr(router_module, "get_system_db", lambda: fake_db)
+    monkeypatch.setattr(
+        router_module,
+        "resolve_chain_properties",
+        AsyncMock(return_value=("denizli", [{"tenant_id": "denizli"}, {"tenant_id": "fethiye"}])),
+    )
+
+    result = await router_module.api_reconcile_transfer_settlement(
+        "settlement-1",
+        router_module.ReconcileTransferSettlementReq(method="bank_transfer", reference="DEC-100"),
+        SimpleNamespace(id="finance-1", tenant_id="denizli", name="Finans"),
+        None,
+    )
+
+    assert result["transfer_reference"] == "TRF-20261002-TRANSFER"
+    assert fake_db.reservation_activity_log.insert_one.await_count == 2
+    assert fake_db.notifications.insert_one.await_count == 2
+    notifications = [call.args[0] for call in fake_db.notifications.insert_one.await_args_list]
+    assert {row["tenant_id"] for row in notifications} == {"denizli", "fethiye"}
+    assert all(row["metadata"]["transfer_reference"] == "TRF-20261002-TRANSFER" for row in notifications)
