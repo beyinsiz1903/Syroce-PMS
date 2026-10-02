@@ -3189,7 +3189,10 @@ async def create_recipe(
 
 
 @router.get("/fnb/recipes")
-async def get_recipes(current_user: User = Depends(get_current_user)):
+async def get_recipes(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
     recipes = await db.recipes.find({"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).sort("dish_name", 1).to_list(200)
 
@@ -3201,7 +3204,11 @@ async def get_recipes(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/fnb/recipes/{recipe_id}")
-async def get_recipe(recipe_id: str, current_user: User = Depends(get_current_user)):
+async def get_recipe(
+    recipe_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
     recipe = await db.recipes.find_one({"tenant_id": current_user.tenant_id, "id": recipe_id}, {"_id": 0})
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
@@ -3245,7 +3252,10 @@ async def create_beo(
 
 
 @router.get("/fnb/ingredients")
-async def list_ingredients(current_user: User = Depends(get_current_user)):
+async def list_ingredients(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
     ingredients = await db.ingredients.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("name", 1).to_list(500)
 
     low_stock = [ing for ing in ingredients if ing.get("current_stock", 0) <= ing.get("reorder_point", 0)]
