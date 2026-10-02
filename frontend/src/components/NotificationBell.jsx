@@ -152,7 +152,14 @@ const NotificationBell = () => {
   };
   return <>
       <div className="relative">
-        <Button variant="ghost" size="sm" onClick={() => setIsOpen(true)} className="relative p-2 hover:bg-white/20 dark:text-gray-100" data-testid="notification-bell-button">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsOpen(true)}
+          className="relative p-2 hover:bg-white/20 dark:text-gray-100"
+          data-testid="notification-bell-button"
+          aria-label={unreadCount > 0 ? `Bildirimler: ${unreadCount} okunmamış` : 'Bildirimleri aç'}
+        >
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white text-xs">
               {unreadCount > 9 ? '9+' : unreadCount}
