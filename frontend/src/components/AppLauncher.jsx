@@ -48,8 +48,14 @@ export default function AppLauncher({ user }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full focus-visible:ring-0">
-          <Grid3X3 className="h-[1.1rem] w-[1.1rem] text-slate-600 dark:text-slate-300" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-full focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+          aria-label="Uygulama seçiciyi aç"
+          title="Uygulamalar"
+        >
+          <Grid3X3 className="h-[1.1rem] w-[1.1rem] text-slate-600 dark:text-slate-300" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 p-2">
