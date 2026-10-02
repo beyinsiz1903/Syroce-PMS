@@ -253,7 +253,11 @@ async def _compute_company_aging(tenant_id: str) -> dict:
     business_state = await ensure_business_date_initialized(db, tenant_id)
     today = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
 
-    folios = await db.folios.find({"tenant_id": tenant_id, "folio_type": "company", "status": "open"}).to_list(10000)
+    # AR aging is a financial control; a hard list cap would silently hide
+    # overdue company debt for high-volume properties.
+    folios = await db.folios.find(
+        {"tenant_id": tenant_id, "folio_type": "company", "status": "open"}
+    ).to_list(None)
 
     company_balances: dict[str, dict] = {}
 
@@ -445,7 +449,9 @@ async def get_finance_snapshot(
     today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
     # 1. Calculate Total Pending AR from company folios
-    company_folios = await db.folios.find({"tenant_id": current_user.tenant_id, "folio_type": "company", "status": "open"}).to_list(10000)
+    company_folios = await db.folios.find(
+        {"tenant_id": current_user.tenant_id, "folio_type": "company", "status": "open"}
+    ).to_list(None)
 
     total_pending_ar = 0
     overdue_0_30 = 0
@@ -483,7 +489,7 @@ async def get_finance_snapshot(
                 {"processed_at": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}},
             ),
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     def effective_payment(payment: dict) -> float:
         return effective_collection(payment)
@@ -504,7 +510,7 @@ async def get_finance_snapshot(
                 {"processed_at": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
             ),
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     mtd_collections = sum(effective_payment(payment) for payment in mtd_payments)
 
@@ -519,13 +525,15 @@ async def get_finance_snapshot(
                 {"business_date": None, "date": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
             ],
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     mtd_revenue = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in mtd_charges)
     collection_rate = (mtd_collections / mtd_revenue * 100) if mtd_revenue > 0 else 0
 
     # 5. Get Accounting Invoices (E-Fatura ready)
-    pending_invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": {"$in": ["pending", "partial"]}}).to_list(1000)
+    pending_invoices = await db.accounting_invoices.find(
+        {"tenant_id": current_user.tenant_id, "status": {"$in": ["pending", "partial"]}}
+    ).to_list(None)
 
     pending_invoice_total = sum(inv.get("total", 0) for inv in pending_invoices)
     pending_invoice_count = len(pending_invoices)
