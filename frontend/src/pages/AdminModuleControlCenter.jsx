@@ -234,6 +234,11 @@ export default function AdminModuleControlCenter() {
                 <p className="mt-1 text-sm font-semibold text-slate-900">{statusLoading ? '—' : statusData.usage?.last_activity_at ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(statusData.usage.last_activity_at)) : 'Kayıt yok'}</p>
                 <p className="mt-0.5 text-[11px] text-slate-500">Kullanım ölçüm kaydı</p>
               </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="flex items-center gap-1.5 text-xs text-slate-500"><ShieldCheck className="h-3.5 w-3.5" /> Son modül yayını</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{selected?.module_control_updated_at ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selected.module_control_updated_at)) : 'Kayıt yok'}</p>
+                <p className="mt-0.5 truncate text-[11px] text-slate-500">{selected?.module_control_updated_by_name || selected?.module_control_updated_by || 'Henüz yayın yapılmadı'}</p>
+              </div>
             </div>
           </section>
 
@@ -264,6 +269,7 @@ export default function AdminModuleControlCenter() {
                         <div><dt className="text-slate-500">Kullanım</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleUsageLabel(item, statusData.usage || {})}</dd></div>
                         <div><dt className="text-slate-500">Kullanıcı kapsamı</dt><dd className="mt-0.5 font-semibold text-slate-800">Tesis: {statusData.usage?.current_resources?.active_users ?? 'ölçülmüyor'} aktif</dd></div>
                         <div><dt className="text-slate-500">Yetkilendirme</dt><dd className="mt-0.5 font-semibold text-slate-800">Rol ve kullanıcı izni ayrıca uygulanır</dd></div>
+                        <div className="col-span-2"><dt className="text-slate-500">Son değişiklik</dt><dd className="mt-0.5 font-semibold text-slate-800">{selected?.module_control_changes?.[item.key]?.changed_at ? `${new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selected.module_control_changes[item.key].changed_at))} · ${selected.module_control_changes[item.key].changed_by_name || selected.module_control_changes[item.key].changed_by || 'Sistem'}` : 'Kayıt yok'}</dd></div>
                       </dl>
                       {state.launchable && (
                         <Button type="button" size="sm" variant="outline" className="mt-3 h-8" onClick={() => openInHotel(item)} disabled={Boolean(openingModule)}>
