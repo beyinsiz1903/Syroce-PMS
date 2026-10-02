@@ -28,6 +28,7 @@ from core.security import get_current_user
 from models.enums import RiskLevel
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.reporting_financials import is_non_cash_adjustment, is_valid_payment
 from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 
 try:
@@ -65,6 +66,19 @@ def _received_payment_amount(payment: dict) -> tuple[float, str]:
         except ValueError:
             pass
     return float(payment.get("amount") or 0), str(payment.get("currency") or "TRY").upper()
+
+
+def _received_collection_amount(payment: dict) -> tuple[float, str]:
+    """Return the received-currency amount with the standard refund sign."""
+    amount, currency = _received_payment_amount(payment)
+    if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
+        amount = -amount
+    return amount, currency
+
+
+def _is_reportable_collection(payment: dict) -> bool:
+    """Exclude voids and folio-only adjustments from cash collection reports."""
+    return is_valid_payment(payment) and not is_non_cash_adjustment(payment)
 
 
 class RecordPaymentRequest(BaseModel):
@@ -108,7 +122,9 @@ async def get_daily_collections_mobile(
         ),
     }
     async for payment in db.payments.find(payment_query):
-        amount, currency = _received_payment_amount(payment)
+        if not _is_reportable_collection(payment):
+            continue
+        amount, currency = _received_collection_amount(payment)
         total_collected += amount
         totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
         payment_count += 1
@@ -174,7 +190,9 @@ async def get_monthly_collections_mobile(
         ),
     }
     async for payment in db.payments.find(payment_query):
-        amount, currency = _received_payment_amount(payment)
+        if not _is_reportable_collection(payment):
+            continue
+        amount, currency = _received_collection_amount(payment)
         total_collected += amount
         totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
 
@@ -244,7 +262,9 @@ async def get_cashier_shift_report(
     methods_by_currency: dict[str, dict[str, float]] = {}
 
     async for payment in db.payments.find(query):
-        amount, currency = _received_payment_amount(payment)
+        if not _is_reportable_collection(payment):
+            continue
+        amount, currency = _received_collection_amount(payment)
         method = payment.get("payment_method") or payment.get("method") or "cash"
         totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
         method_totals = methods_by_currency.setdefault(method, {})
@@ -573,7 +593,9 @@ async def get_cash_flow_summary_mobile(
         ),
     }
     async for payment in db.payments.find(payment_query):
-        amount, currency = _received_payment_amount(payment)
+        if not _is_reportable_collection(payment):
+            continue
+        amount, currency = _received_collection_amount(payment)
         today_inflow += amount
         inflow_by_currency[currency] = inflow_by_currency.get(currency, 0) + amount
         inflow_count += 1
