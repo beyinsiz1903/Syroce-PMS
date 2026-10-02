@@ -267,7 +267,7 @@ async def get_daily_summary(
     bookings = await db.bookings.find(
         {"tenant_id": current_user.tenant_id, "$or": [{"check_in": {"$gte": day, "$lt": next_day}}, {"check_out": {"$gte": day, "$lt": next_day}}, {"check_in": {"$lte": day}, "check_out": {"$gt": day}}]},
         {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "checked_in_at": 1, "checked_out_at": 1},
-    ).to_list(10000)
+    ).to_list(None)
     arrivals = sum(1 for booking in bookings if as_date(booking.get("check_in")) == target_date and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
     departures = sum(1 for booking in bookings if as_date(booking.get("check_out")) == target_date and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
     metrics = await load_stay_night_metrics(db, current_user.tenant_id, target_date, target_date, actual_only=True)
@@ -285,7 +285,7 @@ async def get_daily_summary(
             ),
         },
         {"_id": 0},
-    ).to_list(10000)
+    ).to_list(None)
     collections_by_currency: dict[str, float] = {}
     adjustments_by_currency: dict[str, float] = {}
     for payment in payments:
