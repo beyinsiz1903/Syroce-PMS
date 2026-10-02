@@ -177,6 +177,30 @@ def test_normal_discount_does_not_hide_a_real_room_price_mismatch():
     assert summary["pricing_reconciliation_difference"] == 4800.0
 
 
+def test_audited_rate_correction_offsets_closed_room_charge_without_rewriting_it():
+    summary = reservation_detail._build_financial_summary(
+        {
+            "total_amount": 10000.0,
+            "check_in": "2026-09-28",
+            "check_out": "2026-10-02",
+        },
+        [
+            {"charge_type": "room_charge", "business_date": "2026-09-28", "total": 2500.0, "voided": False},
+            {"charge_type": "room_charge", "business_date": "2026-09-29", "total": 2500.0, "voided": False},
+            {"charge_type": "room_charge", "business_date": "2026-09-30", "total": 2500.0, "voided": False},
+            {"charge_type": "room_charge", "business_date": "2026-10-01", "total": 5000.0, "voided": False},
+        ],
+        [{"amount": 2500.0, "method": "discount", "payment_type": "rate_correction", "voided": False}],
+        [],
+        [],
+    )
+
+    assert summary["rate_correction_total"] == 2500.0
+    assert summary["total_discounts"] == 2500.0
+    assert summary["reservation_total_due"] == 10000.0
+    assert summary["pricing_reconciliation_required"] is False
+
+
 def test_summary_marks_automatic_accommodation_tax_overage_as_reconciliation():
     """A system tax row may not turn a fully paid booking into new debt."""
     summary = reservation_detail._build_financial_summary(
