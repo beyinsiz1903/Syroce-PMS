@@ -128,6 +128,16 @@ def _folio_export_transactions(charges: list[dict], payments: list[dict]) -> lis
     return sorted(transactions, key=lambda transaction: str(transaction["date"]))
 
 
+def _effective_folio_payment_total(payments: list[dict]) -> float:
+    """Sum only payments that are financially effective on a folio.
+
+    Proforma documents show the amount due and are commonly used as the
+    operator's last confirmation before collection or checkout.  A declined
+    gateway attempt must not make that document look settled.
+    """
+    return round(sum(float(payment.get("amount") or 0.0) for payment in payments if is_valid_payment(payment)), 2)
+
+
 async def _decrement_booking_paid_amount(tenant_id: str, booking_id: str, amount: float) -> float:
     """Reverse only the amount previously credited to a booking payment total."""
     booking = await db.bookings.find_one(
@@ -1703,9 +1713,15 @@ async def generate_folio_proforma(
     if not folio:
         raise HTTPException(status_code=404, detail="Folio bulunamadı")
 
-    charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": False}, {"_id": 0}).to_list(2000)
+    charges = await db.folio_charges.find(
+        {"folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": {"$ne": True}},
+        {"_id": 0},
+    ).to_list(2000)
 
-    payments = await db.payments.find({"folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": False}, {"_id": 0}).to_list(2000)
+    payments = await db.payments.find(
+        {"folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": {"$ne": True}},
+        {"_id": 0},
+    ).to_list(2000)
 
     # KDV oranı bazlı gruplama
     vat_groups: dict[str, dict[str, float]] = {}
@@ -1738,7 +1754,7 @@ async def generate_folio_proforma(
         g["vat_amount"] = round(g["vat_amount"] + vat, 2)
         g["count"] += 1
 
-    payments_total = round(sum(float(p.get("amount") or 0.0) for p in payments), 2)
+    payments_total = _effective_folio_payment_total(payments)
     balance = round(grand_total - payments_total, 2)
 
     # Misafir ve booking bilgileri
