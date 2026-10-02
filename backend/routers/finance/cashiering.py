@@ -101,7 +101,7 @@ async def _city_ledger_booking_items(tenant_id: str, account_id: str) -> tuple[l
     transactions = await db.city_ledger_transactions.find(
         {"tenant_id": tenant_id, "account_id": account_id},
         {"_id": 0},
-    ).to_list(5000)
+    ).to_list(None)
 
     items_by_booking: dict[str, dict] = {}
     allocated_payment_total = 0.0
@@ -261,11 +261,11 @@ async def get_city_ledger_candidates(credentials: HTTPAuthorizationCredentials =
     _enforce(current_user, "view_city_ledger")
 
     tenant_id = current_user.tenant_id
-    companies = await db.companies.find({"tenant_id": tenant_id}).to_list(1000)
+    companies = await db.companies.find({"tenant_id": tenant_id}).to_list(None)
     accounts = await db.city_ledger_accounts.find(
         {"tenant_id": tenant_id},
         {"_id": 0, "source_company_id": 1, "account_name": 1, "company_name": 1, "tax_number": 1},
-    ).to_list(1000)
+    ).to_list(None)
 
     linked_ids = {str(account.get("source_company_id")) for account in accounts if account.get("source_company_id")}
     linked_names = {
@@ -318,7 +318,7 @@ async def get_city_ledger_accounts(is_active: bool = True, credentials: HTTPAuth
     if is_active is not None:
         query["is_active"] = is_active
 
-    accounts = await db.city_ledger_accounts.find(query, {"_id": 0}).to_list(1000)
+    accounts = await db.city_ledger_accounts.find(query, {"_id": 0}).to_list(None)
 
     return {"accounts": accounts, "total_count": len(accounts)}
 
@@ -375,7 +375,7 @@ async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depend
     aging_buckets = {"current": [], "30_days": [], "60_days": [], "90_plus": []}
 
     # Get all city ledger accounts with balance
-    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).to_list(1000)
+    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).to_list(None)
 
     for account in accounts:
         # Get oldest transaction
@@ -616,7 +616,7 @@ async def get_outstanding_balances(credentials: HTTPAuthorizationCredentials = D
     current_user = await get_current_user(credentials)
     _enforce(current_user, "view_outstanding_balance")  # Bug CT
 
-    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).sort("current_balance", -1).to_list(1000)
+    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).sort("current_balance", -1).to_list(None)
 
     total_outstanding = sum(a["current_balance"] for a in accounts)
 

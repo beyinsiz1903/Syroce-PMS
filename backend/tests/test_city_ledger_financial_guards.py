@@ -44,8 +44,10 @@ def collections(monkeypatch):
 class _Cursor:
     def __init__(self, rows):
         self.rows = rows
+        self.limits = []
 
-    async def to_list(self, _limit):
+    async def to_list(self, limit):
+        self.limits.append(limit)
         return self.rows
 
     def sort(self, *_args):
@@ -160,6 +162,29 @@ async def test_city_ledger_candidates_are_tenant_scoped_and_exclude_linked_compa
         "total_count": 1,
     }
     assert company_find.call_args.args[0] == {"tenant_id": "tenant-a"}
+
+
+@pytest.mark.asyncio
+async def test_city_ledger_views_never_silently_cap_financial_rows(user, monkeypatch):
+    company_cursor = _Cursor([])
+    account_cursor = _Cursor([])
+    transaction_cursor = _Cursor([])
+    monkeypatch.setattr(
+        cashiering,
+        "db",
+        SimpleNamespace(
+            companies=SimpleNamespace(find=lambda *_args, **_kwargs: company_cursor),
+            city_ledger_accounts=SimpleNamespace(find=lambda *_args, **_kwargs: account_cursor),
+            city_ledger_transactions=SimpleNamespace(find=lambda *_args, **_kwargs: transaction_cursor),
+        ),
+    )
+
+    await cashiering.get_city_ledger_candidates(credentials=None)
+    await cashiering._city_ledger_booking_items("tenant-a", "account-a")
+
+    assert company_cursor.limits == [None]
+    assert account_cursor.limits == [None]
+    assert transaction_cursor.limits == [None]
 
 
 @pytest.mark.asyncio
