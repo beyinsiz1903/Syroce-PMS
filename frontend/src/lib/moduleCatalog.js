@@ -138,6 +138,20 @@ export function moduleIntegrationLabel(item, state) {
   return 'Sağlık verisi bekleniyor';
 }
 
+// A route proves only that a user can be sent to a workspace.  It does not
+// prove that the tenant completed configuration, credentials or a live
+// connection. Keep that distinction explicit until setup evidence is served
+// by the module-health API.
+export function moduleSetupLabel(item, state) {
+  if (!state.enabled) return 'Erişim kapalı';
+  if (!state.path) return 'Giriş noktası eksik';
+  return 'Kurulum kanıtı yok';
+}
+
+export function moduleWorkspaceLabel(item, state) {
+  return state.path ? 'Çalışma alanı bağlı' : 'Giriş noktası tanımsız';
+}
+
 export function moduleUsageLabel(item, usage = {}) {
   const events = usage.events || {};
   const eventKeys = MODULE_USAGE_EVENTS[item.key] || [];
