@@ -822,7 +822,9 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
             "status": {"$in": ["approved", "received", "completed"]},
             "created_at": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()},
         }
-    ).to_list(10000)
+    # Cost and revenue totals are control figures; never silently truncate a
+    # high-volume property's purchase ledger.
+    ).to_list(None)
 
     # Map purchase order categories to cost categories
     category_mapping = {
@@ -877,7 +879,7 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
                 {"business_date": None, "date": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
             ],
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     total_revenue = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in mtd_charges)
 
