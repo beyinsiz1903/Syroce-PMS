@@ -1,10 +1,11 @@
 import React from 'react';
+import { Info } from 'lucide-react';
 
 const formatDate = value => value
   ? new Date(`${value}T12:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
   : '-';
 
-const ReportFrame = ({ children, reportName, reportDate, periodLabel, tenant, user }) => {
+const ReportFrame = ({ children, reportName, reportDate, periodLabel, tenant, user, contract, refreshedAt }) => {
   const hotelName = tenant?.property_name || tenant?.hotel_name || tenant?.name || 'Otel';
   const preparedBy = user?.full_name || user?.name || user?.email || 'Sistem kullanıcısı';
   const generatedAt = new Date().toLocaleString('tr-TR');
@@ -26,6 +27,20 @@ const ReportFrame = ({ children, reportName, reportDate, periodLabel, tenant, us
           </dl>
         </div>
       </header>
+      {contract && <details className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm print:hidden" data-testid="report-data-contract">
+        <summary className="flex cursor-pointer list-none items-center gap-2 font-semibold text-slate-800">
+          <Info className="h-4 w-4 text-sky-700" aria-hidden="true" />
+          Bu rapor nasıl hesaplanır?
+        </summary>
+        <dl className="mt-3 grid gap-x-6 gap-y-2 text-xs text-slate-600 sm:grid-cols-2">
+          <div><dt className="font-semibold text-slate-700">Veri kaynağı</dt><dd>{contract.dataSource}</dd></div>
+          <div><dt className="font-semibold text-slate-700">Tarih kapsamı</dt><dd>{contract.dateScope}</dd></div>
+          <div><dt className="font-semibold text-slate-700">Finansal kapsam</dt><dd>{contract.financialScope}</dd></div>
+          <div><dt className="font-semibold text-slate-700">Para birimi kuralı</dt><dd>{contract.currencyRule}</dd></div>
+          <div><dt className="font-semibold text-slate-700">Rapor tarihi</dt><dd>{formatDate(reportDate)}</dd></div>
+          {refreshedAt && <div><dt className="font-semibold text-slate-700">Son yenileme</dt><dd>{refreshedAt}</dd></div>}
+        </dl>
+      </details>}
       {children}
       <footer className="report-print-footer hidden print:flex">
         <span>{hotelName} · {reportName}</span>
