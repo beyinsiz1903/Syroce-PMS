@@ -82,6 +82,22 @@ export const buildCityLedgerCandidateAccount = (candidate) => {
   };
 };
 
+// City-ledger'da 0 veya boş kredi limiti, kredi tanımlanmadığı için "sınırsız"
+// anlamına gelir. Bu hesaplar için parasal "kullanılabilir limit" hesaplanmaz.
+export const getCityLedgerCreditStatus = (creditLimitValue, balanceValue) => {
+  const creditLimit = Number(creditLimitValue) || 0;
+  const balance = Number(balanceValue) || 0;
+  const hasCreditLimit = creditLimit > 0;
+
+  return {
+    creditLimit,
+    balance,
+    hasCreditLimit,
+    available: hasCreditLimit ? creditLimit - balance : null,
+    utilization: hasCreditLimit ? (balance / creditLimit) * 100 : null,
+  };
+};
+
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const currency = tenant?.currency || cachedTenantCurrency();
@@ -124,21 +140,26 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const loadAccounts = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/cashiering/city-ledger');
-      const data = response.data?.accounts || [];
-      setAccounts(data);
-    } catch (error) {
-      console.error('Failed to load city ledger accounts:', error);
-      toast.error('Cari hesaplar yüklenemedi');
-      setAccounts([]);
-    }
-    try {
-      const candidateResponse = await axios.get('/cashiering/city-ledger-candidates');
-      setCandidates(candidateResponse.data?.candidates || []);
-    } catch (error) {
-      console.error('Failed to load city ledger candidates:', error);
-      toast.error('Tanımlanacak şirketler yüklenemedi');
-      setCandidates([]);
+      const [accountsResult, candidatesResult] = await Promise.allSettled([
+        axios.get('/cashiering/city-ledger'),
+        axios.get('/cashiering/city-ledger-candidates'),
+      ]);
+
+      if (accountsResult.status === 'fulfilled') {
+        setAccounts(accountsResult.value.data?.accounts || []);
+      } else {
+        console.error('Failed to load city ledger accounts:', accountsResult.reason);
+        toast.error('Cari hesaplar yüklenemedi');
+        setAccounts([]);
+      }
+
+      if (candidatesResult.status === 'fulfilled') {
+        setCandidates(candidatesResult.value.data?.candidates || []);
+      } else {
+        console.error('Failed to load city ledger candidates:', candidatesResult.reason);
+        toast.error('Tanımlanacak şirketler yüklenemedi');
+        setCandidates([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -366,6 +387,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                 <Input
                   className="pl-10"
                   placeholder="Hesap veya şirket adına göre ara..."
+                  aria-label="Cari hesap veya şirket adına göre ara"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -416,14 +438,17 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
             ) : (
               <div className="space-y-4">
                 {filteredAccounts.map((account) => {
-                  const balance = account.current_balance || 0;
-                  const creditLimit = account.credit_limit || 0;
-                  const available = creditLimit - balance;
-                  const utilization = creditLimit > 0 ? (balance / creditLimit) * 100 : 0;
+                  const {
+                    balance,
+                    creditLimit,
+                    hasCreditLimit,
+                    available,
+                    utilization,
+                  } = getCityLedgerCreditStatus(account.credit_limit, account.current_balance);
 
                   let statusColor = 'bg-green-100 text-green-800';
-                  if (utilization > 90) statusColor = 'bg-red-100 text-red-800';
-                  else if (utilization > 70) statusColor = 'bg-yellow-100 text-yellow-800';
+                  if (hasCreditLimit && utilization > 90) statusColor = 'bg-red-100 text-red-800';
+                  else if (hasCreditLimit && utilization > 70) statusColor = 'bg-yellow-100 text-yellow-800';
 
                   const accountCurrency = account.currency || currency;
 
@@ -441,14 +466,16 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                           )}
                         </div>
                         <div className="text-sm text-gray-600 mb-2">
-                          Kredi Limiti: {formatCurrency(creditLimit, accountCurrency)} &nbsp;|&nbsp; Bakiye: {formatCurrency(balance, accountCurrency)} &nbsp;|&nbsp; Kullanılabilir: {formatCurrency(available, accountCurrency)}
+                          Kredi Limiti: {hasCreditLimit ? formatCurrency(creditLimit, accountCurrency) : 'Sınırsız'} &nbsp;|&nbsp; Bakiye: {formatCurrency(balance, accountCurrency)} &nbsp;|&nbsp; Kullanılabilir: {hasCreditLimit ? formatCurrency(available, accountCurrency) : 'Sınırsız'}
                         </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="h-2 rounded-full bg-blue-500"
-                            style={{ width: `${Math.min(100, utilization)}%` }}
-                          />
-                        </div>
+                        {hasCreditLimit && (
+                          <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="h-2 rounded-full bg-blue-500"
+                              style={{ width: `${Math.min(100, Math.max(0, utilization))}%` }}
+                            />
+                          </div>
+                        )}
                         {account.billing_address && (
                           <div className="text-xs text-gray-400 mt-1">
                             {account.billing_address}, {account.billing_city}
@@ -459,7 +486,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
                       <div className="flex flex-col items-end gap-2">
                         <Badge className={statusColor}>
-                          Kullanım {creditLimit > 0 ? `${utilization.toFixed(0)}%` : 'Limitsiz'}
+                          {hasCreditLimit ? `Kullanım ${utilization.toFixed(0)}%` : 'Kredi sınırı yok'}
                         </Badge>
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button
