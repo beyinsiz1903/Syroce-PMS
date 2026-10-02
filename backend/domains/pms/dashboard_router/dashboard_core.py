@@ -812,21 +812,22 @@ async def get_revenue_expense_chart(
         start = end - timedelta(days=365)
         interval = "monthly"
 
-    # 2 bagimsiz find paralel — N+1 fix
+    # The chart is a financial report: do not silently truncate a busy
+    # property's ledger at an arbitrary row count.
     charges, expenses = await asyncio.gather(
         db.folio_charges.find(
             {
                 "tenant_id": current_user.tenant_id,
-                "voided": False,
-                "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "voided": {"$ne": True},
+                "date": {"$gte": start.isoformat(), "$lt": end.isoformat()},
             }
-        ).to_list(10000),
+        ).to_list(None),
         db.expenses.find(
             {
                 "tenant_id": current_user.tenant_id,
-                "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "date": {"$gte": start.isoformat(), "$lt": end.isoformat()},
             }
-        ).to_list(10000),
+        ).to_list(None),
     )
 
     # Group data by interval
