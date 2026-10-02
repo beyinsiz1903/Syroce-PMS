@@ -721,6 +721,7 @@ code {
 .dark .hover\:text-indigo-800:hover,
 .dark .data-\[state\=active\]\:text-indigo-600[data-state=active],
 .dark .data-\[state\=active\]\:text-indigo-700[data-state=active] { color: #a5b4fc; }
+.dark .border-indigo-50,
 .dark .border-indigo-100,
 .dark .border-indigo-200,
 .dark .border-indigo-300,
