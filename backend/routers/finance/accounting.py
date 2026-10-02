@@ -1582,10 +1582,10 @@ async def get_profit_loss_report(
     if not end_date:
         end_date = _d.today().isoformat()
     # Get all income
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": "paid", "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": "paid", "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
 
     # Get all expenses
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
 
     from core.tenant_currency import get_tenant_currency
 
@@ -1663,7 +1663,7 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
     if not end_date:
         end_date = _d.today().isoformat()
     # Sales VAT (collected)
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
 
     from core.tenant_currency import get_tenant_currency
 
@@ -1679,7 +1679,7 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
     sales_vat = sum(inv["total_vat"] for inv in invoices)
 
     # Purchase VAT (paid)
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
 
     purchase_vat = sum(exp["vat_amount"] for exp in expenses)
 
@@ -1846,9 +1846,9 @@ async def get_accounting_dashboard(
     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
     month_end = today.isoformat()
 
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(1000)
+    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
 
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
 
     # Never combine nominal amounts from different currencies.  Keep the legacy
     # scalar fields for older clients, and expose currency-safe breakdowns for
@@ -1874,7 +1874,7 @@ async def get_accounting_dashboard(
     overdue_invoices = len([inv for inv in invoices if inv.get("status") == "overdue"])
 
     # Get bank balances
-    bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
+    bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
     total_bank_balance = sum(acc["balance"] for acc in bank_accounts)
     bank_balance_by_currency = _currency_totals(bank_accounts, "balance", cur_code)
 
