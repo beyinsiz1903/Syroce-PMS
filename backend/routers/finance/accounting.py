@@ -1560,25 +1560,6 @@ async def create_accounting_invoice(
     invoice_dict = invoice.model_dump(mode="json")
     await db.accounting_invoices.insert_one(invoice_dict)
 
-    # Create cash flow entry
-    # CashFlow model imported at top
-    cash_flow = CashFlow(
-        tenant_id=current_user.tenant_id,
-        transaction_type="income",
-        category="room_revenue" if request.booking_id else "other_services",
-        amount=total,
-        currency=invoice_currency,
-        description=f"Invoice {invoice_number}",
-        reference_id=invoice.id,
-        reference_type="invoice",
-        date=datetime.now(UTC),
-        created_by=current_user.name,
-    )
-    cf_dict = cash_flow.model_dump()
-    cf_dict["date"] = cf_dict["date"].isoformat()
-    cf_dict["created_at"] = cf_dict["created_at"].isoformat()
-    await db.cash_flow.insert_one(cf_dict)
-
     # v95.1 — list cache + dashboard cache invalidasyon
     _invalidate_accounting_caches(
         current_user.tenant_id,
@@ -1626,8 +1607,32 @@ async def update_accounting_invoice(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
+    editable_fields = {
+        "status",
+        "payment_date",
+        "customer_name",
+        "customer_email",
+        "customer_tax_office",
+        "customer_tax_number",
+        "customer_address",
+        "due_date",
+        "notes",
+    }
+    if set(updates) - editable_fields:
+        raise HTTPException(status_code=422, detail="Faturanın mali ve tesis alanları değiştirilemez")
+    if "status" in updates:
+        try:
+            updates["status"] = PaymentStatus(str(updates["status"])).value
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Geçersiz fatura durumu") from exc
     if "status" in updates and updates["status"] == "paid" and "payment_date" not in updates:
         updates["payment_date"] = datetime.now(UTC).isoformat()
+
+    if "due_date" in updates:
+        try:
+            updates["due_date"] = _normalize_accounting_invoice_due_date(str(updates["due_date"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     for f in ("customer_name", "customer_tax_office", "customer_address", "customer_tax_number"):
         if f in updates and isinstance(updates[f], str):
@@ -1647,6 +1652,33 @@ async def update_accounting_invoice(
     if upd.matched_count == 0:
         raise HTTPException(status_code=404, detail="Accounting invoice not found")
     invoice = await db.accounting_invoices.find_one(tenant_filter, {"_id": 0})
+    cash_flow_filter = {
+        "tenant_id": current_user.tenant_id,
+        "reference_type": "invoice",
+        "reference_id": invoice_id,
+    }
+    if invoice and invoice.get("status") == PaymentStatus.PAID.value:
+        await db.cash_flow.update_one(
+            cash_flow_filter,
+            {
+                "$set": {
+                    "transaction_type": "income",
+                    "category": "room_revenue" if invoice.get("booking_id") else "other_services",
+                    "amount": float(invoice.get("total") or 0),
+                    "currency": invoice.get("currency") or "TRY",
+                    "description": f"Invoice {invoice.get('invoice_number') or invoice_id}",
+                    "date": invoice.get("payment_date") or datetime.now(UTC).isoformat(),
+                },
+                "$setOnInsert": {
+                    **cash_flow_filter,
+                    "created_by": getattr(current_user, "name", None),
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            },
+            upsert=True,
+        )
+    else:
+        await db.cash_flow.delete_one(cash_flow_filter)
 
     _invalidate_accounting_caches(
         current_user.tenant_id,
