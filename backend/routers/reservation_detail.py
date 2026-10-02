@@ -376,6 +376,16 @@ def _build_financial_summary(
         and payment.get("method") == "discount"
         and str(payment.get("payment_type") or "").lower() == "comp_adjustment"
     )
+    # Closed Night Audit rows are immutable. A later commercial rate correction
+    # is recorded as a separate, auditable discount instead of rewriting room
+    # revenue from a closed business day.
+    rate_correction_total = sum(
+        payment.get("amount", 0)
+        for payment in payments
+        if not payment.get("voided")
+        and payment.get("method") == "discount"
+        and str(payment.get("payment_type") or "").lower() == "rate_correction"
+    )
     total_extra = sum(_extra_charge_total(charge) for charge in extra_charges if not charge.get("voided"))
     total_deposits = sum(
         max(
@@ -454,7 +464,8 @@ def _build_financial_summary(
     reconciled_reservation_price_component_total = max(
         0.0,
         float(reservation_price_component_total or 0)
-        - float(complimentary_adjustment_total or 0),
+        - float(complimentary_adjustment_total or 0)
+        - float(rate_correction_total or 0),
     )
     raw_pricing_difference = reconciled_reservation_price_component_total - booking_total
     # A higher booking header is only a mismatch once every stay night is
@@ -477,6 +488,7 @@ def _build_financial_summary(
         "other_payments_total": round(total_payments - prepayment_total, 2),
         "total_discounts": round(total_discounts, 2),
         "complimentary_adjustment_total": round(complimentary_adjustment_total, 2),
+        "rate_correction_total": round(rate_correction_total, 2),
         "total_extra": round(total_extra, 2),
         "accommodation_total": round(accommodation_total, 2),
         "additional_charge_total": round(additional_charge_total, 2),
@@ -852,6 +864,13 @@ class ComplimentaryPlanRequest(BaseModel):
 
     reason: str = Field(..., min_length=3, max_length=500)
     mode: Literal["entire_stay", "open_nights", "closed_nights_adjustment"]
+
+
+class PostedStayRateCorrectionRequest(BaseModel):
+    """Target a commercial stay total without rewriting closed room charges."""
+
+    target_total: float = Field(..., ge=0, le=1e9)
+    reason: str = Field(..., min_length=3, max_length=500)
 
 
 class CariAccountCreate(BaseModel):
@@ -3963,6 +3982,93 @@ async def reconcile_complimentary_total(
         metadata={"old_total": old_total, "new_total": 0.0, "actor_name": current_user.name},
     )
     return {"success": True, "new_total": 0.0, "repaired": True}
+
+
+@router.post("/reservations/{booking_id}/apply-posted-stay-rate-correction")
+async def apply_posted_stay_rate_correction(
+    booking_id: str,
+    data: PostedStayRateCorrectionRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Offset a closed-night pricing error without rewriting Night Audit rows."""
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli konaklama tarihleri yok")
+    stay_dates = [(check_in + timedelta(days=offset)).isoformat() for offset in range((check_out - check_in).days)]
+    folios = [row async for row in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1, "status": 1, "currency": 1})]
+    folio_ids = [row.get("id") for row in folios if row.get("id")]
+    financial_scope = _booking_or_folio_scope_query(tid, booking_id, folio_ids)
+    room_charges = [row async for row in db.folio_charges.find(
+        {"$and": [financial_scope, {"voided": {"$ne": True}}, {"$or": [{"charge_type": "room_charge"}, {"charge_category": "room"}]}]},
+        {"_id": 0},
+    )]
+    charges_by_date: dict[str, float] = {}
+    for charge in room_charges:
+        charge_date = _reservation_calendar_date(charge.get("business_date") or charge.get("night_audit_date") or charge.get("date"))
+        if charge_date is None:
+            raise HTTPException(status_code=409, detail="Tarihsiz oda tahakkuku var; manuel finans mutabakatı gerekir")
+        date_key = charge_date.isoformat()
+        if date_key in charges_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için birden fazla oda tahakkuku var; manuel finans mutabakatı gerekir")
+        charges_by_date[date_key] = round(float(charge.get("total", charge.get("amount", 0)) or 0), 2)
+    if set(charges_by_date) != set(stay_dates) or any(value <= 0 for value in charges_by_date.values()):
+        raise HTTPException(status_code=409, detail="Her konaklama gecesi için tek ve pozitif tahakkuk olmadan fiyat düzeltmesi yapılamaz")
+    invoice_query = {"tenant_id": tid, "status": {"$nin": ["draft", "cancelled", "voided"]}, "$or": [{"booking_id": booking_id}]}
+    if folio_ids:
+        invoice_query["$or"].append({"folio_id": {"$in": folio_ids}})
+    if await db.invoices.find_one(invoice_query, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=409, detail="Fatura düzenlenmiş; fiyat düzeltmesi için iade/düzeltme belgesi gerekir")
+    posted_total = round(sum(charges_by_date.values()), 2)
+    prior_corrections = [row async for row in db.payments.find(
+        {"$and": [financial_scope, {"voided": {"$ne": True}}, {"method": "discount"}, {"payment_type": "rate_correction"}]},
+        {"_id": 0, "amount": 1},
+    )]
+    already_corrected = round(sum(float(row.get("amount", 0) or 0) for row in prior_corrections), 2)
+    effective_total = round(posted_total - already_corrected, 2)
+    target_total = round(float(data.target_total), 2)
+    if target_total >= effective_total - 0.01:
+        raise HTTPException(status_code=422, detail="Hedef tutar mevcut net tahakkuktan düşük olmalıdır; artırma için günlük fiyatı düzeltin")
+    correction_amount = round(effective_total - target_total, 2)
+    reference = "RATE-CORR-" + uuid.uuid5(uuid.NAMESPACE_URL, f"{tid}:{booking_id}:{target_total}").hex
+    existing = await db.payments.find_one({"tenant_id": tid, "booking_id": booking_id, "reference": reference, "voided": False}, {"_id": 0, "id": 1})
+    if existing:
+        return {"success": True, "already_applied": True, "target_total": target_total, "adjustment_amount": correction_amount}
+    now = datetime.now(UTC).isoformat()
+    folio = next((row for row in folios if row.get("status") == "open"), None)
+    if folio is None:
+        raise HTTPException(status_code=409, detail="Açık misafir folyası bulunamadı; fiyat düzeltmesi yapılamaz")
+    payment = {
+        "id": str(uuid.uuid4()), "tenant_id": tid, "folio_id": folio["id"], "booking_id": booking_id,
+        "amount": correction_amount, "currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(),
+        "received_currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(), "received_amount": correction_amount,
+        "exchange_rate": 1.0, "method": "discount", "payment_type": "rate_correction", "status": "paid", "reference": reference,
+        "description": "Kapanmış gece fiyat düzeltmesi", "notes": data.reason.strip(), "processed_by": current_user.name,
+        "processed_at": now, "voided": False, "posted_stay_total": posted_total, "target_total": target_total, "affected_dates": stay_dates,
+    }
+    await stamp_open_business_date(db, tid, payment)
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            await db.payments.insert_one(payment, session=session)
+            result = await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid},
+                {"$set": {"total_amount": target_total, "financial_rate_correction_at": now, "financial_rate_correction_by": current_user.name, "financial_rate_correction_reason": data.reason.strip()}},
+                session=session,
+            )
+            if result.modified_count != 1:
+                raise HTTPException(status_code=409, detail="Rezervasyon değişti; ekranı yenileyip tekrar deneyin")
+    await _refresh_cached_folio_balance(tid, folio["id"])
+    metadata = {"posted_total": posted_total, "target_total": target_total, "adjustment_amount": correction_amount, "reason": data.reason.strip(), "reference": reference, "affected_dates": stay_dates}
+    await _log_activity(tid, booking_id, "posted_stay_rate_correction_applied", current_user.name, metadata)
+    await audit_log(actor_id=current_user.id, tenant_id=tid, property_id=tid, entity_type="reservation", entity_id=booking_id, action="posted_stay_rate_correction_applied", metadata=metadata)
+    return {"success": True, "target_total": target_total, "adjustment_amount": correction_amount, "reference": reference}
 
 
 @router.post("/reservations/{booking_id}/reconcile-posted-stay-total")

@@ -77,11 +77,13 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [showAgency, setShowAgency] = useState(false);
   const [showCariTransfer, setShowCariTransfer] = useState(false);
   const [showReconcile, setShowReconcile] = useState(false);
+  const [showPriceCorrection, setShowPriceCorrection] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', reference: '' });
   const [cariAccounts, setCariAccounts] = useState([]);
   const [cariForm, setCariForm] = useState({ amount: '', cari_account_id: '', description: '' });
   const [agencyForm, setAgencyForm] = useState({ amount: '', agency_name: '', reference: '' });
   const [cariTransferForm, setCariTransferForm] = useState({ source_id: '', target_id: '', amount: '', description: '' });
+  const [priceCorrectionForm, setPriceCorrectionForm] = useState({ target_total: '', reason: '' });
   const [showNewCari, setShowNewCari] = useState(false);
   const [newCariForm, setNewCariForm] = useState({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
@@ -218,6 +220,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     }
   };
 
+  const openPriceCorrection = () => {
+    setActionError('');
+    setPriceCorrectionForm({ target_total: String(booking?.total_amount ?? ''), reason: '' });
+    setShowPriceCorrection(true);
+  };
+
   const openSplit = async () => {
     // Folio zaten varsa mevcut akış aynen çalışır.
     if (folioList.length > 0) {
@@ -339,7 +347,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.total_payments} color="emerald" />
         <SummaryCard currency={currency} label="Kalan Bakiye" value={reservationTotalDue} color={reservationTotalDue > 0 ? 'red' : 'green'} />
         {(summary?.total_discounts || 0) > 0 && (
-          <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
+          <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat Düzeltmesi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
         )}
       </div>
       {prepaymentTotal > 0 && (
@@ -359,10 +367,15 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <span>{pricingReconciliationDirection === 'booking_above_posted'
             ? `Rezervasyon toplamı, tamamlanmış oda tahakkuklarından ${fmtCurrency(pricingReconciliationDifference, currency)} fazla görünüyor. Bu tutar misafire yeniden yansıtılmaz.`
             : `Oda tahakkukları, onaylı rezervasyon toplamından ${fmtCurrency(pricingReconciliationDifference, currency)} fazla. Bu fark tahsil edilmez; ödeme almadan önce mutabakatı tamamlayın.`}</span>
-          {!readOnly && summary?.room_plan_fully_posted && (
+          {!readOnly && summary?.room_plan_fully_posted && pricingReconciliationDirection === 'booking_above_posted' && (
             <Button size="sm" variant="outline" onClick={reconcileStayTotal} disabled={reconcilingStayTotal} className="h-8 border-amber-400 bg-white text-xs text-amber-800" data-testid="btn-reconcile-posted-stay-total">
               {reconcilingStayTotal && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
               Tahakkuklarla Eşitle
+            </Button>
+          )}
+          {!readOnly && summary?.room_plan_fully_posted && pricingReconciliationDirection === 'posted_above_booking' && (
+            <Button size="sm" variant="outline" onClick={openPriceCorrection} className="h-8 border-amber-400 bg-white text-xs text-amber-800" data-testid="btn-posted-stay-rate-correction">
+              Fiyat düzeltmesi oluştur
             </Button>
           )}
         </div>
@@ -375,6 +388,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
           <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
           <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol"><Split className="w-3 h-3 mr-1" /> Folyo Böl</Button>
+          {!readOnly && summary?.room_plan_fully_posted && (
+            <Button size="sm" variant="outline" onClick={openPriceCorrection} className="h-8 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" data-testid="btn-open-posted-stay-rate-correction"><Receipt className="w-3 h-3 mr-1" /> Fiyat Düzeltmesi</Button>
+          )}
           {summarizeReceivedPayments(payments, 0, currency).some(receipt => normalizeCurrency(receipt.currency) !== 'TRY') && (
             <Button size="sm" variant="outline" onClick={openCashExchange} className="h-8 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50" data-testid="btn-currency-exchange"><ArrowRightLeft className="w-3 h-3 mr-1" /> Döviz Bozdur</Button>
           )}
@@ -657,6 +673,26 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             <FormField label={`Tutar (${currency})`} type="number" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
           </div>
           <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplaştırma açıklaması" />
+        </FormPanel>
+      )}
+
+      {showPriceCorrection && (
+        <FormPanel color="amber" title="Kapanmış gece fiyat düzeltmesi" testid="posted-stay-rate-correction-form" onClose={() => setShowPriceCorrection(false)} loading={loading}
+          onSubmit={() => exec(async () => {
+            const targetTotal = Number(priceCorrectionForm.target_total);
+            if (!Number.isFinite(targetTotal) || targetTotal < 0) throw new Error('Hedef konaklama toplamını girin');
+            if (!priceCorrectionForm.reason.trim()) throw new Error('Fiyat düzeltme gerekçesi zorunludur');
+            const result = await axios.post(`/pms/reservations/${booking.id}/apply-posted-stay-rate-correction`, {
+              target_total: targetTotal,
+              reason: priceCorrectionForm.reason.trim(),
+            });
+            toast.success(`${fmtCurrency(result.data?.adjustment_amount, currency)} fiyat düzeltmesi kaydedildi`);
+            setShowPriceCorrection(false);
+            await onRefresh?.();
+          })}>
+          <p className="text-xs leading-5 text-amber-900">Night Audit ile kapanmış oda tahakkukları değişmez. Sistem, hedef toplam ile mevcut net tahakkuk arasındaki farkı denetim izli indirim kaydı olarak folyoya işler.</p>
+          <FormField label={`Hedef konaklama toplamı (${currency})`} type="number" value={priceCorrectionForm.target_total} onChange={v => setPriceCorrectionForm(p => ({ ...p, target_total: v }))} />
+          <FormField label="Düzeltme gerekçesi" value={priceCorrectionForm.reason} onChange={v => setPriceCorrectionForm(p => ({ ...p, reason: v }))} placeholder="Örn. son gece fiyatı hatalı girildi" />
         </FormPanel>
       )}
 
