@@ -26,6 +26,7 @@ import ManagerDailyReports from './reports/ManagerDailyReports';
 import AccountingStatementsSection from './reports/AccountingStatementsSection';
 import ReportFrame from './reports/ReportFrame';
 import GuestPrivacyNotice from './reports/GuestPrivacyNotice';
+import { getReportContract } from '@/lib/reportContracts';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 const BACKEND_URL = "";
@@ -246,6 +247,7 @@ const BasicReports = ({
   const [reportDate, setReportDate] = useState(businessDate);
   const reportDateEditedRef = useRef(false);
   const [loading, setLoading] = useState(false);
+  const [reportRefreshedAt, setReportRefreshedAt] = useState(null);
   const [error, setError] = useState(null);
   const [exchangeRates, setExchangeRates] = useState({ TRY: 1, TL: 1 });
   const [searchParams, setSearchParams] = useSearchParams();
@@ -292,7 +294,10 @@ const BasicReports = ({
       const json = await fetchJsonWithRetry(BACKEND_URL + `/api/reports/basic-dashboard?${urlParams.toString()}`, {
         credentials: 'include',
       });
-      if (requestSequence === requestSequenceRef.current) setData(json);
+      if (requestSequence === requestSequenceRef.current) {
+        setData(json);
+        setReportRefreshedAt(new Date().toLocaleString('tr-TR'));
+      }
     } catch (err) {
       if (requestSequence === requestSequenceRef.current) setError(err && err.status ? 'Veri yüklenemedi' : err.message || 'Veri yüklenemedi');
     } finally {
@@ -711,7 +716,7 @@ const BasicReports = ({
                 </Button>}
               </div>
             </div>
-            <ReportFrame reportName={currentMenuItem?.label || 'Genel Bakış'} reportDate={activeSection === 'official' ? officialDate : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user}>
+            <ReportFrame reportName={currentMenuItem?.label || 'Genel Bakış'} reportDate={activeSection === 'official' ? officialDate : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
               {renderContent()}
             </ReportFrame>
           </div>
