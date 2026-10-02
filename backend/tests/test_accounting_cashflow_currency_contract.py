@@ -1,6 +1,10 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 from pydantic import ValidationError
 
+from routers.finance import accounting
 from routers.finance.accounting import (
     AccountingInvoiceCreateRequest,
     ExpenseCreateRequest,
@@ -86,3 +90,26 @@ def test_foreign_invoice_requires_an_explicit_positive_accounting_rate():
     with pytest.raises(ValueError, match="sıfırdan büyük"):
         _invoice_currency_terms("EUR", 0, "TRY")
     assert _invoice_currency_terms("TRY", None, "TRY") == ("TRY", 1.0)
+
+
+@pytest.mark.asyncio
+async def test_cash_flow_reads_all_rows_before_calculating_totals(monkeypatch):
+    class Cursor:
+        def __init__(self):
+            self.limits = []
+
+        def sort(self, *_args):
+            return self
+
+        async def to_list(self, limit):
+            self.limits.append(limit)
+            return [{"transaction_type": "income", "amount": 10, "currency": "TRY"}]
+
+    cursor = Cursor()
+    monkeypatch.setattr(accounting, "db", SimpleNamespace(cash_flow=SimpleNamespace(find=lambda *_args, **_kwargs: cursor)))
+    monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+
+    result = await accounting.get_cash_flow(current_user=SimpleNamespace(tenant_id="tenant-a"))
+
+    assert cursor.limits == [None]
+    assert result["total_income"] == 10.0

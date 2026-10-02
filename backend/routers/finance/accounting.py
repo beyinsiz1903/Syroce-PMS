@@ -1532,7 +1532,7 @@ async def get_cash_flow(start_date: str | None = None, end_date: str | None = No
     if transaction_type:
         query["transaction_type"] = transaction_type
 
-    flows = await db.cash_flow.find(query, {"_id": 0}).sort("date", -1).to_list(1000)
+    flows = await db.cash_flow.find(query, {"_id": 0}).sort("date", -1).to_list(None)
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     income_by_currency: dict[str, float] = {}
     expense_by_currency: dict[str, float] = {}
