@@ -317,6 +317,10 @@ class CentralReservationService:
             return {"success": False, "error": "Hedef tesiste seçilen oda tipinde aktif oda bulunamadı"}
 
         transfer_id = str(uuid.uuid4())
+        # IDs are useful to services but not to a finance user reconciling two
+        # hotels. Keep one immutable, human-readable reference on every
+        # booking, settlement, notification and audit entry in this transfer.
+        transfer_reference = f"TRF-{datetime.now(UTC):%Y%m%d}-{transfer_id[:8].upper()}"
         settlement_id = str(uuid.uuid4()) if payment_totals else None
         target_booking_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
@@ -328,6 +332,7 @@ class CentralReservationService:
             "transferred_from", "transferred_to_tenant_id", "transferred_to_booking_id",
             "source_booking_id", "source_tenant_id", "source_property_id", "source_property_name",
             "transfer_financial_handling", "transfer_settlement_id", "transferred_prepayments",
+            "transfer_reference",
         }
         booking_payload = {key: value for key, value in booking.items() if key not in excluded_fields}
         for room in rooms:
@@ -345,6 +350,7 @@ class CentralReservationService:
                 "source_property_name": source_property_name,
                 "property_transfer_status": "received",
                 "transfer_id": transfer_id,
+                "transfer_reference": transfer_reference,
                 "transfer_reason": (reason or "").strip(),
                 "transfer_financial_handling": "retain_and_settle" if payment_totals else "no_financial_activity",
                 "transfer_settlement_id": settlement_id,
@@ -365,6 +371,7 @@ class CentralReservationService:
 
         transfer_record = {
             "id": transfer_id,
+            "transfer_reference": transfer_reference,
             "guest_name": booking.get("guest_name"),
             "confirmation_number": booking.get("confirmation_number") or booking.get("reservation_number"),
             "booking_id": booking_id,
@@ -396,6 +403,7 @@ class CentralReservationService:
                     "transferred_to_tenant_id": target_property_id,
                     "transferred_to_booking_id": target_booking_id,
                     "transfer_id": transfer_id,
+                    "transfer_reference": transfer_reference,
                     "transfer_financial_handling": "retain_and_settle" if payment_totals else "no_financial_activity",
                     "transfer_settlement_id": settlement_id,
                     "cancellation_reason": "Zincir içi tesis değişikliği",
@@ -418,6 +426,7 @@ class CentralReservationService:
                 {
                     "id": settlement_id,
                     "transfer_id": transfer_id,
+                    "transfer_reference": transfer_reference,
                     "chain_id": source_property.get("chain_id") or target_property.get("chain_id"),
                     "source_property_id": tenant_id,
                     "source_property_name": source_property_name,
@@ -447,6 +456,7 @@ class CentralReservationService:
 
         activity_details = {
             "transfer_id": transfer_id,
+            "transfer_reference": transfer_reference,
             "source_property_id": tenant_id,
             "source_property_name": source_property_name,
             "target_property_id": target_property_id,
@@ -480,7 +490,7 @@ class CentralReservationService:
                 "user_id": None,
                 "type": "cross_property_transfer",
                 "title": "Zincirden yeni rezervasyon geldi",
-                "message": f"{source_property_name} tesisinden {booking.get('guest_name') or 'bir misafir'} için rezervasyon aktarıldı.",
+                "message": f"{source_property_name} tesisinden {booking.get('guest_name') or 'bir misafir'} için rezervasyon aktarıldı ({transfer_reference}).",
                 "priority": "high",
                 "target_roles": ["admin", "supervisor", "front_desk", "finance"],
                 "read": False,
@@ -503,7 +513,7 @@ class CentralReservationService:
                         "user_id": None,
                         "type": "chain_transfer_settlement",
                         "title": "Zincir içi mahsuplaşma bekliyor",
-                        "message": f"{counterparty_name} ile rezervasyon transferi tahsilatı için mutabakat gerekli.",
+                        "message": f"{counterparty_name} ile rezervasyon transferi tahsilatı için mutabakat gerekli ({transfer_reference}).",
                         "priority": "high",
                         "target_roles": ["admin", "finance"],
                         "read": False,
@@ -526,6 +536,7 @@ class CentralReservationService:
         return {
             "success": True,
             "transfer_id": transfer_id,
+            "transfer_reference": transfer_reference,
             "source": tenant_id,
             "target": target_property_id,
             "source_property_name": source_property_name,
