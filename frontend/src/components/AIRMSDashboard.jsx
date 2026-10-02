@@ -11,6 +11,7 @@ const AIRMSDashboard = () => {
   const [demandForecast, setDemandForecast] = useState([]);
   const [elasticity, setElasticity] = useState(null);
   const [marketCompression, setMarketCompression] = useState(null);
+  const [pricingPreview, setPricingPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     fetchMarketCompression();
@@ -68,7 +69,7 @@ const AIRMSDashboard = () => {
       console.error('Error fetching market compression:', error);
     }
   };
-  const autoPublishRates = async () => {
+  const previewRates = async () => {
     setLoading(true);
     try {
       const today = new Date();
@@ -78,16 +79,18 @@ const AIRMSDashboard = () => {
         params: {
           start_date: today.toISOString().split('T')[0],
           end_date: endDate.toISOString().split('T')[0],
-          strategy: 'revenue_optimization'
+          strategy: 'revenue_optimization',
+          // Bu panel sadece karar desteği sunar. Kalıcı fiyat yayını, açıkça
+          // adlandırılmış ve ayrı onaylı iş akışından yapılmalıdır.
+          dry_run: true,
         },
         headers: {}
       });
       if (response.data.data_available === false || response.data.success === false) {
         toast.error(response.data.message || t('ai.rms.publishErrorNoData'));
-      } else if (response.data.dry_run) {
-        toast.success(t('ai.rms.dryRunPublish', { count: (response.data.published_rates || []).length }));
       } else {
-        toast.success(t('ai.rms.publishSuccess', { count: response.data.rates_published, avg: response.data.avg_rate }));
+        setPricingPreview(response.data);
+        toast.success(`${(response.data.published_rates || []).length} fiyat önerisi hazırlandı. Hiçbir fiyat yayınlanmadı.`);
       }
     } catch (error) {
       console.error('Error publishing rates:', error);
@@ -99,10 +102,27 @@ const AIRMSDashboard = () => {
   return <div className="p-6 bg-white overflow-hidden">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold">{t('ai.rms.title')}</h1>
-        <button onClick={autoPublishRates} disabled={loading} className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-semibold text-base inline-flex items-center gap-2">
-          {loading ? 'Yayınlanıyor…' : 'Tarifeleri Otomatik Yayınla'}
+        <button onClick={previewRates} disabled={loading} className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-semibold text-base inline-flex items-center gap-2">
+          {loading ? 'Öneriler hesaplanıyor…' : 'Yapay zekâ fiyat önerilerini göster'}
         </button>
       </div>
+
+      {pricingPreview && <section aria-live="polite" className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-indigo-950">Fiyat önerisi önizlemesi</h2>
+              <p className="text-sm text-indigo-900">Bu sonuç yalnızca öneridir; hiçbir fiyat kaydedilmedi veya kanallara gönderilmedi.</p>
+            </div>
+            <span className="text-sm font-medium text-indigo-900">{pricingPreview.published_rates?.length || 0} tarih</span>
+          </div>
+          {pricingPreview.published_rates?.length > 0 && <div className="mt-3 max-h-52 overflow-y-auto rounded border border-indigo-100 bg-white">
+              {pricingPreview.published_rates.map(rate => <div key={rate.date} className="grid grid-cols-3 gap-2 border-b border-indigo-50 px-3 py-2 text-sm last:border-b-0">
+                  <span>{rate.date}</span>
+                  <span>Doluluk %{rate.forecasted_occupancy}</span>
+                  <strong className="text-right">{rate.recommended_rate}</strong>
+                </div>)}
+            </div>}
+        </section>}
 
       {/* Market Compression */}
       {marketCompression && marketCompression.data_available === false && <div className="mb-6">
@@ -148,13 +168,13 @@ const AIRMSDashboard = () => {
       {/* Actions */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <button onClick={scrapeCompetitorRates} disabled={loading} className="p-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-          Scrape Competitor Rates
+          Rakip fiyatlarını getir
         </button>
         <button onClick={calculateElasticity} disabled={loading} className="p-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-          Calculate Elasticity
+          Fiyat esnekliğini hesapla
         </button>
         <button onClick={fetchMarketCompression} disabled={loading} className="p-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-          Refresh Compression
+          Talep yoğunluğunu yenile
         </button>
       </div>
 
