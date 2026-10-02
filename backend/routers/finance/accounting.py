@@ -72,6 +72,23 @@ def _accounting_currency(value: object, fallback: str = "TRY") -> str:
     return code
 
 
+def _report_date_bounds(start_date: str, end_date: str) -> tuple[str, str]:
+    """Return inclusive ISO-day bounds for records persisted as ISO strings.
+
+    A bare end date sorts *before* every timestamp on that day (for example,
+    ``2026-10-02`` precedes ``2026-10-02T10:00:00``).  Reports must therefore
+    query through the last representable instant of the requested final day.
+    """
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Tarih YYYY-MM-DD formatında olmalıdır.") from exc
+    if end < start:
+        raise HTTPException(status_code=422, detail="Bitiş tarihi başlangıç tarihinden önce olamaz.")
+    return f"{start.isoformat()}T00:00:00", f"{end.isoformat()}T23:59:59.999999"
+
+
 def _invoice_currency_terms(
     requested_currency: object,
     requested_exchange_rate: object,
@@ -1730,8 +1747,11 @@ async def update_accounting_invoice(
 @router.get("/accounting/cash-flow")
 async def get_cash_flow(start_date: str | None = None, end_date: str | None = None, transaction_type: str | None = None, current_user: User = Depends(get_current_user)):
     query = {"tenant_id": current_user.tenant_id}
-    if start_date and end_date:
-        query["date"] = {"$gte": start_date, "$lte": end_date}
+    if start_date or end_date:
+        if not start_date or not end_date:
+            raise HTTPException(status_code=422, detail="Başlangıç ve bitiş tarihi birlikte verilmelidir.")
+        start_bound, end_bound = _report_date_bounds(start_date, end_date)
+        query["date"] = {"$gte": start_bound, "$lte": end_bound}
     if transaction_type:
         query["transaction_type"] = transaction_type
 
@@ -1784,11 +1804,21 @@ async def get_profit_loss_report(
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
-    # Get all income
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": "paid", "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
+    start_bound, end_bound = _report_date_bounds(start_date, end_date)
+    # Only paid sales documents are realised revenue in this cash-basis view.
+    # A paid purchase or proforma must never become hotel income.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": "paid",
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": start_bound, "$lte": end_bound},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
     # Get all expenses
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_bound, "$lte": end_bound}}, {"_id": 0}).to_list(None)
 
     from core.tenant_currency import get_tenant_currency
 
@@ -1872,8 +1902,18 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
+    start_bound, end_bound = _report_date_bounds(start_date, end_date)
     # Sales VAT (collected)
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
+    # Proforma and purchase invoices are not output VAT.  A proforma is only
+    # an offer, while a purchase invoice belongs to input VAT through AP.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": start_bound, "$lte": end_bound},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
     from core.tenant_currency import get_tenant_currency
 
@@ -1887,7 +1927,7 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
         return {code: round(amount, 2) for code, amount in sorted(totals.items())}
 
     # Purchase VAT (paid)
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_bound, "$lte": end_bound}}, {"_id": 0}).to_list(None)
 
     sales_vat_by_currency = _vat_totals(invoices, "total_vat")
     purchase_vat_by_currency = _vat_totals(expenses, "vat_amount")
@@ -2060,7 +2100,16 @@ async def get_accounting_dashboard(
     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
     month_end = today.isoformat()
 
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
+    # Keep dashboard income/receivable figures aligned with the report ledger:
+    # purchase and proforma documents are never hotel sales.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": month_start, "$lte": month_end},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
     expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
 

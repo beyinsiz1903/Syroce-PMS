@@ -18,8 +18,12 @@ class _Cursor:
 class _Collection:
     def __init__(self, rows):
         self.rows = rows
+        self.query = None
+        self.queries = []
 
-    def find(self, *_args, **_kwargs):
+    def find(self, query, *_args, **_kwargs):
+        self.query = query
+        self.queries.append(query)
         return _Cursor(self.rows)
 
 
@@ -54,10 +58,11 @@ async def test_profit_loss_does_not_add_foreign_currency_invoices(monkeypatch, c
         {"total": 20.0, "currency": "EUR", "items": [{"description": "Room", "total": 20.0}]},
     ]
     expenses = [{"total_amount": 40.0, "currency": "TRY", "category": "supplies"}]
+    accounting_invoices = _Collection(invoices)
     monkeypatch.setattr(
         accounting,
         "db",
-        SimpleNamespace(accounting_invoices=_Collection(invoices), expenses=_Collection(expenses)),
+        SimpleNamespace(accounting_invoices=accounting_invoices, expenses=_Collection(expenses)),
     )
 
     result = await accounting.get_profit_loss_report(
@@ -74,6 +79,7 @@ async def test_profit_loss_does_not_add_foreign_currency_invoices(monkeypatch, c
     assert result["mixed_currency"] is True
     assert result["total_revenue"] is None
     assert result["gross_profit"] is None
+    assert accounting_invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
 
 
 @pytest.mark.asyncio
@@ -101,6 +107,73 @@ async def test_vat_report_keeps_sales_and_purchase_vat_currencies_separate(monke
     assert result["mixed_currency"] is True
     assert result["sales_vat"] is None
     assert result["vat_payable"] is None
+
+
+@pytest.mark.asyncio
+async def test_vat_report_excludes_proforma_and_purchase_invoice_vat(monkeypatch, current_user):
+    invoices = _Collection([{"total_vat": 10.0, "currency": "TRY"}])
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(accounting_invoices=invoices, expenses=_Collection([])),
+    )
+
+    result = await accounting.get_vat_report(
+        start_date="2026-09-01",
+        end_date="2026-09-30",
+        current_user=current_user,
+    )
+
+    assert result["sales_vat"] == 10.0
+    assert invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
+
+
+@pytest.mark.asyncio
+async def test_financial_reports_include_the_complete_final_day(monkeypatch, current_user):
+    invoices = _Collection([])
+    expenses = _Collection([])
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(accounting_invoices=invoices, expenses=expenses),
+    )
+
+    await accounting.get_profit_loss_report.__wrapped__(
+        start_date="2026-09-01",
+        end_date="2026-09-30",
+        current_user=current_user,
+        _perm=None,
+    )
+    await accounting.get_vat_report(
+        start_date="2026-09-01",
+        end_date="2026-09-30",
+        current_user=current_user,
+    )
+
+    expected = {"$gte": "2026-09-01T00:00:00", "$lte": "2026-09-30T23:59:59.999999"}
+    assert invoices.queries[0]["issue_date"] == expected
+    assert invoices.queries[1]["issue_date"] == expected
+    assert expenses.queries[0]["date"] == expected
+    assert expenses.queries[1]["date"] == expected
+
+
+@pytest.mark.asyncio
+async def test_accounting_dashboard_excludes_proforma_and_purchase_documents(monkeypatch, current_user):
+    invoices = _Collection([{"status": "paid", "total": 100.0, "currency": "TRY"}])
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(
+            accounting_invoices=invoices,
+            expenses=_Collection([]),
+            bank_accounts=_Collection([]),
+        ),
+    )
+
+    result = await accounting.get_accounting_dashboard(current_user=current_user, _perm=None)
+
+    assert result["monthly_income"] == 100.0
+    assert invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
 
 
 @pytest.mark.asyncio
