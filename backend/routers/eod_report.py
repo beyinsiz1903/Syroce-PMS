@@ -179,7 +179,7 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
             ),
         },
         {"_id": 0},
-    ).to_list(10000)
+    ).to_list(None)
     tenant_currency, _ = await get_tenant_currency(tenant_id)
     tenant_currency = _currency_code(tenant_currency)
     payment_booking_currency, payment_folio_booking = await _currency_context(tenant_id, payments, tenant_currency)
@@ -210,7 +210,7 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     extra_charges = await db.extra_charges.find(
         _active_extra_charge_query(tenant_id, business_date),
         {"_id": 0, "charge_amount": 1, "amount": 1, "currency": 1, "booking_id": 1, "folio_id": 1},
-    ).to_list(10000)
+    ).to_list(None)
     extra_booking_currency, extra_folio_booking = await _currency_context(tenant_id, extra_charges, tenant_currency)
     extras_by_currency: dict[str, float] = {}
     for charge in extra_charges:
@@ -230,7 +230,7 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
             ],
         },
         {"_id": 0, "total": 1, "amount": 1, "currency": 1, "booking_id": 1, "folio_id": 1},
-    ).to_list(10000)
+    ).to_list(None)
     revenue_booking_currency, revenue_folio_booking = await _currency_context(tenant_id, posted_charges, tenant_currency)
     revenue_by_currency: dict[str, float] = {}
     for charge in posted_charges:
