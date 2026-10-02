@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -122,3 +123,36 @@ async def test_balance_sheet_keeps_assets_and_equity_by_currency(monkeypatch, cu
     assert result["assets"]["total_by_currency"] == {"EUR": 20.0, "TRY": 150.0}
     assert result["liabilities"]["total_by_currency"] == {"TRY": 10.0}
     assert result["equity"]["total_by_currency"] == {"EUR": 20.0, "TRY": 140.0}
+
+
+@pytest.mark.asyncio
+async def test_accounting_dashboard_does_not_add_foreign_bank_balances(monkeypatch):
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        async def to_list(self, _limit):
+            return self.rows
+
+    class Collection:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def find(self, *_args, **_kwargs):
+            return Cursor(self.rows)
+
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(
+            accounting_invoices=Collection([]),
+            expenses=Collection([]),
+            bank_accounts=Collection([{"balance": 100, "currency": "TRY"}, {"balance": 10, "currency": "EUR"}]),
+        ),
+    )
+    monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+
+    result = await accounting.get_accounting_dashboard(current_user=SimpleNamespace(tenant_id="tenant-a"), _perm=None)
+
+    assert result["total_bank_balance"] == 100.0
+    assert result["bank_balance_by_currency"] == {"TRY": 100.0, "EUR": 10.0}

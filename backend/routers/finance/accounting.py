@@ -1886,8 +1886,8 @@ async def get_accounting_dashboard(
 
     # Get bank balances
     bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
-    total_bank_balance = sum(acc["balance"] for acc in bank_accounts)
     bank_balance_by_currency = _currency_totals(bank_accounts, "balance", cur_code)
+    total_bank_balance = bank_balance_by_currency.get(cur_code, 0)
 
     return {
         # Backward-compat field (paid invoices only).
