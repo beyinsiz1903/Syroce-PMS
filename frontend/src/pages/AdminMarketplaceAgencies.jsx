@@ -35,6 +35,31 @@ const dateTime = (value) => value
   ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
   : 'Henüz kullanılmadı';
 
+const apiReadiness = (apiAccess) => {
+  if (!apiAccess?.active) {
+    return {
+      intent: 'neutral',
+      label: 'Kapalı',
+      detail: 'Teknik API sırrı yok; acente yalnızca portal kullanıyor.',
+    };
+  }
+
+  const hasVerifiedRequest = Boolean(apiAccess.last_used_at) || Number(apiAccess.usage_count || 0) > 0;
+  if (!hasVerifiedRequest) {
+    return {
+      intent: 'warning',
+      label: 'Etkinleştirme bekliyor',
+      detail: 'Anahtar oluşturuldu; henüz doğrulanmış bir API isteği görülmedi.',
+    };
+  }
+
+  return {
+    intent: 'success',
+    label: 'Kullanımda',
+    detail: 'En az bir doğrulanmış API isteği kaydedildi.',
+  };
+};
+
 export default function AdminMarketplaceAgencies() {
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
@@ -221,18 +246,19 @@ export default function AdminMarketplaceAgencies() {
             <tbody className="divide-y">
               {loading ? <tr><td colSpan="8" className="px-4 py-12 text-center text-slate-500">Acenteler yükleniyor…</td></tr>
                 : filtered.length === 0 ? <tr><td colSpan="8" className="px-4 py-12 text-center text-slate-500">Eşleşen acente bulunamadı.</td></tr>
-                  : filtered.map((agency) => (
-                    <tr key={agency.id} className="hover:bg-slate-50/70">
+                  : filtered.map((agency) => {
+                    const readiness = apiReadiness(agency.api_access);
+                    return <tr key={agency.id} className="hover:bg-slate-50/70">
                       <td className="px-4 py-3"><div className="font-semibold text-slate-900">{agency.name}</div><div className="text-xs text-slate-500">{agency.contact_email || 'İletişim e-postası yok'}{agency.contact_phone ? ` · ${agency.contact_phone}` : ''}</div></td>
                       <td className="px-4 py-3"><StatusBadge intent={agency.status === 'active' ? 'success' : 'danger'}>{agency.status === 'active' ? 'Aktif' : 'Devre dışı'}</StatusBadge></td>
                       <td className="px-4 py-3"><div className="font-medium">{agency.connected_hotels || 0} otel</div><div className="text-xs text-slate-500">{agency.booking_count || 0} rezervasyon</div></td>
                       <td className="px-4 py-3"><span className="font-semibold">%{Number(agency.default_commission_pct ?? 12).toLocaleString('tr-TR')}</span><div className="text-xs text-slate-500">Otel–acente payı</div></td>
                       <td className="px-4 py-3">{agency.platform_fee_pct == null ? <><span className="font-semibold text-indigo-700">Kanala göre</span><div className="text-xs text-slate-500">API %1 · Portal %2 (eski tarife)</div></> : <><span className="font-semibold text-indigo-700">%{Number(agency.platform_fee_pct).toLocaleString('tr-TR')}</span><div className="text-xs text-slate-500">Acente → Syroce hizmet bedeli</div></>}</td>
                       <td className="px-4 py-3"><div className="font-medium">{money(agency.gross_volume)}</div><div className="text-xs text-emerald-700">Gelir {money(agency.platform_revenue)}</div></td>
-                      <td className="px-4 py-3"><div className="flex items-center gap-1.5 text-xs"><Users className="h-3.5 w-3.5 text-slate-400" />{agency.portal_access?.count || 0} portal kullanıcısı</div><div className={`mt-1 flex items-center gap-1.5 text-xs ${agency.api_access?.active ? 'text-emerald-700' : 'text-slate-500'}`}><KeyRound className="h-3.5 w-3.5" />API {agency.api_access?.active ? 'aktif' : 'kapalı'}</div></td>
+                      <td className="px-4 py-3"><div className="flex items-center gap-1.5 text-xs"><Users className="h-3.5 w-3.5 text-slate-400" />{agency.portal_access?.count || 0} portal kullanıcısı</div><div className={`mt-1 flex items-center gap-1.5 text-xs ${readiness.intent === 'success' ? 'text-emerald-700' : readiness.intent === 'warning' ? 'text-amber-700' : 'text-slate-500'}`} title={readiness.detail}><KeyRound className="h-3.5 w-3.5" />API {readiness.label}</div></td>
                       <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => { setAccessAgency(agency); setAccessAction(null); }}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Erişim</Button><Button variant="outline" size="sm" onClick={() => openEdit(agency)}><Pencil className="mr-1.5 h-3.5 w-3.5" />Düzenle</Button></div></td>
-                    </tr>
-                  ))}
+                    </tr>;
+                  })}
             </tbody>
           </table>
         </div>
@@ -267,15 +293,15 @@ export default function AdminMarketplaceAgencies() {
 
       <Dialog open={Boolean(accessAgency)} onOpenChange={(open) => { if (!open && !accessBusy) { setAccessAgency(null); setAccessAction(null); } }}>
         <DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{accessAgency?.name} · Erişim yönetimi</DialogTitle></DialogHeader>{accessAgency && <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><Users className="h-4 w-4" />Acente portalı</div><div className="mt-2 text-2xl font-semibold">{accessAgency.portal_access?.count || 0}</div><p className="text-xs text-slate-500">aktif insan kullanıcısı</p>{accessAgency.portal_access?.last_login && <p className="mt-2 text-xs text-slate-500">Son giriş: {dateTime(accessAgency.portal_access.last_login)}</p>}</div><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><KeyRound className="h-4 w-4" />Teknik API</div><div className="mt-2"><StatusBadge intent={accessAgency.api_access?.active ? 'success' : 'neutral'}>{accessAgency.api_access?.active ? 'Aktif' : 'Kapalı'}</StatusBadge></div><p className="mt-2 text-xs text-slate-500">Portal oturumundan bağımsızdır.</p></div></div>
-          {accessAgency.api_access?.active ? <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm"><div className="flex justify-between gap-4"><span className="text-slate-500">Entegrasyon</span><span className="font-medium">{accessAgency.api_access.label || 'Ana entegrasyon'}</span></div><div className="flex justify-between gap-4"><span className="text-slate-500">Anahtar</span><code className="text-xs">{accessAgency.api_access.key_prefix}</code></div><div className="flex justify-between gap-4"><span className="text-slate-500">Son kullanım</span><span>{dateTime(accessAgency.api_access.last_used_at)}</span></div><div className="flex justify-between gap-4"><span className="text-slate-500">İstek sayısı</span><span>{Number(accessAgency.api_access.usage_count || 0).toLocaleString('tr-TR')}</span></div>{accessAgency.api_access.last_used_ip && <div className="flex justify-between gap-4"><span className="text-slate-500">Son kaynak IP</span><code className="text-xs">{accessAgency.api_access.last_used_ip}</code></div>}</div> : <p className="rounded-lg border border-dashed p-4 text-sm text-slate-600">Bu acente için teknik API sırrı bulunmuyor. Acente yalnızca portal kullanacaksa bu doğru ve daha güvenli durumdur.</p>}
+          <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><Users className="h-4 w-4" />Acente portalı</div><div className="mt-2 text-2xl font-semibold">{accessAgency.portal_access?.count || 0}</div><p className="text-xs text-slate-500">aktif insan kullanıcısı</p>{accessAgency.portal_access?.last_login && <p className="mt-2 text-xs text-slate-500">Son giriş: {dateTime(accessAgency.portal_access.last_login)}</p>}</div><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><KeyRound className="h-4 w-4" />Teknik API</div><div className="mt-2"><StatusBadge intent={apiReadiness(accessAgency.api_access).intent}>{apiReadiness(accessAgency.api_access).label}</StatusBadge></div><p className="mt-2 text-xs text-slate-500">Portal oturumundan bağımsızdır.</p></div></div>
+          {accessAgency.api_access?.active ? <div className="space-y-3 rounded-lg bg-slate-50 p-3 text-sm"><div className="space-y-2"><div className="flex justify-between gap-4"><span className="text-slate-500">Entegrasyon</span><span className="font-medium">{accessAgency.api_access.label || 'Ana entegrasyon'}</span></div><div className="flex justify-between gap-4"><span className="text-slate-500">Anahtar</span><code className="text-xs">{accessAgency.api_access.key_prefix}</code></div><div className="flex justify-between gap-4"><span className="text-slate-500">Son kullanım</span><span>{dateTime(accessAgency.api_access.last_used_at)}</span></div><div className="flex justify-between gap-4"><span className="text-slate-500">İstek sayısı</span><span>{Number(accessAgency.api_access.usage_count || 0).toLocaleString('tr-TR')}</span></div>{accessAgency.api_access.last_used_ip && <div className="flex justify-between gap-4"><span className="text-slate-500">Son kaynak IP</span><code className="text-xs">{accessAgency.api_access.last_used_ip}</code></div>}</div><div className={`rounded-md border p-2.5 text-xs ${apiReadiness(accessAgency.api_access).intent === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}><p className="font-medium">{apiReadiness(accessAgency.api_access).detail}</p>{apiReadiness(accessAgency.api_access).intent === 'warning' && <p className="mt-1">Anahtarı yalnızca acentenin teknik sorumlusuna güvenli sır paylaşımıyla iletin; ilk başarılı istekten sonra durum otomatik olarak “Kullanımda” olur.</p>}</div><Link to="/b2b/docs" className="inline-flex text-xs font-medium text-indigo-700 hover:underline">B2B API belgelerini aç →</Link></div> : <p className="rounded-lg border border-dashed p-4 text-sm text-slate-600">Bu acente için teknik API sırrı bulunmuyor. Acente yalnızca portal kullanacaksa bu doğru ve daha güvenli durumdur.</p>}
           {accessAction && <div className={`rounded-lg border p-3 text-sm ${accessAction === 'revoke' ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}><p>{accessAction === 'revoke' ? 'API erişimi hemen durdurulacak. Portal kullanıcıları etkilenmeyecek.' : accessAgency.api_access?.active ? 'Mevcut anahtar anında geçersiz olacak ve yeni anahtar yalnızca bir kez gösterilecek.' : 'Yeni API anahtarı yalnızca bir kez gösterilecek.'}</p><div className="mt-3 flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => setAccessAction(null)} disabled={accessBusy}>Vazgeç</Button><Button size="sm" variant={accessAction === 'revoke' ? 'destructive' : 'default'} onClick={confirmAccessAction} disabled={accessBusy}>{accessBusy ? 'İşleniyor…' : 'Onayla'}</Button></div></div>}
           {!accessAction && <div className="flex justify-end gap-2">{accessAgency.api_access?.active && <Button variant="destructive" size="sm" onClick={() => setAccessAction('revoke')}><Ban className="mr-1.5 h-4 w-4" />API erişimini kapat</Button>}<Button size="sm" onClick={() => setAccessAction('rotate')} disabled={accessAgency.status !== 'active'}><RotateCcw className="mr-1.5 h-4 w-4" />{accessAgency.api_access?.active ? 'Anahtarı yenile' : 'API anahtarı oluştur'}</Button></div>}
         </div>}</DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(createdKey)} onOpenChange={(open) => !open && setCreatedKey(null)}>
-        <DialogContent><DialogHeader><DialogTitle>Teknik API anahtarı oluşturuldu</DialogTitle></DialogHeader><div className="space-y-3"><div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><KeyRound className="mt-0.5 h-4 w-4 shrink-0" /><span><strong>{createdKey?.agencyName}</strong> için oluşturulan bu anahtar insan kullanıcı girişi değildir. Yalnızca acentenin sunucu entegrasyonunda <code>X-API-Key</code> başlığıyla kullanılmalı; parola kasasında saklanmalı ve açık e-posta/mesajla gönderilmemelidir.</span></div><Input readOnly value={createdKey?.value || ''} className="font-mono text-xs" /><Button className="w-full" onClick={() => navigator.clipboard.writeText(createdKey?.value || '').then(() => toast.success('API anahtarı kopyalandı'))}>Anahtarı güvenli teslim için kopyala</Button><p className="text-center text-xs text-slate-500">Pencere kapatıldıktan sonra tam anahtar tekrar görüntülenemez.</p></div></DialogContent>
+        <DialogContent><DialogHeader><DialogTitle>Teknik API anahtarı oluşturuldu</DialogTitle></DialogHeader><div className="space-y-3"><div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><KeyRound className="mt-0.5 h-4 w-4 shrink-0" /><span><strong>{createdKey?.agencyName}</strong> için oluşturulan bu anahtar insan kullanıcı girişi değildir. Yalnızca acentenin sunucu entegrasyonunda <code>X-API-Key</code> başlığıyla kullanılmalı; parola kasasında saklanmalı ve açık e-posta/mesajla gönderilmemelidir.</span></div><Input readOnly value={createdKey?.value || ''} className="font-mono text-xs" /><Button className="w-full" onClick={() => navigator.clipboard.writeText(createdKey?.value || '').then(() => toast.success('API anahtarı kopyalandı'))}>Anahtarı güvenli teslim için kopyala</Button><div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"><strong className="text-slate-800">Teslim ve doğrulama sırası:</strong> Anahtarı acentenin teknik sorumlusuna parola kasası veya güvenli sır paylaşımıyla iletin. Teknik ekip ilk başarılı isteği attığında erişim ekranındaki durum otomatik olarak “Kullanımda” olur.</div><Link to="/b2b/docs" className="block text-center text-xs font-medium text-indigo-700 hover:underline">B2B API belgelerini aç →</Link><p className="text-center text-xs text-slate-500">Pencere kapatıldıktan sonra tam anahtar tekrar görüntülenemez.</p></div></DialogContent>
       </Dialog>
     </div>
   );

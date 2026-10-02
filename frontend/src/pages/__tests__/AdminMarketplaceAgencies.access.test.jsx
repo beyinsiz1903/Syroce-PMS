@@ -74,4 +74,23 @@ describe('AdminMarketplaceAgencies access lifecycle', () => {
       expect.objectContaining({ issue_api_key: true, api_key_label: 'Ana entegrasyon' }),
     );
   });
+
+  it('does not present an unused key as a verified live integration', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agencies: [{
+          id: 'agency-1', name: 'Yeni Entegrasyon', status: 'active', contact_email: 'api@example.com',
+          api_access: { active: true, key_prefix: 'syroce_mkt_...', usage_count: 0, last_used_at: null },
+          portal_access: { count: 0 },
+        }],
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText('API Etkinleştirme bekliyor')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Erişim/ }));
+    expect(await screen.findByText('Anahtar oluşturuldu; henüz doğrulanmış bir API isteği görülmedi.')).toBeInTheDocument();
+    expect(screen.getByText(/ilk başarılı istekten sonra durum otomatik olarak “Kullanımda” olur/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'B2B API belgelerini aç →' })).toHaveAttribute('href', '/b2b/docs');
+  });
 });
