@@ -568,9 +568,61 @@ async def update_expense(
     expense_id: str,
     updates: dict[str, Any],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+    _perm=Depends(require_op("post_charge")),
 ):
-    await db.expenses.update_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    editable_fields = {
+        "supplier_id",
+        "category",
+        "description",
+        "amount",
+        "vat_rate",
+        "date",
+        "payment_status",
+        "payment_method",
+        "receipt_url",
+        "notes",
+        "currency",
+    }
+    unsupported_fields = set(updates) - editable_fields
+    if unsupported_fields:
+        raise HTTPException(status_code=422, detail="Giderin korunan alanları değiştirilemez")
+
+    current = await db.expenses.find_one(
+        {"id": expense_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if not current:
+        raise HTTPException(status_code=404, detail="Gider bulunamadı")
+
+    patch = dict(updates)
+    if "currency" in patch:
+        try:
+            patch["currency"] = _accounting_currency(patch["currency"], current.get("currency") or "TRY")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if "amount" in patch or "vat_rate" in patch:
+        try:
+            amount = float(patch.get("amount", current.get("amount", 0)))
+            vat_rate = float(patch.get("vat_rate", current.get("vat_rate", 0)))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Tutar ve KDV oranı sayısal olmalıdır") from exc
+        if not math.isfinite(amount) or amount < 0 or not math.isfinite(vat_rate) or not 0 <= vat_rate <= 100:
+            raise HTTPException(status_code=422, detail="Tutar negatif olamaz; KDV oranı 0 ile 100 arasında olmalıdır")
+        patch.update(
+            {
+                "amount": round(amount, 2),
+                "vat_rate": round(vat_rate, 2),
+                "vat_amount": round(amount * vat_rate / 100, 2),
+                "total_amount": round(amount * (1 + vat_rate / 100), 2),
+            }
+        )
+
+    result = await db.expenses.update_one(
+        {"id": expense_id, "tenant_id": current_user.tenant_id},
+        {"$set": patch},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Gider bulunamadı")
     expense = await db.expenses.find_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     _invalidate_accounting_caches(
         current_user.tenant_id,
