@@ -14,7 +14,8 @@ async def test_expense_update_recalculates_vat_and_total(monkeypatch):
         find_one=AsyncMock(side_effect=[existing, {**existing, "amount": 200, "vat_rate": 10, "vat_amount": 20, "total_amount": 220}]),
         update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
     )
-    monkeypatch.setattr(accounting, "db", SimpleNamespace(expenses=expenses))
+    cash_flow = SimpleNamespace(update_one=AsyncMock())
+    monkeypatch.setattr(accounting, "db", SimpleNamespace(expenses=expenses, cash_flow=cash_flow))
     monkeypatch.setattr(accounting, "_invalidate_accounting_caches", lambda *_args: None)
 
     result = await accounting.update_expense(
@@ -31,6 +32,15 @@ async def test_expense_update_recalculates_vat_and_total(monkeypatch):
         "vat_amount": 20.0,
         "total_amount": 220.0,
     }
+    assert cash_flow.update_one.await_args.args[1]["$set"] == {
+        "transaction_type": "expense",
+        "category": None,
+        "amount": 220.0,
+        "currency": "TRY",
+        "description": None,
+        "date": None,
+    }
+    assert cash_flow.update_one.await_args.kwargs["upsert"] is True
 
 
 @pytest.mark.asyncio

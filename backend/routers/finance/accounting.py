@@ -624,6 +624,33 @@ async def update_expense(
     if result.matched_count != 1:
         raise HTTPException(status_code=404, detail="Gider bulunamadı")
     expense = await db.expenses.find_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    expense_for_cash_flow = {**current, **patch}
+    cash_flow_patch = {
+        "transaction_type": "expense",
+        "category": expense_for_cash_flow.get("category"),
+        "amount": float(expense_for_cash_flow.get("total_amount") or 0),
+        "currency": expense_for_cash_flow.get("currency") or "TRY",
+        "description": expense_for_cash_flow.get("description"),
+        "date": expense_for_cash_flow.get("date"),
+    }
+    await db.cash_flow.update_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "reference_type": "expense",
+            "reference_id": expense_id,
+        },
+        {
+            "$set": cash_flow_patch,
+            "$setOnInsert": {
+                "tenant_id": current_user.tenant_id,
+                "reference_type": "expense",
+                "reference_id": expense_id,
+                "created_by": getattr(current_user, "name", None),
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        },
+        upsert=True,
+    )
     _invalidate_accounting_caches(
         current_user.tenant_id,
         "accounting_dashboard",
