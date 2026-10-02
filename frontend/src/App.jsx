@@ -68,6 +68,14 @@ function RouteAwareCommunicationCenter({ user }) {
   return isGuestRoomService ? null : <CommunicationCenter user={user} />;
 }
 
+// Legacy bookmarks are kept working, but must converge on one workspace URL.
+// Keeping the current query and hash is important for report section links and
+// deep-linked settings tabs.
+function CanonicalRedirect({ to }) {
+  const location = useLocation();
+  return <Navigate replace to={{ pathname: to, search: location.search, hash: location.hash }} />;
+}
+
 function notifyServiceWorkerAuthChanged() {
   // SW v1.1.0+ AUTH_CHANGED mesajına karşılık tüm `hotel-pms-*` cache'leri
   // siler. Login/logout/clearAuthStorage akışlarından çağrılır → cross-user
@@ -438,7 +446,9 @@ function App() {
                     let element;
 
                     if (rc.type === "redirect") {
-                      element = <Navigate to={rc.to} replace />;
+                      element = rc.preserveLocation
+                        ? <CanonicalRedirect to={rc.to} />
+                        : <Navigate to={rc.to} replace />;
                     } else if (rc.type === "public") {
                       element = <Suspense fallback={<LoadingFallback />}><rc.component {...(rc.props || {})} /></Suspense>;
                     } else if (rc.type === "memory") {
