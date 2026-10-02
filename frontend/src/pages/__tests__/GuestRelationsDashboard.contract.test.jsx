@@ -31,6 +31,7 @@ const directive = {
   pillow_preference: 'Ortopedik',
   minibar_preference: 'Standart',
   spa_preference: 'Aroma',
+  status: 'pending',
 };
 
 describe('guest relations directive contract', () => {
@@ -69,5 +70,18 @@ describe('guest relations directive contract', () => {
       '2 adet oda hazırlık direktifi tetiklendi!',
     ));
     expect(axiosPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a pending directive and refreshes the queue', async () => {
+    axiosGet.mockResolvedValue({ data: { directives: [directive] } });
+    axiosPost.mockResolvedValue({ data: { directive: { ...directive, status: 'completed' } } });
+
+    render(<GuestRelationsDashboard embedded />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Hazır olarak işaretle' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/guest-relations/preparations/directives/directive-1/complete',
+    ));
+    expect(toast.success).toHaveBeenCalledWith('Hazırlık direktifi ve bağlı görev tamamlandı.');
   });
 });

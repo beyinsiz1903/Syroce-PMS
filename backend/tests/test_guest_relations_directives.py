@@ -53,6 +53,10 @@ class _MockCollection:
                 for k, v in flt.items():
                     if k in ("tenant_id", "pillow_type", "status", "description"):
                         continue
+                    if k == "$or" and isinstance(v, list):
+                        if not any(all(d.get(field) == value for field, value in condition.items()) for condition in v):
+                            match = False
+                        continue
                     val = d.get(k)
                     if isinstance(v, dict) and "$in" in v:
                         if val not in v["$in"]:
@@ -114,6 +118,18 @@ class _MockCollection:
                 target.update(update["$set"])
             return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
+
+    async def find_one_and_update(self, flt, update, return_document=None):
+        for d in self.docs.values():
+            if d.get("tenant_id") != flt.get("tenant_id") or d.get("id") != flt.get("id"):
+                continue
+            expected_status = flt.get("status")
+            if isinstance(expected_status, dict) and "$ne" in expected_status and d.get("status") == expected_status["$ne"]:
+                continue
+            if "$set" in update:
+                d.update(update["$set"])
+            return dict(d)
+        return None
 
 
 class _FakeDB:
@@ -211,6 +227,7 @@ def test_trigger_room_preparations(env):
     dir_doc = list(env.db.guest_prep_directives.docs.values())[0]
     assert dir_doc["guest_name"] == "Jane Doe"
     assert dir_doc["pillow_preference"] == "Kaz tüyü"
+    assert dir_doc["status"] == "pending"
 
     # Verify Housekeeping Task created
     assert len(env.db.housekeeping_tasks.docs) == 1
@@ -219,10 +236,48 @@ def test_trigger_room_preparations(env):
     assert "Kaz tüyü" in task["description"]
     assert "Soda" in task["description"]
     assert "Derin Doku" in task["description"]
+    assert dir_doc["housekeeping_task_id"] == task["id"]
 
     # Verify booking special requests updated
     booking = env.db.bookings.docs[_BOOKING_ID]
     assert "[MİSAFİR İLİŞKİLERİ DİREKTİFİ]" in booking["special_requests"]
+
+
+def test_guest_profile_analysis_resolves_tenant_local_booking_number(env):
+    env.db.bookings.docs[_BOOKING_ID]["booking_number"] = "RSV-2026-100"
+
+    r = env.client.get("/api/guest-relations/profiles/RSV-2026-100/analysis")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["guest_id"] == _GUEST_ID
+
+
+def test_complete_preparation_directive_closes_linked_housekeeping_task(env, monkeypatch):
+    env.db.guest_prep_directives.docs["directive-1"] = {
+        "id": "directive-1",
+        "tenant_id": TENANT_ID,
+        "status": "pending",
+        "housekeeping_task_id": "task-1",
+    }
+    env.db.housekeeping_tasks.docs["task-1"] = {
+        "id": "task-1",
+        "tenant_id": TENANT_ID,
+        "status": "pending",
+    }
+    audit_events = []
+
+    async def _audit(*args, **kwargs):
+        audit_events.append({"args": args, **kwargs})
+
+    monkeypatch.setattr(gr_router, "create_audit_log", _audit)
+
+    r = env.client.post("/api/guest-relations/preparations/directives/directive-1/complete")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "completed"
+    assert env.db.guest_prep_directives.docs["directive-1"]["status"] == "completed"
+    assert env.db.housekeeping_tasks.docs["task-1"]["status"] == "completed"
+    assert audit_events[0]["args"][2] == "guest_preparation_completed"
 
 
 def test_cross_tenant_isolation(env):

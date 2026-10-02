@@ -13,8 +13,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from pymongo import ReturnDocument
 
 from core.database import db
+from core.helpers import create_audit_log
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -28,6 +30,26 @@ class GuestAnalysisResponse(BaseModel):
     pillow_preference: str
     spa_preference: str
     minibar_preference: str
+
+
+async def _resolve_guest(tenant_id: str, reference: str) -> tuple[dict[str, Any], str]:
+    """Resolve a guest id or a reservation id/number without cross-tenant lookup."""
+    guest = await db.guests.find_one({"id": reference, "tenant_id": tenant_id, "status": {"$ne": "deleted"}})
+    if guest:
+        return guest, guest["id"]
+    booking = await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "$or": [{"id": reference}, {"booking_number": reference}, {"reservation_number": reference}],
+        },
+        {"_id": 0, "guest_id": 1},
+    )
+    if not booking or not booking.get("guest_id"):
+        raise HTTPException(status_code=404, detail="Misafir veya rezervasyon bulunamadı")
+    guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tenant_id, "status": {"$ne": "deleted"}})
+    if not guest:
+        raise HTTPException(status_code=404, detail="Rezervasyona bağlı misafir bulunamadı")
+    return guest, guest["id"]
 
 
 async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, guest_name: str) -> dict[str, str]:
@@ -100,12 +122,10 @@ async def get_guest_profile_analysis(
     """Retrieve historical preference analysis for a guest."""
     tenant_id = current_user.tenant_id
 
-    guest = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id})
-    if not guest:
-        raise HTTPException(status_code=404, detail="Misafir bulunamadı")
+    guest, resolved_guest_id = await _resolve_guest(tenant_id, guest_id)
 
-    pref = await _analyze_guest_preferences(db, tenant_id, guest_id, guest["name"])
-    return {"guest_id": guest_id, "guest_name": guest["name"], **pref}
+    pref = await _analyze_guest_preferences(db, tenant_id, resolved_guest_id, guest["name"])
+    return {"guest_id": resolved_guest_id, "guest_name": guest["name"], **pref}
 
 
 @router.get("/preparations/directives")
@@ -169,11 +189,10 @@ async def trigger_room_preparations(
             "guest_name": guest_name,
             "room_id": booking.get("room_id"),
             "check_in": booking["check_in"],
+            "status": "pending",
             "created_at": datetime.now(UTC).isoformat(),
             **pref,
         }
-        await db.guest_prep_directives.insert_one(directive_doc)
-
         # Create Automated Housekeeping Task
         hk_task_id = str(uuid.uuid4())
         hk_task = {
@@ -188,6 +207,8 @@ async def trigger_room_preparations(
             "created_at": datetime.now(UTC).isoformat(),
         }
         await db.housekeeping_tasks.insert_one(hk_task)
+        directive_doc["housekeeping_task_id"] = hk_task_id
+        await db.guest_prep_directives.insert_one(directive_doc)
 
         # Update Booking Special Requests for Front Desk visibility
         existing_requests = booking.get("special_requests") or ""
@@ -198,3 +219,32 @@ async def trigger_room_preparations(
         generated_count += 1
 
     return {"success": True, "processed_bookings": len(tomorrow_bookings), "directives_generated": generated_count}
+
+
+@router.post("/preparations/directives/{directive_id}/complete")
+async def complete_preparation_directive(
+    directive_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_guests")),
+):
+    """Mark a room-preparation directive complete and close its linked housekeeping task."""
+    now = datetime.now(UTC).isoformat()
+    tenant_id = current_user.tenant_id
+    directive = await db.guest_prep_directives.find_one_and_update(
+        {"id": directive_id, "tenant_id": tenant_id, "status": {"$ne": "completed"}},
+        {"$set": {"status": "completed", "completed_at": now, "completed_by": current_user.id}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not directive:
+        existing = await db.guest_prep_directives.find_one({"id": directive_id, "tenant_id": tenant_id}, {"_id": 0, "status": 1})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Hazırlık direktifi bulunamadı")
+        raise HTTPException(status_code=409, detail="Hazırlık direktifi zaten tamamlandı")
+    task_id = directive.get("housekeeping_task_id")
+    if task_id:
+        await db.housekeeping_tasks.update_one(
+            {"id": task_id, "tenant_id": tenant_id, "status": {"$ne": "completed"}},
+            {"$set": {"status": "completed", "completed_at": now, "completed_by": current_user.id}},
+        )
+    await create_audit_log(tenant_id, current_user, "guest_preparation_completed", "guest_preparation_directive", directive_id, {"booking_id": directive.get("booking_id")})
+    return {"success": True, "directive_id": directive_id, "status": "completed"}
