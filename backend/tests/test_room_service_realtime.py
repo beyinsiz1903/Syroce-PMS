@@ -335,6 +335,36 @@ async def test_ws_auth_rejects_revoked_jti(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ws_auth_checks_device_session_revocation(monkeypatch):
+    from domains.guest.experience_router import guest_app as ga
+    core_security = _real_core_security()
+    seen = {}
+
+    monkeypatch.setattr(core_security, "_user_doc_cache_get", lambda _key: None)
+    monkeypatch.setattr(core_security, "_user_doc_cache_set", lambda _key, _doc: None)
+
+    async def revoked(jti, *, session_id=None):
+        seen["jti"] = jti
+        seen["session_id"] = session_id
+        return session_id == "closed-device"
+
+    monkeypatch.setattr(core_security, "is_jti_revoked", revoked)
+
+    class _Users:
+        async def find_one(self, *_a, **_kw):  # pragma: no cover - denied before lookup
+            return {"id": "u1", "tenant_id": "tenantX", "role": "front_desk"}
+
+    class _Db:
+        users = _Users()
+
+    monkeypatch.setattr(ga, "db", _Db())
+    token = _make_jwt({"user_id": "u1", "tenant_id": "tenantX", "jti": "access-1", "sid": "closed-device"})
+
+    assert await ga._authenticate_ws_token(token) is None
+    assert seen == {"jti": "access-1", "session_id": "closed-device"}
+
+
+@pytest.mark.asyncio
 async def test_ws_auth_rejects_tenant_mismatch(monkeypatch):
     from domains.guest.experience_router import guest_app as ga
     core_security = _real_core_security()
