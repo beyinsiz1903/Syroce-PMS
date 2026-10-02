@@ -74,6 +74,14 @@ describe('CalendarGrid stay resize handle', () => {
     });
   });
 
+  it('makes the exclusive checkout boundary explicit for a completed stay', () => {
+    const presentation = getReservationCardPresentation({ ...booking, status: 'checked_out' });
+
+    expect(presentation.statusLabel).toBe('Çıkış yapıldı · oda boş');
+    expect(presentation.checkoutAvailability).toContain('oda yeniden satılabilir');
+    expect(presentation.ariaLabel).toContain('oda yeniden satılabilir');
+  });
+
   it('uses distinct but readable surfaces for each reservation lifecycle state', () => {
     expect(getReservationCardSurface({ status: 'confirmed' })).toMatchObject({
       background: '#eff6ff',
