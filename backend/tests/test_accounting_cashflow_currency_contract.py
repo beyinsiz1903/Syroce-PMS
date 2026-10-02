@@ -56,6 +56,48 @@ def test_request_currency_validation_rejects_unsupported_currency():
         )
 
 
+@pytest.mark.asyncio
+async def test_new_pending_expense_does_not_create_a_cash_movement(monkeypatch):
+    class Expenses:
+        def __init__(self):
+            self.rows = []
+
+        async def count_documents(self, _query):
+            return len(self.rows)
+
+        async def insert_one(self, row):
+            self.rows.append(row)
+
+    class CashFlowRows:
+        def __init__(self):
+            self.rows = []
+
+        async def insert_one(self, row):
+            self.rows.append(row)
+
+    expenses = Expenses()
+    cash_flow = CashFlowRows()
+    monkeypatch.setattr(accounting, "db", SimpleNamespace(expenses=expenses, cash_flow=cash_flow))
+    monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+    monkeypatch.setattr(accounting, "_invalidate_accounting_caches", lambda *_args: None)
+
+    expense = await accounting.create_expense(
+        ExpenseCreateRequest(
+            category="supplies",
+            description="Coffee",
+            amount=100,
+            vat_rate=20,
+            date="2026-09-28",
+        ),
+        current_user=SimpleNamespace(tenant_id="tenant-a", name="Finance"),
+        _perm=None,
+    )
+
+    assert expense.payment_status.value == "pending"
+    assert len(expenses.rows) == 1
+    assert cash_flow.rows == []
+
+
 def test_currency_totals_never_add_unrelated_nominal_amounts():
     records = [
         {"amount": 100, "currency": "TRY", "status": "paid"},
