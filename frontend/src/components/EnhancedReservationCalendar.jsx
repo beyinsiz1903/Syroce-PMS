@@ -3,6 +3,14 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+
+const roomStatusLabel = {
+  available: 'Müsait',
+  occupied: 'Dolu',
+  maintenance: 'Bakımda',
+  out_of_order: 'Arızalı',
+};
+
 const EnhancedReservationCalendar = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [rooms, setRooms] = useState([]);
@@ -77,10 +85,10 @@ const EnhancedReservationCalendar = () => {
   };
   return <div className="p-6 bg-white overflow-hidden">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-        <h1 className="text-3xl font-bold">Reservation Calendar</h1>
+        <h1 className="text-3xl font-bold">Rezervasyon Takvimi</h1>
         <div className="flex flex-wrap gap-4 w-full lg:w-auto">
-          <button onClick={fetchAIPricing} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 whitespace-nowrap">
-            AI Price Suggestions
+          <button onClick={fetchAIPricing} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 whitespace-nowrap" title="Seçili tarihten itibaren 30 günlük fiyat önerisini yayınlar">
+            Yapay zekâ fiyat önerileri
           </button>
           <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="px-4 py-2 border rounded-lg flex-1 min-w-[150px]" />
         </div>
@@ -89,19 +97,19 @@ const EnhancedReservationCalendar = () => {
       {/* ADR Summary */}
       {adrData && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="text-sm text-gray-600">Overall ADR</div>
+            <div className="text-sm text-gray-600">Ortalama günlük fiyat (ADR)</div>
             <div className="text-2xl font-bold text-blue-600">{formatCurrencyBreakdown(adrData.overall_adr_by_currency, adrData.overall_adr, displayCurrency)}</div>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
-            <div className="text-sm text-gray-600">Total Revenue</div>
+            <div className="text-sm text-gray-600">Toplam oda geliri</div>
             <div className="text-2xl font-bold text-green-600">{formatCurrencyBreakdown(adrData.total_room_revenue_by_currency, adrData.total_room_revenue, displayCurrency)}</div>
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
-            <div className="text-sm text-gray-600">Room Nights</div>
+            <div className="text-sm text-gray-600">Oda gecesi</div>
             <div className="text-2xl font-bold text-indigo-600">{adrData.total_room_nights}</div>
           </div>
           <div className="bg-amber-50 p-4 rounded-lg">
-            <div className="text-sm text-gray-600">Bookings</div>
+            <div className="text-sm text-gray-600">Rezervasyon</div>
             <div className="text-2xl font-bold text-amber-600">{adrData.total_bookings}</div>
           </div>
         </div>}
@@ -109,7 +117,7 @@ const EnhancedReservationCalendar = () => {
       {/* Room Grid */}
       <div className="border rounded-lg overflow-hidden">
         <div className="bg-gray-100 p-4 font-semibold border-b">
-          Availability Grid - {rooms.length} Rooms
+          Müsaitlik görünümü · {rooms.length} oda
         </div>
         <div className="max-h-[600px] overflow-y-auto overflow-x-hidden">
           {rooms.map(room => <div key={room.id} className="border-b p-4 hover:bg-gray-50">
@@ -118,15 +126,15 @@ const EnhancedReservationCalendar = () => {
                   <span className="font-semibold">{room.room_number}</span>
                   <span className="text-gray-600">{room.room_type}</span>
                   <span className={`px-2 py-1 rounded text-sm ${room.status === 'available' ? 'bg-green-100 text-green-800' : room.status === 'occupied' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {room.status}
+                    {roomStatusLabel[room.status] || room.status || 'Bilinmiyor'}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => {
+                  <button disabled={!room.current_booking_id} title={room.current_booking_id ? 'Bu odadaki aktif rezervasyonun fiyatını düzeltin' : 'Fiyat düzeltmesi için odada aktif rezervasyon olmalıdır'} onClick={() => {
                 setSelectedBooking(room);
                 setShowRateOverride(true);
-              }} className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
-                    Override Rate
+              }} className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+                    Fiyatı düzelt
                   </button>
                 </div>
               </div>
@@ -137,26 +145,26 @@ const EnhancedReservationCalendar = () => {
       {/* Rate Override Modal */}
       {showRateOverride && selectedBooking && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[500px]">
-            <h3 className="text-xl font-bold mb-4">Rate Override - Room {selectedBooking.room_number}</h3>
+            <h3 className="text-xl font-bold mb-4">Fiyat düzeltmesi · Oda {selectedBooking.room_number}</h3>
             <form onSubmit={e => {
           e.preventDefault();
           const formData = new FormData(e.target);
           handleRateOverride(selectedBooking.current_booking_id, formData.get('new_rate'), formData.get('reason'));
         }}>
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">New Rate ({selectedBooking.currency || displayCurrency})</label>
-                <input type="number" name="new_rate" step="0.01" required className="w-full px-4 py-2 border rounded-lg" placeholder="Enter new rate" />
+                <label className="block text-sm font-medium mb-2">Yeni fiyat ({selectedBooking.currency || displayCurrency})</label>
+                <input type="number" name="new_rate" step="0.01" min="0.01" required className="w-full px-4 py-2 border rounded-lg" placeholder="Yeni fiyatı girin" />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Override Reason</label>
-                <textarea name="reason" required rows="3" className="w-full px-4 py-2 border rounded-lg" placeholder="Why are you overriding the rate?" />
+                <label className="block text-sm font-medium mb-2">Düzeltme gerekçesi</label>
+                <textarea name="reason" required rows="3" className="w-full px-4 py-2 border rounded-lg" placeholder="Fiyatın neden değiştirildiğini yazın" />
               </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setShowRateOverride(false)} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
-                  Cancel
+                  Vazgeç
                 </button>
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                  Override Rate
+                  Fiyatı düzelt
                 </button>
               </div>
             </form>
