@@ -85,6 +85,7 @@ async def enqueue_failed_push(
     cta=None,
     ctd=None,
     days=None,
+    channel_codes: list[str] | None = None,
     error: str = "",
     retry_after_seconds: int = DEFAULT_RATE_LIMIT_COOLDOWN,
 ) -> str:
@@ -124,6 +125,8 @@ async def enqueue_failed_push(
             update_fields["cta"] = cta
         if ctd is not None:
             update_fields["ctd"] = ctd
+        if channel_codes is not None:
+            update_fields["channel_codes"] = channel_codes
         await db.hr_push_queue.update_one(
             {"id": existing["id"]},
             {"$set": update_fields},
@@ -146,6 +149,7 @@ async def enqueue_failed_push(
         "cta": cta,
         "ctd": ctd,
         "days": days,
+        "channel_codes": channel_codes,
         "status": "pending",
         "retry_count": 0,
         "last_error": error,
@@ -427,6 +431,8 @@ class HRPushQueueWorker:
                 update_data["ctd"] = 1 if item["ctd"] else 0
             if item.get("days") is not None:
                 update_data["days"] = item["days"]
+            if item.get("channel_codes"):
+                update_data["channel_codes"] = item["channel_codes"]
 
             try:
                 delivery = await deliver_hotelrunner_ari(

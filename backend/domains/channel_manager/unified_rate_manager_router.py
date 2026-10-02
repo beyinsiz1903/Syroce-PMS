@@ -133,6 +133,10 @@ class UnifiedBulkUpdateRequest(BaseModel):
     ctd: bool | None = None
     update_fields: list[str] = []
     agency_ids: list[str] | None = None
+    # OTA hedefleri hiçbir zaman istemcinin serbest metin listesi değildir.
+    # HotelRunner'dan doğrulanmış bağlı kanal kodları burada seçilir. Boş liste
+    # yalnızca PMS yerel takvimini günceller; otomatik olarak tüm OTA'lara gitmez.
+    channel_codes: list[str] | None = Field(default=None, max_length=100)
 
 
 class AgencyRateOverride(BaseModel):
@@ -232,6 +236,44 @@ async def _add_pms_rule_aliases(tenant_id: str, provider: str, rules: dict) -> d
         if remote_code in rules and pms_type:
             aliased.setdefault(str(pms_type), rules[remote_code])
     return aliased
+
+
+async def _validated_hotelrunner_channel_codes(tenant_id: str, requested_codes: list[str] | None) -> list[str]:
+    """Return explicitly selected, provider-verified HotelRunner channels.
+
+    The connected-channel list is the channel-manager authority. A stale list
+    cannot safely authorise an outbound rate write, and a missing selection is
+    deliberately local-only instead of silently fanning out to every OTA.
+    """
+    if not requested_codes:
+        return []
+
+    from domains.channel_manager.channel_connections_router import _load_active_hotelrunner_channels
+
+    connection = await db.hotelrunner_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True},
+        {"_id": 0, "connected_channels": 1, "connected_channels_refreshed_at": 1, "is_active": 1},
+    )
+    active_channels, stale, _refreshed_at = await _load_active_hotelrunner_channels(tenant_id, connection)
+    if stale:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "CHANNEL_LIST_STALE", "message": "Bağlı OTA listesi doğrulanamadı; gönderim güvenlik nedeniyle durduruldu."},
+        )
+
+    code_index = {
+        str(channel.get("code") or "").strip().casefold(): str(channel.get("code") or "").strip()
+        for channel in active_channels
+        if str(channel.get("code") or "").strip()
+    }
+    requested = [str(code).strip() for code in requested_codes if str(code).strip()]
+    unknown = [code for code in requested if code.casefold() not in code_index]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail={"error_code": "CHANNEL_NOT_CONNECTED", "channels": unknown, "message": "Seçilen OTA, kanal yöneticisinde bağlı ve aktif değil."},
+        )
+    return list(dict.fromkeys(code_index[code.casefold()] for code in requested))
 
 
 def _ari_write_block_for_targets(targets: list[dict]) -> str:
@@ -799,7 +841,20 @@ async def unified_bulk_grid_update(
     else:
         targets = [detection]
 
-    runtime_block = _ari_write_block_for_targets(targets)
+    selected_channel_codes: list[str] = []
+    if request.channel_codes:
+        if detection["provider"] != "hotelrunner":
+            raise HTTPException(
+                status_code=409,
+                detail={"error_code": "CHANNEL_TARGETING_UNSUPPORTED", "message": "Seçili kanal yöneticisi OTA bazlı hedefli fiyat gönderimini desteklemiyor."},
+            )
+        selected_channel_codes = await _validated_hotelrunner_channel_codes(tenant_id, request.channel_codes)
+
+    # A deliberately empty HotelRunner selection means "save locally only".
+    # No remote ARI write is attempted, so a remote-runtime issue must not
+    # prevent the hotel from maintaining its own PMS calendar.
+    remote_delivery_requested = detection["provider"] != "hotelrunner" or bool(selected_channel_codes)
+    runtime_block = _ari_write_block_for_targets(targets) if remote_delivery_requested else ""
     if runtime_block:
         raise HTTPException(
             status_code=409,
@@ -957,6 +1012,14 @@ async def unified_bulk_grid_update(
     channel_push_count = 0
     provider_delivery_results: list[dict] = []
     for tgt in targets:
+        # Rate Manager eskiden kanal seçimi olmadan HotelRunner'a gönderiyor ve
+        # sağlayıcının tüm bağlı OTA'larına yayılıyordu. Seçim yoksa bu işlem
+        # yalnızca yerel takvimi günceller; kullanıcı açıkça OTA seçmelidir.
+        if tgt["provider"] == "hotelrunner" and not selected_channel_codes:
+            provider_delivery_results.append(
+                {"provider": "hotelrunner", "delivery_state": "NOT_SENT", "task_count": 0}
+            )
+            continue
         try:
             if tgt["provider"] == "hotelrunner":
                 cnt = await _push_to_hotelrunner(
@@ -966,6 +1029,7 @@ async def unified_bulk_grid_update(
                     per_room_map,
                     update_fields,
                     selected_days_set,
+                    selected_channel_codes,
                 )
                 delivery_state = "SCHEDULED" if cnt else "NOT_SENT"
             else:
@@ -1034,12 +1098,13 @@ async def unified_bulk_grid_update(
         "provider_delivery": provider_delivery_results,
         **delivery_summary,
         "agency_push_count": agency_push_count,
+        "selected_channel_codes": selected_channel_codes,
         "total_room_types": len(total_room_types_set),
         "message": msg,
     }
 
 
-async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_fields, selected_days_set):
+async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_fields, selected_days_set, selected_channel_codes):
     """HotelRunner'a arka planda push gonder."""
     try:
         from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
@@ -1099,6 +1164,7 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
                 "start_date": request.start_date,
                 "end_date": request.end_date,
                 "days": sorted(selected_days_set) if selected_days_set else None,
+                "channel_codes": selected_channel_codes,
             }
         )
 
@@ -1121,6 +1187,7 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
                     cta=t["cta"],
                     ctd=t["ctd"],
                     days=t["days"],
+                    channel_codes=t["channel_codes"],
                 )
                 logger.info(
                     "[UNIFIED] HR delivery finished: state=%s",
@@ -1157,6 +1224,7 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
                             cta=remaining["cta"],
                             ctd=remaining["ctd"],
                             days=remaining.get("days"),
+                            channel_codes=remaining.get("channel_codes"),
                             error=result.get("error", ""),
                             retry_after_seconds=retry_after,
                         )

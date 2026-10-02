@@ -17,6 +17,7 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
   const [analysis, setAnalysis] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [completingId, setCompletingId] = useState(null);
 
   useEffect(() => {
     fetchDirectives();
@@ -69,6 +70,19 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
     }
   };
 
+  const completeDirective = async (directiveId) => {
+    setCompletingId(directiveId);
+    try {
+      await axios.post(`/guest-relations/preparations/directives/${directiveId}/complete`);
+      toast.success('Hazırlık direktifi ve bağlı görev tamamlandı.');
+      await fetchDirectives();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Hazırlık direktifi güncellenemedi.');
+    } finally {
+      setCompletingId(null);
+    }
+  };
+
   return (
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="guest_relations">
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -96,8 +110,8 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
-                  <Input 
-                    placeholder="Misafir ID girin..." 
+                    <Input
+                    placeholder="Misafir kimliği veya rezervasyon numarası"
                     value={guestId}
                     onChange={(e) => setGuestId(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
@@ -121,17 +135,17 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                     <div className="space-y-3">
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">Yastık Tercihi</span>
-                        <p className="text-sm font-medium text-gray-800">{analysis.pillow_preference}</p>
+                        <p className="text-sm font-medium text-gray-800">{analysis.pillow_preference || 'Gizlilik profiliniz nedeniyle gizli'}</p>
                       </div>
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">SPA Tercihleri</span>
-                        <p className="text-sm font-medium text-gray-800">{analysis.spa_preference}</p>
+                        <p className="text-sm font-medium text-gray-800">{analysis.spa_preference || 'Gizlilik profiliniz nedeniyle gizli'}</p>
                       </div>
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">Minibar Alışkanlığı</span>
                         <p className="text-sm font-medium text-gray-800 flex items-center gap-1">
                           <Coffee className="w-4 h-4 text-amber-600" />
-                          {analysis.minibar_preference}
+                          {analysis.minibar_preference || 'Gizlilik profiliniz nedeniyle gizli'}
                         </p>
                       </div>
                     </div>
@@ -189,12 +203,15 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                             </p>
                           )}
                         </div>
-                        <div className="text-right flex-shrink-0">
+                        <div className="flex items-center gap-2 text-right flex-shrink-0">
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                             status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
                           }`}>
                             {status === 'pending' ? 'Bekliyor' : 'Hazır'}
                           </span>
+                          {status === 'pending' && <Button size="sm" onClick={() => completeDirective(dir.id)} disabled={completingId === dir.id}>
+                            {completingId === dir.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Hazır olarak işaretle'}
+                          </Button>}
                         </div>
                       </div>
                       );

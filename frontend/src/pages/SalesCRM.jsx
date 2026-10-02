@@ -13,7 +13,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog';
-import { Mail, Phone, Trash2, Activity, RefreshCw, Users, Search } from 'lucide-react';
+import { Mail, Phone, Trash2, Activity, CalendarClock, RefreshCw, Users, Search } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
@@ -45,6 +45,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
   const fmtTL = (value, currency = crmCurrency) => formatCurrency(value, currency, { decimals: 0 });
   const [leads, setLeads] = useState([]);
   const [funnel, setFunnel] = useState(null);
+  const [attention, setAttention] = useState({ overdue: [], upcoming: [] });
   const [loadingList, setLoadingList] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -65,7 +66,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
   const [detail, setDetail] = useState(null); // { lead, activities }
   const [stageSaving, setStageSaving] = useState(false);
   const [actDraft, setActDraft] = useState({
-    activity_type: 'call', subject: '', description: '',
+    activity_type: 'call', subject: '', description: '', follow_up_at: '',
   });
   const [actSaving, setActSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -97,10 +98,14 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
 
   const loadFunnel = useCallback(async () => {
     try {
-      const r = await axios.get('/sales/funnel');
-      setFunnel(r.data || null);
+      const [funnelResult, attentionResult] = await Promise.all([
+        axios.get('/sales/funnel'), axios.get('/sales/attention'),
+      ]);
+      setFunnel(funnelResult.data || null);
+      setAttention(attentionResult.data || { overdue: [], upcoming: [] });
     } catch (e) {
       setFunnel(null);
+      setAttention({ overdue: [], upcoming: [] });
     }
   }, []);
 
@@ -183,8 +188,8 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
         description: actDraft.description,
       });
       toast.success('Aktivite kaydedildi');
-      setActDraft({ activity_type: 'call', subject: '', description: '' });
-      await openDetail(detail.lead.id);
+      setActDraft({ activity_type: 'call', subject: '', description: '', follow_up_at: '' });
+      await Promise.all([openDetail(detail.lead.id), loadFunnel()]);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Aktivite kaydedilemedi');
     } finally {
@@ -197,7 +202,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
     if (!detail?.lead) return;
     try {
       await axios.delete(`/sales/leads/${detail.lead.id}`);
-      toast.success('Lead silindi');
+      toast.success('Lead arşivlendi');
       setConfirmDelete(false);
       setDetailOpen(false);
       setDetail(null);
@@ -372,6 +377,16 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                   Win Rate: <span className="font-bold text-green-600">{funnel.win_rate}%</span>
                 </span>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {(attention.overdue.length > 0 || attention.upcoming.length > 0) && (
+          <Card className="mb-6">
+            <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><CalendarClock className="h-4 w-4" />Satış takip kuyruğu</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <FollowUpList title="Geciken takipler" items={attention.overdue} tone="text-red-700" onOpen={openDetail} empty="Gecikmiş takip yok." />
+              <FollowUpList title="Yaklaşan takipler" items={attention.upcoming} tone="text-amber-700" onOpen={openDetail} empty="Planlanmış yaklaşan takip yok." />
             </CardContent>
           </Card>
         )}
@@ -565,6 +580,14 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                     value={actDraft.description}
                     onChange={(e) => setActDraft({ ...actDraft, description: e.target.value })}
                   />
+                  <div>
+                    <Label>Takip zamanı <span className="font-normal text-gray-500">(isteğe bağlı)</span></Label>
+                    <Input
+                      type="datetime-local"
+                      value={actDraft.follow_up_at}
+                      onChange={(e) => setActDraft({ ...actDraft, follow_up_at: e.target.value })}
+                    />
+                  </div>
                   <Button type="submit" size="sm" disabled={actSaving}>
                     {actSaving ? 'Kaydediliyor…' : 'Aktivite Kaydet'}
                   </Button>
@@ -574,7 +597,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                 <div className="border-t pt-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Activity className="w-4 h-4 text-gray-500" />
-                    <h4 className="text-sm font-semibold">{t('cm.pages_SalesCRM.aktivite_gecmisi')}{detail.activities.length})</h4>
+                    <h4 className="text-sm font-semibold">{t('cm.pages_SalesCRM.aktivite_gecmisi')} ({detail.activities.length})</h4>
                   </div>
                   {detail.activities.length === 0 ? (
                     <p className="text-xs text-gray-500">{t('cm.pages_SalesCRM.henuz_aktivite_yok')}</p>
@@ -593,6 +616,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                           {a.description && (
                             <p className="text-xs text-gray-600 mt-0.5">{a.description}</p>
                           )}
+                          {a.follow_up_at && <p className="text-xs font-medium text-amber-700 mt-1">Takip: {new Date(a.follow_up_at).toLocaleString('tr-TR')}</p>}
                         </li>
                       ))}
                     </ul>
@@ -620,7 +644,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
               <DialogTitle>Lead silinsin mi?</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-gray-600">
-              {t('cm.pages_SalesCRM.bu_islem_geri_alinamaz_bagli_tum_aktivit')}
+              Lead listelerden kaldırılır; satış ve denetim geçmişi korunur.
             </p>
             <DialogFooter className="mt-3 gap-2">
               <Button variant="outline" onClick={() => setConfirmDelete(false)}>{t('cm.pages_SalesCRM.vazgec')}</Button>
@@ -634,3 +658,23 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
 };
 
 export default SalesCRM;
+
+function FollowUpList({ title, items, tone, onOpen, empty }) {
+  return (
+    <section aria-label={title}>
+      <h3 className={`mb-2 text-sm font-semibold ${tone}`}>{title} ({items.length})</h3>
+      {items.length === 0 ? <p className="text-sm text-gray-500">{empty}</p> : (
+        <ul className="space-y-2">
+          {items.slice(0, 5).map((item) => (
+            <li key={item.id}>
+              <button type="button" onClick={() => onOpen(item.lead.id)} className="w-full rounded-md border p-2 text-left text-sm hover:bg-muted">
+                <span className="block font-medium">{item.lead.contact_name || item.lead.company_name || 'İsimsiz lead'} · {item.subject}</span>
+                <span className="text-xs text-gray-500">{new Date(item.follow_up_at).toLocaleString('tr-TR')}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
