@@ -36,6 +36,14 @@ import {
   reconcileAdminTenantContext,
 } from "@/lib/adminTenantContext";
 import { resolvePostLoginDestination } from "@/lib/postLoginWorkspace";
+import {
+  blockTabAfterExternalSessionChange,
+  clearTabAuthScope,
+  isForeignIdentityForTab,
+  isTabAuthBlocked,
+  readSharedAuthUser,
+  rememberTabAuthSubject,
+} from "@/lib/authSessionScope";
 
 // Sesli softphone (Contact Center Faz 2) — yalnızca personel için, lazy.
 // Twilio Voice SDK + mikrofon izni operatör "Aktifleştir"e basınca yüklenir.
@@ -94,6 +102,7 @@ function clearAuthStorage() {
   try {
     sessionStorage.removeItem("notif_cache_v1");
     sessionStorage.removeItem("pms_bd_cache_v1");
+    clearTabAuthScope();
   } catch { /* ignore */ }
   notifyServiceWorkerAuthChanged();
 }
@@ -115,6 +124,12 @@ function App() {
   useUserAccessRefresh(isAuthenticated ? user : null, setUser, clearAccessCaches);
 
   useEffect(() => {
+    if (isTabAuthBlocked()) {
+      // A different identity was established in another same-browser tab.
+      // Do not silently adopt it. The user must explicitly authenticate here.
+      setLoading(false);
+      return undefined;
+    }
     const hasAuthCookieSession = localStorage.getItem("token_ts") !== null;
     const storedUser = localStorage.getItem("user");
     const storedTenant = localStorage.getItem("tenant");
@@ -128,6 +143,19 @@ function App() {
       axios.get("/auth/me")
         .then(async (meResponse) => {
           const freshUser = meResponse.data;
+          if (isForeignIdentityForTab(freshUser)) {
+            // Never repaint an existing workspace as another hotel/user. This
+            // is intentionally local to this tab; the new session must remain
+            // valid in the tab/device where it was explicitly established.
+            blockTabAfterExternalSessionChange();
+            clearAccessCaches();
+            delete axios.defaults.headers.common["Authorization"];
+            setUser(null);
+            setTenant(null);
+            setModules(null);
+            setIsAuthenticated(false);
+            return;
+          }
           let parsedTenant = null;
           if (storedTenant && storedTenant !== "null") {
             try { parsedTenant = JSON.parse(storedTenant); } catch { /* ignore parse error */ }
@@ -162,6 +190,7 @@ function App() {
           setModules(reconciled.modules);
           setTenant(reconciledTenant);
           setIsAuthenticated(true);
+          rememberTabAuthSubject(reconciled.user);
           prefetchHeavyModules();
         })
         .catch((error) => {
@@ -178,6 +207,14 @@ function App() {
           // interceptor will still hard-logout on a definitive 401.
           try {
             const cachedUser = JSON.parse(storedUser);
+            // Network fallback is safe only for the identity already verified
+            // by this tab. A localStorage snapshot belongs to all tabs and is
+            // never enough to establish a different account here.
+            if (isForeignIdentityForTab(cachedUser)) {
+              blockTabAfterExternalSessionChange();
+              setIsAuthenticated(false);
+              return;
+            }
             const cachedTenant = storedTenant && storedTenant !== "null"
               ? JSON.parse(storedTenant)
               : null;
@@ -199,6 +236,45 @@ function App() {
       if (hasAuthCookieSession || localStorage.getItem("token")) clearAuthStorage();
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const authKeys = new Set(["user", "tenant", "modules", "token_ts", "refresh_token", "token", ADMIN_TENANT_CONTEXT_KEY]);
+    const onStorage = (event) => {
+      if (!authKeys.has(event.key)) return;
+      const sharedUser = readSharedAuthUser();
+      if (!sharedUser) {
+        // An explicit logout in another tab belongs to this browser session.
+        // Clear only this tab's in-memory state; the tab that initiated
+        // logout already owns the shared-storage cleanup.
+        clearTabAuthScope();
+        clearAccessCaches();
+        delete axios.defaults.headers.common["Authorization"];
+        setUser(null);
+        setTenant(null);
+        setModules(null);
+        setIsAuthenticated(false);
+        try { websocket.disconnect?.(); } catch { /* noop */ }
+        notifyAuthChanged();
+        return;
+      }
+      if (!isForeignIdentityForTab(sharedUser)) return;
+
+      // `storage` is emitted in every *other* tab. A login, logout or
+      // super-admin property switch elsewhere must close this tab's in-memory
+      // workspace, never turn it into that other user's workspace.
+      blockTabAfterExternalSessionChange();
+      clearAccessCaches();
+      delete axios.defaults.headers.common["Authorization"];
+      setUser(null);
+      setTenant(null);
+      setModules(null);
+      setIsAuthenticated(false);
+      try { websocket.disconnect?.(); } catch { /* noop */ }
+      notifyAuthChanged();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   useEffect(() => {
@@ -275,6 +351,7 @@ function App() {
       if (me?.data) canonicalUser = me.data;
     } catch { /* fallback: login response */ }
     localStorage.setItem("user", JSON.stringify(canonicalUser));
+    rememberTabAuthSubject(canonicalUser);
 
     const fetchModules = async () => {
       try {
