@@ -38,6 +38,7 @@ import {
 import { resolvePostLoginDestination } from "@/lib/postLoginWorkspace";
 import {
   blockTabAfterExternalSessionChange,
+  clearAuthScopedSessionStorage,
   clearTabAuthScope,
   isForeignIdentityForTab,
   isTabAuthBlocked,
@@ -107,11 +108,7 @@ function clearAuthStorage() {
   clearAxiosCache();
   // SessionStorage cache'leri de sil — aynı tab'da hesap değişiminde
   // önceki kullanıcının notification/business-date verisi sızmasın.
-  try {
-    sessionStorage.removeItem("notif_cache_v1");
-    sessionStorage.removeItem("pms_bd_cache_v1");
-    clearTabAuthScope();
-  } catch { /* ignore */ }
+  clearAuthScopedSessionStorage();
   notifyServiceWorkerAuthChanged();
 }
 
