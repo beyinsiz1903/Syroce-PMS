@@ -1011,6 +1011,15 @@ def _reservation_calendar_date(value) -> date | None:
             return None
 
 
+def _room_charge_business_date(charge: dict) -> date | None:
+    """Resolve the accounting date from current and legacy room-charge rows."""
+    return _reservation_calendar_date(
+        charge.get("business_date")
+        or charge.get("night_audit_date")
+        or charge.get("date")
+    )
+
+
 def _daily_rate_cents(value) -> int:
     """Convert a persisted monetary value to integer cents without float drift."""
     try:
@@ -4029,7 +4038,7 @@ async def apply_posted_stay_rate_correction(
     )]
     charges_by_date: dict[str, float] = {}
     for charge in room_charges:
-        charge_date = _reservation_calendar_date(charge.get("business_date") or charge.get("night_audit_date") or charge.get("date"))
+        charge_date = _room_charge_business_date(charge)
         if charge_date is None:
             raise HTTPException(status_code=409, detail="Tarihsiz oda tahakkuku var; manuel finans mutabakatı gerekir")
         date_key = charge_date.isoformat()
@@ -4126,7 +4135,7 @@ async def reconcile_posted_stay_total(
     ]
     rates_by_date: dict[str, float] = {}
     for charge in room_charges:
-        charge_date = _reservation_calendar_date(charge.get("business_date") or charge.get("night_audit_date"))
+        charge_date = _room_charge_business_date(charge)
         if charge_date is None:
             raise HTTPException(status_code=409, detail="Tarihsiz oda tahakkuku var; manuel finans mutabakatı gerekir")
         date_key = charge_date.isoformat()
