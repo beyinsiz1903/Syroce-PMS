@@ -126,6 +126,25 @@ async def test_vat_report_excludes_proforma_and_purchase_invoice_vat(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_accounting_dashboard_excludes_proforma_and_purchase_documents(monkeypatch, current_user):
+    invoices = _Collection([{"status": "paid", "total": 100.0, "currency": "TRY"}])
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(
+            accounting_invoices=invoices,
+            expenses=_Collection([]),
+            bank_accounts=_Collection([]),
+        ),
+    )
+
+    result = await accounting.get_accounting_dashboard(current_user=current_user, _perm=None)
+
+    assert result["monthly_income"] == 100.0
+    assert invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
+
+
+@pytest.mark.asyncio
 async def test_balance_sheet_keeps_assets_and_equity_by_currency(monkeypatch, current_user):
     monkeypatch.setattr(
         accounting,

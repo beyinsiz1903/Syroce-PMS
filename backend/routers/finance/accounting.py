@@ -1875,7 +1875,16 @@ async def get_accounting_dashboard(
     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
     month_end = today.isoformat()
 
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
+    # Keep dashboard income/receivable figures aligned with the report ledger:
+    # purchase and proforma documents are never hotel sales.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": month_start, "$lte": month_end},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
     expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
 
