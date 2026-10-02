@@ -119,6 +119,12 @@ class ApplyRecommendationsRequest(BaseModel):
     apply_confirmed: bool = False
 
 
+class ApplyPricingRecommendationRequest(BaseModel):
+    """Explicit acknowledgement for a single rate-calendar mutation."""
+
+    apply_confirmed: bool = False
+
+
 @router.put("/rms/pricing-strategy")
 async def update_pricing_strategy(
     request: PricingStrategyUpdateRequest,
@@ -478,28 +484,60 @@ async def get_pricing_recommendations(
 @router.post("/rms/apply-pricing/{recommendation_id}")
 async def apply_pricing_recommendation(
     recommendation_id: str,
+    request: ApplyPricingRecommendationRequest = ApplyPricingRecommendationRequest(),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
-    """Apply pricing recommendation"""
+    """Apply one future pending pricing recommendation after explicit confirmation."""
+    if not request.apply_confirmed:
+        raise HTTPException(
+            status_code=409,
+            detail="Fiyat önerisini uygulamak için açık onay gerekir.",
+        )
+
     recommendation = await db.rms_pricing_recommendations.find_one({"id": recommendation_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    if recommendation.get("status") != "pending":
+        raise HTTPException(status_code=409, detail="Yalnız bekleyen fiyat önerileri uygulanabilir")
     if str(recommendation.get("date") or "") < datetime.now(UTC).date().isoformat():
         raise HTTPException(status_code=409, detail="Gecmis tarihli fiyat onerisi uygulanamaz")
+
+    now = datetime.now(UTC).isoformat()
 
     # Update rate in rate calendar
     await db.rate_calendar.update_one(
         {"tenant_id": current_user.tenant_id, "date": recommendation["date"], "room_type": recommendation["room_type"]},
-        {"$set": {"rate": recommendation["suggested_rate"], "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.id}},
+        {"$set": {"rate": recommendation["suggested_rate"], "updated_at": now, "updated_by": current_user.id}},
         upsert=True,
     )
 
-    # Mark recommendation as applied
-    await db.rms_pricing_recommendations.update_one({"id": recommendation_id}, {"$set": {"status": "applied", "applied_at": datetime.now(UTC).isoformat(), "applied_by": current_user.id}})
+    # Mark recommendation as applied, retaining the tenant guard even though the
+    # read above was scoped. This avoids a cross-tenant mutation if IDs collide.
+    await db.rms_pricing_recommendations.update_one(
+        {"id": recommendation_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"status": "applied", "applied_at": now, "applied_by": current_user.id}},
+    )
 
-    return {"message": "Pricing recommendation applied successfully"}
+    # Single and bulk application must have the same financial trace so the
+    # adjustment history and downstream reports do not silently diverge.
+    await db.rms_price_adjustments.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "date": recommendation["date"],
+            "reason": recommendation.get("reasoning", "Pricing recommendation applied"),
+            "old_rate": recommendation.get("current_rate", 0),
+            "new_rate": recommendation["suggested_rate"],
+            "room_type": recommendation["room_type"],
+            "applied_at": now,
+            "applied_by": current_user.id,
+            "recommendation_id": recommendation_id,
+        }
+    )
+
+    return {"message": "Pricing recommendation applied successfully", "recommendation_id": recommendation_id}
 
 
 # ENHANCED RMS ENDPOINTS FOR VISUALIZATION
