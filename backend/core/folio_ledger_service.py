@@ -457,7 +457,7 @@ class FolioLedgerService:
                 {"_id": 0},
             )
             .sort("sequence_number", 1)
-            .to_list(10000)
+            .to_list(None)
         )
         balance = await self.compute_balance(tenant_id, folio_id)
         return {"entries": entries, "balance": balance, "entry_count": len(entries)}
@@ -497,7 +497,7 @@ class ReconciliationEngine:
         open_folios = await db.folios.find(
             {"tenant_id": tenant_id, "status": "open"},
             {"_id": 0, "id": 1, "booking_id": 1, "balance": 1},
-        ).to_list(10000)
+        ).to_list(None)
 
         mismatches = []
         balanced_count = 0
