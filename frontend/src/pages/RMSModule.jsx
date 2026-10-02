@@ -228,7 +228,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       confirmText: t('rmsModule.rec_apply_all_action', 'Fiyatları Uygula'),
     })) return;
     try {
-      const res = await axios.post('/rms/apply-recommendations');
+      const res = await axios.post('/rms/apply-recommendations', { apply_confirmed: true });
       toast.success(res.data.message || t('rmsModule.apply_success'));
       loadData();
     } catch (e) {
