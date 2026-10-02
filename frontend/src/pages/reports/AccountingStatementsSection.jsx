@@ -118,6 +118,12 @@ export default function AccountingStatementsSection({ type, reportDate, reportPe
     : type === 'balance_sheet'
       ? (data?.assets?.length || 0) + (data?.liabilities?.length || 0) + (data?.equity?.length || 0)
       : type === 'journal' ? data?.entries?.length || 0 : data?.rows?.length || 0;
+  // An empty trial balance has zero debit and zero credit. It is not an
+  // imbalance; older API responses may omit `balanced`, so fail closed only
+  // when there are actual rows and the backend explicitly reports a mismatch.
+  const trialBalanceHasEntries = type === 'gl_trial_balance' && totalRows > 0;
+  const trialBalanceBalanced = type === 'gl_trial_balance'
+    && (!trialBalanceHasEntries || data?.totals?.balanced !== false);
 
   return <div className="space-y-5" data-testid={`section-${type}`}>
     <SectionHeader title={config.title} description={config.description} icon={type === 'gl_trial_balance' ? Scale : FileSpreadsheet} actions={<>
@@ -133,7 +139,11 @@ export default function AccountingStatementsSection({ type, reportDate, reportPe
         <div className="grid gap-3 sm:grid-cols-3">
           <SummaryCard label="Borç bakiyesi" value={money(data.totals?.debit_balance)} />
           <SummaryCard label="Alacak bakiyesi" value={money(data.totals?.credit_balance)} />
-          <SummaryCard label="Mizan kontrolü" value={data.totals?.balanced ? 'Dengeli' : 'Dengesiz'} intent={data.totals?.balanced ? 'success' : 'danger'} />
+          <SummaryCard
+            label="Mizan kontrolü"
+            value={trialBalanceHasEntries ? (trialBalanceBalanced ? 'Dengeli' : 'Dengesiz') : 'Dengeli — kayıt yok'}
+            intent={trialBalanceBalanced ? 'success' : 'danger'}
+          />
         </div>
         <AccountTable rows={data.rows || []} balanceColumns />
       </>}

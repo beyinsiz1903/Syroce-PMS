@@ -21,6 +21,18 @@ describe('AccountingStatementsSection', () => {
     expect(screen.getByText('Dengeli')).toBeInTheDocument();
   });
 
+  it('does not mark an empty trial balance as unbalanced when the API omits the legacy balanced flag', async () => {
+    get.mockResolvedValue({ data: {
+      rows: [],
+      totals: { debit_balance: 0, credit_balance: 0 },
+    } });
+
+    render(<AccountingStatementsSection type="gl_trial_balance" reportDate="2026-09-27" reportPeriod="daily" />);
+
+    expect(await screen.findByText('Dengeli — kayıt yok')).toBeInTheDocument();
+    expect(screen.queryByText('Dengesiz')).not.toBeInTheDocument();
+  });
+
   it('uses the selected reporting period for the income statement', async () => {
     get.mockResolvedValue({ data: {
       revenue: [], expenses: [], totals: { revenue: 0, expenses: 0, net_income: 0 },
