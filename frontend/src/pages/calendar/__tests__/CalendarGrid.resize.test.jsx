@@ -116,6 +116,29 @@ describe('CalendarGrid stay resize handle', () => {
     expect(screen.queryByTestId('booking-resize-handle-booking-1')).not.toBeInTheDocument();
   });
 
+  it('does not paint the checkout date when the visible range and navigation date differ', () => {
+    const visibleDates = [29, 30].map((day) => new Date(`2026-09-${day}T00:00:00Z`))
+      .concat([1, 2].map((day) => new Date(`2026-10-${String(day).padStart(2, '0')}T00:00:00Z`)));
+
+    renderGrid({
+      bookings: [{
+        ...booking,
+        status: 'checked_out',
+        check_in: '2026-09-28',
+        check_out: '2026-10-02',
+      }],
+      dateRange: visibleDates,
+      daysToShow: visibleDates.length,
+      // Reproduces the old navigation drift: the render starts on 29 Sep,
+      // while the navigation cursor still points at 28 Sep.
+      currentDate: new Date('2026-09-28T00:00:00Z'),
+    });
+
+    const card = screen.getByTestId('booking-bar-booking-1');
+    // 29, 30 Sep and 1 Oct are occupied. 2 Oct is checkout, not a sold night.
+    expect(card).toHaveStyle({ width: '308px' });
+  });
+
   it('protects Turkish weekday abbreviations from browser translation', () => {
     renderGrid();
     const wednesday = screen.getByTitle('Çarşamba');
