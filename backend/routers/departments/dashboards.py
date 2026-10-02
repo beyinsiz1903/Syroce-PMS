@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -752,15 +753,16 @@ async def get_revenue_by_department(
     _perm=Depends(require_op("view_finance_reports")),  # v83 DS: gelir breakdown finansal
 ):
     """Revenue breakdown by department (Rooms, F&B, Other)"""
-    today = datetime.now(UTC)
-
-    if not start_date:
-        start_date = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC).isoformat()
-    if not end_date:
-        end_date = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC).isoformat()
+    if not start_date or not end_date:
+        business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        business_day = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
+        if not start_date:
+            start_date = datetime.combine(business_day, datetime.min.time()).replace(tzinfo=UTC).isoformat()
+        if not end_date:
+            end_date = datetime.combine(business_day, datetime.max.time()).replace(tzinfo=UTC).isoformat()
 
     # Get all charges
-    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}, "voided": False}).to_list(100000)
+    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}, "voided": {"$ne": True}}).to_list(100000)
 
     # Categorize by department
     departments = {
@@ -775,7 +777,7 @@ async def get_revenue_by_department(
     }
 
     for charge in charges:
-        charge_type = charge.get("charge_type", "other").lower()
+        charge_type = str(charge.get("charge_category") or charge.get("charge_type") or "other").lower()
         amount = charge.get("total", 0)
 
         if charge_type in ["room", "accommodation", "room_charge"]:
