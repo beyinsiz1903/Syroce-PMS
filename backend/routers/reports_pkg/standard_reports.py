@@ -112,8 +112,11 @@ async def _posted_revenue_rows(tenant_id: str, start: date, end: date) -> list[d
         "source_pos_order_id": 1,
     }
     folio_rows, extra_rows, pos_rows = await asyncio.gather(
-        db.folio_charges.find(charge_query, projection).to_list(10000),
-        db.extra_charges.find(charge_query, projection).to_list(10000),
+        # Financial reports may cover high-volume F&B and chain properties.
+        # A hard cap silently underreports revenue, so preserve every matching
+        # ledger row instead of treating 10,000 as a reporting limit.
+        db.folio_charges.find(charge_query, projection).to_list(None),
+        db.extra_charges.find(charge_query, projection).to_list(None),
         db.pos_orders.find(
             {
                 "tenant_id": tenant_id,
@@ -125,7 +128,7 @@ async def _posted_revenue_rows(tenant_id: str, start: date, end: date) -> list[d
                 ],
             },
             {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1},
-        ).to_list(10000),
+        ).to_list(None),
     )
     represented_pos_ids = {str(row["source_pos_order_id"]) for row in folio_rows if row.get("source_pos_order_id")}
     direct_pos_rows = [
