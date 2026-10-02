@@ -71,6 +71,7 @@ const UnifiedRateManager = ({
   const [pushProviders, setPushProviders] = useState([]);
   const [activeChannels, setActiveChannels] = useState([]);
   const [activeChannelsStale, setActiveChannelsStale] = useState(false);
+  const [selectedChannelCodes, setSelectedChannelCodes] = useState(new Set());
 
   // Agencies
   const [agencies, setAgencies] = useState([]);
@@ -211,7 +212,10 @@ const UnifiedRateManager = ({
     }
     axios.get('/channel-manager/connections/overview', { headers }).then(res => {
       const hotelrunner = (res.data?.providers || []).find(item => item.provider === 'hotelrunner');
-      setActiveChannels(Array.isArray(hotelrunner?.channels) ? hotelrunner.channels : []);
+      const channels = Array.isArray(hotelrunner?.channels) ? hotelrunner.channels : [];
+      setActiveChannels(channels);
+      const validCodes = new Set(channels.map(channel => String(channel?.code || '').trim()).filter(Boolean));
+      setSelectedChannelCodes(previous => new Set([...previous].filter(code => validCodes.has(code))));
       setActiveChannelsStale(hotelrunner?.channels_stale === true);
     }).catch(error => {
       console.warn('[UnifiedRateManager] active HotelRunner channels unavailable:', error?.response?.status ?? error?.message);
@@ -447,6 +451,17 @@ const UnifiedRateManager = ({
       setSelectedAgencies(new Set(agencies.map(a => a.id)));
     }
   };
+  const toggleChannel = channelCode => {
+    setSelectedChannelCodes(previous => {
+      const next = new Set(previous);
+      if (next.has(channelCode)) next.delete(channelCode);else next.add(channelCode);
+      return next;
+    });
+  };
+  const toggleAllChannels = () => {
+    const codes = activeChannels.map(channel => String(channel?.code || '').trim()).filter(Boolean);
+    setSelectedChannelCodes(previous => previous.size === codes.length ? new Set() : new Set(codes));
+  };
 
   // Save agency override
   const saveAgencyOverride = async (agencyId, roomTypeCode, overrideType, value) => {
@@ -561,7 +576,8 @@ const UnifiedRateManager = ({
         end_date: dateTo,
         selected_days: allDays ? null : Array.from(selectedDays),
         update_fields: Array.from(enabledFields),
-        agency_ids: agencyIds
+        agency_ids: agencyIds,
+        channel_codes: Array.from(selectedChannelCodes),
       }, {
         headers
       });
@@ -761,7 +777,7 @@ const UnifiedRateManager = ({
               </TabsList>
 
               <TabsContent value="bulk" className="mt-4">
-                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} channelProvider={provider} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
+                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} selectedChannelCodes={selectedChannelCodes} toggleChannel={toggleChannel} toggleAllChannels={toggleAllChannels} channelProvider={provider} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
               </TabsContent>
 
               <TabsContent value="grid" className="mt-4">

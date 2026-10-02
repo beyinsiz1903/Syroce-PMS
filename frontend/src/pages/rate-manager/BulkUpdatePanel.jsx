@@ -23,7 +23,7 @@ export const BulkUpdatePanel = ({
   pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
-  activeChannels, activeChannelsStale, channelProvider,
+  activeChannels, activeChannelsStale, selectedChannelCodes, toggleChannel, toggleAllChannels, channelProvider,
   mobileStep = 1, setMobileStep,
 }) => {
   const { t } = useTranslation();
@@ -171,7 +171,7 @@ export const BulkUpdatePanel = ({
             <CardTitle className="text-sm font-semibold text-gray-700">Kanallar</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <ChannelList channels={activeChannels} stale={activeChannelsStale} provider={channelProvider} />
+            <ChannelList channels={activeChannels} stale={activeChannelsStale} selectedChannelCodes={selectedChannelCodes} onToggle={toggleChannel} onToggleAll={toggleAllChannels} provider={channelProvider} />
           </CardContent>
         </Card>
       </div>

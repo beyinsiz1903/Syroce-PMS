@@ -115,6 +115,11 @@ async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeyp
         "hotelrunner_ari_write_block_reason",
         MagicMock(return_value="HOTELRUNNER_ARI_WRITE_KILL_SWITCH_ACTIVE"),
     )
+    monkeypatch.setattr(
+        rate_router,
+        "_validated_hotelrunner_channel_codes",
+        AsyncMock(return_value=["bookingcom"]),
+    )
 
     request = rate_router.UnifiedBulkUpdateRequest(
         provider="hotelrunner",
@@ -123,6 +128,7 @@ async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeyp
         end_date="2026-08-14",
         availability=1,
         update_fields=["availability"],
+        channel_codes=["bookingcom"],
     )
 
     with pytest.raises(HTTPException) as exc_info:
