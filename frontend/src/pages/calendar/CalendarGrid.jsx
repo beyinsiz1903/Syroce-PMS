@@ -44,9 +44,10 @@ export const getReservationCardPresentation = (booking) => {
   const statusLabel = normalizedStatus === 'checked_in'
     ? 'Otelde'
     : normalizedStatus === 'checked_out'
-      ? 'Çıkış yapıldı'
+      ? 'Çıkış yapıldı · oda boş'
       : 'Giriş bekliyor';
   const stayRange = `${formatCardDate(booking?.check_in)} – ${formatCardDate(booking?.check_out)}`;
+  const checkoutAvailability = `Çıkış günü (${formatCardDate(booking?.check_out)}) oda yeniden satılabilir`;
 
   return {
     guestName,
@@ -54,7 +55,8 @@ export const getReservationCardPresentation = (booking) => {
     paxCount,
     statusLabel,
     stayRange,
-    ariaLabel: `${guestName}, ${statusLabel}, ${source.label}${paxCount ? `, ${paxCount} kişi` : ''}, ${stayRange}`,
+    checkoutAvailability,
+    ariaLabel: `${guestName}, ${statusLabel}, ${source.label}${paxCount ? `, ${paxCount} kişi` : ''}, ${stayRange}. ${checkoutAvailability}.`,
   };
 };
 
@@ -751,7 +753,7 @@ const CalendarGrid = ({
                             const fullGuestName = presentation.guestName;
                             const conflictTitle = conflictInfo
                               ? `⚠ Çakışma: Bu oda ${formatConflictRange(conflictInfo.overlap_start, conflictInfo.overlap_end)} tarihlerinde iki rezervasyona sahip (${conflictInfo.guest1 || 'Misafir'} ↔ ${conflictInfo.guest2 || 'Misafir'}). Lütfen birini başka odaya taşıyın.`
-                              : fullGuestName;
+                              : `${fullGuestName} · ${presentation.checkoutAvailability}`;
                             const isDragging = draggingBooking?.id === booking.id;
                             const isResizing = resizingBooking?.id === booking.id;
                             const previewSpan = span;
@@ -821,7 +823,7 @@ const CalendarGrid = ({
                                     <span className="h-1.5 w-1.5 shrink-0 rounded-full shadow-sm" style={{ backgroundColor: cardSurface.border }} aria-hidden="true" />
                                     <span className="font-semibold truncate">{presentation.sourceLabel}</span>
                                     {presentation.paxCount ? <span className="shrink-0 opacity-80">· {presentation.paxCount} kişi</span> : null}
-                                    {span > 1 && <span className="ml-auto truncate rounded-full bg-white/70 px-1.5 py-0.5 text-[8px] font-semibold shadow-sm ring-1 ring-black/5">{presentation.statusLabel}</span>}
+                                    {span > 1 && <span className="ml-auto truncate rounded-full bg-white/70 px-1.5 py-0.5 text-[8px] font-semibold shadow-sm ring-1 ring-black/5" title={presentation.checkoutAvailability}>{presentation.statusLabel}</span>}
                                   </div>
                                   <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
                                     {showDeluxePanel && isGroupBooking(booking.id) && (
