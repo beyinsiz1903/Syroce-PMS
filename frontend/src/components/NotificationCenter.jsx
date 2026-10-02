@@ -175,10 +175,18 @@ const NotificationCenter = () => {
                 onClick={clearAll}
                 disabled={!notifications.length}
                 title={t('cm.components_NotificationCenter.tumunu_temizle')}
+                aria-label="Tüm bildirimleri temizle"
               >
                 <Trash2 className="w-4 h-4 text-gray-500" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpen(false)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setOpen(false)}
+                aria-label="Bildirim merkezini kapat"
+                title="Kapat"
+              >
                 <X className="w-4 h-4" />
               </Button>
             </div>
