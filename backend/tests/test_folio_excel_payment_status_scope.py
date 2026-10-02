@@ -1,4 +1,4 @@
-from routers.finance.folio import _folio_export_transactions
+from routers.finance.folio import _effective_folio_payment_total, _folio_export_transactions
 
 
 def test_folio_export_includes_only_financially_effective_payments():
@@ -31,3 +31,16 @@ def test_folio_export_keeps_legacy_payment_without_status():
             "is_charge": False,
         }
     ]
+
+
+def test_proforma_payment_total_excludes_invalid_payment_attempts():
+    payments = [
+        {"amount": 750, "status": "paid"},
+        {"amount": 500, "status": "failed"},
+        {"amount": 250, "status": "cancelled"},
+        {"amount": 100, "status": "rejected"},
+        {"amount": 50, "voided": True},
+        {"amount": 125},  # legacy successful payment without a status field
+    ]
+
+    assert _effective_folio_payment_total(payments) == 875.0
