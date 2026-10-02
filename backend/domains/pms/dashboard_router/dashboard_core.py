@@ -899,21 +899,22 @@ async def get_budget_vs_actual(
 
     # v63 Bug CZ: UTC-aware datetimes (mongo strings may be aware → naive comparison TypeError)
     start = datetime.fromisoformat(f"{month}-01").replace(tzinfo=UTC)
-    # Last day of month
+    # First instant of the following month. Report ranges are half-open so
+    # the final calendar day is fully included without leaking next month.
     if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
+        end = start.replace(year=start.year + 1, month=1, day=1)
     else:
-        end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
+        end = start.replace(month=start.month + 1, day=1)
 
     # v95 — Parallel queries with server-side $sum (was 3 sequential to_list(10000) + Python sum)
     import asyncio as _asyncio
 
     tid = current_user.tenant_id
-    date_range = {"$gte": start.isoformat(), "$lte": end.isoformat()}
+    date_range = {"$gte": start.isoformat(), "$lt": end.isoformat()}
 
     # Charges aggregation: total revenue + room-only revenue in single pipeline
     charges_pipeline = [
-        {"$match": {"tenant_id": tid, "voided": False, "date": date_range}},
+        {"$match": {"tenant_id": tid, "voided": {"$ne": True}, "date": date_range}},
         {
             "$group": {
                 "_id": None,
@@ -940,7 +941,12 @@ async def get_budget_vs_actual(
     expenses_q = db.expenses.aggregate(expenses_pipeline).to_list(1)
     rooms_count_q = db.rooms.count_documents({"tenant_id": tid})
     bookings_q = db.bookings.find(
-        {"tenant_id": tid, "status": {"$in": ["checked_in", "checked_out"]}, "check_in": date_range},
+        {
+            "tenant_id": tid,
+            "status": {"$in": ["checked_in", "checked_out"]},
+            "check_in": {"$lt": end.isoformat()},
+            "check_out": {"$gt": start.isoformat()},
+        },
         {"_id": 0, "check_in": 1, "check_out": 1},
     ).to_list(10000)
 
@@ -957,7 +963,7 @@ async def get_budget_vs_actual(
     actual_expense = expenses_agg[0]["total"] if expenses_agg else 0
 
     # Get actual occupancy
-    days_in_month = (end - start).days + 1
+    days_in_month = (end - start).days
     available_room_nights = total_rooms * days_in_month
 
     occupied_room_nights = 0
@@ -972,7 +978,7 @@ async def get_budget_vs_actual(
         check_in = max(ci, start)
         check_out = min(co, end)
         nights = (check_out - check_in).days
-        occupied_room_nights += max(nights, 1)
+        occupied_room_nights += max(nights, 0)
 
     actual_occupancy = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
 
