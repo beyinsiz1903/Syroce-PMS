@@ -16,6 +16,7 @@ const EnhancedReservationCalendar = () => {
   const [rooms, setRooms] = useState([]);
   const [adrData, setAdrData] = useState(null);
   const [aiPricing, setAiPricing] = useState(null);
+  const [aiPricingLoading, setAiPricingLoading] = useState(false);
   const [draggedBooking, setDraggedBooking] = useState(null);
   const [showRateOverride, setShowRateOverride] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -48,20 +49,33 @@ const EnhancedReservationCalendar = () => {
     }
   };
   const fetchAIPricing = async () => {
+    setAiPricingLoading(true);
     try {
       const endDate = new Date(selectedDate);
       endDate.setDate(endDate.getDate() + 30);
-      const response = await axios.post(`/rms/ai-pricing/auto-publish-rates`, {
-        start_date: selectedDate,
-        end_date: endDate.toISOString().split('T')[0],
-        strategy: 'revenue_optimization'
-      }, {
-        headers: {}
+      // Bu ekran karar desteğidir: dry_run, fiyatları/veritabanını/kanalları
+      // değiştirmeden yalnızca öneri üretir. Yayınlama RMS çalışma alanındaki
+      // açıkça adlandırılmış ve onaylı akıştan yapılır.
+      const response = await axios.post(`/rms/ai-pricing/auto-publish-rates`, null, {
+        headers: {},
+        params: {
+          start_date: selectedDate,
+          end_date: endDate.toISOString().split('T')[0],
+          strategy: 'revenue_optimization',
+          dry_run: true
+        }
       });
       setAiPricing(response.data);
-      toast.success(`AI Fiyatlama: ${response.data.rates_published} fiyat yayınlandı`);
+      if (response.data.data_available === false || response.data.success === false) {
+        toast.error(response.data.message || 'Fiyat önerisi üretmek için yeterli gerçek veri yok.');
+        return;
+      }
+      toast.success(`${response.data.published_rates?.length || 0} fiyat önerisi hazırlandı. Hiçbir fiyat yayınlanmadı.`);
     } catch (error) {
       console.error('Error fetching AI pricing:', error);
+      toast.error(error.response?.data?.detail || error.response?.data?.message || 'Fiyat önerileri alınamadı.');
+    } finally {
+      setAiPricingLoading(false);
     }
   };
   const handleRateOverride = async (bookingId, newRate, reason) => {
@@ -85,14 +99,31 @@ const EnhancedReservationCalendar = () => {
   };
   return <div className="p-6 bg-white overflow-hidden">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-        <h1 className="text-3xl font-bold">Rezervasyon Takvimi</h1>
+        <h1 className="text-3xl font-bold">Fiyat ve Müsaitlik Takvimi</h1>
         <div className="flex flex-wrap gap-4 w-full lg:w-auto">
-          <button onClick={fetchAIPricing} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 whitespace-nowrap" title="Seçili tarihten itibaren 30 günlük fiyat önerisini yayınlar">
-            Yapay zekâ fiyat önerileri
+          <button onClick={fetchAIPricing} disabled={aiPricingLoading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
+            {aiPricingLoading ? 'Öneriler hesaplanıyor…' : 'Yapay zekâ fiyat önerilerini göster'}
           </button>
           <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="px-4 py-2 border rounded-lg flex-1 min-w-[150px]" />
         </div>
       </div>
+
+      {aiPricing && <section aria-live="polite" className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold text-indigo-950">Fiyat önerisi önizlemesi</h2>
+              <p className="text-sm text-indigo-900">Bu sonuç yalnızca öneridir; hiçbir fiyat kaydedilmedi veya kanallara gönderilmedi.</p>
+            </div>
+            <span className="text-sm font-medium text-indigo-900">{aiPricing.published_rates?.length || 0} tarih</span>
+          </div>
+          {aiPricing.published_rates?.length > 0 && <div className="mt-3 max-h-48 overflow-y-auto rounded border border-indigo-100 bg-white">
+              {aiPricing.published_rates.map(rate => <div key={rate.date} className="grid grid-cols-3 gap-2 border-b border-indigo-50 px-3 py-2 text-sm last:border-b-0">
+                  <span>{rate.date}</span>
+                  <span>Doluluk %{rate.forecasted_occupancy}</span>
+                  <strong className="text-right">{formatCurrency(rate.recommended_rate, displayCurrency)}</strong>
+                </div>)}
+            </div>}
+        </section>}
 
       {/* ADR Summary */}
       {adrData && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
