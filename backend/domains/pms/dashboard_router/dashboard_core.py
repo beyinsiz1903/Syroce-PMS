@@ -1057,19 +1057,21 @@ async def get_monthly_profitability(
     # Window başlangıcı: en eski ayın 1'i (geri months-1 ay)
     win_y, win_m = _shift_month(cur_year, cur_month, -(months - 1))
     window_start = datetime(win_y, win_m, 1, tzinfo=UTC)
+    next_y, next_m = _shift_month(cur_year, cur_month, 1)
+    window_end = datetime(next_y, next_m, 1, tzinfo=UTC)
 
     # Tek seferde charges + expenses (paralel)
     charges_q = db.folio_charges.find(
         {
             "tenant_id": current_user.tenant_id,
-            "voided": False,
-            "date": {"$gte": window_start.isoformat()},
+            "voided": {"$ne": True},
+            "date": {"$gte": window_start.isoformat(), "$lt": window_end.isoformat()},
         }
     ).to_list(100000)
     expenses_q = db.expenses.find(
         {
             "tenant_id": current_user.tenant_id,
-            "date": {"$gte": window_start.isoformat()},
+            "date": {"$gte": window_start.isoformat(), "$lt": window_end.isoformat()},
         }
     ).to_list(100000)
     charges, expenses = await asyncio.gather(charges_q, expenses_q)
