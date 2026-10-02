@@ -113,6 +113,12 @@ class PricingStrategyUpdateRequest(BaseModel):
     auto_pricing_enabled: bool
 
 
+class ApplyRecommendationsRequest(BaseModel):
+    """Explicit acknowledgement for the bulk rate-calendar mutation."""
+
+    apply_confirmed: bool = False
+
+
 @router.put("/rms/pricing-strategy")
 async def update_pricing_strategy(
     request: PricingStrategyUpdateRequest,
@@ -161,10 +167,17 @@ async def get_price_adjustments(limit: int = 20, current_user: User = Depends(ge
 
 @router.post("/rms/apply-recommendations")
 async def apply_all_recommendations(
+    request: ApplyRecommendationsRequest = ApplyRecommendationsRequest(),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
-    """Apply all pending pricing recommendations"""
+    """Apply all pending pricing recommendations after explicit confirmation."""
+    if not request.apply_confirmed:
+        raise HTTPException(
+            status_code=409,
+            detail="Bekleyen fiyat önerilerini uygulamak için açık onay gerekir.",
+        )
+
     pending_docs = await db.rms_pricing_recommendations.find(
         _active_pending_query(current_user.tenant_id),
         {"_id": 0},

@@ -418,8 +418,11 @@ class TestApplyRecommendations(TestRMSAuth):
     
     def test_apply_all_recommendations(self, auth_headers):
         """Test POST apply all pending recommendations"""
-        response = requests.post(f"{BASE_URL}/api/rms/apply-recommendations", 
-                                headers=auth_headers)
+        response = requests.post(
+            f"{BASE_URL}/api/rms/apply-recommendations",
+            json={"apply_confirmed": True},
+            headers=auth_headers,
+        )
         assert response.status_code == 200, f"Failed: {response.text}"
         
         data = response.json()
