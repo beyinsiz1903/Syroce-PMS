@@ -110,6 +110,17 @@ def test_acc_due_date_is_normalized_to_iso_date():
     assert _normalize_accounting_invoice_due_date(" 2026-09-15 ") == "2026-09-15"
 
 
+def test_acc_invoice_type_normalizes_legacy_standard_to_sales():
+    request = AccountingInvoiceCreateRequest(**_acc_base(invoice_type="standard"))
+    assert request.invoice_type == "sales"
+
+
+@pytest.mark.parametrize("bad", ["", "offer", "random_document"])
+def test_acc_invoice_type_rejects_unknown_document_type(bad):
+    with pytest.raises(ValidationError, match="invoice_type geçerli"):
+        AccountingInvoiceCreateRequest(**_acc_base(invoice_type=bad))
+
+
 # ── Package C: shared helper used by the raw-dict update path ──
 # update_accounting_invoice takes a dict (not a pydantic model), so it calls
 # _normalize_customer_tax_number directly. Lock the same contract there.
