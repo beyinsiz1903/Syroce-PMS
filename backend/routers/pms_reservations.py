@@ -316,6 +316,23 @@ async def create_rate_override_with_panel(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
+    # Konaklama başladıktan sonra yalnızca rezervasyon toplamını değiştirmek,
+    # gece tahakkukları ve folyo hareketleriyle ayrışmaya neden olur. Bu
+    # kayıtlar günlük fiyat düzeltme akışı üzerinden ele alınmalıdır.
+    if str(booking.get("status") or "").lower() in {
+        "checked_in",
+        "in_house",
+        "occupied",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Konaklaması başlamış rezervasyonlarda fiyat değişikliği günlük "
+                "fiyat düzeltmesi üzerinden yapılmalıdır; bu işlem folyo ve "
+                "tahakkukları birlikte uzlaştırır."
+            ),
+        )
+
     original_rate = booking.get("total_amount", 0)
     terminal_statuses = {"checked_out", "cancelled", "no_show", "archived"}
     if str(booking.get("status") or "").lower() in terminal_statuses:
