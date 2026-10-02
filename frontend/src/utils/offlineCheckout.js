@@ -156,6 +156,13 @@ export async function performCheckout(bookingId, { balance, onlineRequest } = {}
       : await axios.post(checkoutEndpoint(bookingId));
     return { offlineQueued: false, synced: true, key, data: response?.data };
   } catch (error) {
+    // Sunucu işlemi tamamlayıp yanıtı istemciye ulaştıramamış olabilir; aynı
+    // operatörün ikinci tıklaması da bu duruma düşer. Checkout idempotent bir
+    // yaşam döngüsü geçişidir: "zaten çıkış yapıldı" sonucu başarısızlık değil,
+    // ekranda güncel durumu yüklememiz gereken başarılı son durumdur.
+    if (isAlreadyCheckedOut(error)) {
+      return { offlineQueued: false, synced: true, alreadyCheckedOut: true, key };
+    }
     if (isNetworkError(error)) {
       await queueCheckout({ bookingId, key });
       return { offlineQueued: true, key };
