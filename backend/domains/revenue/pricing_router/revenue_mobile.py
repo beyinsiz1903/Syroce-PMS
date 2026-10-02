@@ -168,7 +168,7 @@ async def get_adr_mobile(start_date: str | None = None, end_date: str | None = N
                         "tenant_id": current_user.tenant_id,
                         "booking_id": {"$in": booking_ids},
                         "charge_category": "room",
-                        "voided": False,
+                        "voided": {"$ne": True},
                     }
                 },
                 {"$group": {"_id": None, "total": {"$sum": "$total"}}},
@@ -222,7 +222,7 @@ async def get_revpar_mobile(start_date: str | None = None, end_date: str | None 
     available_room_nights = total_rooms * days
 
     # Get total room revenue from folio charges
-    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "charge_category": "room", "voided": False, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(
+    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "charge_category": "room", "voided": {"$ne": True}, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(
         10000
     )
 
@@ -252,7 +252,7 @@ async def get_revpar_mobile(start_date: str | None = None, end_date: str | None 
     prev_available_room_nights = total_rooms * prev_days
 
     prev_charges = await db.folio_charges.find(
-        {"tenant_id": current_user.tenant_id, "charge_category": "room", "voided": False, "date": {"$gte": prev_start.isoformat(), "$lte": prev_end.isoformat()}}
+        {"tenant_id": current_user.tenant_id, "charge_category": "room", "voided": {"$ne": True}, "date": {"$gte": prev_start.isoformat(), "$lte": prev_end.isoformat()}}
     ).to_list(10000)
 
     prev_room_revenue = sum(c.get("total", 0) for c in prev_charges)
@@ -284,7 +284,7 @@ async def get_total_revenue_mobile(start_date: str | None = None, end_date: str 
         start = end - timedelta(days=30)
 
     # Get all charges in date range
-    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "voided": False, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(10000)
+    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "voided": {"$ne": True}, "date": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(10000)
 
     # Calculate revenue by category
     room_revenue = sum(c.get("total", 0) for c in charges if c.get("charge_category") == "room")
@@ -309,7 +309,7 @@ async def get_total_revenue_mobile(start_date: str | None = None, end_date: str 
     # Previous period comparison
     prev_start = start - (end - start)
     prev_end = start
-    prev_charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "voided": False, "date": {"$gte": prev_start.isoformat(), "$lte": prev_end.isoformat()}}).to_list(10000)
+    prev_charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "voided": {"$ne": True}, "date": {"$gte": prev_start.isoformat(), "$lte": prev_end.isoformat()}}).to_list(10000)
 
     prev_total_revenue = sum(c.get("total", 0) for c in prev_charges)
     change_pct = round(((total_revenue - prev_total_revenue) / prev_total_revenue * 100), 2) if prev_total_revenue > 0 else 0
@@ -357,7 +357,7 @@ async def get_segment_distribution_mobile(start_date: str | None = None, end_dat
         segment = booking.get("market_segment", "other")
 
         # Get charges for this booking
-        charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking["id"], "voided": False}).to_list(1000)
+        charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking["id"], "voided": {"$ne": True}}).to_list(1000)
 
         booking_revenue = sum(c.get("total", 0) for c in charges)
 
@@ -535,7 +535,7 @@ async def get_revenue_forecast_mobile(days_ahead: int = 30, credentials: HTTPAut
     last_year_start = start - timedelta(days=365)
     last_year_end = last_year_start + timedelta(days=days_ahead)
 
-    last_year_charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "voided": False, "date": {"$gte": last_year_start.isoformat(), "$lte": last_year_end.isoformat()}}).to_list(
+    last_year_charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "voided": {"$ne": True}, "date": {"$gte": last_year_start.isoformat(), "$lte": last_year_end.isoformat()}}).to_list(
         10000
     )
 
@@ -580,7 +580,7 @@ async def get_channel_distribution_mobile(start_date: str | None = None, end_dat
         source = booking.get("source", "direct")
 
         # Get charges for this booking
-        charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking["id"], "voided": False}).to_list(1000)
+        charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking["id"], "voided": {"$ne": True}}).to_list(1000)
 
         booking_revenue = sum(c.get("total", 0) for c in charges)
 
@@ -698,7 +698,7 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
         booking_id = booking.get("id")
         if not booking_id:
             continue
-        fees = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking_id, "charge_type": "cancellation_fee", "voided": False}).to_list(100)
+        fees = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking_id, "charge_type": "cancellation_fee", "voided": {"$ne": True}}).to_list(100)
         cancellation_fees += sum((safe_amount(f.get("total")) for f in fees), start=safe_amount(0))
 
     # Analyze by channel
