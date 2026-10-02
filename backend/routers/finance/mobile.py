@@ -226,10 +226,21 @@ async def get_cashier_shift_report(
     if shift_date:
         target_date = datetime.fromisoformat(shift_date)
     else:
-        target_date = datetime.now(UTC)
+        # A cashier report without an explicit date belongs to the hotel's
+        # currently open accounting day, not the server's UTC calendar day.
+        business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        target_date = datetime.fromisoformat(str(business_state["business_date"])[:10])
 
     business_day = target_date.date().isoformat()
-    query = {"tenant_id": current_user.tenant_id, "$or": [{"processed_at": {"$regex": f"^{business_day}"}}, {"payment_date": business_day}, {"date": business_day}]}
+    query = {
+        "tenant_id": current_user.tenant_id,
+        **accounting_day_match(
+            business_day,
+            {"processed_at": {"$regex": f"^{business_day}"}},
+            {"payment_date": business_day},
+            {"date": business_day},
+        ),
+    }
 
     if cashier_name:
         query["created_by"] = cashier_name
