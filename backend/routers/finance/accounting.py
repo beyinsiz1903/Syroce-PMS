@@ -1609,10 +1609,16 @@ async def get_profit_loss_report(
         for code, revenue in total_revenue_by_currency.items()
     }
 
-    total_revenue = sum(inv["total"] for inv in invoices)
-    total_expenses = sum(exp["total_amount"] for exp in expenses)
-    gross_profit = total_revenue - total_expenses
-    profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
+    report_currencies = set(total_revenue_by_currency) | set(total_expenses_by_currency)
+    mixed_currency = len(report_currencies) > 1
+    if mixed_currency:
+        total_revenue = total_expenses = gross_profit = profit_margin = None
+    else:
+        only_currency = next(iter(report_currencies), tenant_currency)
+        total_revenue = total_revenue_by_currency.get(only_currency, 0)
+        total_expenses = total_expenses_by_currency.get(only_currency, 0)
+        gross_profit = round(total_revenue - total_expenses, 2)
+        profit_margin = round((gross_profit / total_revenue * 100), 2) if total_revenue > 0 else 0
 
     # Revenue breakdown
     revenue_by_category = {}
@@ -1637,10 +1643,10 @@ async def get_profit_loss_report(
 
     return {
         "period": {"start": start_date, "end": end_date},
-        "total_revenue": round(total_revenue, 2),
-        "total_expenses": round(total_expenses, 2),
-        "gross_profit": round(gross_profit, 2),
-        "profit_margin": round(profit_margin, 2),
+        "total_revenue": total_revenue,
+        "total_expenses": total_expenses,
+        "gross_profit": gross_profit,
+        "profit_margin": profit_margin,
         "revenue_breakdown": revenue_by_category,
         "expense_breakdown": expense_by_category,
         "total_revenue_by_currency": total_revenue_by_currency,
@@ -1649,6 +1655,7 @@ async def get_profit_loss_report(
         "profit_margin_by_currency": profit_margin_by_currency,
         "revenue_breakdown_by_currency": revenue_by_category_currency,
         "expense_breakdown_by_currency": expense_by_category_currency,
+        "mixed_currency": mixed_currency,
     }
 
 
@@ -1676,14 +1683,8 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
             totals[code] = totals.get(code, 0) + float(record.get(field, 0) or 0)
         return {code: round(amount, 2) for code, amount in sorted(totals.items())}
 
-    sales_vat = sum(inv["total_vat"] for inv in invoices)
-
     # Purchase VAT (paid)
     expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(None)
-
-    purchase_vat = sum(exp["vat_amount"] for exp in expenses)
-
-    vat_payable = sales_vat - purchase_vat
 
     sales_vat_by_currency = _vat_totals(invoices, "total_vat")
     purchase_vat_by_currency = _vat_totals(expenses, "vat_amount")
@@ -1691,15 +1692,25 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
         code: round(sales_vat_by_currency.get(code, 0) - purchase_vat_by_currency.get(code, 0), 2)
         for code in sorted(set(sales_vat_by_currency) | set(purchase_vat_by_currency))
     }
+    report_currencies = set(sales_vat_by_currency) | set(purchase_vat_by_currency)
+    mixed_currency = len(report_currencies) > 1
+    if mixed_currency:
+        sales_vat = purchase_vat = vat_payable = None
+    else:
+        only_currency = next(iter(report_currencies), tenant_currency)
+        sales_vat = sales_vat_by_currency.get(only_currency, 0)
+        purchase_vat = purchase_vat_by_currency.get(only_currency, 0)
+        vat_payable = round(sales_vat - purchase_vat, 2)
 
     return {
         "period": {"start": start_date, "end": end_date},
-        "sales_vat": round(sales_vat, 2),
-        "purchase_vat": round(purchase_vat, 2),
-        "vat_payable": round(vat_payable, 2),
+        "sales_vat": sales_vat,
+        "purchase_vat": purchase_vat,
+        "vat_payable": vat_payable,
         "sales_vat_by_currency": sales_vat_by_currency,
         "purchase_vat_by_currency": purchase_vat_by_currency,
         "vat_payable_by_currency": vat_payable_by_currency,
+        "mixed_currency": mixed_currency,
     }
 
 
