@@ -321,24 +321,41 @@ async def create_campaign(
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Pazarlama kampanyasi olustur"""
+    required = {field: str(campaign_data.get(field) or "").strip() for field in ("name", "subject", "message")}
+    missing = [field for field, value in required.items() if not value]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"{', '.join(missing)} zorunlu")
+    now = _now()
     campaign = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "name": campaign_data["name"],
-        "subject": campaign_data["subject"],
-        "message": campaign_data["message"],
+        "name": required["name"],
+        "subject": required["subject"],
+        "message": required["message"],
         "segment": campaign_data.get("segment", "all"),
         "status": "draft",
         "sent_count": 0,
         "created_by": current_user.id,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": now,
+        "updated_at": now,
     }
     await db.marketing_campaigns.insert_one(campaign)
+    await create_audit_log(
+        current_user.tenant_id,
+        current_user,
+        "marketing_campaign_created",
+        "marketing_campaign",
+        campaign["id"],
+        {"segment": campaign["segment"]},
+    )
     return {"success": True, "message": "Kampanya olusturuldu", "campaign_id": campaign["id"]}
 
 
 @router.get("/marketing/segments")
-async def get_customer_segments(current_user: User = Depends(get_current_user)):
+async def get_customer_segments(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
     """Musteri segmentleri"""
     vip_count = await db.guests.count_documents({"tenant_id": current_user.tenant_id, "tags": "vip"})
     total = await db.guests.count_documents({"tenant_id": current_user.tenant_id})
