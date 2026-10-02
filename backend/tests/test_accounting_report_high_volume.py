@@ -44,9 +44,12 @@ async def test_financial_summaries_never_silently_cap_source_rows(monkeypatch):
     monkeypatch.setattr(tenant_currency, "get_tenant_currency", currency)
     user = SimpleNamespace(tenant_id="tenant-a")
 
-    await accounting.get_profit_loss_report("2026-10-01", "2026-10-02", current_user=user, _perm=None)
+    # Exercise the report sources rather than a value cached by an earlier
+    # test.  The contract here is that each summary reads its complete source
+    # dataset, so cache reuse would make the cursor assertion order-dependent.
+    await accounting.get_profit_loss_report.__wrapped__("2026-10-01", "2026-10-02", current_user=user, _perm=None)
     await accounting.get_vat_report("2026-10-01", "2026-10-02", current_user=user)
-    await accounting.get_accounting_dashboard(current_user=user, _perm=None)
+    await accounting.get_accounting_dashboard.__wrapped__(current_user=user, _perm=None)
 
     assert invoice_cursor.limits == [None, None, None]
     assert expense_cursor.limits == [None, None, None]
