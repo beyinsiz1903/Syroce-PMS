@@ -649,7 +649,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "unified_rate_manager",
-    label: "Fiyat & Musaitlik",
+    label: "Fiyat & Müsaitlik",
     path: "/unified-rate-manager",
     moduleKey: "channel_manager",
     tier: "professional",
@@ -659,7 +659,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "room_mapping_wizard",
-    label: "Oda Eslestirme Sihirbazi",
+    label: "Oda Eşleştirme Sihirbazı",
     path: "/room-mapping-wizard",
     moduleKey: "channel_manager",
     tier: "professional",
@@ -739,7 +739,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "channel_connections",
-    label: "Kanal Baglantilari",
+    label: "Kanal Bağlantıları",
     path: "/channel-connections",
     moduleKey: "channel_manager",
     tier: "professional",

@@ -1,4 +1,4 @@
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
@@ -19,6 +19,8 @@ it('polls only visible tabs every minute and refreshes on return', async () => {
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
   axios.get.mockResolvedValue({ data: { notifications: [], unread_count: 0 } });
   await act(async () => { render(<MemoryRouter><NotificationBell /></MemoryRouter>); });
+
+  expect(screen.getByRole('button', { name: 'Bildirimleri aç' })).toBeInTheDocument();
   expect(axios.get).toHaveBeenCalledTimes(1);
   await act(async () => { vi.advanceTimersByTime(15000); });
   expect(axios.get).toHaveBeenCalledTimes(1);

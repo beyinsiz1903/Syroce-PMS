@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from domains.channel_manager import unified_rate_manager_router as rate_router
+from domains.channel_manager import channel_connections_router as connections_router
 
 
 @pytest.mark.asyncio
@@ -146,6 +147,47 @@ async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeyp
         "provider_write_count": 0,
     }
     assert not hasattr(fake_db, "hr_rate_calendar")
+
+
+@pytest.mark.asyncio
+async def test_selected_hotelrunner_channels_are_canonicalised_from_connection(monkeypatch):
+    fake_db = SimpleNamespace(
+        hotelrunner_connections=SimpleNamespace(find_one=AsyncMock(return_value={"is_active": True}))
+    )
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        connections_router,
+        "_load_active_hotelrunner_channels",
+        AsyncMock(return_value=([
+            {"code": "bookingcom", "name": "Booking.com"},
+            {"code": "expedia", "name": "Expedia"},
+        ], False, "2026-10-02T00:00:00Z")),
+    )
+
+    result = await rate_router._validated_hotelrunner_channel_codes(
+        "tenant-test", [" BOOKINGCOM ", "expedia", "bookingcom"]
+    )
+
+    assert result == ["bookingcom", "expedia"]
+
+
+@pytest.mark.asyncio
+async def test_selected_hotelrunner_channel_fails_closed_when_connection_list_is_stale(monkeypatch):
+    fake_db = SimpleNamespace(
+        hotelrunner_connections=SimpleNamespace(find_one=AsyncMock(return_value={"is_active": True}))
+    )
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        connections_router,
+        "_load_active_hotelrunner_channels",
+        AsyncMock(return_value=([], True, None)),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await rate_router._validated_hotelrunner_channel_codes("tenant-test", ["bookingcom"])
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["error_code"] == "CHANNEL_LIST_STALE"
 
 
 def test_scheduled_delivery_is_not_provider_verified():

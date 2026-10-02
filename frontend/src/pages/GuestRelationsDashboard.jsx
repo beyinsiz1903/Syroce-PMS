@@ -45,7 +45,7 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
     setAnalyzing(true);
     setAnalysis(null);
     try {
-      const res = await axios.get(`/guest-relations/profiles/${guestId}/analysis`);
+      const res = await axios.get(`/guest-relations/profiles/${encodeURIComponent(guestId.trim())}/analysis`);
       setAnalysis(res.data);
     } catch (err) {
       console.error(err);
@@ -112,11 +112,12 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                 <div className="flex gap-2">
                     <Input
                     placeholder="Misafir kimliği veya rezervasyon numarası"
+                    aria-label="Misafir kimliği veya rezervasyon numarası"
                     value={guestId}
                     onChange={(e) => setGuestId(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                   />
-                  <Button variant="secondary" onClick={handleAnalyze} disabled={analyzing}>
+                  <Button variant="secondary" onClick={handleAnalyze} disabled={analyzing} aria-label="Misafir analizini başlat">
                     {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                   </Button>
                 </div>

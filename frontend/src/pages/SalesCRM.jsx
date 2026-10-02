@@ -39,6 +39,16 @@ const ACTIVITY_LABEL = Object.fromEntries(
   ACTIVITY_TYPES.map((a) => [a.key, a.label]),
 );
 
+// Keep the optional follow-up separate when it is empty. This preserves the
+// API's distinction between "no follow-up planned" and a scheduled task.
+export const buildActivityPayload = (leadId, draft) => ({
+  lead_id: leadId,
+  activity_type: draft.activity_type,
+  subject: draft.subject,
+  description: draft.description,
+  ...(draft.follow_up_at ? { follow_up_at: draft.follow_up_at } : {}),
+});
+
 const SalesCRM = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const crmCurrency = tenant?.currency || cachedTenantCurrency();
@@ -181,12 +191,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
     }
     setActSaving(true);
     try {
-      await axios.post('/sales/activity', {
-        lead_id: detail.lead.id,
-        activity_type: actDraft.activity_type,
-        subject: actDraft.subject,
-        description: actDraft.description,
-      });
+      await axios.post('/sales/activity', buildActivityPayload(detail.lead.id, actDraft));
       toast.success('Aktivite kaydedildi');
       setActDraft({ activity_type: 'call', subject: '', description: '', follow_up_at: '' });
       await Promise.all([openDetail(detail.lead.id), loadFunnel()]);
@@ -396,13 +401,14 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
           <div className="flex-1 min-w-[200px]">
             <Input
               placeholder={t('cm.pages_SalesCRM.ara_kisi_sirket_veya_e_posta')}
+              aria-label={t('cm.pages_SalesCRM.ara_kisi_sirket_veya_e_posta')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="w-44">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger><SelectValue placeholder={t('cm.pages_SalesCRM.asama')} /></SelectTrigger>
+              <SelectTrigger aria-label={t('cm.pages_SalesCRM.asama')}><SelectValue placeholder={t('cm.pages_SalesCRM.asama')} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('cm.pages_SalesCRM.tum_asamalar')}</SelectItem>
                 {STAGES.map((s) => (
@@ -540,7 +546,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                       onValueChange={changeStage}
                       disabled={stageSaving}
                     >
-                      <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-56" aria-label="Lead aşaması"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {STAGES.map((s) => (
                           <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
@@ -559,7 +565,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                       value={actDraft.activity_type}
                       onValueChange={(v) => setActDraft({ ...actDraft, activity_type: v })}
                     >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-label="Aktivite türü"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {ACTIVITY_TYPES.map((a) => (
                           <SelectItem key={a.key} value={a.key}>{a.label}</SelectItem>
@@ -569,6 +575,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                     <Input
                       className="col-span-2"
                       placeholder="Konu"
+                      aria-label="Aktivite konusu"
                       value={actDraft.subject}
                       onChange={(e) => setActDraft({ ...actDraft, subject: e.target.value })}
                       required
@@ -577,6 +584,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                   <Textarea
                     rows={2}
                     placeholder={t('cm.pages_SalesCRM.aciklama_opsiyonel')}
+                    aria-label="Aktivite açıklaması"
                     value={actDraft.description}
                     onChange={(e) => setActDraft({ ...actDraft, description: e.target.value })}
                   />
@@ -584,6 +592,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                     <Label>Takip zamanı <span className="font-normal text-gray-500">(isteğe bağlı)</span></Label>
                     <Input
                       type="datetime-local"
+                      aria-label="Takip zamanı"
                       value={actDraft.follow_up_at}
                       onChange={(e) => setActDraft({ ...actDraft, follow_up_at: e.target.value })}
                     />
