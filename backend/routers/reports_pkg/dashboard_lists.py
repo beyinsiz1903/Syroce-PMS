@@ -85,23 +85,26 @@ _FX_RECEIPT_RE = re.compile(
 
 def _received_payment_amount(payment: dict, fallback_currency: str = "TRY") -> dict:
     """Return the currency physically received, not the booking ledger currency."""
+    def _signed(amount: float) -> float:
+        return -amount if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0 else amount
+
     structured_amount = payment.get("received_amount")
     structured_currency = payment.get("received_currency")
     if structured_amount is not None and structured_currency:
         try:
             amount = float(structured_amount)
             if amount > 0:
-                return {"amount": amount, "currency": str(structured_currency).upper()}
+                return {"amount": _signed(amount), "currency": str(structured_currency).upper()}
         except (TypeError, ValueError):
             pass
     match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
     if match:
         try:
-            return {"amount": float(match.group(1).replace(",", ".")), "currency": match.group(2).upper()}
+            return {"amount": _signed(float(match.group(1).replace(",", "."))), "currency": match.group(2).upper()}
         except ValueError:
             pass
     return {
-        "amount": float(payment.get("amount") or 0),
+        "amount": _signed(float(payment.get("amount") or 0)),
         "currency": str(payment.get("currency") or fallback_currency or "TRY").upper(),
     }
 
