@@ -565,7 +565,7 @@ async def currency_exchange(
     payments = await db.payments.find(
         {"tenant_id": tenant_id, "booking_id": booking_id, "voided": {"$ne": True}},
         {"_id": 0, "notes": 1, "received_amount": 1, "received_currency": 1},
-    ).to_list(1000)
+    ).to_list(None)
     received_total = 0.0
     for payment in payments:
         if payment.get("received_currency") and str(payment["received_currency"]).upper() == source_currency:
@@ -582,7 +582,7 @@ async def currency_exchange(
             "status": "posted",
         },
         {"_id": 0, "source_amount": 1},
-    ).to_list(1000)
+    ).to_list(None)
     exchanged_total = sum(_safe_float(row.get("source_amount")) for row in exchanged_rows)
     available = round(received_total - exchanged_total, 2)
     if source_amount > available + 0.001:
