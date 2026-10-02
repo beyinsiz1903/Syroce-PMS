@@ -35,7 +35,11 @@ router = APIRouter(prefix="/api", tags=["PMS / Maintenance"])
 
 
 @router.get("/iot/room-devices/{room_id}")
-async def get_room_devices(room_id: str, current_user: User = Depends(get_current_user)):
+async def get_room_devices(
+    room_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
     """Odadaki akıllı cihazlar"""
     # Bug DZ — tenant scoping (cross-tenant IDOR fix)
     devices = await db.smart_room_devices.find({"room_id": room_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
@@ -49,13 +53,36 @@ async def control_smart_device(
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Akıllı cihaz kontrol"""
-    command = {"device_id": control_data["device_id"], "command": control_data["command"], "value": control_data.get("value"), "executed_at": datetime.now(UTC).isoformat()}
+    device_id = control_data.get("device_id")
+    command_name = control_data.get("command")
+    if not device_id or not command_name:
+        raise HTTPException(status_code=400, detail="device_id and command are required")
+
+    device = await db.smart_room_devices.find_one(
+        {"id": device_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1},
+    )
+    if not device:
+        raise HTTPException(status_code=404, detail="Smart device not found")
+
+    command = {
+        "device_id": device_id,
+        "tenant_id": current_user.tenant_id,
+        "command": command_name,
+        "value": control_data.get("value"),
+        "executed_at": datetime.now(UTC).isoformat(),
+        "executed_by": current_user.id,
+    }
     await db.iot_commands.insert_one(command)
     return {"success": True, "message": "Cihaz komutu gönderildi (MOCK)"}
 
 
 @router.get("/iot/energy-consumption")
-async def get_energy_consumption(days: int = 30, current_user: User = Depends(get_current_user)):
+async def get_energy_consumption(
+    days: int = 30,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
     """Enerji tüketim raporu"""
     from datetime import timedelta
 
@@ -96,7 +123,13 @@ async def create_maintenance_work_order(
 
 
 @router.get("/maintenance/work-orders")
-async def get_maintenance_work_orders(status: str | None = None, room_id: str | None = None, priority: str | None = None, current_user: User = Depends(get_current_user)):
+async def get_maintenance_work_orders(
+    status: str | None = None,
+    room_id: str | None = None,
+    priority: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),
+):
     """List maintenance work orders with basic filters"""
     query = {"tenant_id": current_user.tenant_id}
     if status:
@@ -255,7 +288,12 @@ async def technician_submit_task(
 
 
 @router.get("/maintenance/repeat-issues")
-async def get_repeat_issues(days: int = 90, min_occurrences: int = 3, current_user: User = Depends(get_current_user)):
+async def get_repeat_issues(
+    days: int = 90,
+    min_occurrences: int = 3,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),
+):
     """
     Detect repeat issues
     - Same room, same issue type multiple times
@@ -316,7 +354,11 @@ async def get_repeat_issues(days: int = 90, min_occurrences: int = 3, current_us
 
 
 @router.get("/maintenance/sla-metrics")
-async def get_maintenance_sla(days: int = 30, current_user: User = Depends(get_current_user)):
+async def get_maintenance_sla(
+    days: int = 30,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),
+):
     """
     SLA measurement for maintenance
     - Average completion time
@@ -386,6 +428,7 @@ async def get_maintenance_parts_inventory(
     category: str | None = None,
     low_stock_only: bool = False,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
 ):
     """List spare parts inventory for the maintenance team."""
     query: dict = {"tenant_id": current_user.tenant_id}
@@ -429,7 +472,10 @@ async def create_or_update_part(
 # rbac-allow: cache-rbac — maintenance tasks operasyonel cross-role
 @router.get("/maintenance/tasks")
 @cached(ttl=180, key_prefix="maintenance_tasks")  # Cache for 3 min
-async def get_maintenance_tasks(current_user: User = Depends(get_current_user)):
+async def get_maintenance_tasks(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v99("housekeeping")),
+):
     """Get all maintenance tasks"""
     try:
         tasks = await db.maintenance_tasks.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
@@ -455,7 +501,12 @@ async def create_maintenance_asset(
 
 
 @router.get("/maintenance/assets")
-async def list_maintenance_assets(asset_type: str | None = None, room_id: str | None = None, current_user: User = Depends(get_current_user)):
+async def list_maintenance_assets(
+    asset_type: str | None = None,
+    room_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
     query = {"tenant_id": current_user.tenant_id}
     if asset_type:
         query["asset_type"] = asset_type
@@ -491,7 +542,11 @@ async def create_preventive_plan(
 
 
 @router.get("/maintenance/plans")
-async def list_preventive_plans(asset_id: str | None = None, current_user: User = Depends(get_current_user)):
+async def list_preventive_plans(
+    asset_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
     query = {"tenant_id": current_user.tenant_id}
     if asset_id:
         query["asset_id"] = asset_id
