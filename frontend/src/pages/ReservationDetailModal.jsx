@@ -115,6 +115,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [propertyTransferSaving, setPropertyTransferSaving] = useState(false);
   const [propertyTransferOptions, setPropertyTransferOptions] = useState([]);
   const [propertyTransferForm, setPropertyTransferForm] = useState({ targetPropertyId: '', roomType: '', reason: '', financialHandling: 'reject' });
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const loadGenerationRef = useRef(0);
   const tabsListRef = useRef(null);
   const openedAtRef = useRef(Date.now());
@@ -201,7 +202,6 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const finishOperation = useCallback(async (operation, operationBookingId = bookingId) => {
     if (typeof onOperationComplete === 'function') {
       await onOperationComplete({ bookingId: operationBookingId, operation });
-      return;
     }
     await loadData();
   }, [bookingId, loadData, onOperationComplete]);
@@ -955,7 +955,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
                 <Button
                   size="sm"
+                  disabled={checkoutSubmitting}
                   onClick={async () => {
+                    if (checkoutSubmitting) return;
                     if (pricingReconciliationRequired) {
                       setActiveTab('daily_rates');
                       toast.warning('Fiyat ve tahakkuk farkı düzeltilmeden çıkış yapılamaz. Bu tutarı misafirden tahsil etmeyin.');
@@ -980,6 +982,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       variant: 'danger',
                     });
                     if (!checkoutConfirmed) return;
+                    setCheckoutSubmitting(true);
                     try {
                       // Mutasyonlarda ekranda gösterilen kısa RES-... referansını
                       // veya liste state'indeki eski kimliği değil, full-detail
@@ -1001,6 +1004,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                         toast.success('Çevrimdışı: çıkış kuyruğa alındı, internet gelince tamamlanacak');
                         return;
                       }
+                      if (result.alreadyCheckedOut) {
+                        toast.success('Çıkış daha önce tamamlanmış; ekran güncellendi');
+                      }
                       const total = result.data?.total_balance;
                       if (typeof total === 'number' && total > 0.01) {
                         toast.warning(`Açık bakiye ile çıkış yapıldı: ${total.toFixed(2)}`);
@@ -1013,6 +1019,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       } else {
                         toast.error('İşlem Hatası: ' + detail);
                       }
+                    } finally {
+                      setCheckoutSubmitting(false);
                     }
                   }}
                   className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm"
@@ -1023,7 +1031,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   ) : hasOpenBalance ? (
                     <><CreditCard className="w-4 h-4 mr-2" /> Önce folio bakiyesini tamamlayın</>
                   ) : (
-                    <><LogOut className="w-4 h-4 mr-2" /> {isEarlyCheckout ? 'Erken Çıkış Yap' : t('cm.pages_ReservationDetailModal.cikis_yap')}</>
+                    <>{checkoutSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogOut className="w-4 h-4 mr-2" />} {checkoutSubmitting ? 'Çıkış kaydediliyor…' : (isEarlyCheckout ? 'Erken Çıkış Yap' : t('cm.pages_ReservationDetailModal.cikis_yap'))}</>
                   )}
                 </Button>
               </div>
