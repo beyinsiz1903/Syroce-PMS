@@ -536,6 +536,8 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                   size="icon"
                   onClick={() => removeCustomRow(idx)}
                   disabled={customSplits.length === 1}
+                  aria-label={`${idx + 1}. folyo bölme hedefini kaldır`}
+                  title="Hedefi kaldır"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
