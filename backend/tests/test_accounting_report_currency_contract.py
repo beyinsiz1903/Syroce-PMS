@@ -70,6 +70,9 @@ async def test_profit_loss_does_not_add_foreign_currency_invoices(monkeypatch, c
     assert result["total_expenses_by_currency"] == {"TRY": 40.0}
     assert result["gross_profit_by_currency"] == {"EUR": 20.0, "TRY": 60.0}
     assert result["revenue_breakdown_by_currency"] == {"Room": {"EUR": 20.0, "TRY": 100.0}}
+    assert result["mixed_currency"] is True
+    assert result["total_revenue"] is None
+    assert result["gross_profit"] is None
 
 
 @pytest.mark.asyncio
@@ -94,6 +97,9 @@ async def test_vat_report_keeps_sales_and_purchase_vat_currencies_separate(monke
     assert result["sales_vat_by_currency"] == {"EUR": 2.0, "TRY": 10.0}
     assert result["purchase_vat_by_currency"] == {"TRY": 4.0}
     assert result["vat_payable_by_currency"] == {"EUR": 2.0, "TRY": 6.0}
+    assert result["mixed_currency"] is True
+    assert result["sales_vat"] is None
+    assert result["vat_payable"] is None
 
 
 @pytest.mark.asyncio
