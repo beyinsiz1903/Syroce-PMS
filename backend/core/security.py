@@ -70,6 +70,12 @@ def _local_evict_user_doc(user_id: str | None = None) -> None:
         _USER_DOC_CACHE.clear()
     else:
         _USER_DOC_CACHE.pop(user_id, None)
+        # Newer callers namespace entries by the principal tenant.  Keep
+        # invalidation user-wide so a password/role change still evicts every
+        # tenant-context token family for that principal.
+        suffix = f":{user_id}"
+        for cache_key in [key for key in _USER_DOC_CACHE if key.endswith(suffix)]:
+            _USER_DOC_CACHE.pop(cache_key, None)
 
 
 def invalidate_user_doc_cache(user_id: str | None = None) -> None:
@@ -474,14 +480,23 @@ async def get_current_user(
         # Cached read avoids a per-request Atlas round-trip (~150 ms RTT).
         # See `_user_doc_cache_*` block above for the full rationale and
         # security tradeoffs (30 s grace after logout / password change).
-        user_doc = _user_doc_cache_get(user_id)
+        # A tenant-context token can deliberately carry a target tenant that
+        # differs from the operator's home tenant.  The actor tenant remains
+        # the stable identity scope for the user document and prevents a
+        # legacy/colliding user id from reusing another property's cache row.
+        principal_tenant_id = payload.get("actor_tenant_id") or payload.get("tenant_id")
+        user_cache_key = f"{principal_tenant_id}:{user_id}" if principal_tenant_id else user_id
+        user_doc = _user_doc_cache_get(user_cache_key)
         if user_doc is None:
             from core.tenant_db import get_system_db
 
             sys_db = get_system_db()
-            user_doc = await sys_db.users.find_one({"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0})
+            user_query: dict = {"$or": [{"id": user_id}, {"user_id": user_id}]}
+            if principal_tenant_id:
+                user_query["tenant_id"] = principal_tenant_id
+            user_doc = await sys_db.users.find_one(user_query, {"_id": 0})
             if user_doc:
-                _user_doc_cache_set(user_id, user_doc)
+                _user_doc_cache_set(user_cache_key, user_doc)
 
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
