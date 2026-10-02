@@ -160,7 +160,7 @@ const CalendarHeader = ({
               </DropdownMenuItem>}
               {canSyncChannels && <DropdownMenuItem onSelect={onSyncReservations} disabled={syncing}>
                 {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                {syncing ? 'Senkronize ediliyor…' : 'OTA senkronizasyonu'}
+                {syncing ? 'Kanallar eşitleniyor…' : 'Kanalları eşitle'}
               </DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuLabel>Gün aralığı</DropdownMenuLabel>
@@ -306,7 +306,8 @@ const CalendarHeader = ({
           onClick={onNavigatePrevious}
           className="h-8 w-8 p-0 transition-transform hover:-translate-x-0.5"
           data-testid="calendar-nav-prev"
-          title="Önceki"
+          title="Önceki tarih aralığı"
+          aria-label="Önceki tarih aralığı"
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
@@ -325,7 +326,8 @@ const CalendarHeader = ({
           onClick={onNavigateNext}
           className="h-8 w-8 p-0 transition-transform hover:translate-x-0.5"
           data-testid="calendar-nav-next"
-          title="Sonraki"
+          title="Sonraki tarih aralığı"
+          aria-label="Sonraki tarih aralığı"
         >
           <ChevronRight className="w-4 h-4" />
         </Button>
@@ -352,9 +354,10 @@ const CalendarHeader = ({
           disabled={syncing}
           data-testid="ota-sync-button"
           className="text-xs h-8"
+          aria-label={syncing ? 'Kanallar eşitleniyor' : 'Satış kanallarını eşitle'}
         >
           {syncing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
-          <span className={compactMode ? 'hidden xl:inline' : ''}>{syncing ? 'Senkronize...' : 'OTA Sync'}</span>
+          <span className={compactMode ? 'hidden xl:inline' : ''}>{syncing ? 'Eşitleniyor…' : 'Kanalları eşitle'}</span>
         </Button>}
 
         <select
@@ -362,6 +365,7 @@ const CalendarHeader = ({
           value={daysToShow}
           onChange={(e) => setDaysToShow(Number(e.target.value))}
           data-testid="reservation-view-range-select"
+          aria-label="Takvimde gösterilecek gün sayısı"
         >
           <option value={7}>7 Gün</option>
           <option value={14}>14 Gün</option>
@@ -374,8 +378,9 @@ const CalendarHeader = ({
           onClick={onShowFindRoomDialog}
           className="text-xs h-8"
           data-testid="find-room-btn"
+          aria-label="Müsait oda ara"
         >
-          {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
+          Müsait oda ara
         </Button>
         {canManageRooms && <Button
           variant="outline"

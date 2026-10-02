@@ -45,7 +45,7 @@ describe('CalendarHeader mobile toolbar', () => {
 
     await user.click(screen.getByTestId('mobile-calendar-actions'));
     expect(screen.getByRole('menu')).toHaveTextContent('Takvim işlemleri');
-    expect(screen.getByRole('menu')).toHaveTextContent('OTA senkronizasyonu');
+    expect(screen.getByRole('menu')).toHaveTextContent('Kanalları eşitle');
     expect(screen.getByRole('menu')).toHaveTextContent('Gün aralığı');
   });
 
@@ -88,6 +88,6 @@ describe('CalendarHeader mobile toolbar', () => {
 
     await user.click(screen.getByTestId('mobile-calendar-actions'));
     expect(screen.getByRole('menu')).not.toHaveTextContent('Odayı blokla / arıza bildir');
-    expect(screen.getByRole('menu')).not.toHaveTextContent('OTA senkronizasyonu');
+    expect(screen.getByRole('menu')).not.toHaveTextContent('Kanalları eşitle');
   });
 });

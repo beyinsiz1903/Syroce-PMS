@@ -1417,7 +1417,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Find Room ─────────────────────────────────────────────
   const handleFindRoom = async () => {
     if (!findRoomCriteria.check_in || !findRoomCriteria.check_out) {
-      toast.error('Please select check-in and check-out dates');
+      toast.error('Lütfen giriş ve çıkış tarihlerini seçin');
       return;
     }
     try {
@@ -1459,7 +1459,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         setFolioPanelId(folioRes.data[0].id);
         setShowFolioPanel(true);
       } else {
-        toast.info('Bu rezervasyon için henüz folyo olusturulmamis');
+        toast.info('Bu rezervasyon için henüz folyo oluşturulmamış');
       }
     } catch (error) {
       toast.error('Folyo yüklenemedi');
@@ -2141,7 +2141,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Ban className="w-4 h-4 text-amber-600" />
-              No-Show Sebebi
+              Gelmeme sebebi
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -2164,7 +2164,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" onClick={() => { setShowNoShowDialog(false); setNoShowBookingId(null); }} data-testid="noshow-cancel-btn">
-              Vazgec
+              Vazgeç
             </Button>
             <Button
               size="sm"
@@ -2173,7 +2173,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               disabled={noShowProcessing}
               data-testid="noshow-confirm-btn"
             >
-              {noShowProcessing ? 'Isleniyor...' : 'No-Show Onayla'}
+              {noShowProcessing ? 'İşleniyor…' : 'Gelmeme olarak işaretle'}
             </Button>
           </DialogFooter>
         </DialogContent>
