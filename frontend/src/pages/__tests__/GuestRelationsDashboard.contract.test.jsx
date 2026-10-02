@@ -84,4 +84,16 @@ describe('guest relations directive contract', () => {
     ));
     expect(toast.success).toHaveBeenCalledWith('Hazırlık direktifi ve bağlı görev tamamlandı.');
   });
+
+  it('uses an accessible analysis control and safely encodes the requested identifier', async () => {
+    axiosGet.mockResolvedValue({ data: { directives: [] } });
+    render(<GuestRelationsDashboard embedded />);
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Misafir kimliği veya rezervasyon numarası' }), {
+      target: { value: 'rez / 42' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Misafir analizini başlat' }));
+
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/guest-relations/profiles/rez%20%2F%2042/analysis'));
+  });
 });
