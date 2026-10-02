@@ -121,6 +121,10 @@ MODULE_ROLES = {
     "housekeeping": {UserRole.HOUSEKEEPING, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "maintenance": {UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "frontdesk": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
+    # Sales CRM is a distinct workspace.  Its read models must be available to
+    # the people who can manage sales records (sales and finance), rather than
+    # being accidentally tied to a front-desk role.
+    "sales": {UserRole.SALES, UserRole.FINANCE, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "pos": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "contact_center": {
         UserRole.CALL_CENTER_AGENT,
