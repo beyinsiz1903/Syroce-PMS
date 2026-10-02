@@ -10,6 +10,7 @@ import {
   isAdminTenantContextActive,
   restoreOriginTenantContext,
 } from "@/lib/adminTenantContext";
+import { clearAuthScopedSessionStorage } from "@/lib/authSessionScope";
 
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
@@ -112,9 +113,11 @@ function _hardLogout() {
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
+  localStorage.removeItem("entitlements");
   localStorage.removeItem(ADMIN_TENANT_CONTEXT_KEY);
   // Eski oturum cache'i yeni kullanıcıya sızmasın.
   clearAxiosCache();
+  clearAuthScopedSessionStorage();
   delete axios.defaults.headers.common["Authorization"];
   if (window.location.pathname !== "/auth" && window.location.pathname !== "/") {
     window.location.assign("/auth");

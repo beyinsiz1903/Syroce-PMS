@@ -107,6 +107,8 @@ describe('Auth Cookie Flow in App.jsx', () => {
   it('should clear token_ts if /auth/me definitively rejects the session', async () => {
     localStorage.setItem('token_ts', Date.now().toString());
     localStorage.setItem('user', JSON.stringify({ name: 'Test User' }));
+    localStorage.setItem('entitlements', JSON.stringify({ tenantId: 'previous-hotel' }));
+    sessionStorage.setItem('notif_cache_v1', 'previous-notifications');
     
     // Mock a failed backend verification (e.g. cookie expired)
     axios.get.mockRejectedValueOnce({ response: { status: 401 } });
@@ -122,6 +124,8 @@ describe('Auth Cookie Flow in App.jsx', () => {
       // Auth storage should be cleared
       expect(localStorage.getItem('token_ts')).toBeNull();
       expect(localStorage.getItem('user')).toBeNull();
+      expect(localStorage.getItem('entitlements')).toBeNull();
+      expect(sessionStorage.getItem('notif_cache_v1')).toBeNull();
     });
   });
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   blockTabAfterExternalSessionChange,
+  clearAuthScopedSessionStorage,
   clearTabAuthScope,
   isForeignIdentityForTab,
   isTabAuthBlocked,
@@ -53,5 +54,26 @@ describe("authSessionScope", () => {
     clearTabAuthScope();
     expect(readTabAuthSubject()).toBeNull();
     expect(isTabAuthBlocked()).toBe(false);
+  });
+
+  it("clears every auth-scoped cache without removing neutral preferences", () => {
+    rememberTabAuthSubject(hotelAUser);
+    sessionStorage.setItem("notif_cache_v1", "notifications");
+    sessionStorage.setItem("pms_bd_cache_v1", "business-date");
+    sessionStorage.setItem("push_status_cache_v1", "push");
+    sessionStorage.setItem("pms_edit_booking", "booking");
+    sessionStorage.setItem("simulation_active", "true");
+    sessionStorage.setItem("settings:activeTab", "users");
+
+    clearAuthScopedSessionStorage();
+
+    expect(readTabAuthSubject()).toBeNull();
+    expect(isTabAuthBlocked()).toBe(false);
+    expect(sessionStorage.getItem("notif_cache_v1")).toBeNull();
+    expect(sessionStorage.getItem("pms_bd_cache_v1")).toBeNull();
+    expect(sessionStorage.getItem("push_status_cache_v1")).toBeNull();
+    expect(sessionStorage.getItem("pms_edit_booking")).toBeNull();
+    expect(sessionStorage.getItem("simulation_active")).toBeNull();
+    expect(sessionStorage.getItem("settings:activeTab")).toBe("users");
   });
 });

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearAuthScopedSessionStorage } from '@/lib/authSessionScope';
 
 export const ADMIN_TENANT_CONTEXT_KEY = 'admin_tenant_context';
 export const ADMIN_TENANT_SESSION_EVENT = 'syroce:admin-tenant-session-changed';
@@ -25,12 +26,7 @@ function notifyAuthChanged() {
 
 function clearTenantCaches() {
   localStorage.removeItem('entitlements');
-  try {
-    sessionStorage.removeItem('notif_cache_v1');
-    sessionStorage.removeItem('pms_bd_cache_v1');
-  } catch {
-    // Storage can be unavailable in hardened/private browser modes.
-  }
+  clearAuthScopedSessionStorage();
   notifyAuthChanged();
 }
 
