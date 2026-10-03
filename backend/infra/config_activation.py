@@ -171,12 +171,15 @@ CONFIG_DEFINITIONS = {
 }
 
 SENSITIVE_PATTERNS = re.compile(r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE)
+# Connection strings may embed a username/password.  Never expose them on the
+# super-admin go-live screen; it only needs to report whether they are valid.
+CONNECTION_STRING_VARIABLES = {"MONGO_URL", "REDIS_URL", "CELERY_BROKER_URL"}
 
 
 def _mask_value(key: str, value: str) -> str:
     if not value:
         return ""
-    if SENSITIVE_PATTERNS.search(key):
+    if SENSITIVE_PATTERNS.search(key) or key in CONNECTION_STRING_VARIABLES:
         if len(value) <= 8:
             return "***"
         return value[:3] + "*" * min(len(value) - 6, 20) + value[-3:]

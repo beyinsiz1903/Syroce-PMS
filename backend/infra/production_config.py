@@ -190,13 +190,17 @@ PRODUCTION_VARIABLES = {
 }
 
 SENSITIVE_PATTERNS = re.compile(r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE)
+# A URL can carry credentials even when its environment-variable name does not
+# include one of the sensitive words above.  The go-live dashboard is a status
+# screen, not a secret viewer, so these values are always redacted.
+CONNECTION_STRING_VARIABLES = {"MONGO_URL", "REDIS_URL", "CELERY_BROKER_URL"}
 
 
 def _mask_value(key: str, value: str) -> str:
     """Mask sensitive values for safe display."""
     if not value:
         return ""
-    if SENSITIVE_PATTERNS.search(key):
+    if SENSITIVE_PATTERNS.search(key) or key in CONNECTION_STRING_VARIABLES:
         if len(value) <= 8:
             return "***"
         return value[:4] + "***" + value[-4:]
