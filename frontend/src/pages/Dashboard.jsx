@@ -1057,13 +1057,13 @@ const DashboardLite = ({
         <div className="rounded-2xl border border-slate-200 bg-white dark:bg-card p-4">
           <div className="text-sm font-semibold text-slate-900">{t('dashboard.quickActions')}</div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => window.location.assign("/app/pms#frontdesk")}>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => navigate("/app/pms#frontdesk")}>
               {t('dashboard.newReservation')}
             </Button>
-            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => window.location.assign("/app/reservation-calendar")}>
+            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => navigate("/app/reservation-calendar")}>
               {t('dashboard.openCalendar')}
             </Button>
-            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => window.location.assign("/app/pms#frontdesk")}>
+            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => navigate("/app/pms#frontdesk")}>
               {t('dashboard.reservations')}
             </Button>
           </div>
