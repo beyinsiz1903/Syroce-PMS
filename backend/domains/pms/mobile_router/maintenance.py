@@ -547,6 +547,12 @@ async def use_spare_part_mobile(
     if quantity <= 0:
         raise HTTPException(status_code=400, detail="Spare part quantity must be positive")
 
+    # A zero or negative "usage" would either create a meaningless ledger row
+    # or increase inventory when subtracted below. Reject it before touching
+    # task, stock, or usage collections.
+    if quantity <= 0:
+        raise HTTPException(status_code=422, detail="Spare part quantity must be a positive integer")
+
     # Validate task
     task_filter = _maintenance_task_filter(current_user.tenant_id, task_id)
     task = await db.tasks.find_one(task_filter)
