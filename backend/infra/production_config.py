@@ -195,6 +195,31 @@ SENSITIVE_PATTERNS = re.compile(r"(token|secret|key|password|dsn|auth|sid|creden
 # screen, not a secret viewer, so these values are always redacted.
 CONNECTION_STRING_VARIABLES = {"MONGO_URL", "REDIS_URL", "CELERY_BROKER_URL"}
 
+# These values are intentionally injected by the runtime's secret store, but
+# they are not all surfaced in the operator config matrix.  Treating them as
+# leaked merely because their names contain ``key``, ``secret`` or ``token``
+# produces a permanent false go-live failure.  Keep the list explicit: an
+# unrecognised sensitive environment variable still requires investigation.
+MANAGED_RUNTIME_SECRET_VARIABLES = {
+    "AFSADAKAT_ADMIN_TOKEN",
+    "ATLAS_API_PRIVATE_KEY",
+    "CAPX_WEBHOOK_SECRET",
+    "CM_MASTER_KEY_CURRENT",
+    "CM_MASTER_KEY_PREVIOUS",
+    "DOOR_READER_SERVICE_KEY",
+    "GPG_KEY",
+    "HOTELRUNNER_WEBHOOK_SECRET",
+    "MARKETPLACE_ADMIN_TOKEN",
+    "QUICKID_SERVICE_KEY",
+    "RESEND_API_KEY",
+    "RESEND_WEBHOOK_SECRET",
+    "SESSION_SECRET",
+    "TWILIO_API_KEY_SECRET",
+    "TWILIO_API_KEY_SID",
+    "TWILIO_TWIML_APP_SID",
+    "VITE_SENTRY_DSN",
+}
+
 
 def _mask_value(key: str, value: str) -> str:
     """Mask sensitive values for safe display."""
@@ -409,7 +434,7 @@ class ProductionConfigValidator:
     def detect_leaked_secrets(self) -> dict[str, Any]:
         """Scan for potential secret leakage in non-secret environment variables."""
         suspicious = []
-        safe_secret_vars = set(PRODUCTION_VARIABLES.keys())
+        safe_secret_vars = set(PRODUCTION_VARIABLES.keys()) | MANAGED_RUNTIME_SECRET_VARIABLES
 
         for key, value in os.environ.items():
             if key in safe_secret_vars:
