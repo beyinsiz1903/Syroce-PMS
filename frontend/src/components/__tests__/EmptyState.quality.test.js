@@ -15,10 +15,10 @@ describe('shared EmptyState quality contract', () => {
   });
 
   it('uses translated defaults and does not submit a surrounding form', () => {
-    expect(component).toContain("t('uiQuality.emptyState.defaultTitle'");
-    expect(component).toContain("t('uiQuality.emptyState.defaultDescription'");
+    expect(component).toContain("t('uiQuality.states.empty.title'");
+    expect(component).toContain("t('uiQuality.states.empty.description'");
     expect(component).toContain("t('uiQuality.emptyState.comingSoon'");
-    expect(component).toContain("t('uiQuality.emptyState.setupRequired'");
+    expect(component).toContain("t('uiQuality.states.setup.title'");
     expect(component).toContain('<Button type="button"');
   });
 });
