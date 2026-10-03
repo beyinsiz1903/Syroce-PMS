@@ -170,7 +170,9 @@ async def test_accounting_dashboard_excludes_proforma_and_purchase_documents(mon
         ),
     )
 
-    result = await accounting.get_accounting_dashboard(current_user=current_user, _perm=None)
+    # This is a report-calculation contract.  Bypass the tenant dashboard cache
+    # so another dashboard test cannot supply a stale, unrelated fixture result.
+    result = await accounting.get_accounting_dashboard.__wrapped__(current_user=current_user, _perm=None)
 
     assert result["monthly_income"] == 100.0
     assert invoices.query["invoice_type"] == {"$nin": ["proforma", "purchase"]}
@@ -225,7 +227,11 @@ async def test_accounting_dashboard_does_not_add_foreign_bank_balances(monkeypat
     )
     monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
 
-    result = await accounting.get_accounting_dashboard(current_user=SimpleNamespace(tenant_id="tenant-a"), _perm=None)
+    # Exercise the underlying calculation; the decorated endpoint deliberately
+    # caches one tenant's dashboard for production requests.
+    result = await accounting.get_accounting_dashboard.__wrapped__(
+        current_user=SimpleNamespace(tenant_id="tenant-a"), _perm=None
+    )
 
     assert result["total_bank_balance"] == 100.0
     assert result["bank_balance_by_currency"] == {"TRY": 100.0, "EUR": 10.0}
