@@ -98,6 +98,46 @@ async def test_new_pending_expense_does_not_create_a_cash_movement(monkeypatch):
     assert cash_flow.rows == []
 
 
+@pytest.mark.asyncio
+async def test_new_pending_invoice_does_not_create_a_cash_movement(monkeypatch):
+    class Invoices:
+        def __init__(self):
+            self.rows = []
+
+        async def count_documents(self, _query):
+            return len(self.rows)
+
+        async def insert_one(self, row):
+            self.rows.append(row)
+
+    class CashFlowRows:
+        def __init__(self):
+            self.rows = []
+
+        async def insert_one(self, row):
+            self.rows.append(row)
+
+    invoices = Invoices()
+    cash_flow = CashFlowRows()
+    monkeypatch.setattr(accounting, "db", SimpleNamespace(accounting_invoices=invoices, cash_flow=cash_flow))
+    monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+    monkeypatch.setattr(accounting, "_invalidate_accounting_caches", lambda *_args: None)
+
+    invoice = await accounting.create_accounting_invoice(
+        AccountingInvoiceCreateRequest(
+            invoice_type="sales",
+            customer_name="Cash-flow test guest",
+            due_date="2026-10-15",
+        ),
+        current_user=SimpleNamespace(tenant_id="tenant-a", name="Finance"),
+        _perm=None,
+    )
+
+    assert invoice.status.value == "pending"
+    assert len(invoices.rows) == 1
+    assert cash_flow.rows == []
+
+
 def test_currency_totals_never_add_unrelated_nominal_amounts():
     records = [
         {"amount": 100, "currency": "TRY", "status": "paid"},
