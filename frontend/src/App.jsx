@@ -200,6 +200,14 @@ function App() {
           prefetchHeavyModules();
         })
         .catch((error) => {
+          if (error?._sessionContextRestored) {
+            // The auth interceptor has already restored the super-admin's
+            // origin session and initiated navigation to its tenant list.
+            // Do not clear the freshly restored local session because the
+            // original request happened to be a 401 from the expired
+            // short-lived workspace context.
+            return;
+          }
           const status = error?.response?.status;
           if (status === 401) {
             clearAuthStorage();
