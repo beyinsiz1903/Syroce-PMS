@@ -515,6 +515,25 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         />
         <h1 data-testid="night-audit-title" className="sr-only">Gece Denetimi</h1>
 
+        {businessDateCatchupRequired && (
+          <Card
+            className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950"
+            data-testid="business-date-catchup-banner"
+            role="alert"
+          >
+            <CardContent className="flex items-start gap-3 py-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div className="text-sm text-amber-950 dark:text-amber-100">
+                <p className="font-semibold">Canlı gün sonu beklemede</p>
+                <p className="mt-0.5 text-xs">
+                  PMS iş günü takvimden {previewData.date_drift_days} gün geride.
+                  Günleri kontrollü olarak kapatmadan finansal kayıt oluşturulamaz; yalnızca simülasyon başlatabilirsiniz.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {blockedRunDetail && (
           <Card className="border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950" data-testid="blocked-run-details">
             <CardContent className="py-4 space-y-3">
