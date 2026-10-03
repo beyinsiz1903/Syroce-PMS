@@ -1929,7 +1929,14 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
 
     # 8) Oda durumlari ozeti
     rooms_pipeline = [
-        {"$match": {"tenant_id": tenant_id}},
+        # Routing/virtual rooms are operational placeholders, not sellable
+        # inventory. Keep this count aligned with the PMS dashboard KPI.
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
+            }
+        },
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ]
     room_status_counts: dict[str, int] = {}
