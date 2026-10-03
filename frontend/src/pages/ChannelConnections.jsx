@@ -29,6 +29,14 @@ export function getChannelConnectionsErrorMessage(error, fallback = 'Bağlantı 
   return error?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : fallback;
 }
 
+export function getChannelOperationalStatus(provider) {
+  if (!provider?.connected) return { key: 'setup_pending', label: 'Kurulum bekliyor', intent: 'neutral' };
+  if (Number(provider.room_mappings_count || 0) === 0) return { key: 'mapping_required', label: 'Oda eşlemesi bekliyor', intent: 'warning' };
+  if (!provider.auto_sync_reservations) return { key: 'sync_paused', label: 'Senkronizasyon kapalı', intent: 'warning' };
+  if (!provider.last_sync_at) return { key: 'first_sync_pending', label: 'İlk senkronizasyon bekliyor', intent: 'warning' };
+  return { key: 'production', label: 'Üretimde', intent: 'success' };
+}
+
 export default function ChannelConnections({
   user,
   tenant,
@@ -211,6 +219,7 @@ export default function ChannelConnections({
   };
   const hr = getProvider('hotelrunner');
   const exely = getProvider('exely');
+  const hotelRunnerStatus = getChannelOperationalStatus(hr);
 
   // ── Collect all connected OTA channels across all providers ──
   const allConnectedChannels = [];
@@ -270,16 +279,18 @@ export default function ChannelConnections({
               <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
             </div> : allConnectedChannels.length > 0 ? <>
               {/* Connection Status Summary */}
-              <Card className="border-green-200 bg-green-50/50">
+              <Card className={hotelRunnerStatus.key === 'production' ? 'border-green-200 bg-green-50/50' : 'border-amber-200 bg-amber-50/50'}>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${hotelRunnerStatus.key === 'production' ? 'bg-green-100' : 'bg-amber-100'}`}>
+                      {hotelRunnerStatus.key === 'production' ? <CheckCircle className="w-5 h-5 text-green-600" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
                     </div>
                     <div>
-                      <p className="font-semibold text-green-800">{t('cm.pages_ChannelConnections.kanal_baglantisi_aktif')}</p>
-                      <p className="text-sm text-green-600">
-                        {allConnectedChannels.length} {t('cm.pages_ChannelConnections.satis_kanali_uzerinden_rezervasyon_alina')}
+                      <p className={`font-semibold ${hotelRunnerStatus.key === 'production' ? 'text-green-800' : 'text-amber-900'}`}>{hotelRunnerStatus.label}</p>
+                      <p className={`text-sm ${hotelRunnerStatus.key === 'production' ? 'text-green-600' : 'text-amber-800'}`}>
+                        {hotelRunnerStatus.key === 'production'
+                          ? `${allConnectedChannels.length} ${t('cm.pages_ChannelConnections.satis_kanali_uzerinden_rezervasyon_alina')}`
+                          : `${allConnectedChannels.length} doğrulanmış kanal listeleniyor; rezervasyon ve ARI akışı henüz üretim için hazır değil.`}
                       </p>
                     </div>
                   </div>
@@ -609,6 +620,7 @@ function ProviderCard({
   const { t, i18n } = useTranslation();
   const connected = data?.connected;
   const mappings = data?.room_mappings_count || 0;
+  const operationalStatus = getChannelOperationalStatus(data);
   const colorMap = {
     hotelrunner: {
       border: 'border-amber-200',
@@ -636,8 +648,8 @@ function ProviderCard({
               <CardDescription className="text-xs mt-0.5">{description}</CardDescription>
             </div>
           </div>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <Badge className={`text-xs ${connected ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`} data-testid={`${provider}-status-badge`}>
-              {connected ? 'Bagli' : 'Bagli Degil'}
+          {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <Badge className={`text-xs ${operationalStatus.intent === 'success' ? 'bg-green-100 text-green-700' : operationalStatus.intent === 'warning' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`} data-testid={`${provider}-status-badge`}>
+              {operationalStatus.label}
             </Badge>}
         </div>
       </CardHeader>
