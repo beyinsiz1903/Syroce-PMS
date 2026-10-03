@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '@/api/axios';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 
 const SHIFTS = [
   { v: 'morning',   l: 'Sabah (07:00–15:00)' },
@@ -25,18 +26,18 @@ const PRIORITIES = [
   { v: 'high',   l: 'Acil',   cls: 'bg-rose-100 text-rose-800 border-rose-200' },
 ];
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 export const isSameShiftTransfer = (shift, toShift) => Boolean(shift && toShift && shift === toShift);
 
 export default function ShiftHandoverPage({ user, tenant, onLogout }) {
   const { t, i18n } = useTranslation();
+  const localToday = useRef(localIsoDate()).current;
+  const operationalBusinessDate = useBusinessDate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('open');
-  const [businessDate, setBusinessDate] = useState(today());
+  const [businessDate, setBusinessDate] = useState(localToday);
   const [form, setForm] = useState({
-    business_date: today(),
+    business_date: localToday,
     shift: 'afternoon',
     to_shift: 'night',
     priority: 'normal',
@@ -45,6 +46,17 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
     related_booking_id: '',
   });
   const [creating, setCreating] = useState(false);
+
+  // Vardiya notları, tarayıcının UTC gününe değil Night Audit'in yönettiği
+  // PMS iş gününe yazılmalıdır. Kullanıcı tarihi elle değiştirdiyse seçim
+  // korunur.
+  useEffect(() => {
+    if (!operationalBusinessDate || operationalBusinessDate === localToday) return;
+    setBusinessDate((current) => current === localToday ? operationalBusinessDate : current);
+    setForm((current) => current.business_date === localToday
+      ? { ...current, business_date: operationalBusinessDate }
+      : current);
+  }, [localToday, operationalBusinessDate]);
 
   const load = useCallback(async () => {
     setLoading(true);
