@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -94,15 +94,25 @@ const ChannelManagerDashboardV2 = ({
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
+  const tenantKey = tenant?.id || tenant?._id || tenant?.tenant_id || user?.tenant_id || 'unknown';
+  const activeTenantKeyRef = useRef(tenantKey);
+  const dashboardRequestRef = useRef(0);
+  const drilldownRequestRef = useRef(0);
+  activeTenantKeyRef.current = tenantKey;
   const [data, setData] = useState(null);
+  const [dataTenantKey, setDataTenantKey] = useState(null);
+  const [settledTenantKey, setSettledTenantKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [drilldown, setDrilldown] = useState(null);
   const [drilldownData, setDrilldownData] = useState(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const headers = {};
   const fetchDashboard = useCallback(async ({
-    silent = false
+    silent = false,
+    requestTenantKey
   } = {}) => {
+    const scopedTenantKey = requestTenantKey || activeTenantKeyRef.current;
+    const requestId = ++dashboardRequestRef.current;
     // Geçici ağ hatasında (backend restart, vite proxy ECONNREFUSED) tek
     // retry — kullanıcı görmeden önce. Backend gerçekten çökmüşse ikinci
     // denemede de hata alır, toast düşer.
@@ -121,24 +131,35 @@ const ChannelManagerDashboardV2 = ({
         await new Promise(r => setTimeout(r, 1500));
         resp = await tryOnce();
       }
+      if (requestId !== dashboardRequestRef.current || activeTenantKeyRef.current !== scopedTenantKey) return;
       setData(resp.data);
+      setDataTenantKey(scopedTenantKey);
     } catch (err) {
+      if (requestId !== dashboardRequestRef.current || activeTenantKeyRef.current !== scopedTenantKey) return;
       console.error('[CM Dashboard] fetch failed:', err?.response?.status, err?.response?.data || err?.message);
       if (!silent) {
         const detail = err?.response?.data?.detail || (err?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : null);
         toast.error(detail ? `Dashboard verileri yüklenemedi: ${detail}` : 'Dashboard verileri yüklenemedi');
       }
     } finally {
-      setLoading(false);
+      if (requestId === dashboardRequestRef.current && activeTenantKeyRef.current === scopedTenantKey) {
+        setLoading(false);
+        setSettledTenantKey(scopedTenantKey);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- headers stable per mount
   }, []);
   useEffect(() => {
+    setDrilldown(null);
+    setDrilldownData(null);
     fetchDashboard({
-      silent: true
+      silent: true,
+      requestTenantKey: tenantKey
     });
-  }, [fetchDashboard]);
+  }, [fetchDashboard, tenantKey]);
   const openDrilldown = useCallback(async connectorId => {
+    const requestId = ++drilldownRequestRef.current;
+    const scopedTenantKey = activeTenantKeyRef.current;
     setDrilldown(connectorId);
     setDrilldownLoading(true);
     try {
@@ -147,25 +168,27 @@ const ChannelManagerDashboardV2 = ({
       } = await axios.get(`/channel-manager/v2/dashboard/connector/${connectorId}`, {
         headers
       });
+      if (requestId !== drilldownRequestRef.current || activeTenantKeyRef.current !== scopedTenantKey) return;
       setDrilldownData(d);
     } catch {
-      toast.error('Connector detayları yüklenemedi');
+      if (requestId === drilldownRequestRef.current && activeTenantKeyRef.current === scopedTenantKey) toast.error('Connector detayları yüklenemedi');
     } finally {
-      setDrilldownLoading(false);
+      if (requestId === drilldownRequestRef.current && activeTenantKeyRef.current === scopedTenantKey) setDrilldownLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-  if (loading && !data) {
+  const dashboardData = dataTenantKey === tenantKey ? data : null;
+  if (!dashboardData && (loading || settledTenantKey !== tenantKey)) {
     return <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
         <div className="flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-8 h-8 animate-spin text-[#C09D63]" />
         </div>
       </Layout>;
   }
-  const kpis = data?.kpis || {};
-  const connectors = data?.connectors || [];
-  const recentRes = data?.recent_reservations || [];
-  const mapping = data?.mapping_visibility || {};
+  const kpis = dashboardData?.kpis || {};
+  const connectors = dashboardData?.connectors || [];
+  const recentRes = dashboardData?.recent_reservations || [];
+  const mapping = dashboardData?.mapping_visibility || {};
   return <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
       <div className="max-w-7xl mx-auto space-y-6" data-testid="cm-dashboard">
         <div className="flex items-center justify-between">
