@@ -9999,5 +9999,13 @@
     "verificationCode": "Doğrulama kodu",
     "notFoundTitle": "Sertifika bulunamadı",
     "notFoundDesc": "Bu doğrulama koduna ait geçerli bir sertifika bulunamadı. Lütfen kodu kontrol edip tekrar deneyin."
+  },
+  "uiQuality": {
+    "emptyState": {
+      "defaultTitle": "Henüz gösterilecek veri yok",
+      "defaultDescription": "Filtreleri değiştirin veya ilk kaydı oluşturarak başlayın.",
+      "comingSoon": "Yakında",
+      "setupRequired": "Kurulum gerekli"
+    }
   }
 }
