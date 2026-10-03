@@ -113,6 +113,16 @@ class MenuPriceUpdateRequest(BaseModel):
 router = APIRouter(prefix="/api", tags=["mobile"])
 
 
+async def _get_tenant_room_or_404(tenant_id: str, room_id: str) -> dict[str, Any]:
+    room = await db.rooms.find_one(
+        {"id": room_id, "tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "room_number": 1},
+    )
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
+
 # ── GET /housekeeping/mobile/sla-delayed-rooms ──
 @router.get("/housekeeping/mobile/sla-delayed-rooms")
 async def get_sla_delayed_rooms_mobile(
@@ -420,6 +430,8 @@ async def create_room_inspection(
 ):
     """Create room inspection record"""
     current_user = await get_current_user(credentials)
+    room = await _get_tenant_room_or_404(current_user.tenant_id, room_id)
+    canonical_room_number = room.get("room_number") or room_number
 
     inspection_id = str(uuid.uuid4())
 
@@ -437,12 +449,12 @@ async def create_room_inspection(
             {
                 "id": task_id,
                 "tenant_id": current_user.tenant_id,
-                "title": f"Maintenance Required - Room {room_number}",
+                "title": f"Maintenance Required - Room {canonical_room_number}",
                 "description": "\n".join(issues_found),
                 "priority": "high",
                 "status": "new",
                 "room_id": room_id,
-                "room_number": room_number,
+                "room_number": canonical_room_number,
                 "department": "maintenance",
                 "created_by": current_user.username,
                 "created_at": datetime.now(UTC),
@@ -455,7 +467,7 @@ async def create_room_inspection(
         "id": inspection_id,
         "tenant_id": current_user.tenant_id,
         "room_id": room_id,
-        "room_number": room_number,
+        "room_number": canonical_room_number,
         "inspection_type": inspection_type,
         "inspector": current_user.username,
         "inspection_status": "completed" if not maintenance_required else "failed",
@@ -612,6 +624,30 @@ async def assign_hk_tasks(
 ):
     """Assign rooms to housekeeping staff"""
     current_user = await get_current_user(credentials)
+    staff = await db.users.find_one(
+        {
+            "id": staff_id,
+            "tenant_id": current_user.tenant_id,
+            "role": {"$nin": ["guest", "super_admin"]},
+            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+        },
+        {"_id": 0, "id": 1, "name": 1, "username": 1},
+    )
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    canonical_staff_name = staff.get("name") or staff.get("username")
+    if not canonical_staff_name:
+        raise HTTPException(status_code=400, detail="Staff member has no assignable name")
+
+    unique_room_ids = list(dict.fromkeys(room_ids))
+    if not unique_room_ids:
+        raise HTTPException(status_code=400, detail="At least one room is required")
+    rooms = await db.rooms.find(
+        {"id": {"$in": unique_room_ids}, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1},
+    ).to_list(len(unique_room_ids))
+    if len(rooms) != len(unique_room_ids):
+        raise HTTPException(status_code=404, detail="One or more rooms were not found")
 
     assignment_id = str(uuid.uuid4())
     assignment = {
@@ -619,9 +655,9 @@ async def assign_hk_tasks(
         "tenant_id": current_user.tenant_id,
         "assignment_date": datetime.now(UTC),
         "staff_id": staff_id,
-        "staff_name": staff_name,
-        "assigned_rooms": room_ids,
-        "room_count": len(room_ids),
+        "staff_name": canonical_staff_name,
+        "assigned_rooms": unique_room_ids,
+        "room_count": len(unique_room_ids),
         "status": "assigned",
         "assigned_by": current_user.username,
         "notes": notes,
@@ -632,9 +668,9 @@ async def assign_hk_tasks(
     await db.hk_task_assignments.insert_one(assignment)
 
     # Update rooms status
-    await db.rooms.update_many({"id": {"$in": room_ids}, "tenant_id": current_user.tenant_id}, {"$set": {"assigned_to": staff_name, "assigned_at": datetime.now(UTC)}})
+    await db.rooms.update_many({"id": {"$in": unique_room_ids}, "tenant_id": current_user.tenant_id}, {"$set": {"assigned_to": canonical_staff_name, "assigned_at": datetime.now(UTC)}})
 
-    return {"message": "Tasks assigned successfully", "assignment_id": assignment_id, "staff_name": staff_name, "room_count": len(room_ids)}
+    return {"message": "Tasks assigned successfully", "assignment_id": assignment_id, "staff_name": canonical_staff_name, "room_count": len(unique_room_ids)}
 
 
 # ── GET /housekeeping/mobile/staff-assignments ──
@@ -695,6 +731,8 @@ async def start_cleaning_timer(
 ):
     """Start cleaning timer"""
     current_user = await get_current_user(credentials)
+    room = await _get_tenant_room_or_404(current_user.tenant_id, room_id)
+    canonical_room_number = room.get("room_number") or room_number
 
     # Check if already started
     existing = await db.cleaning_timers.find_one({"tenant_id": current_user.tenant_id, "room_id": room_id, "status": "in_progress"})
@@ -707,7 +745,7 @@ async def start_cleaning_timer(
         "id": timer_id,
         "tenant_id": current_user.tenant_id,
         "room_id": room_id,
-        "room_number": room_number,
+        "room_number": canonical_room_number,
         "staff_id": current_user.id,
         "staff_name": current_user.username,
         "task_type": task_type,
@@ -720,7 +758,7 @@ async def start_cleaning_timer(
     # Update room status
     await db.rooms.update_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "cleaning"}})
 
-    return {"message": "Cleaning started", "timer_id": timer_id, "room_number": room_number, "started_at": timer["started_at"].isoformat()}
+    return {"message": "Cleaning started", "timer_id": timer_id, "room_number": canonical_room_number, "started_at": timer["started_at"].isoformat()}
 
 
 # ── POST /housekeeping/mobile/cleaning/stop ──
@@ -734,7 +772,14 @@ async def stop_cleaning_timer(
     """Stop cleaning timer"""
     current_user = await get_current_user(credentials)
 
-    timer = await db.cleaning_timers.find_one({"tenant_id": current_user.tenant_id, "room_id": room_id, "status": "in_progress"})
+    timer = await db.cleaning_timers.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "room_id": room_id,
+            "staff_id": current_user.id,
+            "status": "in_progress",
+        }
+    )
 
     if not timer:
         raise HTTPException(status_code=404, detail="No active timer found")
@@ -772,18 +817,20 @@ async def report_maintenance_from_hk(
 ):
     """Report maintenance issue from housekeeping"""
     current_user = await get_current_user(credentials)
+    room = await _get_tenant_room_or_404(current_user.tenant_id, room_id)
+    canonical_room_number = room.get("room_number") or room_number
 
     task_id = str(uuid.uuid4())
     task = {
         "id": task_id,
         "tenant_id": current_user.tenant_id,
         "task_number": f"MAINT-HK-{task_id[:8]}",
-        "title": f"{issue_type} - Room {room_number}",
+        "title": f"{issue_type} - Room {canonical_room_number}",
         "description": description,
         "priority": priority,
         "status": "new",
         "room_id": room_id,
-        "room_number": room_number,
+        "room_number": canonical_room_number,
         "department": "maintenance",
         "reported_by": current_user.username,
         "source": "housekeeping",
