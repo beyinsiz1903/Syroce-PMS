@@ -129,6 +129,29 @@ describe('Auth Cookie Flow in App.jsx', () => {
     });
   });
 
+  it('preserves the restored origin session after an expired super-admin workspace context', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'admin-1', name: 'Platform Admin' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 'origin-tenant', name: 'Platform' }));
+
+    axios.get.mockRejectedValueOnce({
+      response: { status: 401 },
+      _sessionContextRestored: true,
+    });
+
+    try {
+      render(<App />);
+    } catch (e) {
+      // Providers are intentionally minimal in this focused auth test.
+    }
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/auth/me');
+      expect(localStorage.getItem('token_ts')).not.toBeNull();
+      expect(JSON.parse(localStorage.getItem('user'))).toMatchObject({ id: 'admin-1' });
+    });
+  });
+
   it('should preserve the verified local session during a transient backend outage', async () => {
     localStorage.setItem('token_ts', Date.now().toString());
     localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Test User' }));

@@ -276,6 +276,11 @@ axios.interceptors.response.use(
         return axios(original);
       }
       if (result?.contextRestored) {
+        // A super-admin's short-lived tenant workspace has expired, but the
+        // long-lived origin session was successfully refreshed and restored.
+        // Preserve that distinction for App's bootstrapping catch block: the
+        // triggering 401 must not be interpreted as a full account logout.
+        error._sessionContextRestored = true;
         return Promise.reject(error);
       }
       if (result?.transient) {
