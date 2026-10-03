@@ -29,8 +29,8 @@ from fastapi import APIRouter, Depends
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_op
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 from security.guest_data_visibility import protect_guest_row
 from security.search_normalize import prefix_conditions
 
