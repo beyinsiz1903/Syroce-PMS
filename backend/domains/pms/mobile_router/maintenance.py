@@ -545,7 +545,10 @@ async def use_spare_part_mobile(
     """Record spare part usage for a task"""
     current_user = await get_current_user(credentials)
     if quantity <= 0:
-        raise HTTPException(status_code=400, detail="Spare part quantity must be positive")
+        # Quantity is request-field validation, not a resource state conflict.
+        # Keep the direct mobile endpoint aligned with the API contract and
+        # FastAPI's validation semantics.
+        raise HTTPException(status_code=422, detail="Spare part quantity must be positive")
 
     # A zero or negative "usage" would either create a meaningless ledger row
     # or increase inventory when subtracted below. Reject it before touching
