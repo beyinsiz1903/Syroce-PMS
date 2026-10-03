@@ -239,6 +239,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const bookingsRef = useRef(bookings);
   bookingsRef.current = bookings;
   const referenceDataRef = useRef({ loadedAt: 0, guests: null, companies: null });
+  const calendarDataLoadedRef = useRef(false);
   const [guests, setGuests] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [roomBlocks, setRoomBlocks] = useState([]);
@@ -468,9 +469,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   }, []);
 
   const loadCalendarData = async (isCancelled = () => false) => {
-    // İlk yüklemede full-screen spinner; sonraki fetch'lerde mevcut takvimi
-    // koru (boş ekran flash yok). bookings.length === 0 = ilk yükleme.
-    const isInitialLoad = bookings.length === 0;
+    // An empty hotel is a valid loaded state.  Using bookings.length here made
+    // every navigation look like a first load for zero-booking properties,
+    // repeatedly hiding the calendar behind a full-screen spinner.
+    const isInitialLoad = !calendarDataLoadedRef.current;
     if (isInitialLoad) setLoading(true);
     try {
       const startDate = new Date(currentDate);
@@ -512,6 +514,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       });
       setRooms(roomsRes.data || []);
       setBookings(bookingsRes.data || []);
+      setGuests(referenceData.guests);
+      setCompanies(referenceData.companies);
+      if (!useCachedReferenceData) {
+        referenceDataRef.current = { loadedAt: Date.now(), guests: referenceData.guests, companies: referenceData.companies };
+      }
+      calendarDataLoadedRef.current = true;
       setGuests(referenceData.guests);
       setCompanies(referenceData.companies);
       if (!useCachedReferenceData) {
