@@ -13,6 +13,12 @@ import useMediaCapture from "@/hooks/useMediaCapture";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
 
+export const availableMaintenanceTransitions = (status) => {
+  if (status === 'open') return ['in_progress', 'completed'];
+  if (status === 'in_progress') return ['completed'];
+  return [];
+};
+
 const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const [items, setItems] = useState([]);
@@ -25,6 +31,7 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaType, setMediaType] = useState("photo");
   const [includeBeforeAfter, setIncludeBeforeAfter] = useState(true);
+  const [updatingWorkOrderId, setUpdatingWorkOrderId] = useState(null);
   const { uploadMedia, uploading } = useMediaCapture();
 
   const loadData = async () => {
@@ -47,9 +54,11 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
-  const handleUpdateStatus = async (id, newStatus) => {
+  const handleUpdateStatus = async (workOrder, newStatus) => {
+    if (!workOrder?.id || updatingWorkOrderId || !availableMaintenanceTransitions(workOrder.status).includes(newStatus)) return;
+    setUpdatingWorkOrderId(workOrder.id);
     try {
-      const response = await axios.patch(`/maintenance/work-orders/${id}`, null, {
+      const response = await axios.patch(`/maintenance/work-orders/${workOrder.id}`, null, {
         params: { status: newStatus },
       });
       if (response.data?.updated !== true) {
@@ -60,6 +69,8 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
     } catch (err) {
       console.error("Failed to update work order", err);
       toast.error("İş emri durumu güncellenemedi");
+    } finally {
+      setUpdatingWorkOrderId(null);
     }
   };
 
@@ -291,6 +302,9 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
                   <tbody>
                     {items.map((wo) => {
                       const created = wo.created_at ? new Date(wo.created_at).toLocaleString("tr-TR") : "";
+                      const transitions = availableMaintenanceTransitions(wo.status);
+                      const isUpdating = Boolean(updatingWorkOrderId);
+                      const isCurrentUpdate = updatingWorkOrderId === wo.id;
                       return (
                         <tr key={wo.id} className="border-b last:border-0 hover:bg-gray-50">
                           <td className="py-2 pr-3 whitespace-nowrap">
@@ -316,28 +330,30 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
                             {renderStatusBadge(wo.status)}
                           </td>
                           <td className="py-2 pr-3 text-right">
-                            {wo.status !== "completed" ? (
+                            {transitions.length > 0 ? (
                               <div className="inline-flex gap-1">
-                                <Button
+                                {transitions.includes('in_progress') && <Button
                                   size="xs"
                                   variant="outline"
-                                  onClick={() => handleUpdateStatus(wo.id, "in_progress")}
+                                  onClick={() => handleUpdateStatus(wo, "in_progress")}
+                                  disabled={isUpdating}
                                 >
                                   <AlertTriangle className="w-3 h-3 mr-1" />
-                                  Start
-                                </Button>
+                                  {isCurrentUpdate ? 'İşleniyor…' : 'Start'}
+                                </Button>}
                                 <Button
                                   size="xs"
                                   variant="outline"
                                   className="border-green-300 text-green-700"
-                                  onClick={() => handleUpdateStatus(wo.id, "completed")}
+                                  onClick={() => handleUpdateStatus(wo, "completed")}
+                                  disabled={isUpdating}
                                 >
                                   <CheckCircle className="w-3 h-3 mr-1" />
-                                  Done
+                                  {isCurrentUpdate ? 'İşleniyor…' : 'Done'}
                                 </Button>
                               </div>
                             ) : (
-                              <span className="text-[11px] text-gray-400">Closed</span>
+                              <span className="text-[11px] text-gray-400">{wo.status === 'cancelled' ? 'İptal edildi' : 'Closed'}</span>
                             )}
                             <div className="mt-2">
                               <Button
