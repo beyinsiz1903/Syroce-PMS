@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -31,50 +31,62 @@ export default function IntegrationObservabilityDashboard() {
   const [financePage, setFinancePage] = useState(1);
   const [financeTotalPages, setFinanceTotalPages] = useState(1);
   const [financeProviderFilter, setFinanceProviderFilter] = useState('all');
+  const financeRequestRef = useRef(0);
 
   // ARI State
   const [driftStates, setDriftStates] = useState([]);
   const [driftLoading, setDriftLoading] = useState(true);
   const [outboundLogs, setOutboundLogs] = useState([]);
   const [outboundLoading, setOutboundLoading] = useState(true);
+  const driftRequestRef = useRef(0);
+  const outboundRequestRef = useRef(0);
   const fetchFinanceLogs = useCallback(async (page = 1, provider = 'all') => {
+    const requestId = ++financeRequestRef.current;
     setFinanceLoading(true);
     try {
       let url = `/finance/integration/logs?page=${page}&limit=20`;
       if (provider !== 'all') url += `&provider=${provider}`;
       const res = await axios.get(url);
+      if (requestId !== financeRequestRef.current) return;
       setFinanceLogs(res.data.logs || []);
       setFinanceTotalPages(res.data.total_pages || 1);
       setFinancePage(page);
     } catch (err) {
+      if (requestId !== financeRequestRef.current) return;
       toast.error('Failed to load finance sync history');
       console.error(err);
     } finally {
-      setFinanceLoading(false);
+      if (requestId === financeRequestRef.current) setFinanceLoading(false);
     }
   }, []);
   const fetchAriDrift = useCallback(async () => {
+    const requestId = ++driftRequestRef.current;
     setDriftLoading(true);
     try {
       const res = await axios.get('/channel-manager/ari/drift?limit=50&skip=0');
+      if (requestId !== driftRequestRef.current) return;
       setDriftStates(res.data.drift_states || []);
     } catch (err) {
+      if (requestId !== driftRequestRef.current) return;
       toast.error('Failed to load ARI drift states');
       console.error(err);
     } finally {
-      setDriftLoading(false);
+      if (requestId === driftRequestRef.current) setDriftLoading(false);
     }
   }, []);
   const fetchAriOutbound = useCallback(async () => {
+    const requestId = ++outboundRequestRef.current;
     setOutboundLoading(true);
     try {
       const res = await axios.get('/channel-manager/ari/outbound-logs?limit=50&skip=0');
+      if (requestId !== outboundRequestRef.current) return;
       setOutboundLogs(res.data.logs || []);
     } catch (err) {
+      if (requestId !== outboundRequestRef.current) return;
       toast.error('Failed to load ARI outbound logs');
       console.error(err);
     } finally {
-      setOutboundLoading(false);
+      if (requestId === outboundRequestRef.current) setOutboundLoading(false);
     }
   }, []);
   useEffect(() => {
