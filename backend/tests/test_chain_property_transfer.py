@@ -77,7 +77,7 @@ async def test_chain_transfer_creates_target_booking_then_closes_source(monkeypa
         "Standard",
     )
 
-    assert result["success"] is True
+    assert result["success"] is True, result
     assert result["target_property_name"] == "Fethiye Oteli"
     target_payload = atomic_create.await_args.kwargs["booking_doc"]
     assert target_payload["tenant_id"] == "fethiye"
@@ -200,7 +200,7 @@ async def test_chain_transfer_retains_prepayment_and_creates_two_sided_settlemen
         "retain_and_settle",
     )
 
-    assert result["success"] is True
+    assert result["success"] is True, result
     assert result["settlement_status"] == "open"
     settlement = fake_db.chain_transfer_settlements.insert_one.await_args.args[0]
     assert settlement["collection_property_id"] == "denizli"
@@ -259,3 +259,114 @@ async def test_reconciliation_notifies_both_properties_with_transfer_reference(m
     notifications = [call.args[0] for call in fake_db.notifications.insert_one.await_args_list]
     assert {row["tenant_id"] for row in notifications} == {"denizli", "fethiye"}
     assert all(row["metadata"]["transfer_reference"] == "TRF-20261002-TRANSFER" for row in notifications)
+
+
+@pytest.mark.asyncio
+async def test_transfer_reversal_restores_source_and_reverses_open_settlement(monkeypatch):
+    transfer = {
+        "id": "transfer-1",
+        "transfer_reference": "TRF-20261003-TRANSFER",
+        "status": "completed",
+        "source_property": "denizli",
+        "target_property": "fethiye",
+        "source_booking_id": "source-booking",
+        "target_booking_id": "target-booking",
+        "settlement_id": "settlement-1",
+        "original_booking": {"status": "confirmed"},
+    }
+    source_booking = {
+        "id": "source-booking",
+        "tenant_id": "denizli",
+        "status": "cancelled",
+        "transfer_id": "transfer-1",
+        "room_id": "room-101",
+        "check_in": "2026-10-10",
+        "check_out": "2026-10-12",
+    }
+    target_booking = {
+        "id": "target-booking",
+        "tenant_id": "fethiye",
+        "status": "confirmed",
+        "transfer_id": "transfer-1",
+    }
+    bookings = _collection()
+    bookings.find_one = AsyncMock(side_effect=[source_booking, target_booking])
+    fake_db = SimpleNamespace(
+        reservation_transfers=_collection(find_one=transfer),
+        bookings=bookings,
+        chain_transfer_settlements=_collection(find_one={"id": "settlement-1", "transfer_id": "transfer-1", "status": "open"}),
+        room_night_locks=_collection(),
+        reservation_activity_log=_collection(),
+    )
+    monkeypatch.setattr(service_module, "db", fake_db)
+    monkeypatch.setattr(
+        service_module,
+        "_properties_for_transfer_user",
+        AsyncMock(return_value=("denizli", [{"tenant_id": "denizli"}, {"tenant_id": "fethiye"}])),
+    )
+    monkeypatch.setattr(service_module, "_claim_night_or_get_owner", AsyncMock(return_value=(True, None)))
+
+    result = await service_module.CentralReservationService().reverse_transfer(
+        SimpleNamespace(id="user-1", name="Merkez", tenant_id="denizli"),
+        "transfer-1",
+        "Misafir tarihini değiştirdi",
+    )
+
+    assert result["success"] is True, result
+    assert result["status"] == "reversed"
+    assert result["settlement_status"] == "reversed"
+    assert service_module._claim_night_or_get_owner.await_count == 2
+    assert bookings.find_one.await_args_list[1].args[0]["transfer_id"] == "transfer-1"
+    source_update = bookings.update_one.await_args_list[0]
+    assert source_update.args[1]["$set"]["status"] == "confirmed"
+    assert fake_db.chain_transfer_settlements.update_one.await_args.args[1]["$set"]["status"] == "reversed"
+    assert fake_db.reservation_transfers.update_one.await_args.args[1]["$set"]["status"] == "reversed"
+    assert fake_db.reservation_activity_log.insert_one.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_transfer_reversal_is_blocked_after_finance_reconciliation(monkeypatch):
+    transfer = {
+        "id": "transfer-1",
+        "status": "completed",
+        "source_property": "denizli",
+        "target_property": "fethiye",
+        "source_booking_id": "source-booking",
+        "target_booking_id": "target-booking",
+        "settlement_id": "settlement-1",
+    }
+    source_booking = {
+        "id": "source-booking",
+        "tenant_id": "denizli",
+        "status": "cancelled",
+        "transfer_id": "transfer-1",
+    }
+    target_booking = {
+        "id": "target-booking",
+        "tenant_id": "fethiye",
+        "status": "confirmed",
+        "transfer_id": "transfer-1",
+    }
+    bookings = _collection()
+    bookings.find_one = AsyncMock(side_effect=[source_booking, target_booking])
+    fake_db = SimpleNamespace(
+        reservation_transfers=_collection(find_one=transfer),
+        bookings=bookings,
+        chain_transfer_settlements=_collection(find_one={"id": "settlement-1", "transfer_id": "transfer-1", "status": "reconciled"}),
+    )
+    monkeypatch.setattr(service_module, "db", fake_db)
+    monkeypatch.setattr(
+        service_module,
+        "_properties_for_transfer_user",
+        AsyncMock(return_value=("denizli", [{"tenant_id": "denizli"}, {"tenant_id": "fethiye"}])),
+    )
+
+    result = await service_module.CentralReservationService().reverse_transfer(
+        SimpleNamespace(id="user-1", tenant_id="denizli"),
+        "transfer-1",
+        "Finansal ters fiş talebi",
+    )
+
+    assert result["success"] is False
+    assert "ters muhasebe fişi" in result["error"]
+    assert fake_db.bookings.find_one.await_count == 2

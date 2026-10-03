@@ -9,7 +9,12 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from core.atomic_booking import BookingConflictError, create_booking_atomic
+from core.atomic_booking import (
+    BookingConflictError,
+    _claim_night_or_get_owner,
+    _night_dates,
+    create_booking_atomic,
+)
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
@@ -548,6 +553,186 @@ class CentralReservationService:
             "payment_totals": payment_totals,
             "settlement_id": settlement_id,
             "settlement_status": "open" if settlement_id else "not_required",
+        }
+
+    async def reverse_transfer(
+        self,
+        current_user: User,
+        transfer_id: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Reverse an unconsumed chain transfer without losing its financial trail.
+
+        A transfer is immutable once the target guest has checked in or its
+        settlement has been reconciled.  Until then this operation cancels the
+        target booking, atomically reclaims the original source-room nights,
+        restores the source booking and marks the open inter-property payable /
+        receivable as reversed.  Changing a transfer is therefore always a
+        reverse followed by a new, separately auditable transfer.
+        """
+        tenant_id, properties = await _properties_for_transfer_user(current_user)
+        allowed_tenants = {tenant_id_from_document(prop) for prop in properties}
+        transfer = await db.reservation_transfers.find_one(
+            {
+                "id": transfer_id,
+                "source_property": {"$in": list(allowed_tenants)},
+                "target_property": {"$in": list(allowed_tenants)},
+                "status": "completed",
+            },
+            {"_id": 0},
+        )
+        if not transfer:
+            return {"success": False, "error": "Aktarılabilir tesis transferi bulunamadı"}
+        if transfer.get("source_property") != tenant_id:
+            return {"success": False, "error": "Transfer yalnız kaynak tesis tarafından geri alınabilir"}
+
+        source_booking_id = transfer.get("source_booking_id") or transfer.get("booking_id")
+        target_booking_id = transfer.get("target_booking_id")
+        source_tenant_id = transfer.get("source_property")
+        target_tenant_id = transfer.get("target_property")
+        if not all((source_booking_id, target_booking_id, source_tenant_id, target_tenant_id)):
+            return {"success": False, "error": "Transfer kaydı geri alma için eksik"}
+
+        source_booking = await db.bookings.find_one(
+            {"id": source_booking_id, "tenant_id": source_tenant_id, "status": "cancelled"},
+            {"_id": 0},
+        )
+        target_booking = await db.bookings.find_one(
+            {
+                "id": target_booking_id,
+                "tenant_id": target_tenant_id,
+                "transfer_id": transfer_id,
+                "status": {"$in": ["pending", "confirmed", "guaranteed"]},
+            },
+            {"_id": 0},
+        )
+        if not source_booking or not target_booking:
+            return {
+                "success": False,
+                "error": "Giriş yapılmış, tamamlanmış veya değiştirilmiş transfer geri alınamaz",
+            }
+
+        settlement_id = transfer.get("settlement_id")
+        settlement = None
+        if settlement_id:
+            settlement = await db.chain_transfer_settlements.find_one(
+                {"id": settlement_id, "transfer_id": transfer_id}, {"_id": 0}
+            )
+            if not settlement or settlement.get("status") != "open":
+                return {
+                    "success": False,
+                    "error": "Mutabakatı kapanmış transfer geri alınamaz; ters muhasebe fişi gerekir",
+                }
+
+        claimed_nights: list[str] = []
+        try:
+            for night in _night_dates(source_booking.get("check_in"), source_booking.get("check_out")):
+                lock_doc = {
+                    "tenant_id": source_tenant_id,
+                    "room_id": source_booking.get("room_id"),
+                    "night_date": night,
+                    "booking_id": source_booking_id,
+                    "lock_type": "booking",
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+                claimed, _ = await _claim_night_or_get_owner(lock_doc, correlation_id=transfer_id)
+                if not claimed:
+                    raise BookingConflictError("Kaynak oda artık başka bir rezervasyona tahsis edilmiş")
+                claimed_nights.append(night)
+        except Exception:
+            if claimed_nights:
+                await db.room_night_locks.delete_many(
+                    {
+                        "tenant_id": source_tenant_id,
+                        "booking_id": source_booking_id,
+                        "night_date": {"$in": claimed_nights},
+                    }
+                )
+            return {"success": False, "error": "Kaynak odanın müsaitliği geri alma için uygun değil"}
+
+        now = datetime.now(UTC).isoformat()
+        reversal = {
+            "reversed_at": now,
+            "reversed_by": current_user.id,
+            "reversal_reason": reason.strip(),
+            "reversal_reference": f"REV-{transfer.get('transfer_reference') or transfer_id}",
+        }
+        source_status = (transfer.get("original_booking") or {}).get("status") or "confirmed"
+        source_result = await db.bookings.update_one(
+            {
+                "id": source_booking_id,
+                "tenant_id": source_tenant_id,
+                "status": "cancelled",
+                "transfer_id": transfer_id,
+            },
+            {
+                "$set": {"status": source_status, "updated_at": now, **reversal},
+                "$unset": {
+                    "property_transfer_status": "",
+                    "transferred_to_tenant_id": "",
+                    "transferred_to_booking_id": "",
+                    "transfer_financial_handling": "",
+                    "transfer_settlement_id": "",
+                    "cancelled_at": "",
+                    "cancelled_by": "",
+                    "cancellation_reason": "",
+                },
+            },
+        )
+        if source_result.modified_count != 1:
+            await db.room_night_locks.delete_many(
+                {"tenant_id": source_tenant_id, "booking_id": source_booking_id}
+            )
+            return {"success": False, "error": "Kaynak rezervasyon değişti; geri alma uygulanmadı"}
+
+        await db.bookings.update_one(
+            {"id": target_booking_id, "tenant_id": target_tenant_id},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "property_transfer_status": "reversed",
+                    "cancellation_reason": "Kaynak tesis transferi geri aldı",
+                    "cancelled_at": now,
+                    "cancelled_by": current_user.id,
+                    "updated_at": now,
+                    **reversal,
+                }
+            },
+        )
+        await db.room_night_locks.delete_many(
+            {"tenant_id": target_tenant_id, "booking_id": target_booking_id}
+        )
+        if settlement:
+            await db.chain_transfer_settlements.update_one(
+                {"id": settlement_id, "status": "open"},
+                {"$set": {"status": "reversed", "accounting_status": "reversed", "reversal": reversal, "updated_at": now}},
+            )
+        await db.reservation_transfers.update_one(
+            {"id": transfer_id, "status": "completed"},
+            {"$set": {"status": "reversed", "settlement_status": "reversed" if settlement else "not_required", **reversal, "updated_at": now}},
+        )
+        for row_tenant_id, booking_id, action in (
+            (source_tenant_id, source_booking_id, "property_transfer_reversed"),
+            (target_tenant_id, target_booking_id, "property_transfer_reversed"),
+        ):
+            await db.reservation_activity_log.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": row_tenant_id,
+                    "booking_id": booking_id,
+                    "action": action,
+                    "actor": getattr(current_user, "name", None) or current_user.id,
+                    "details": {"transfer_id": transfer_id, "transfer_reference": transfer.get("transfer_reference"), **reversal},
+                    "created_at": now,
+                }
+            )
+        return {
+            "success": True,
+            "transfer_id": transfer_id,
+            "transfer_reference": transfer.get("transfer_reference"),
+            "status": "reversed",
+            "settlement_status": "reversed" if settlement else "not_required",
+            "change_instruction": "Yeni tarih, oda veya fiyat için geri alma sonrası yeni transfer oluşturun.",
         }
 
 
