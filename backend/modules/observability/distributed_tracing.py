@@ -118,10 +118,12 @@ class TracingService:
         rank = max(1, int(len(ordered) * percentile + 0.999999))
         return float(ordered[min(rank - 1, len(ordered) - 1)])
 
-    def _traces_in_window(self, hours: int) -> list[dict]:
+    def _traces_in_window(self, hours: int, tenant_id: str | None = None) -> list[dict]:
         cutoff = datetime.now(UTC) - timedelta(hours=max(hours, 1))
         result = []
         for trace in self._recent_traces:
+            if tenant_id is not None and trace.get("tenant_id") != tenant_id:
+                continue
             timestamp = trace.get("completed_at") or trace.get("started_at_iso")
             if not timestamp:
                 continue
@@ -135,16 +137,19 @@ class TracingService:
                 logger.debug("Skipping trace with invalid timestamp", exc_info=True)
         return result
 
-    async def _load_traces_in_window(self, hours: int) -> list[dict]:
+    async def _load_traces_in_window(self, hours: int, tenant_id: str | None = None) -> list[dict]:
         """Combine every worker's persisted traces with this worker's buffer."""
-        local = self._traces_in_window(hours)
+        local = self._traces_in_window(hours, tenant_id)
         cutoff = datetime.now(UTC) - timedelta(hours=max(hours, 1))
         try:
             from core.database import db
 
+            query = {"completed_at": {"$gte": cutoff.isoformat()}}
+            if tenant_id is not None:
+                query["tenant_id"] = tenant_id
             persisted = await asyncio.wait_for(
                 db.observability_traces.find(
-                    {"completed_at": {"$gte": cutoff.isoformat()}},
+                    query,
                     # Summaries never need spans, attributes or request payloads.
                     {"_id": 0, "trace_id": 1, "request_path": 1, "duration_ms": 1, "status_code": 1, "is_slow": 1},
                 )
@@ -222,9 +227,9 @@ class TracingService:
             await asyncio.sleep(interval_seconds)
             await self.flush_to_db()
 
-    async def get_trace_summary(self, hours: int = 1) -> dict:
+    async def get_trace_summary(self, hours: int = 1, tenant_id: str | None = None) -> dict:
         """Get a rolling trace summary combined across backend workers."""
-        recent = await self._load_traces_in_window(hours)
+        recent = await self._load_traces_in_window(hours, tenant_id)
         total_requests = len(recent)
         total_errors = sum(1 for trace in recent if int(trace.get("status_code") or 0) >= 400)
         total_slow = sum(1 for trace in recent if trace.get("is_slow"))
@@ -233,6 +238,7 @@ class TracingService:
         return {
             "window_hours": hours,
             "window_scope": "multi_worker_rolling",
+            "tenant_scoped": tenant_id is not None,
             "total_requests": total_requests,
             "total_errors": total_errors,
             "total_slow": total_slow,
@@ -241,6 +247,10 @@ class TracingService:
             "buffered_traces": len(self._completed_traces),
             "endpoints": self._aggregate_paths(recent)[:30],
         }
+
+    async def get_path_metrics(self, hours: int = 1, tenant_id: str | None = None) -> list[dict]:
+        """Return all aggregated path metrics, optionally isolated to one tenant."""
+        return self._aggregate_paths(await self._load_traces_in_window(hours, tenant_id))
 
     async def get_recent_traces(self, limit: int = 20, slow_only: bool = False) -> list[dict]:
         """Get recent traces from MongoDB."""
