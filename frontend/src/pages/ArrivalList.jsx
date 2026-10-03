@@ -145,6 +145,8 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   };
 
   const assignRoom = async (bookingId) => {
+    if (busyId) return;
+    setBusyId(bookingId);
     try {
       // Auto-assign based on preferences
       await axios.post(`/bookings/${bookingId}/assign-room`);
@@ -152,6 +154,8 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       loadTodayArrivals();
     } catch (error) {
       toast.error('Oda atanamadı');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -342,10 +346,11 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                       <Button 
                         size="sm" 
                         onClick={() => assignRoom(booking.id)}
+                        disabled={busyId === booking.id}
                         className="mb-3"
                       >
                         <BedDouble className="w-4 h-4 mr-2" />
-                        Oda Ata
+                        {busyId === booking.id ? 'Atanıyor…' : 'Oda Ata'}
                       </Button>
                     )}
                     {(booking.status || '').toLowerCase() !== 'checked_in' && (
