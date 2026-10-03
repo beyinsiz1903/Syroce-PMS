@@ -30,6 +30,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 from security.guest_data_visibility import protect_guest_row
 from security.search_normalize import prefix_conditions
 
@@ -198,6 +199,7 @@ async def unified_search(
     q: str = "",
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
+    _guest_access: None = Depends(require_op("view_guest_list")),
 ):
     """Cross-entity search over guests, reservations and rooms.
 
