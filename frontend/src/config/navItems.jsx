@@ -307,6 +307,16 @@ export const NAV_ITEMS = [
     navSection: "wellness",
   },
   {
+    key: "golf",
+    label: "Golf & Aktivite Rezervasyonları",
+    path: "/golf",
+    moduleKey: "golf",
+    tier: "basic",
+    group: "operations",
+    navGroup: "operations",
+    navSection: "wellness",
+  },
+  {
     key: "shift_handover",
     label: "Vardiya Devri",
     path: "/shift-handover",

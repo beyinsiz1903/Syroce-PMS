@@ -5,8 +5,6 @@ Rol/paket (tier) dogrulama mantigi ve gecici sifre uretimi gibi saf fonksiyonlar
 burada, hicbir DB/sunucu olmadan kosar. Privilege-escalation onleme (super_admin
 vb. atanamaz) ve paket-duyarli rol haritasi bu testlerle cimlenir.
 """
-import pytest
-
 from domains.admin.router.users import (
     ASSIGNABLE_ROLES_BY_TIER,
     _assignable_roles_for_tier,
@@ -15,9 +13,7 @@ from domains.admin.router.users import (
 )
 
 # Tenant-admin tarafindan ASLA atanmamasi gereken yuksek/ozel roller.
-_FORBIDDEN_ROLES = {
-    "super_admin", "guest", "agency_admin", "agency_agent", "call_center_agent",
-}
+_FORBIDDEN_ROLES = {"super_admin", "guest", "agency_admin", "agency_agent"}
 
 
 def test_normalize_tier_aliases():
@@ -52,6 +48,10 @@ def test_tier_is_monotonic_superset():
     # sales yalniz enterprise'da
     assert "sales" in enterprise
     assert "sales" not in professional
+    # Contact-center agents are tenant users, not platform principals. Their
+    # actual visibility still depends on the paid module and explicit scope.
+    assert "call_center_agent" in professional
+    assert "call_center_agent" in enterprise
 
 
 def test_unknown_tier_falls_back_to_basic():

@@ -184,6 +184,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES
+        "golf": False,
         "spa": False,
         "mice": False,
         "academy": False,
@@ -251,6 +252,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
+        "golf": False,
         "spa": False,
         "mice": False,
         "academy": False,
@@ -318,6 +320,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
+        "golf": False,
         "spa": False,
         "mice": False,
         "academy": False,
@@ -385,6 +388,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "marketplace": True,
         "af_sadakat": True,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
+        "golf": False,
         "spa": False,
         "mice": False,
         "academy": False,

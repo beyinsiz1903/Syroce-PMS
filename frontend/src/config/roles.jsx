@@ -15,6 +15,7 @@ export const ROLES_BY_TIER = {
     { value: "housekeeping", label: "Kat Hizmetleri", description: "Oda durumları, temizlik görevleri" },
     { value: "finance", label: "Muhasebe", description: "Fatura, ödeme, finansal raporlar" },
     { value: "procurement", label: "Satınalma", description: "Tedarikçi, satınalma talebi/siparişi, mal kabul" },
+    { value: "call_center_agent", label: "İletişim Merkezi Temsilcisi", description: "İletişim merkezi modülünde misafir konuşmalarını yönetir" },
     { value: "staff", label: "Personel", description: "Kullanıcıya özel erişim" },
   ],
   enterprise: [
@@ -25,6 +26,7 @@ export const ROLES_BY_TIER = {
     { value: "finance", label: "Muhasebe", description: "Fatura, ödeme, raporlar" },
     { value: "procurement", label: "Satınalma", description: "Tedarikçi, satınalma talebi/siparişi, mal kabul" },
     { value: "sales", label: "Satış", description: "Kurumsal satış, grup rezervasyon" },
+    { value: "call_center_agent", label: "İletişim Merkezi Temsilcisi", description: "İletişim merkezi modülünde misafir konuşmalarını yönetir" },
     { value: "staff", label: "Personel", description: "Teknik, restoran, spa vb. departmanlar için kullanıcıya özel erişim" },
   ],
 };

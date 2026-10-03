@@ -495,8 +495,9 @@ async def get_web_push_metrics(
 # Onemli model ayrimi: DEPARTMAN organizasyoneldir (Spa, F&B, Satinalma...),
 # ROL ise yetki seviyesidir (enum-gecerli). Bir spa terapisti = departman "Spa"
 # + rol "staff". Bu nedenle asagidaki harita yalniz GERCEK, atanabilir enum
-# rollerini icerir; super_admin/guest/agency_*/call_center_agent bilincli
-# olarak DISARIDADIR (tenant yoneticisi tarafindan acilamaz).
+# rollerini icerir; super_admin/guest/agency_* bilincli olarak DISARIDADIR.
+# ``call_center_agent`` İletişim Merkezi eklentili tesislerde atanabilir;
+# eklenti ve kullanıcı-modül erişimi ayrıca fail-closed uygulanır.
 # ============================================================================
 from pydantic import BaseModel, EmailStr  # noqa: E402
 
@@ -509,6 +510,7 @@ ASSIGNABLE_ROLES_BY_TIER: dict[str, list[str]] = {
         "housekeeping",
         "finance",
         "procurement",
+        "call_center_agent",
         "staff",
     ],
     "enterprise": [
@@ -519,6 +521,7 @@ ASSIGNABLE_ROLES_BY_TIER: dict[str, list[str]] = {
         "finance",
         "procurement",
         "sales",
+        "call_center_agent",
         "staff",
     ],
 }
@@ -531,6 +534,7 @@ _ROLE_LABELS_TR: dict[str, str] = {
     "finance": "Muhasebe",
     "procurement": "Satinalma",
     "sales": "Satis",
+    "call_center_agent": "Iletisim Merkezi Temsilcisi",
     "staff": "Personel",
 }
 

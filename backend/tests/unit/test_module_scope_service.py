@@ -47,5 +47,15 @@ def test_unknown_or_malformed_stored_scope_fails_closed():
     assert has_module_scope(user, "not-a-real-module") is False
 
 
+def test_resort_addon_scopes_are_registered_and_role_defaults_are_narrow():
+    """Spa, golf and MICE must be assignable without broadening every role."""
+    assert has_module_scope({"role": "front_desk"}, "spa") is True
+    assert has_module_scope({"role": "front_desk"}, "golf") is True
+    assert has_module_scope({"role": "front_desk"}, "mice") is False
+    assert has_module_scope({"role": "sales"}, "mice") is True
+    assert has_module_scope({"role": "sales"}, "golf") is False
+    assert has_module_scope({"role": "staff", "module_scopes": ["golf"]}, "golf") is True
+
+
 def test_scope_normalization_accepts_hyphen_and_wildcard_suffix():
     assert normalize_module_scope("channel-manager.*") == "channel_manager"
