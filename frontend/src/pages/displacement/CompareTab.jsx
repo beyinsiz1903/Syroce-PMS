@@ -128,7 +128,14 @@ const CompareTab = ({
                   <Label className="text-xs">{t('displacement.commShort', 'Comm%')}</Label>
                   <Input type="number" min={0} max={100} value={sc.commission} onChange={e => updateScenario(i, 'commission', e.target.value)} />
                 </div>
-                {scenarios.length > 1 && <Button size="icon" variant="ghost" onClick={() => removeScenario(i)} className="text-red-500">
+                {scenarios.length > 1 && <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => removeScenario(i)}
+                  className="text-red-500"
+                  aria-label={`${sc.name || `${t('displacement.scenario', 'Senaryo')} ${i + 1}`} senaryosunu sil`}
+                  title={t('displacement.removeScenario', 'Senaryoyu sil')}
+                >
                     <Trash2 className="w-4 h-4" />
                   </Button>}
               </div>)}
