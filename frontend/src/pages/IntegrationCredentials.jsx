@@ -279,7 +279,8 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                             type="button"
                             onClick={() => setRevealed((s) => ({ ...s, [cred.key]: !s[cred.key] }))}
                             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            tabIndex={-1}
+                            aria-label={`${cred.name} anahtarını ${revealed[cred.key] ? 'gizle' : 'göster'}`}
+                            title={`${cred.name} anahtarını ${revealed[cred.key] ? 'gizle' : 'göster'}`}
                           >
                             {revealed[cred.key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
