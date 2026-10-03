@@ -21,6 +21,7 @@ from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
 from modules.pms_core.role_permission_service import (
+    require_module,
     require_op,
 )
 
@@ -201,7 +202,10 @@ async def get_gm_notifications_mobile(
 
 # ── GET /notifications/mobile/frontdesk ──
 @router.get("/notifications/mobile/frontdesk")
-async def get_frontdesk_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_frontdesk_notifications_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("frontdesk")),
+):
     """Get notifications for front desk mobile dashboard"""
     current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
@@ -286,7 +290,10 @@ async def get_frontdesk_notifications_mobile(credentials: HTTPAuthorizationCrede
 
 # ── GET /notifications/mobile/housekeeping ──
 @router.get("/notifications/mobile/housekeeping")
-async def get_housekeeping_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_housekeeping_notifications_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get notifications for housekeeping mobile dashboard"""
     current_user = await get_current_user(credentials)
 
@@ -373,7 +380,10 @@ async def get_housekeeping_notifications_mobile(credentials: HTTPAuthorizationCr
 
 # ── GET /notifications/mobile/maintenance ──
 @router.get("/notifications/mobile/maintenance")
-async def get_maintenance_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_maintenance_notifications_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get notifications for maintenance mobile dashboard"""
     current_user = await get_current_user(credentials)
 
@@ -435,7 +445,10 @@ async def get_maintenance_notifications_mobile(credentials: HTTPAuthorizationCre
 
 # ── GET /notifications/mobile/fnb ──
 @router.get("/notifications/mobile/fnb")
-async def get_fnb_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_fnb_notifications_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("pos")),
+):
     """Get notifications for F&B mobile dashboard"""
     current_user = await get_current_user(credentials)
 
