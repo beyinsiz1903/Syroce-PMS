@@ -18,7 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from core.database import db
-from core.security import get_current_user, security
+from core.security import _is_super_admin, get_current_user, security
 from modules.pms_core.role_permission_service import (
     require_module,  # v89 DW
 )
@@ -121,6 +121,14 @@ async def _get_tenant_room_or_404(tenant_id: str, room_id: str) -> dict[str, Any
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
     return room
+
+
+def _can_override_cleaning_timer(user: Any) -> bool:
+    """Supervisors may close a stranded timer; attendants may close only theirs."""
+    if _is_super_admin(user):
+        return True
+    role = getattr(user, "role", "")
+    return getattr(role, "value", role) in {"admin", "supervisor"}
 
 
 # ── GET /housekeeping/mobile/sla-delayed-rooms ──
@@ -784,11 +792,26 @@ async def stop_cleaning_timer(
     if not timer:
         raise HTTPException(status_code=404, detail="No active timer found")
 
+    is_owner = timer.get("staff_id") == current_user.id or timer.get("staff_name") == current_user.username
+    if not is_owner and not _can_override_cleaning_timer(current_user):
+        raise HTTPException(status_code=403, detail="Only the assigned attendant or a supervisor can stop this timer")
+
     completed_at = datetime.now(UTC)
     duration = (completed_at - timer["started_at"]).total_seconds() / 60
 
     await db.cleaning_timers.update_one(
-        {"id": timer["id"], "tenant_id": current_user.tenant_id}, {"$set": {"completed_at": completed_at, "duration_minutes": int(duration), "status": "completed", "notes": notes}}
+        {"id": timer["id"], "tenant_id": current_user.tenant_id},
+        {
+            "$set": {
+                "completed_at": completed_at,
+                "duration_minutes": int(duration),
+                "status": "completed",
+                "notes": notes,
+                "completed_by": current_user.id,
+                "completed_by_name": current_user.username,
+                "supervisor_override": not is_owner,
+            }
+        },
     )
 
     # Update room status
