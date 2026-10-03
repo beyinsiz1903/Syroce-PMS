@@ -108,7 +108,10 @@ export const PRODUCT_MODULES = MODULE_GROUPS
 export function resolveModuleState(item, tenant = {}) {
   const modules = tenant.modules || {};
   const explicit = Object.prototype.hasOwnProperty.call(modules, item.key);
-  const included = isModuleIncludedInPlan(item, tenant.subscription_tier || tenant.tier || 'basic');
+  const tier = tenant.subscription_plan === 'pms_lite'
+    ? 'pms_lite'
+    : (tenant.subscription_tier || tenant.tier || 'basic');
+  const included = isModuleIncludedInPlan(item, tier);
   const enabled = explicit ? modules[item.key] === true : included;
 
   return {

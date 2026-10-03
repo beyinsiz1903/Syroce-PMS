@@ -75,7 +75,7 @@ describe('EntitlementContext', () => {
     expect(screen.getByTestId('hasModule').textContent).toBe('false'); // Missing strict module
   });
 
-  it('allows access to non-strict modules if missing', async () => {
+  it('denies access when a module key is missing from the effective hotel map', async () => {
     axios.get.mockResolvedValue({ data: { modules: {}, entitlements: {} } });
 
     render(
@@ -86,7 +86,22 @@ describe('EntitlementContext', () => {
 
     await act(async () => { await new Promise(r => setTimeout(r, 0)); });
 
-    expect(screen.getByTestId('hasModule').textContent).toBe('true');
+    expect(screen.getByTestId('hasModule').textContent).toBe('false');
+  });
+
+  it('keeps platform access separate from the selected hotel module inventory', async () => {
+    axios.get.mockResolvedValue({ data: { modules: { pms: true, ai_chatbot: false }, entitlements: {} } });
+
+    const Probe = () => {
+      const { hasModule, hasTenantModule } = useEntitlements();
+      return <><div data-testid="platform-access">{String(hasModule('ai_chatbot'))}</div><div data-testid="hotel-access">{String(hasTenantModule('ai_chatbot'))}</div></>;
+    };
+
+    render(<EntitlementProvider currentTenantId="tenant-1" isSuperAdmin><Probe /></EntitlementProvider>);
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+
+    expect(screen.getByTestId('platform-access').textContent).toBe('true');
+    expect(screen.getByTestId('hotel-access').textContent).toBe('false');
   });
 
   it('handles KDS feature for pro and basic', async () => {

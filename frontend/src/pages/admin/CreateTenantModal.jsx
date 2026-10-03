@@ -35,6 +35,13 @@ const OPTIONAL_MODULE_GROUP_IDS = new Set([
   'ai',
   'mobile',
   'operations',
+  // These are independently licensed/enabled inside their parent hubs. They
+  // must be selectable during onboarding as well as in the later edit screen.
+  'pms_submodules',
+  'rms_submodules',
+  'channels_submodules',
+  'reports_submodules',
+  'reports_items',
   'addons',
 ]);
 

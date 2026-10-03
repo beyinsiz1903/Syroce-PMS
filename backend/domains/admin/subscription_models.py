@@ -393,6 +393,43 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
     },
 }
 
+# Hub sections are tenant modules in their own right.  Keeping their defaults
+# here (rather than relying on a missing-key-is-open convention in the UI)
+# makes old and newly created hotels resolve to the same explicit contract.
+SUBMODULE_KEYS_BY_TIER: dict[str, set[str]] = {
+    "pms_lite": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping",
+    },
+    "mini": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "channels.connections", "reports.excel", "reports.daily-flash", "reports.operations-daily-summary",
+    },
+    "basic": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "pms.cashier", "pms.upsell", "pms.internal_chat", "pms.reports", "pms.flash", "pms.tasks", "pms.feedback", "pms.kvkk",
+        "channels.connections", "channels.dashboard", "reports.excel", "reports.night_audit",
+        "reports.daily-flash", "reports.operations-daily-summary", "reports.company-aging", "reports.revenue-detail",
+        "reports.housekeeping-efficiency", "reports.channel-distribution",
+    },
+    "professional": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "pms.cashier", "pms.upsell", "pms.internal_chat", "pms.reports", "pms.flash", "pms.tasks", "pms.feedback", "pms.kvkk",
+        "pms.allotment", "pms.pos", "pms.laundry", "pms.concierge", "pms.revenue", "pms.manager_report",
+        "channels.connections", "channels.dashboard", "reports.excel", "reports.night_audit",
+        "reports.daily-flash", "reports.operations-daily-summary", "reports.company-aging", "reports.revenue-detail",
+        "reports.housekeeping-efficiency", "reports.channel-distribution", "reports.forecast-detail", "reports.market-segment",
+    },
+    "enterprise": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "pms.cashier", "pms.upsell", "pms.internal_chat", "pms.reports", "pms.flash", "pms.tasks", "pms.feedback", "pms.kvkk",
+        "pms.allotment", "pms.pos", "pms.laundry", "pms.concierge", "pms.revenue", "pms.manager_report",
+        "rms.dashboard", "rms.recommendations", "channels.connections", "channels.dashboard", "reports.excel", "reports.night_audit",
+        "reports.daily-flash", "reports.operations-daily-summary", "reports.company-aging", "reports.revenue-detail",
+        "reports.housekeeping-efficiency", "reports.channel-distribution", "reports.forecast-detail", "reports.market-segment",
+    },
+}
+ALL_SUBMODULE_KEYS = set().union(*SUBMODULE_KEYS_BY_TIER.values())
+
 
 # Define subscription plans
 SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
@@ -555,7 +592,25 @@ def has_feature_access(tier: SubscriptionTier, feature: FeatureFlag) -> bool:
 def get_plan_default_modules(tier: str) -> dict[str, bool]:
     """Get default modules for a subscription tier"""
     tier_lower = tier.lower() if tier else "basic"
-    return PLAN_MODULE_DEFAULTS.get(tier_lower, PLAN_MODULE_DEFAULTS["basic"]).copy()
+    if tier_lower == "pms_lite":
+        # Legacy PMS Lite is deliberately narrower than the later Mini tier.
+        # Keep a complete map so missing keys never become implicit grants.
+        modules = dict.fromkeys(PLAN_MODULE_DEFAULTS["mini"], False)
+        modules.update({
+            "pms": True,
+            "reservation_calendar": True,
+            "dashboard": True,
+            "guests": True,
+            "housekeeping": True,
+            "settings": True,
+        })
+    else:
+        modules = PLAN_MODULE_DEFAULTS.get(tier_lower, PLAN_MODULE_DEFAULTS["basic"]).copy()
+        tier_lower = tier_lower if tier_lower in SUBMODULE_KEYS_BY_TIER else "basic"
+
+    modules.update(dict.fromkeys(ALL_SUBMODULE_KEYS, False))
+    modules.update(dict.fromkeys(SUBMODULE_KEYS_BY_TIER[tier_lower], True))
+    return modules
 
 
 def get_feature_comparison() -> dict[str, dict[str, bool]]:

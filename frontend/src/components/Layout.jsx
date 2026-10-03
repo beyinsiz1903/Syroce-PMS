@@ -197,7 +197,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   const [expandedMobileGroup, setExpandedMobileGroup] = useState(null);
   const [exitingTenantContext, setExitingTenantContext] = useState(false);
 
-  const { isSuperAdmin, hasModule } = useEntitlements();
+  const { isSuperAdmin, hasModule, hasTenantModule = hasModule } = useEntitlements();
   const identityLabel = userIdentityLabel(user);
   const roleLabel = userRoleLabel(user?.role, t);
   const accessScopeLabel = userAccessScopeLabel(user?.role);
@@ -243,8 +243,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     user,
     tenant,
     isSuperAdmin,
-    hasModule,
-  }), [hasModule, isSuperAdmin, tenant, user]);
+    // Navigation inside a selected hotel reflects that hotel's effective
+    // module configuration. Super-admin-only platform tools are preserved by
+    // the catalogue itself rather than by granting every hotel add-on.
+    hasModule: hasTenantModule,
+  }), [hasTenantModule, isSuperAdmin, tenant, user]);
 
   const { standaloneItems, groupedItems } = useMemo(() => {
     const standalone = [];

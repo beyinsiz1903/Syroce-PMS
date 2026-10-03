@@ -13,6 +13,40 @@ import { runIdle } from '@/lib/idle';
 import { useCurrency } from '@/context/CurrencyContext';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
+// Dashboard cards are shortcuts to product modules, not a second catalogue.
+// Keep their entitlement key explicit: an unknown/missing key must never turn
+// into a visible upsell or a route that the hotel did not select.
+const DASHBOARD_MODULE_KEYS = {
+  '/pms': ['pms'],
+  '/invoices': ['invoices', 'invoices_basic'],
+  '/rms': ['revenue_management'],
+  '/cost-management': ['cost_management'],
+  '/housekeeping': ['housekeeping', 'housekeeping_advanced'],
+  '/pos': ['pos_basic', 'pos_fnb'],
+  '/features': ['pms'],
+  '/loyalty': ['loyalty_program'],
+  '/marketplace': ['marketplace'],
+  '/hotel-inventory': ['pms'],
+  '/flash-report': ['reports', 'basic_reporting'],
+  '/group-sales': ['group_sales'],
+  '/sales-crm': ['sales_crm'],
+  '/service-recovery': ['guest_advanced'],
+  '/spa-wellness': ['spa'],
+  '/ai-chatbot': ['ai', 'ai_chatbot'],
+  '/dynamic-pricing': ['ai', 'ai_pricing'],
+  '/app/multi-property': ['multi_property'],
+  '/staff-management': ['hr'],
+  '/guest-journey': ['guests', 'guest_advanced'],
+  '/arrival-list': ['pms'],
+  '/ai-whatsapp-concierge': ['ai', 'ai_whatsapp'],
+  '/predictive-analytics': ['ai', 'ai_predictive'],
+  '/social-media-radar': ['ai', 'ai_social_radar'],
+  '/revenue-autopilot': ['ai', 'ai_revenue_autopilot'],
+  '/hr-complete': ['hr'],
+  '/fnb-complete': ['pos_basic', 'pos_fnb'],
+  '/kitchen-display': ['pos_fnb'],
+};
+
 // Hafif inline SVG sparkline — recharts overhead yok, 4 KPI kartına uygun.
 const Sparkline = ({
   values,
@@ -487,45 +521,18 @@ const Dashboard = ({
     category: 'core'
   }], [t, stats]);
 
-  // Backend modül yetkilerine göre kartları filtrele
+  // Dashboard always reflects the selected hotel's effective module set.
+  // Platform privilege may still allow an administrator to navigate to a
+  // diagnostic route, but it must not make an unpurchased module look active.
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
   const filteredModules = useMemo(() => {
     const accessibleModules = visibleModules.filter(m => canAccessPath(user, m.path));
-    if (!modules) return accessibleModules;
-    // Super admin: tüm modülleri (add-on'lar dahil) göster.
-    if (isSuperAdmin) return visibleModules;
+    if (!modules || Object.keys(modules).length === 0) return [];
     return accessibleModules.filter(m => {
-      // PMS & mobil
-      if (m.path === '/pms') return modules.pms !== false;
-      if (m.path === '/mobile' || m.path?.startsWith('/mobile/')) return modules.pms_mobile !== false;
-
-      // Add-on modules — sold separately, default OFF for all plans
-      if (m.path === '/spa-wellness') return modules.spa === true;
-      if (m.path === '/app/mice') return modules.mice === true;
-
-      // Raporlar
-      if (m.path === '/reports' || m.path === '/flash-report') return modules.reports !== false;
-
-      // Faturalar & finans
-      if (m.path === '/invoices' || m.path === '/efatura' || m.path === '/e-fatura' || m.path === '/pending-ar' || m.path === '/cost-management') {
-        return modules.invoices !== false;
-      }
-
-      // AI alt modülleri
-      if (m.path === '/ai-chatbot') return modules.ai_chatbot !== false;
-      if (m.path === '/dynamic-pricing') return modules.ai_pricing !== false;
-      if (m.path === '/ai-whatsapp-concierge') return modules.ai_whatsapp !== false;
-      if (m.path === '/predictive-analytics') return modules.ai_predictive !== false;
-      if (m.path === '/revenue-autopilot') return modules.ai_revenue_autopilot !== false;
-      if (m.path === '/social-media-radar') return modules.ai_social_radar !== false;
-
-      // AI kategorisi genel fallback: ana ai kapalıysa gizle
-      if (m.category === 'ai' || m.path === '/ai-pms') return modules.ai !== false;
-
-      // Diğer modüller şimdilik her zaman görünür
-      return true;
+      const requiredKeys = DASHBOARD_MODULE_KEYS[m.path];
+      return Array.isArray(requiredKeys) && requiredKeys.every((key) => modules[key] === true);
     });
-  }, [visibleModules, modules, isSuperAdmin, user]);
+  }, [visibleModules, modules, user]);
 
   // Kategorilere göre modülleri grupla
   const categorizedModules = useMemo(() => {

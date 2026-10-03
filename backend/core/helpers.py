@@ -322,7 +322,10 @@ def get_tenant_modules(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     """Merge stored tenant modules with tier-based defaults."""
     from domains.admin.subscription_models import get_plan_default_modules
 
-    tier = (tenant_doc.get("subscription_tier") or "basic").lower()
+    # `pms_lite` predates the commercial tier names. It is a real, narrower
+    # plan, so its explicit plan must win over a legacy/default tier value.
+    plan = (tenant_doc.get("subscription_plan") or tenant_doc.get("plan") or "").lower()
+    tier = "pms_lite" if plan == "pms_lite" else (tenant_doc.get("subscription_tier") or "basic").lower()
     if tier == "pro":
         tier = "professional"
     if tier == "ultra":
