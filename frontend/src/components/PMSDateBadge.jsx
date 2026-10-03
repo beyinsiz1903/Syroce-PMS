@@ -4,7 +4,6 @@ import { Calendar, AlertTriangle } from "lucide-react";
 import api from "@/api/axios";
 import { prefetchNightAudit } from "@/lib/prefetch";
 import { BUSINESS_DATE_CHANGED_EVENT } from "@/lib/businessDateEvents";
-import { useTranslation } from 'react-i18next';
 
 const MONTHS_TR = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 
@@ -47,7 +46,6 @@ const readBdCache = () => {
 };
 
 export default function PMSDateBadge({ inLayout = false }) {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const cached = readBdCache();
@@ -176,9 +174,9 @@ export default function PMSDateBadge({ inLayout = false }) {
             disabled={navigating}
             className="ml-1 px-2.5 py-0.5 rounded-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-700 disabled:cursor-wait text-white text-[11px] font-medium transition-colors"
             data-testid="pms-date-stale-warning"
-            title={t('cm.components_PMSDateBadge.gun_sonu_islemini_baslat')}
+            title="Gün sonu hazırlığını incele"
           >
-            {navigating ? "Açılıyor…" : "Gün Sonu Yap"}
+            {navigating ? "Açılıyor…" : "Gün Sonunu İncele"}
           </button>
         )}
       </div>
