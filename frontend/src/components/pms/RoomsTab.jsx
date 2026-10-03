@@ -20,6 +20,23 @@ import { getRoomBlockForDate, normalizeRoomBlocksResponse } from '@/pages/calend
 import { bookingFinancials } from '@/lib/bookingFinancials';
 import { formatCurrency } from '@/lib/currency';
 
+export const formatCleaningDuration = (minutes) => {
+  const roundedMinutes = Math.round(Number(minutes));
+  if (!Number.isFinite(roundedMinutes) || roundedMinutes < 0) return null;
+
+  if (roundedMinutes >= 24 * 60) {
+    return `${Math.floor(roundedMinutes / (24 * 60))} gün`;
+  }
+
+  if (roundedMinutes >= 60) {
+    const hours = Math.floor(roundedMinutes / 60);
+    const remainder = roundedMinutes % 60;
+    return remainder ? `${hours} sa ${remainder} dk` : `${hours} sa`;
+  }
+
+  return `${roundedMinutes} dk`;
+};
+
 const RoomsTab = ({
   rooms,
   bookings = [],
@@ -666,14 +683,19 @@ const RoomsTab = ({
                 {/* Live cleaning indicator for dirty/cleaning rooms */}
                 {(room.status === 'dirty' || room.status === 'cleaning') && (() => {
                   const hk = room.housekeeping || {};
-                  const isInProgress = hk.state === 'in_progress';
+                  // Room state is the operational source of truth. A delayed
+                  // housekeeping-task sync must not make one card say both
+                  // “Temizleniyor” and “Temizlik bekliyor”.
+                  const isInProgress = room.status === 'cleaning' || hk.state === 'in_progress';
                   const estimated = hk.estimated_minutes;
                   const elapsed = hk.elapsed_minutes;
+                  const elapsedLabel = formatCleaningDuration(elapsed);
+                  const isStaleCleaning = isInProgress && Number(elapsed) >= 24 * 60;
                   const remaining = (estimated != null && elapsed != null)
                     ? Math.max(0, Math.round(estimated - elapsed))
                     : null;
                   const progressPct = hk.progress_pct;
-                  const showSeparate = isInProgress && elapsed != null && remaining != null;
+                  const showSeparate = isInProgress && elapsedLabel != null && remaining != null;
                   const sizeLabel = !isInProgress && estimated != null
                     ? `~${estimated} dk`
                     : null;
@@ -685,8 +707,11 @@ const RoomsTab = ({
                           {isInProgress ? 'Temizleniyor' : 'Temizlik bekliyor'}
                         </span>
                         {showSeparate ? (
-                          <span className="font-medium tabular-nums">
-                            {Math.round(elapsed)} / {estimated} dk
+                          <span
+                            className="font-medium tabular-nums"
+                            aria-label={isStaleCleaning ? `Temizlik görevi ${elapsedLabel}dır açık` : undefined}
+                          >
+                            {isStaleCleaning ? `${elapsedLabel} açık` : `${elapsedLabel} / ${estimated} dk`}
                           </span>
                         ) : sizeLabel && (
                           <span className="font-medium">{sizeLabel}</span>
@@ -708,7 +733,7 @@ const RoomsTab = ({
                       )}
                       {isInProgress && progressPct != null && progressPct >= 100 && (
                         <div className="text-[10px] text-rose-700 mt-0.5 flex items-center gap-1">
-                          <AlertOctagon className="w-3 h-3" /> Süreyi aştı
+                          <AlertOctagon className="w-3 h-3" /> {isStaleCleaning ? '24 saati aşan görev' : 'Süreyi aştı'}
                         </div>
                       )}
                       {isInProgress && remaining != null && progressPct != null && progressPct < 100 && (

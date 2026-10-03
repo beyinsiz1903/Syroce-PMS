@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import RoomsTab from '@/components/pms/RoomsTab';
+import RoomsTab, { formatCleaningDuration } from '@/components/pms/RoomsTab';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
 vi.mock('sonner', () => ({
@@ -34,6 +34,59 @@ const booking = {
 };
 
 describe('RoomsTab PMS business date', () => {
+  it('formats long-running cleaning work in a human-readable duration', () => {
+    expect(formatCleaningDuration(30)).toBe('30 dk');
+    expect(formatCleaningDuration(90)).toBe('1 sa 30 dk');
+    expect(formatCleaningDuration(163875)).toBe('113 gün');
+  });
+
+  it('does not render a stale cleaning task as a raw minute counter', () => {
+    render(
+      <RoomsTab
+        rooms={[{
+          ...room,
+          room_number: '105',
+          status: 'cleaning',
+          housekeeping: {
+            state: 'in_progress',
+            estimated_minutes: 30,
+            elapsed_minutes: 163875,
+            progress_pct: 100,
+          },
+        }]}
+        bookings={[]}
+        businessDate="2026-08-28"
+      />,
+    );
+
+    const cleaning = screen.getByTestId('room-cleaning-105');
+    expect(cleaning).toHaveTextContent('113 gün açık');
+    expect(cleaning).toHaveTextContent('24 saati aşan görev');
+    expect(cleaning).not.toHaveTextContent('163875');
+  });
+
+  it('uses the room state when housekeeping task synchronization lags', () => {
+    render(
+      <RoomsTab
+        rooms={[{
+          ...room,
+          room_number: '104',
+          status: 'cleaning',
+          housekeeping: {
+            state: 'queued',
+            estimated_minutes: 30,
+          },
+        }]}
+        bookings={[]}
+        businessDate="2026-08-28"
+      />,
+    );
+
+    const cleaning = screen.getByTestId('room-cleaning-104');
+    expect(cleaning).toHaveTextContent('Temizleniyor');
+    expect(cleaning).not.toHaveTextContent('Temizlik bekliyor');
+  });
+
   it('does not expose a future arrival relative to the open PMS day', () => {
     render(
       <RoomsTab
