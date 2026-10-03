@@ -54,6 +54,15 @@ export const partitionDeparturesForBulkCheckout = (rows) => ({
   blocked: rows.filter((row) => Number(row.balance || 0) > 0),
 });
 
+export const isFinalPaymentWithinBalance = (amount, balance) => {
+  const payment = Number(amount);
+  const outstanding = Number(balance);
+  return Number.isFinite(payment)
+    && Number.isFinite(outstanding)
+    && payment > 0
+    && payment <= outstanding + 0.001;
+};
+
 const DepartureList = () => {
   const { t } = useTranslation();
   const [date, setDate] = useState(() => localISODate(new Date()));
@@ -229,6 +238,10 @@ const DepartureList = () => {
     if (!payTarget) return;
     const n = Number(payAmount);
     if (!(n > 0)) { toast.error('Tutar 0\'dan büyük olmalı'); return; }
+    if (!isFinalPaymentWithinBalance(n, payTarget.balance)) {
+      toast.error('Tahsilat açık bakiyeden yüksek olamaz');
+      return;
+    }
     setPaySubmitting(true);
     try {
       await axios.post(`/frontdesk/folio/${payTarget.id}/payment`, {
@@ -492,6 +505,8 @@ const DepartureList = () => {
                   { v: 'bank_transfer', l: 'Havale', i: 'neutral' },
                 ].map((m) => (
                   <button key={m.v} type="button" onClick={() => setPayMethod(m.v)}
+                    aria-pressed={payMethod === m.v}
+                    aria-label={`${m.l} tahsilat yöntemini seç`}
                     className={`h-10 rounded-md border text-sm font-medium transition ${payMethod === m.v ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-200 hover:border-slate-400 bg-white'}`}>
                     {m.l}
                   </button>
