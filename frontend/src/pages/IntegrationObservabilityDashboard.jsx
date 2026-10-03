@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+
+export const formatAuditTimestamp = (value, pattern) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : format(date, pattern);
+};
+
 const StatusBadge = ({
   status,
   code
@@ -31,50 +38,62 @@ export default function IntegrationObservabilityDashboard() {
   const [financePage, setFinancePage] = useState(1);
   const [financeTotalPages, setFinanceTotalPages] = useState(1);
   const [financeProviderFilter, setFinanceProviderFilter] = useState('all');
+  const financeRequestRef = useRef(0);
 
   // ARI State
   const [driftStates, setDriftStates] = useState([]);
   const [driftLoading, setDriftLoading] = useState(true);
   const [outboundLogs, setOutboundLogs] = useState([]);
   const [outboundLoading, setOutboundLoading] = useState(true);
+  const driftRequestRef = useRef(0);
+  const outboundRequestRef = useRef(0);
   const fetchFinanceLogs = useCallback(async (page = 1, provider = 'all') => {
+    const requestId = ++financeRequestRef.current;
     setFinanceLoading(true);
     try {
       let url = `/finance/integration/logs?page=${page}&limit=20`;
       if (provider !== 'all') url += `&provider=${provider}`;
       const res = await axios.get(url);
+      if (requestId !== financeRequestRef.current) return;
       setFinanceLogs(res.data.logs || []);
       setFinanceTotalPages(res.data.total_pages || 1);
       setFinancePage(page);
     } catch (err) {
+      if (requestId !== financeRequestRef.current) return;
       toast.error('Failed to load finance sync history');
       console.error(err);
     } finally {
-      setFinanceLoading(false);
+      if (requestId === financeRequestRef.current) setFinanceLoading(false);
     }
   }, []);
   const fetchAriDrift = useCallback(async () => {
+    const requestId = ++driftRequestRef.current;
     setDriftLoading(true);
     try {
       const res = await axios.get('/channel-manager/ari/drift?limit=50&skip=0');
+      if (requestId !== driftRequestRef.current) return;
       setDriftStates(res.data.drift_states || []);
     } catch (err) {
+      if (requestId !== driftRequestRef.current) return;
       toast.error('Failed to load ARI drift states');
       console.error(err);
     } finally {
-      setDriftLoading(false);
+      if (requestId === driftRequestRef.current) setDriftLoading(false);
     }
   }, []);
   const fetchAriOutbound = useCallback(async () => {
+    const requestId = ++outboundRequestRef.current;
     setOutboundLoading(true);
     try {
       const res = await axios.get('/channel-manager/ari/outbound-logs?limit=50&skip=0');
+      if (requestId !== outboundRequestRef.current) return;
       setOutboundLogs(res.data.logs || []);
     } catch (err) {
+      if (requestId !== outboundRequestRef.current) return;
       toast.error('Failed to load ARI outbound logs');
       console.error(err);
     } finally {
-      setOutboundLoading(false);
+      if (requestId === outboundRequestRef.current) setOutboundLoading(false);
     }
   }, []);
   useEffect(() => {
@@ -145,11 +164,14 @@ export default function IntegrationObservabilityDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {financeLogs.length === 0 ? <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-400">No sync logs found.</td></tr> : financeLogs.map((log, i) => {
+                        {financeLogs.length === 0 ? <tr><td colSpan="8" className="px-4 py-8 text-center text-slate-400">No sync logs found.</td></tr> : financeLogs.map((log, i) => {
                       const statusDict = log.provider_response_status || {};
                       return <tr key={log.id || i} className="hover:bg-zinc-800/20 transition-colors">
                               <td className="px-4 py-3 text-slate-700">
-                                {format(new Date(log.synced_at || log.created_at), 'MMM dd, HH:mm:ss')}
+                                {log.tenant_name || log.tenant_id || '—'}
+                              </td>
+                              <td className="px-4 py-3 text-slate-700">
+                                {formatAuditTimestamp(log.synced_at || log.created_at, 'MMM dd, HH:mm:ss')}
                               </td>
                               <td className="px-4 py-3">
                                 <Badge variant="outline" className="capitalize">{log.provider}</Badge>
@@ -246,16 +268,18 @@ export default function IntegrationObservabilityDashboard() {
                         <tr>
                           <th className="px-4 py-2">Otel (Tenant)</th>
                           <th className="px-4 py-2">Timestamp</th>
-                          <th className="px-4 py-2">Otel (Tenant)</th>
                           <th className="px-4 py-2">Provider</th>
                           <th className="px-4 py-2">Trigger</th>
                           <th className="px-4 py-2">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {outboundLogs.length === 0 ? <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">No outbound logs.</td></tr> : outboundLogs.map((log, i) => <tr key={log.id || i}>
+                        {outboundLogs.length === 0 ? <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-400">No outbound logs.</td></tr> : outboundLogs.map((log, i) => <tr key={log.id || i}>
+                            <td className="px-4 py-2 text-slate-700">
+                              {log.tenant_name || log.tenant_id || '—'}
+                            </td>
                             <td className="px-4 py-2 whitespace-nowrap text-slate-700">
-                              {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
+                              {formatAuditTimestamp(log.created_at, 'MM/dd HH:mm:ss')}
                             </td>
                             <td className="px-4 py-2 capitalize">{log.provider}</td>
                             <td className="px-4 py-2 truncate max-w-[120px]">{log.trigger_source || 'system'}</td>
