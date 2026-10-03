@@ -109,6 +109,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   if (!data) return null;
 
   const drift = data.date_drift_days || 0;
+  const catchupRequired = drift > 1;
   const blockers = data.blockers || [];
   const warnings = data.warnings || [];
   const rooms = data.rooms || {};
@@ -139,19 +140,23 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
       <Card>
         <CardContent className="py-4 flex flex-col md:flex-row md:items-center gap-3 justify-between">
           <div className="flex items-center gap-3">
-            {data.ready ? (
+            {data.ready && !catchupRequired ? (
               <CheckCircle2 className="w-6 h-6 text-emerald-600" />
             ) : (
-              <ShieldAlert className="w-6 h-6 text-rose-600" />
+              <ShieldAlert className={`w-6 h-6 ${catchupRequired ? 'text-amber-600' : 'text-rose-600'}`} />
             )}
             <div>
               <p className="text-sm font-semibold text-gray-900">
-                {data.ready
+                {catchupRequired
+                  ? 'Kontrollü gün kapatma gerekli'
+                  : data.ready
                   ? 'Gece denetimi için hazır görünüyorsunuz'
                   : `Başlatılamıyor — ${blockers.length} engelleyici sorun var`}
               </p>
               <p className="text-xs text-gray-500">
-                {t('cm.components_nightaudit_tabs_PreparationTab.is_gunu')} {data.business_date} · {warnings.length} {t('cm.components_nightaudit_tabs_PreparationTab.uyari')}
+                {catchupRequired
+                  ? `PMS iş günü takvimden ${drift} gün geride; canlı gün sonu çalıştırılamaz.`
+                  : `${t('cm.components_nightaudit_tabs_PreparationTab.is_gunu')} ${data.business_date} · ${warnings.length} ${t('cm.components_nightaudit_tabs_PreparationTab.uyari')}`}
               </p>
             </div>
           </div>
@@ -162,12 +167,12 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
             </Button>
             {canRunAudit && <Button
               size="sm"
-              onClick={onStartRun}
+              onClick={() => onStartRun?.({ dryRun: catchupRequired })}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
               data-testid="prep-start-btn"
             >
               <Play className="w-4 h-4 mr-1" />
-              {t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
+              {catchupRequired ? 'Simülasyon Başlat' : t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
             </Button>}
           </div>
         </CardContent>

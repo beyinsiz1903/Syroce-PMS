@@ -89,4 +89,27 @@ describe('Night Audit inline blocker resolution', () => {
     expect(get).toHaveBeenLastCalledWith('/night-audit/preview', { params: { nocache: 1 } });
     expect(screen.getByTestId('location')).toHaveTextContent('/night-audit');
   });
+
+  it('does not present a large business-date backlog as ready for a live close', async () => {
+    const onStartRun = vi.fn();
+    get.mockResolvedValue({
+      data: {
+        ...readyPreview,
+        calendar_date: '2026-09-03',
+        date_drift_days: 10,
+      },
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/night-audit']}>
+        <PreparationTab canRunAudit onStartRun={onStartRun} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Kontrollü gün kapatma gerekli')).toBeInTheDocument();
+    expect(screen.getByText('PMS iş günü takvimden 10 gün geride; canlı gün sonu çalıştırılamaz.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('prep-start-btn'));
+    expect(onStartRun).toHaveBeenCalledWith({ dryRun: true });
+  });
 });
