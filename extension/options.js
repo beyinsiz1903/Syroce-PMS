@@ -16,6 +16,9 @@ const HOST_RULES = {
 };
 const JANDARMA_SOAP_ENDPOINT = "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc";
 let hasSessionPassword = false;
+let hasPersistentPassword = false;
+const SESSION_PASSWORD_KEY = "jandarmaWebServicePassword";
+const PERSISTENT_PASSWORD_KEY = "jandarmaPersistentWebServicePassword";
 
 function fillProfileForm(a, cfg) {
   const c = cfg || {};
@@ -42,9 +45,14 @@ async function load() {
     if (isLegacyFlat && a === "polis") fillProfileForm(a, raw);
     else fillProfileForm(a, raw[a]);
   }
-  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const { jandarmaWebServicePassword } = await chrome.storage.session.get(SESSION_PASSWORD_KEY);
+  const persistent = await chrome.storage.local.get(PERSISTENT_PASSWORD_KEY);
   hasSessionPassword = Boolean(jandarmaWebServicePassword);
-  $("jandarma_password").placeholder = jandarmaWebServicePassword ? "Bu oturum icin yuklendi" : "Yeni web servis sifresi";
+  hasPersistentPassword = Boolean(persistent[PERSISTENT_PASSWORD_KEY]);
+  $("jandarma_rememberPassword").checked = hasPersistentPassword;
+  $("jandarma_password").placeholder = hasPersistentPassword
+    ? "Bu cihazda güvenle hatırlanıyor"
+    : hasSessionPassword ? "Bu oturum için yüklendi" : "Yeni web servis şifresi";
 }
 
 function buildProfile(a, status) {
@@ -121,11 +129,19 @@ async function save() {
 
   await chrome.storage.local.set({ kbsConfig: cfg });
   const password = $("jandarma_password").value;
+  const rememberPassword = $("jandarma_rememberPassword").checked;
   if (password) {
-    await chrome.storage.session.set({ jandarmaWebServicePassword: password });
+    await chrome.storage.session.set({ [SESSION_PASSWORD_KEY]: password });
     hasSessionPassword = true;
   }
-  status.textContent = cfg.jandarma.mode === "jandarma-soap" && !password && !hasSessionPassword
+  if (rememberPassword && password) {
+    await chrome.storage.local.set({ [PERSISTENT_PASSWORD_KEY]: password });
+    hasPersistentPassword = true;
+  } else if (!rememberPassword) {
+    await chrome.storage.local.remove(PERSISTENT_PASSWORD_KEY);
+    hasPersistentPassword = false;
+  }
+  status.textContent = cfg.jandarma.mode === "jandarma-soap" && !password && !hasSessionPassword && !hasPersistentPassword
     ? "Ayarlar kaydedildi. Bu oturum icin web servis sifresini de girin."
     : "Kaydedildi.";
 }

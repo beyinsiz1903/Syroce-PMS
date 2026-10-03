@@ -132,9 +132,10 @@
       <input id="jandarma_facilityCode" inputmode="numeric" maxlength="19" autocomplete="off" />
       <div class="row-help">KBS portalında görünen tesis kodunu aynen girin. Resmî servis bu alanı sayısal uzun değer olarak tanımlar; sabit 6 hane şartı yoktur.</div>
 
-      <label for="jandarma_password">Yeni web servis sifresi (tarayici kapaninca silinir)</label>
+      <label for="jandarma_password">Yeni web servis sifresi</label>
       <input id="jandarma_password" type="password" maxlength="50" autocomplete="new-password" />
-      <div class="row-help">E-devlet sifrenizi buraya girmeyin. Ekran goruntusunde gorunen eski sifreyi kullanmayin.</div>
+      <label><input id="jandarma_rememberPassword" type="checkbox" /> Bu resepsiyon cihazında hatırla</label>
+      <div class="row-help">İşaretlenmezse şifre tarayıcı kapanınca silinir. İşaretlenirse yalnızca bu Chrome profilinde saklanır ve yalnızca resmî Jandarma SOAP çağrısında kullanılır. Paylaşımlı cihazlarda kullanmayın; E-Devlet şifrenizi buraya girmeyin.</div>
 
       <label><input id="jandarma_liveConfirmed" type="checkbox" /> Canli Jandarma bildirimlerinin hukuki kayit olusturacagini anliyorum.</label>
 

@@ -8,7 +8,10 @@ const { webcrypto } = require("node:crypto");
 function loadWorker(fetchImpl, overrides = {}) {
   let listener;
   const extensionDir = path.join(__dirname, "..");
-  const local = { kbsConfig: overrides.kbsConfig || { polis: { mode: "egm-session" }, jandarma: { mode: "test" } } };
+  const local = {
+    kbsConfig: overrides.kbsConfig || { polis: { mode: "egm-session" }, jandarma: { mode: "test" } },
+    ...(overrides.local || {}),
+  };
   const session = overrides.session || {};
   const context = {
     AbortController, URL, URLSearchParams, Response, Headers, crypto: webcrypto,
@@ -18,6 +21,7 @@ function loadWorker(fetchImpl, overrides = {}) {
         local: {
           get: async (key) => ({ [key]: local[key] }),
           set: async (values) => Object.assign(local, values),
+          remove: async (key) => { delete local[key]; },
         },
         session: { get: async (key) => ({ [key]: session[key] }) },
       },
@@ -171,4 +175,30 @@ test("Jandarma SOAP accepts live WSDL facility-code shape and returns auditable 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc");
   assert.match(calls[0].init.body, /<TssKod>12345<\/TssKod>/);
+});
+
+test("Jandarma SOAP can use the explicitly remembered device password after Chrome restarts", async () => {
+  const send = loadWorker(async (_url, init) => {
+    assert.match(init.body, /<Sifre>remembered-secret<\/Sifre>/);
+    return new Response(
+      "<MusteriKimlikNoCikisResult><Basarili>true</Basarili><HataKodu>Basarili</HataKodu><Mesaj>İşlem başarılı</Mesaj></MusteriKimlikNoCikisResult>",
+      { status: 200, headers: { "content-type": "text/xml" } },
+    );
+  }, {
+    kbsConfig: {
+      polis: { mode: "test" },
+      jandarma: {
+        mode: "jandarma-soap",
+        endpoint: "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc",
+        userTc: "11111111110", facilityCode: "12345", liveConfirmed: true,
+      },
+    },
+    session: {},
+    local: { jandarmaPersistentWebServicePassword: "remembered-secret" },
+  });
+  const result = await send({
+    type: "KBS_SEND", authority: "jandarma",
+    body: { action: "checkout", nationality: "TR", id_number: "10000000146", check_out: "2026-08-23" },
+  });
+  assert.equal(result.ok, true);
 });
