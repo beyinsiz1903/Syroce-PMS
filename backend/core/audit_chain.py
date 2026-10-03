@@ -77,7 +77,7 @@ def _system_db():
     return get_system_db()
 
 
-async def _link_chain(tenant_id: str, entry: dict) -> tuple[int, str, str]:
+async def _link_chain(tenant_id: str, entry: dict, session=None) -> tuple[int, str, str]:
     """Atomically reserve the next (seq, prev_hash) for `tenant_id` and return
     (seq, prev_hash, record_hash). Compare-and-swap on `seq` serializes the
     chain even under concurrent writers. Raises on persistent contention.
@@ -86,10 +86,11 @@ async def _link_chain(tenant_id: str, entry: dict) -> tuple[int, str, str]:
 
     sysdb = _system_db()
     coll = sysdb[CHAIN_STATE_COLLECTION]
+    session_kwargs = {"session": session} if session is not None else {}
 
     # Initialize the genesis state document once (race-safe via upsert filter).
     for _ in range(8):
-        state = await coll.find_one({"_id": tenant_id})
+        state = await coll.find_one({"_id": tenant_id}, **session_kwargs)
         if state is None:
             seq = 1
             prev_hash = ""
@@ -100,6 +101,7 @@ async def _link_chain(tenant_id: str, entry: dict) -> tuple[int, str, str]:
                 {"$set": {"seq": seq, "last_hash": record_hash}},
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
+                **session_kwargs,
             )
             if res and res.get("seq") == seq and res.get("last_hash") == record_hash:
                 return seq, prev_hash, record_hash
@@ -115,6 +117,7 @@ async def _link_chain(tenant_id: str, entry: dict) -> tuple[int, str, str]:
             {"_id": tenant_id, "seq": cur_seq},
             {"$set": {"seq": seq, "last_hash": record_hash}},
             return_document=ReturnDocument.AFTER,
+            **session_kwargs,
         )
         if res is not None and res.get("seq") == seq:
             return seq, prev_hash, record_hash
@@ -123,7 +126,7 @@ async def _link_chain(tenant_id: str, entry: dict) -> tuple[int, str, str]:
     raise RuntimeError(f"audit chain CAS contention for tenant {tenant_id}")
 
 
-async def append_audit_log(db, entry: dict) -> dict:
+async def append_audit_log(db, entry: dict, session=None) -> dict:
     """Single canonical audit insert: fills chain fields + persists.
 
     `db` is whatever collection-bearing handle the caller already uses (the
@@ -136,14 +139,15 @@ async def append_audit_log(db, entry: dict) -> dict:
     tenant_id = entry.get("tenant_id")
     if tenant_id:
         try:
-            seq, prev_hash, record_hash = await _link_chain(tenant_id, entry)
+            seq, prev_hash, record_hash = await _link_chain(tenant_id, entry, session=session)
             entry["seq"] = seq
             entry["prev_hash"] = prev_hash
             entry["record_hash"] = record_hash
         except Exception as exc:
             logger.warning("audit chain link failed (writing unchained): %s", exc)
 
-    await db.audit_logs.insert_one(entry)
+    insert_kwargs = {"session": session} if session is not None else {}
+    await db.audit_logs.insert_one(entry, **insert_kwargs)
     return entry
 
 
@@ -267,6 +271,29 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
                 {
                     "tenant_id": tenant_id,
                     "record_hash": {"$exists": False},
+                }
+            )
+
+    # A deleted tail record cannot cause a subsequent prev-hash mismatch. The
+    # durable per-tenant chain state is therefore also a commitment to the
+    # expected tip. Compare it only for a complete scan; a bounded response
+    # naturally stops before the current tip.
+    chain_state = await sysdb[CHAIN_STATE_COLLECTION].find_one(
+        {"_id": tenant_id},
+        {"_id": 0, "seq": 1, "last_hash": 1},
+    )
+    if chain_state and not truncated:
+        expected_seq = chain_state.get("seq")
+        expected_hash = chain_state.get("last_hash")
+        actual_hash = rows[-1].get("record_hash") if rows else None
+        if expected_seq != last_seq or expected_hash != actual_hash:
+            breaks.append(
+                {
+                    "seq": last_seq,
+                    "id": rows[-1].get("id") if rows else None,
+                    "reason": "chain_state_tip_mismatch",
+                    "expected_seq": expected_seq,
+                    "actual_seq": last_seq,
                 }
             )
 

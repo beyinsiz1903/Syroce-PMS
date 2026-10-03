@@ -59,9 +59,11 @@ async def audit_log(
         correlation_id=correlation_id,
     )
     if session:
-        # Session-aware writes still pass through the append-only collection
-        # wrapper, which performs the tamper-evident chain link.
-        await db.audit_logs.insert_one(entry, session=session)
+        # A transaction must not bypass chain linking. The chain state and the
+        # entry are committed together on the same Mongo client/session.
+        from core.audit_chain import append_audit_log
+
+        await append_audit_log(db, entry, session=session)
     else:
         from core.audit_chain import append_audit_log
 
