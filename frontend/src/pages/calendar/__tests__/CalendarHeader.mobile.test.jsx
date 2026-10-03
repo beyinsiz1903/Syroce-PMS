@@ -80,6 +80,12 @@ describe('CalendarHeader mobile toolbar', () => {
     expect(screen.getByTestId('calendar-nav-today')).toHaveAccessibleName('PMS iş günü çevresine git (05.09.2026)');
   });
 
+  it('keeps the compact room-block action named for assistive technology', () => {
+    render(<MemoryRouter><CalendarHeader {...defaultProps} /></MemoryRouter>);
+
+    expect(screen.getByTestId('calendar-room-block-button')).toHaveAccessibleName('Odayı blokla veya arıza bildir');
+  });
+
   it('does not expose mutation controls to a read-only calendar user', async () => {
     const user = userEvent.setup();
     render(
