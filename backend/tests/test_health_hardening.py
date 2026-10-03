@@ -33,6 +33,15 @@ def test_health_check_dynamic_commit_sha(monkeypatch, client):
     assert data["commit"] == "dynamic_sha_12345"
 
 
+def test_health_check_without_trailing_slash_is_canonical(client):
+    """Keep probes on HTTPS instead of redirecting them through a proxy."""
+    response = client.get("/api/health", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert response.headers.get("location") is None
+    assert response.json()["status"] == "healthy"
+
+
 def test_health_check_commit_sha_unknown(monkeypatch, client):
     monkeypatch.delenv("COMMIT_SHA", raising=False)
     response = client.get("/api/health/")

@@ -137,6 +137,7 @@ def check_system_resources() -> dict[str, Any]:
         return {"status": "unhealthy", "error": str(e)}
 
 
+@health_router.get("")
 @health_router.get("/")
 async def health_check_simple():
     """
