@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+
+const formatAuditTimestamp = (value, pattern) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : format(date, pattern);
+};
+
 const StatusBadge = ({
   status,
   code
@@ -164,7 +171,7 @@ export default function IntegrationObservabilityDashboard() {
                                 {log.tenant_name || log.tenant_id || '—'}
                               </td>
                               <td className="px-4 py-3 text-slate-700">
-                                {format(new Date(log.synced_at || log.created_at), 'MMM dd, HH:mm:ss')}
+                                {formatAuditTimestamp(log.synced_at || log.created_at, 'MMM dd, HH:mm:ss')}
                               </td>
                               <td className="px-4 py-3">
                                 <Badge variant="outline" className="capitalize">{log.provider}</Badge>
@@ -272,7 +279,7 @@ export default function IntegrationObservabilityDashboard() {
                               {log.tenant_name || log.tenant_id || '—'}
                             </td>
                             <td className="px-4 py-2 whitespace-nowrap text-slate-700">
-                              {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
+                              {formatAuditTimestamp(log.created_at, 'MM/dd HH:mm:ss')}
                             </td>
                             <td className="px-4 py-2 capitalize">{log.provider}</td>
                             <td className="px-4 py-2 truncate max-w-[120px]">{log.trigger_source || 'system'}</td>
