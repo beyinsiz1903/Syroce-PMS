@@ -7,8 +7,9 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -359,17 +360,38 @@ async def _night_audit_for_tenant_async(tenant_id: str) -> dict[str, Any]:
         from core.business_date_service import ensure_business_date_initialized
 
         bd = (await ensure_business_date_initialized(raw_db, tenant_id))["business_date"]
+        local_today = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+        try:
+            backlog_days = (local_today - date.fromisoformat(bd)).days
+        except (TypeError, ValueError):
+            backlog_days = 0
 
-        with tenant_context(tenant_id):
-            result = await engine.start_night_audit(
-                tenant_id=tenant_id,
-                business_date=bd,
-                trigger_source="scheduler",
-                actor={"id": "system_scheduler", "email": "system"},
-            )
+        # The scheduler invokes the engine directly, rather than the HTTP
+        # router, so it must enforce the same stale-date protection itself.
+        # Otherwise an enabled schedule can post a chain of historical room
+        # charges even though the interactive screen correctly blocks it.
+        if backlog_days > 1:
+            result = {
+                "success": False,
+                "code": "BUSINESS_DATE_CATCHUP_REQUIRED",
+                "error": (
+                    f"PMS iş günü takvimden {backlog_days} gün geride. Otomatik gün sonu "
+                    "çalıştırılmadı; kontrollü kapatma planı ve simülasyon gerekli."
+                ),
+            }
+        else:
+            with tenant_context(tenant_id):
+                result = await engine.start_night_audit(
+                    tenant_id=tenant_id,
+                    business_date=bd,
+                    trigger_source="scheduler",
+                    actor={"id": "system_scheduler", "email": "system"},
+                )
 
         success = bool(result.get("success"))
-        status = "completed" if success else "failed"
+        status = "completed" if success else (
+            "blocked" if result.get("code") == "BUSINESS_DATE_CATCHUP_REQUIRED" else "failed"
+        )
         error_msg = None if success else result.get("error")
         run_id = None
         if success and result.get("run"):
