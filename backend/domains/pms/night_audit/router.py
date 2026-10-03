@@ -5,7 +5,7 @@ plus legacy schedule management and financial reporting.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -158,6 +158,31 @@ async def run_night_audit(
                 ),
                 "current_business_date": authoritative_bd,
                 "local_calendar_date": local_today,
+            },
+        )
+
+    # A large gap is not a normal end-of-day operation.  Repeatedly closing a
+    # stale date can post room charges, no-shows and financial snapshots for
+    # many historical days without a reconciliation plan.  Permit a dry run
+    # so the operator can assess the backlog, but require controlled recovery
+    # for a live catch-up instead of presenting the close as "ready".
+    try:
+        backlog_days = (date.fromisoformat(local_today) - date.fromisoformat(authoritative_bd)).days
+    except ValueError:
+        backlog_days = 0
+    if not request.dry_run and backlog_days > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "success": False,
+                "code": "BUSINESS_DATE_CATCHUP_REQUIRED",
+                "error": (
+                    f"PMS iş günü takvimden {backlog_days} gün geride. Canlı gün sonu durduruldu; "
+                    "önce simülasyonu inceleyin ve kontrollü gün kapatma planı oluşturun."
+                ),
+                "current_business_date": authoritative_bd,
+                "local_calendar_date": local_today,
+                "backlog_days": backlog_days,
             },
         )
 

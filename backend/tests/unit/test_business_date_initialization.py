@@ -208,3 +208,27 @@ async def test_run_endpoint_rejects_stale_client_business_date():
     assert exc.value.detail["code"] == "BUSINESS_DATE_MISMATCH"
     assert exc.value.detail["current_business_date"] == "2026-08-22"
     start_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_endpoint_blocks_large_business_date_backlog():
+    from domains.pms.night_audit.router import run_night_audit
+
+    user = SimpleNamespace(id="user-1", tenant_id="tenant-1", role="admin", email="manager@example.com")
+    request = RunNightAuditRequest(business_date="2000-01-01")
+    start_mock = AsyncMock()
+
+    with (
+        patch(
+            "core.business_date_service.ensure_business_date_initialized",
+            new=AsyncMock(return_value={"business_date": "2000-01-01"}),
+        ),
+        patch("core.night_audit_hardened.start_night_audit", new=start_mock),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await run_night_audit(request, current_user=user, _perm=None)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "BUSINESS_DATE_CATCHUP_REQUIRED"
+    assert exc.value.detail["backlog_days"] > 1
+    start_mock.assert_not_awaited()
