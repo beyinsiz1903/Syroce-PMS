@@ -309,11 +309,26 @@ const MinibarPage = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQty(it.id, qty - 1)} disabled={qty <= 0}>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setQty(it.id, qty - 1)}
+                            disabled={qty <= 0}
+                            aria-label={`${it.name} miktarını azalt`}
+                            title="Miktarı azalt"
+                          >
                             <Minus className="w-3.5 h-3.5" />
                           </Button>
                           <span className="w-6 text-center text-sm tabular-nums">{qty}</span>
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQty(it.id, qty + 1)}>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setQty(it.id, qty + 1)}
+                            aria-label={`${it.name} miktarını artır`}
+                            title="Miktarı artır"
+                          >
                             <Plus className="w-3.5 h-3.5" />
                           </Button>
                         </div>
@@ -407,11 +422,25 @@ const MinibarPage = () => {
                         </div>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => openEditItem(it)}>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEditItem(it)}
+                          aria-label={`${it.name} ürününü düzenle`}
+                          title="Ürünü düzenle"
+                        >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
                         {it.active && (
-                          <Button variant="outline" size="icon" className="h-8 w-8 text-red-600" onClick={() => deactivateItem(it)}>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 text-red-600"
+                            onClick={() => deactivateItem(it)}
+                            aria-label={`${it.name} ürününü pasifleştir`}
+                            title="Ürünü pasifleştir"
+                          >
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         )}
