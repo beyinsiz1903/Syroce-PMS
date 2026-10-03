@@ -22,6 +22,12 @@ export function operaParityRoutes({ p, pm }) {
       layoutModule: "pms",
     },
     {
+      path: "/golf",
+      ...pm(ActivitySchedulerPage, "golf", undefined, { strict: true }),
+      wrapLayout: true,
+      layoutModule: "golf",
+    },
+    {
       path: "/block-management",
       ...pm(BlockManagementPage, "pms", undefined, { strict: true }),
       wrapLayout: true,

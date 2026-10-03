@@ -288,6 +288,7 @@ export const MODULE_GROUPS = [
     icon: Sparkles,
     color: 'pink',
     items: [
+      { key: 'golf', label: 'Golf & Aktivite Rezervasyonları', hint: 'Golf sahası, tee-time, oyuncu ve kaynak/aktivite rezervasyonları; kullanıcı erişimi ayrıca rol ve sayfa yetkileriyle belirlenir', tier: 'addon', addon: true, monthly: 59, setup: 99, alwaysPaid: true },
       { key: 'spa', label: 'Spa & Wellness', hint: 'Hizmet kataloğu, terapist & oda yönetimi, randevu defteri, folio entegrasyonu', tier: 'addon', addon: true, monthly: 39, setup: 99, alwaysPaid: true },
       { key: 'mice', label: 'MICE & Banquet', hint: 'Toplantı/balo salonları, catering menüleri, kurumsal CRM, etkinlik yönetimi', tier: 'addon', addon: true, monthly: 59, setup: 149, alwaysPaid: true },
       { key: 'academy', label: 'Syroce Academy', hint: 'Departmana özel personel eğitimi, ders sonu sınav ve otomatik PDF sertifika', tier: 'addon', addon: true, monthly: 19, alwaysPaid: true },

@@ -1,6 +1,9 @@
 {
   "modules": {
     "frontdesk": "Ön büro",
+    "spa": "Spa & wellness",
+    "golf": "Golf & aktivite rezervasyonları",
+    "mice": "MICE & banquet",
     "cashier": "Kasa ve folyolar",
     "night_audit": "Gece denetimi",
     "housekeeping": "Kat hizmetleri",
@@ -348,6 +351,48 @@
       ],
       "permissions": [
         "view_contact_center"
+      ]
+    },
+    {
+      "key": "spa",
+      "label": "Spa & wellness",
+      "module": "spa",
+      "paths": [
+        "/spa-wellness",
+        "/spa-dining-packages"
+      ],
+      "api_prefixes": [
+        "/spa"
+      ],
+      "permissions": []
+    },
+    {
+      "key": "golf",
+      "label": "Golf & aktivite rezervasyonları",
+      "module": "golf",
+      "paths": [
+        "/golf"
+      ],
+      "api_prefixes": [
+        "/api/golf"
+      ],
+      "permissions": []
+    },
+    {
+      "key": "mice",
+      "label": "MICE & banquet",
+      "module": "mice",
+      "paths": [
+        "/app/mice",
+        "/function-space",
+        "/catering"
+      ],
+      "api_prefixes": [
+        "/mice",
+        "/api/mice"
+      ],
+      "permissions": [
+        "view_companies"
       ]
     },
     {

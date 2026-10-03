@@ -33,12 +33,18 @@ describe('tenant module catalogue parity', () => {
   });
 
   it('never silently grants the newly exposed optional modules in any plan', () => {
-    for (const key of ['hr', 'pos_fnb', 'parking']) {
+    for (const key of ['hr', 'pos_fnb', 'parking', 'golf']) {
       for (const tier of ['mini', 'basic', 'professional', 'enterprise']) {
         expect(isModuleIncludedInPlan(items.find(item => item.key === key), tier)).toBe(false);
       }
     }
     expect(isModuleIncludedInPlan(items.find(item => item.key === 'quick_id'), 'enterprise')).toBe(false);
+  });
+
+  it('makes every resort add-on selectable by its canonical key', () => {
+    expect(items.find(item => item.key === 'golf')).toMatchObject({ addon: true, alwaysPaid: true });
+    expect(items.find(item => item.key === 'spa')).toMatchObject({ addon: true });
+    expect(items.find(item => item.key === 'mice')).toMatchObject({ addon: true });
   });
 
   it('keeps legacy PMS Lite narrower than the later Mini commercial tier', () => {
