@@ -434,12 +434,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // Race-safe + debounced: hızlı ok navigasyonunda her tıklama fetch tetiklemez,
   // 250 ms hareketsizlik beklenir → sadece son tarih için tek fetch atılır.
   // cleanup hem timer'ı hem aktif fetch'i iptal eder (eski response state'i ezmesin).
-  // İlk yüklemede gecikme olmasın diye bookings boşken (ilk render) anında çağırılır.
+  // İlk yüklemede gecikme olmasın diye yalnızca veri henüz hiç yüklenmemişken
+  // anında çağırılır. Boş tesis de geçerli bir yüklenmiş durumdur.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     if (!businessDateReady) return undefined;
     let cancelled = false;
-    const isInitial = bookings.length === 0;
+    const isInitial = !calendarDataLoadedRef.current;
     const delay = isInitial ? 0 : 250;
     const timer = setTimeout(() => {
       if (!cancelled) loadCalendarData(() => cancelled);
