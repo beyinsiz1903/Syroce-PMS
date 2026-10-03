@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -49,11 +49,15 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
   const [filterCat, setFilterCat] = useState('');
   const [filterRoom, setFilterRoom] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const latestLoadRequest = useRef(0);
   const [form, setForm] = useState({
     room_number: '', guest_name: '', nps_score: 9, feedback: '',
   });
 
   const loadAll = useCallback(async () => {
+    const requestId = latestLoadRequest.current + 1;
+    latestLoadRequest.current = requestId;
+    setLoading(true);
     try {
       const [scoreRes, recentRes, roomRes] = await Promise.all([
         axios.get(`/nps/score?days=${days}`),
@@ -62,14 +66,19 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
           (filterRoom ? `&room_number=${encodeURIComponent(filterRoom)}` : '')),
         axios.get(`/nps/by-room?days=${days}`),
       ]);
+      // Filtreler hızlıca değiştirildiğinde önceki isteğin yanıtı daha geç
+      // gelebilir. Eski yanıtın ekrandaki yeni filtre sonucunu ezmesine izin
+      // verme.
+      if (requestId !== latestLoadRequest.current) return;
       setNpsData(scoreRes.data);
       setRecent(recentRes.data?.items || []);
       setByRoom(roomRes.data?.rooms || []);
     } catch (err) {
+      if (requestId !== latestLoadRequest.current) return;
       console.error('NPS yüklenemedi', err);
       toast.error('Veriler yüklenemedi');
     } finally {
-      setLoading(false);
+      if (requestId === latestLoadRequest.current) setLoading(false);
     }
   }, [days, filterCat, filterRoom]);
 
