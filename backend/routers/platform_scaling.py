@@ -107,6 +107,10 @@ class ReconcileTransferSettlementReq(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class ReverseTransferReq(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
 class GlobalRateAdjustReq(BaseModel):
     adjustment_pct: float
     room_type: str | None = None
@@ -370,6 +374,24 @@ async def api_transfer_reservation(
                 },
             )
         raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+@router.post("/multi-property/transfers/{transfer_id}/reverse")
+async def api_reverse_transfer(
+    transfer_id: str,
+    req: ReverseTransferReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),
+):
+    """Reverse an eligible transfer; changed stays must be transferred anew."""
+    # Reversal can void an open inter-property receivable/payable.  Require
+    # payment authority even when the original transfer did not retain funds,
+    # so a front-desk role cannot mutate the financial trail.
+    RolePermissionService().enforce_user_permission(current_user, "post_payment")
+    result = await crs.reverse_transfer(current_user, transfer_id, req.reason)
+    if not result.get("success"):
+        raise HTTPException(status_code=409, detail=result.get("error"))
     return result
 
 
