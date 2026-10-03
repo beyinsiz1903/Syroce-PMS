@@ -234,20 +234,12 @@ const Dashboard = ({
       });
     }
 
-    // Prefetch commonly used routes in background
-    const prefetchRoutes = () => {
-      const routes = ['/pms/dashboard', '/invoices/stats'];
-      routes.forEach(route => {
-        const link = document.createElement('link');
-        link.rel = 'prefetch';
-        link.href = route;
-        document.head.appendChild(link);
-      });
-    };
-
-    // Prefetch after 2 seconds
-    const timer = setTimeout(prefetchRoutes, 2000);
-    return () => clearTimeout(timer);
+    // API base URL'si /api olduğundan, burada document'a eklenen
+    // "/pms/dashboard" ve "/invoices/stats" linkleri API önbelleğini
+    // ısıtmıyordu. Bunun yerine SPA rotası olarak istenip gereksiz iki ağ
+    // isteği ve yanıt işleme maliyeti çıkarıyordu. KPI isteği zaten axios
+    // önbelleği üzerinden bu verileri yüklediği için ek bir prefetch yok.
+    return () => cancelIdle();
   }, [loadDashboardStats, loadAIBriefing, loadChartData]);
   const visibleModules = useMemo(() => [{
     title: t('nav.pms'),
