@@ -40,4 +40,10 @@ describe('tenant module catalogue parity', () => {
     }
     expect(isModuleIncludedInPlan(items.find(item => item.key === 'quick_id'), 'enterprise')).toBe(false);
   });
+
+  it('keeps legacy PMS Lite narrower than the later Mini commercial tier', () => {
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'pms'), 'pms_lite')).toBe(true);
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'invoices_basic'), 'pms_lite')).toBe(false);
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'channel_manager_lite'), 'pms_lite')).toBe(false);
+  });
 });

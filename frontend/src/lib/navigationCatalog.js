@@ -25,8 +25,11 @@ export function accessibleNavigationItems({
 
   return [...NAV_ITEMS, ...supplementalModuleNavItems(user)].filter((item) => {
     if (!canAccessNavItem(user, item)) return false;
-    if (!isSuperAdmin && hiddenItems.has(item.key)) return false;
-    if (!isSuperAdmin && item.navGroup && hiddenGroups.has(item.navGroup)) return false;
+    // Property-level navigation choices describe the hotel's workspace and
+    // must be honoured for administrators too. Platform-only entries remain
+    // available through their explicit super-admin routes.
+    if (hiddenItems.has(item.key)) return false;
+    if (item.navGroup && hiddenGroups.has(item.navGroup)) return false;
     if (item.requireSuperAdmin && !isSuperAdmin) return false;
     if (item.requireChain && !tenant?.chain_id) return false;
     if (
@@ -34,7 +37,7 @@ export function accessibleNavigationItems({
       && !isSuperAdmin
       && !item.allowedRoles.some((role) => userRoles.has(String(role).trim().toLowerCase()))
     ) return false;
-    if (item.moduleKey && !hasModule(item.moduleKey)) return false;
+    if (item.moduleKey && !(isSuperAdmin && item.requireSuperAdmin) && !hasModule(item.moduleKey)) return false;
     return true;
   });
 }
@@ -46,4 +49,3 @@ export function navigationItemsByGroup(items) {
     return groups;
   }, {});
 }
-

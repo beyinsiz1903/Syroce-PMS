@@ -85,7 +85,7 @@ describe('CreateTenantModal professional module wizard', () => {
     expect(screen.queryByText('System Health')).not.toBeInTheDocument();
   });
 
-  it('keeps only real optional products behind an explicit customization control', async () => {
+  it('exposes optional products and selectable hub sub-modules behind customization', async () => {
     await reachInstallationSummary();
 
     fireEvent.click(screen.getByTestId('tenant-module-customize-toggle'));
@@ -96,8 +96,8 @@ describe('CreateTenantModal professional module wizard', () => {
     expect(screen.getByText('AI Modülleri')).toBeInTheDocument();
     expect(screen.getByText('Ek Ücretli Modüller')).toBeInTheDocument();
 
-    expect(screen.queryByText('PMS Alt Sekmeleri')).not.toBeInTheDocument();
-    expect(screen.queryByText('Rapor Listesi (Excel Raporları)')).not.toBeInTheDocument();
+    expect(screen.getByText('PMS Alt Sekmeleri')).toBeInTheDocument();
+    expect(screen.getByText('Rapor Listesi (Excel Raporları)')).toBeInTheDocument();
     expect(screen.queryByText('System Health')).not.toBeInTheDocument();
   });
 

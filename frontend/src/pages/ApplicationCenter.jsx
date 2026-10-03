@@ -39,20 +39,22 @@ export const mergeApplicationEntries = (productModules, navigationItems) => {
 
 export default function ApplicationCenter({ tenant, user }) {
   const navigate = useNavigate();
-  const { hasModule, isSuperAdmin } = useEntitlements();
+  const { hasModule, hasTenantModule = hasModule } = useEntitlements();
   const [query, setQuery] = useState('');
   const [view, setView] = useState('all');
   const [favorites, setFavorites] = useState(loadFavorites);
 
   const modules = useMemo(() => {
     const productModules = PRODUCT_MODULES
-      .filter((item) => hasModule(item.key))
+      .filter((item) => hasTenantModule(item.key))
       .map((item) => ({ ...item, enabled: true }));
     const navigationItems = user ? accessibleNavigationItems({
       user,
       tenant,
-      isSuperAdmin,
-      hasModule,
+      // The app centre is an inventory of this hotel's usable workspaces,
+      // not the platform administrator's unrestricted navigation.
+      isSuperAdmin: false,
+      hasModule: hasTenantModule,
     }).filter((item) => item.path) : [];
 
     return mergeApplicationEntries(productModules, navigationItems).map((item) => ({
@@ -64,7 +66,7 @@ export default function ApplicationCenter({ tenant, user }) {
     const needle = query.trim().toLocaleLowerCase('tr-TR');
     return !needle || `${item.label} ${item.hint || ''} ${item.groupTitle}`.toLocaleLowerCase('tr-TR').includes(needle);
     });
-  }, [favorites, hasModule, isSuperAdmin, query, tenant, user, view]);
+  }, [favorites, hasTenantModule, query, tenant, user, view]);
 
   const groups = useMemo(() => modules.reduce((result, item) => {
     (result[item.groupTitle] ||= []).push(item);
@@ -85,7 +87,7 @@ export default function ApplicationCenter({ tenant, user }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{tenant?.property_name || tenant?.name || 'Otel çalışma alanı'}</p>
           <h1 className="mt-1 text-2xl font-bold text-slate-950">Uygulamalar</h1>
-          <p className="mt-1 text-sm text-slate-600">Yetkiniz olan her modül ve alt çalışma alanına tek yerden ulaşın.</p>
+          <p className="mt-1 text-sm text-slate-600">Bu otel için etkinleştirilmiş modül ve alt çalışma alanlarına tek yerden ulaşın.</p>
         </div>
         <Button variant="outline" onClick={() => navigate('/app/module-store')}><Settings2 className="mr-2 h-4 w-4" /> Modül ve paketleri yönet</Button>
       </header>
@@ -101,7 +103,7 @@ export default function ApplicationCenter({ tenant, user }) {
       </section>
 
       <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {modules.filter((item) => item.path).length} yetkili çalışma alanı kullanıma hazır</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {modules.filter((item) => item.path).length} etkin çalışma alanı</span>
         {modules.some((item) => !item.path) && <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-amber-800"><Clock3 className="h-3.5 w-3.5" /> {modules.filter((item) => !item.path).length} modül için kurulum bağlantısı bekleniyor</span>}
       </div>
 

@@ -309,10 +309,15 @@ export const ROLE_LABELS = {
 
 export const tierRank = { mini: 0, basic: 1, professional: 2, enterprise: 3 };
 
+const PMS_LITE_MODULE_KEYS = new Set([
+  'pms', 'reservation_calendar', 'dashboard', 'guests', 'housekeeping', 'settings',
+]);
+
 export const isModuleIncludedInPlan = (moduleItem, tenantTier) => {
   // Add-on modules are never "included" in any plan — they're always
   // upsell items that super_admin enables per-tenant.
   if (moduleItem.alwaysPaid || moduleItem.addon || moduleItem.tier === 'addon') return false;
+  if (tenantTier === 'pms_lite') return PMS_LITE_MODULE_KEYS.has(moduleItem.key);
   const moduleTier = moduleItem.tier || 'enterprise';
   // Higher tier always includes lower-tier modules; Mini (rank 0) is the
   // minimum baseline matching Elektraweb Mini's feature set.
