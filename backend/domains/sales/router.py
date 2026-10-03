@@ -117,7 +117,7 @@ async def get_leads(
     status: str | None = None,
     q: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # GET'lere de yetki kontrolü
+    _perm=Depends(require_module_v97("sales")),  # GET'lere de yetki kontrolü
 ):
     """Lead'leri listele (status filtresi + isim/şirket/e-posta arama)."""
     query: dict = _active_lead_query(current_user.tenant_id)
@@ -139,7 +139,7 @@ async def get_leads(
 @router.get("/sales/funnel")
 async def get_sales_funnel(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # GET'e de yetki kontrolü
+    _perm=Depends(require_module_v97("sales")),  # GET'e de yetki kontrolü
 ):
     """Satis hunisi metrikleri — tek aggregation ile (eski 7 sorgu yerine)."""
     pipeline = [
@@ -164,7 +164,7 @@ async def get_sales_funnel(
 async def get_lead_detail(
     lead_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_v97("sales")),
 ):
     """Tek lead + son aktiviteler."""
     lead = await db.mice_opportunities.find_one(_active_lead_query(current_user.tenant_id, id=lead_id), {"_id": 0})
@@ -283,7 +283,7 @@ async def log_sales_activity(
 @router.get("/sales/attention")
 async def get_sales_attention(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_v97("sales")),
 ):
     """Open sales follow-ups, separated into overdue and upcoming without fake counts."""
     active_leads = await db.mice_opportunities.find(
