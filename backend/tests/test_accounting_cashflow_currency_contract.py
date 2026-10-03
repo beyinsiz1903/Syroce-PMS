@@ -138,6 +138,54 @@ async def test_new_pending_invoice_does_not_create_a_cash_movement(monkeypatch):
     assert cash_flow.rows == []
 
 
+@pytest.mark.asyncio
+async def test_invoice_line_amounts_are_recalculated_server_side(monkeypatch):
+    class Invoices:
+        async def count_documents(self, _query):
+            return 0
+
+        async def insert_one(self, _row):
+            return None
+
+    class CashFlowRows:
+        async def insert_one(self, _row):
+            return None
+
+    monkeypatch.setattr(
+        accounting,
+        "db",
+        SimpleNamespace(accounting_invoices=Invoices(), cash_flow=CashFlowRows()),
+    )
+    monkeypatch.setattr(accounting, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+    monkeypatch.setattr(accounting, "_invalidate_accounting_caches", lambda *_args: None)
+
+    invoice = await accounting.create_accounting_invoice(
+        AccountingInvoiceCreateRequest(
+            invoice_type="sales",
+            customer_name="Calculation test guest",
+            due_date="2026-10-15",
+            items=[
+                {
+                    "description": "Accommodation",
+                    "quantity": 2,
+                    "unit_price": 100,
+                    "vat_rate": 20,
+                    "vat_amount": 1,
+                    "total": 1,
+                }
+            ],
+        ),
+        current_user=SimpleNamespace(tenant_id="tenant-a", name="Finance"),
+        _perm=None,
+    )
+
+    assert invoice.items[0].vat_amount == 40.0
+    assert invoice.items[0].total == 240.0
+    assert invoice.subtotal == 200.0
+    assert invoice.total_vat == 40.0
+    assert invoice.total == 240.0
+
+
 def test_currency_totals_never_add_unrelated_nominal_amounts():
     records = [
         {"amount": 100, "currency": "TRY", "status": "paid"},
