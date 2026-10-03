@@ -683,7 +683,10 @@ const RoomsTab = ({
                 {/* Live cleaning indicator for dirty/cleaning rooms */}
                 {(room.status === 'dirty' || room.status === 'cleaning') && (() => {
                   const hk = room.housekeeping || {};
-                  const isInProgress = hk.state === 'in_progress';
+                  // Room state is the operational source of truth. A delayed
+                  // housekeeping-task sync must not make one card say both
+                  // “Temizleniyor” and “Temizlik bekliyor”.
+                  const isInProgress = room.status === 'cleaning' || hk.state === 'in_progress';
                   const estimated = hk.estimated_minutes;
                   const elapsed = hk.elapsed_minutes;
                   const elapsedLabel = formatCleaningDuration(elapsed);

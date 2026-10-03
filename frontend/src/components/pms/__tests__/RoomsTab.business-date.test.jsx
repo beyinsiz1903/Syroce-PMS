@@ -65,6 +65,28 @@ describe('RoomsTab PMS business date', () => {
     expect(cleaning).not.toHaveTextContent('163875');
   });
 
+  it('uses the room state when housekeeping task synchronization lags', () => {
+    render(
+      <RoomsTab
+        rooms={[{
+          ...room,
+          room_number: '104',
+          status: 'cleaning',
+          housekeeping: {
+            state: 'queued',
+            estimated_minutes: 30,
+          },
+        }]}
+        bookings={[]}
+        businessDate="2026-08-28"
+      />,
+    );
+
+    const cleaning = screen.getByTestId('room-cleaning-104');
+    expect(cleaning).toHaveTextContent('Temizleniyor');
+    expect(cleaning).not.toHaveTextContent('Temizlik bekliyor');
+  });
+
   it('does not expose a future arrival relative to the open PMS day', () => {
     render(
       <RoomsTab
