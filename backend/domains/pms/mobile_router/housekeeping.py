@@ -115,7 +115,10 @@ router = APIRouter(prefix="/api", tags=["mobile"])
 
 # ── GET /housekeeping/mobile/sla-delayed-rooms ──
 @router.get("/housekeeping/mobile/sla-delayed-rooms")
-async def get_sla_delayed_rooms_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_sla_delayed_rooms_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get rooms with SLA delays for housekeeping mobile"""
     current_user = await get_current_user(credentials)
 
@@ -159,7 +162,10 @@ async def get_sla_delayed_rooms_mobile(credentials: HTTPAuthorizationCredentials
 
 # ── GET /housekeeping/mobile/team-assignments ──
 @router.get("/housekeeping/mobile/team-assignments")
-async def get_team_assignments_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_team_assignments_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get team assignment overview for housekeeping mobile"""
     current_user = await get_current_user(credentials)
 
@@ -358,7 +364,11 @@ async def list_room_open_tasks(
 
 # ── GET /housekeeping/mobile/inspection-checklist ──
 @router.get("/housekeeping/mobile/inspection-checklist")
-async def get_inspection_checklist_template(room_type: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_inspection_checklist_template(
+    room_type: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get inspection checklist template"""
     await get_current_user(credentials)
 
@@ -520,7 +530,11 @@ async def create_lost_found_item(
 
 # ── GET /housekeeping/mobile/lost-found/items ──
 @router.get("/housekeeping/mobile/lost-found/items")
-async def get_lost_found_items(status: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_lost_found_items(
+    status: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get lost & found items"""
     current_user = await get_current_user(credentials)
 
@@ -625,7 +639,11 @@ async def assign_hk_tasks(
 
 # ── GET /housekeeping/mobile/staff-assignments ──
 @router.get("/housekeeping/mobile/staff-assignments")
-async def get_staff_assignments(assignment_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_staff_assignments(
+    assignment_date: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get staff task assignments"""
     current_user = await get_current_user(credentials)
 
@@ -780,7 +798,11 @@ async def report_maintenance_from_hk(
 
 # ── GET /housekeeping/mobile/reports/daily ──
 @router.get("/housekeeping/mobile/reports/daily")
-async def get_hk_daily_report(report_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_hk_daily_report(
+    report_date: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get housekeeping daily report"""
     current_user = await get_current_user(credentials)
 
