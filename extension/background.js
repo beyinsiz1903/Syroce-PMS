@@ -317,7 +317,7 @@ async function sendToKbs(body, authority) {
 
 async function testJandarmaConnection() {
   const cfg = await getProfile("jandarma");
-  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const jandarmaWebServicePassword = await getJandarmaWebServicePassword();
   const state = configState(cfg, Boolean(jandarmaWebServicePassword));
   if (state !== "configured") return { ok: false, error: state };
   let request;
