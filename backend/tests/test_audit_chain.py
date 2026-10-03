@@ -130,11 +130,26 @@ class _FakeColl:
         return n
 
 
+class _FakeStateColl:
+    def __init__(self, state):
+        self._state = state
+
+    async def find_one(self, _query, _projection=None):
+        return self._state
+
+
 class _FakeDB:
-    def __init__(self, rows, archive_rows=None):
+    def __init__(self, rows, archive_rows=None, chain_state=None):
+        all_rows = list(rows) + list(archive_rows or [])
+        tip = max(all_rows, key=lambda row: row.get("seq", 0), default=None)
         self._colls = {
             "audit_logs": _FakeColl(rows),
             "audit_logs_archive": _FakeColl(archive_rows or []),
+            "audit_chain_state": _FakeStateColl(
+                chain_state
+                if chain_state is not None
+                else ({"seq": tip.get("seq"), "last_hash": tip.get("record_hash")} if tip else None)
+            ),
         }
         self.audit_logs = self._colls["audit_logs"]
         self.audit_logs_archive = self._colls["audit_logs_archive"]
@@ -160,8 +175,8 @@ def _chained_rows(n, tenant_id="t1"):
 
 @pytest.fixture
 def patch_sysdb(monkeypatch):
-    def _install(rows, archive_rows=None):
-        monkeypatch.setattr(audit_chain, "_system_db", lambda: _FakeDB(rows, archive_rows))
+    def _install(rows, archive_rows=None, chain_state=None):
+        monkeypatch.setattr(audit_chain, "_system_db", lambda: _FakeDB(rows, archive_rows, chain_state))
     return _install
 
 
@@ -192,6 +207,19 @@ async def test_verify_detects_deletion_gap(patch_sysdb):
     res = await verify_chain("t1")
     assert res["ok"] is False
     assert any(b["reason"] == "prev_hash_mismatch" for b in res["breaks"])
+
+
+async def test_verify_detects_deleted_chain_tip_via_durable_state(patch_sysdb):
+    full = _chained_rows(5)
+    # Removing the tip used to leave all remaining prev_hash links valid. The
+    # committed chain-state tip makes that deletion fail-visible.
+    patch_sysdb(
+        full[:-1],
+        chain_state={"seq": 5, "last_hash": full[-1]["record_hash"]},
+    )
+    res = await verify_chain("t1")
+    assert res["ok"] is False
+    assert any(b["reason"] == "chain_state_tip_mismatch" for b in res["breaks"])
 
 
 async def test_verify_skips_legacy_unchained_rows(patch_sysdb):
