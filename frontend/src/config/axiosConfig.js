@@ -49,7 +49,13 @@ axios.interceptors.request.use(
       // Legacy token fallback - in cookie-auth era this is mostly unused
       // but kept briefly for migration. We no longer write it on login.
       const token = localStorage.getItem("token");
-      if (token) {
+      // A request retried after refresh already carries the freshly minted
+      // access token.  Old deployments persisted the legacy token in local
+      // storage; blindly assigning it here used to replace that fresh header
+      // and made a successful refresh look like a second 401/logout.
+      // Keep the legacy value strictly as a fallback while migration clients
+      // still exist.
+      if (token && !config.headers.Authorization && !config.headers.authorization) {
         config.headers.Authorization = `Bearer ${token}`;
       }
     } else {
