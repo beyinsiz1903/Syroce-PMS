@@ -774,9 +774,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/companies', newCompany);
-      toast.success('Şirket oluşturuldu'); setOpenDialog(null); loadData();
-      const company = response.data; handleCompanySelect(company.id);
+      await axios.post('/companies', newCompany);
+      // Quick-created companies intentionally start pending, so they cannot be
+      // attached to a reservation until their approval is complete.
+      toast.success('Şirket oluşturuldu; onaylandıktan sonra rezervasyona bağlayabilirsiniz.');
+      setOpenDialog('booking');
+      loadData();
       setNewCompany({ name: '', corporate_code: '', tax_number: '', billing_address: '', contact_person: '', contact_email: '', contact_phone: '', contracted_rate: '', default_rate_type: '', default_market_segment: '', default_cancellation_policy: '', payment_terms: '', status: 'pending' });
     } catch (error) { toast.error('Şirket oluşturulamadı'); }
   };
