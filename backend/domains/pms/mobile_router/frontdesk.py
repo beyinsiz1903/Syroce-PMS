@@ -9,6 +9,7 @@ Domain Router: Mobile
 
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
+import math
 import uuid
 from datetime import UTC, datetime
 
@@ -109,10 +110,15 @@ class MenuPriceUpdateRequest(BaseModel):
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 
+_NO_SHOW_ELIGIBLE_STATUSES = {"confirmed", "guaranteed", "reserved"}
+
 
 # ── GET /frontdesk/mobile/early-checkin-requests ──
 @router.get("/frontdesk/mobile/early-checkin-requests")
-async def get_early_checkin_requests_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_early_checkin_requests_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),
+):
     """Get early check-in requests for front desk mobile"""
     current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
@@ -150,7 +156,10 @@ async def get_early_checkin_requests_mobile(credentials: HTTPAuthorizationCreden
 
 # ── GET /frontdesk/mobile/late-checkout-requests ──
 @router.get("/frontdesk/mobile/late-checkout-requests")
-async def get_late_checkout_requests_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_late_checkout_requests_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module_v92("frontdesk")),
+):
     """Get late checkout requests for front desk mobile"""
     current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
@@ -210,17 +219,35 @@ async def process_no_show_mobile(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    # Check if already processed
-    if booking.get("status") == "no_show":
-        raise HTTPException(status_code=400, detail="Booking already marked as no-show")
+    if booking.get("status") not in _NO_SHOW_ELIGIBLE_STATUSES:
+        raise HTTPException(status_code=409, detail="Booking is not eligible for no-show processing")
 
-    # Update booking status
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "no_show", "no_show_date": datetime.now(UTC), "no_show_processed_by": current_user.username}}
+    # Compare-and-set protects the financial side effect below from retries or
+    # two staff members processing the same booking concurrently.
+    update_result = await db.bookings.update_one(
+        {
+            "id": booking_id,
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": list(_NO_SHOW_ELIGIBLE_STATUSES)},
+        },
+        {
+            "$set": {
+                "status": "no_show",
+                "no_show_date": datetime.now(UTC),
+                "no_show_processed_by": current_user.username,
+            }
+        },
     )
+    if update_result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Booking was already processed or changed")
 
     # Apply no-show charge if policy exists
-    no_show_fee = booking.get("cancellation_policy", {}).get("no_show_fee", 0)
+    try:
+        no_show_fee = float(booking.get("cancellation_policy", {}).get("no_show_fee", 0) or 0)
+    except (TypeError, ValueError):
+        no_show_fee = 0.0
+    if not math.isfinite(no_show_fee) or no_show_fee < 0:
+        no_show_fee = 0.0
     if no_show_fee > 0:
         # Create charge record
         charge_id = str(uuid.uuid4())
@@ -237,6 +264,20 @@ async def process_no_show_mobile(
                 "created_by": current_user.username,
             }
         )
+
+    await db.audit_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "user_id": getattr(current_user, "user_id", None) or current_user.id,
+            "user_name": current_user.username,
+            "action": "NO_SHOW_PROCESSED",
+            "entity_type": "booking",
+            "entity_id": booking_id,
+            "changes": {"previous_status": booking.get("status"), "no_show_fee": no_show_fee},
+            "timestamp": datetime.now(UTC),
+        }
+    )
 
     return {"message": "No-show processed successfully", "booking_id": booking_id, "no_show_fee": no_show_fee, "status": "no_show"}
 
@@ -301,7 +342,7 @@ async def change_room_mobile(
         {
             "id": str(uuid.uuid4()),
             "tenant_id": current_user.tenant_id,
-            "user_id": current_user.user_id,
+            "user_id": getattr(current_user, "user_id", None) or current_user.id,
             "user_name": current_user.username,
             "action": "ROOM_CHANGE",
             "entity_type": "booking",
