@@ -14,6 +14,13 @@ import EmptyState from '@/components/EmptyState';
 import { performRoomStatusUpdate } from '@/utils/offlineRoomStatus';
 import { websocket } from '@/lib/websocket';
 
+export const withOptimisticHousekeepingStatus = (rooms, roomIds, status) => {
+  const ids = new Set(Array.isArray(roomIds) ? roomIds : [roomIds]);
+  return rooms.map((room) => ids.has(room.id)
+    ? { ...room, housekeeping_status: status }
+    : room);
+};
+
 const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
   const { t } = useTranslation();
   const tg = (k) => t(`pmsComponents.housekeeping.roomGrid.${k}`);
@@ -107,7 +114,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
         // Çevrimdışı: ağ-öncelikli denendi, başarısız → kuyruğa alındı. loadRooms
         // ağa gideceği için optimistik yerel güncelleme yapıyoruz; internet
         // gelince SW kuyruğu idempotent PUT ile eşitler.
-        setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, status: newStatus } : r)));
+        setRooms((prev) => withOptimisticHousekeepingStatus(prev, roomId, newStatus));
         toast.success('Çevrimdışı: oda durumu kuyruğa alındı, internet gelince eşitlenecek');
       } else {
         toast.success(tg('statusUpdated').replace('{label}', STATUS_CONFIG[newStatus]?.label || newStatus));
@@ -129,9 +136,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
         for (const roomId of selectedRooms) {
           await performRoomStatusUpdate(roomId, newStatus);
         }
-        setRooms((prev) =>
-          prev.map((r) => (selectedRooms.includes(r.id) ? { ...r, status: newStatus } : r))
-        );
+        setRooms((prev) => withOptimisticHousekeepingStatus(prev, selectedRooms, newStatus));
         toast.success(
           `Çevrimdışı: ${selectedRooms.length} oda durumu kuyruğa alındı, internet gelince eşitlenecek`
         );
