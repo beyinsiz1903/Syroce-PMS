@@ -22,6 +22,12 @@ class ProductionEnvService:
 
         self._db = db
 
+    @staticmethod
+    def _not_verified(name: str, issues: list[str], message: str) -> dict:
+        """Record an operational claim as unknown until real evidence exists."""
+        issues.append(message)
+        return {"name": name, "status": "not_verified"}
+
     async def run_full_validation(self, ctx: OperationContext) -> ServiceResult:
         """Run all 4 category validations and produce overall readiness."""
         now = datetime.now(UTC)
@@ -65,8 +71,10 @@ class ProductionEnvService:
         issues = []
         critical = False
 
-        # Redis cluster health
+        # Database connectivity is the only infrastructure check that this
+        # process can verify directly.
         try:
+            await self._db.command("ping")
             checks.append({"name": "mongodb_connection", "status": "pass"})
         except Exception:
             checks.append({"name": "mongodb_connection", "status": "fail"})
@@ -75,20 +83,14 @@ class ProductionEnvService:
 
         # Worker readiness
         worker_tasks = await self._db.celery_task_log.count_documents({"created_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}})
-        if worker_tasks >= 0:
+        if worker_tasks > 0:
             checks.append({"name": "worker_autoscaling_readiness", "status": "pass"})
         else:
-            checks.append({"name": "worker_autoscaling_readiness", "status": "fail"})
-            issues.append("No worker activity in last hour")
+            checks.append(self._not_verified("worker_autoscaling_readiness", issues, "No worker activity evidence in the last hour"))
 
-        # Load balancer health
-        checks.append({"name": "load_balancer_health", "status": "pass"})
-
-        # Redis check (simulated - in prod would ping Redis)
-        checks.append({"name": "redis_cluster_health", "status": "pass"})
-
-        # Mongo replication
-        checks.append({"name": "mongo_replication_health", "status": "pass"})
+        checks.append(self._not_verified("load_balancer_health", issues, "Load balancer health is not connected to this validation"))
+        checks.append(self._not_verified("redis_cluster_health", issues, "Redis health is not connected to this validation"))
+        checks.append(self._not_verified("mongo_replication_health", issues, "MongoDB replication health is not connected to this validation"))
 
         passed = sum(1 for c in checks if c["status"] == "pass")
         return {
@@ -104,20 +106,10 @@ class ProductionEnvService:
         issues = []
         critical = False
 
-        # Secrets rotation
-        checks.append({"name": "secrets_rotation_verified", "status": "pass"})
-
-        # TLS termination
-        checks.append({"name": "tls_termination_verified", "status": "pass"})
-
-        # Rate limiting
-        try:
-            checks.append({"name": "rate_limiting_active", "status": "pass"})
-        except Exception:
-            checks.append({"name": "rate_limiting_active", "status": "pass"})
-
-        # WAF policies
-        checks.append({"name": "waf_policies_active", "status": "pass"})
+        checks.append(self._not_verified("secrets_rotation_verified", issues, "Secrets rotation evidence is not connected to this validation"))
+        checks.append(self._not_verified("tls_termination_verified", issues, "TLS termination evidence is not connected to this validation"))
+        checks.append(self._not_verified("rate_limiting_active", issues, "Rate-limit runtime evidence is not connected to this validation"))
+        checks.append(self._not_verified("waf_policies_active", issues, "WAF policy evidence is not connected to this validation"))
 
         # JWT security
         import os
@@ -142,11 +134,8 @@ class ProductionEnvService:
         checks = []
         issues = []
 
-        # Backup schedule
-        checks.append({"name": "backup_schedule_active", "status": "pass"})
-
-        # Restore test
-        checks.append({"name": "restore_test_verified", "status": "pass"})
+        checks.append(self._not_verified("backup_schedule_active", issues, "Backup schedule evidence is not connected to this validation"))
+        checks.append(self._not_verified("restore_test_verified", issues, "Restore-test evidence is not connected to this validation"))
 
         # Audit log persistence
         audit_count = await self._db.audit_logs.count_documents({"tenant_id": ctx.tenant_id})
@@ -156,8 +145,7 @@ class ProductionEnvService:
             checks.append({"name": "audit_log_persistence", "status": "warn"})
             issues.append("No audit logs found for tenant — persistence unverified")
 
-        # Data retention policy
-        checks.append({"name": "data_retention_policy", "status": "pass"})
+        checks.append(self._not_verified("data_retention_policy", issues, "Data retention evidence is not connected to this validation"))
 
         passed = sum(1 for c in checks if c["status"] == "pass")
         return {
@@ -172,14 +160,9 @@ class ProductionEnvService:
         checks = []
         issues = []
 
-        # Metrics collection
-        checks.append({"name": "metrics_collection_active", "status": "pass"})
-
-        # Log aggregation
-        checks.append({"name": "log_aggregation_active", "status": "pass"})
-
-        # Tracing pipeline
-        checks.append({"name": "tracing_pipeline_active", "status": "pass"})
+        checks.append(self._not_verified("metrics_collection_active", issues, "Metrics delivery evidence is not connected to this validation"))
+        checks.append(self._not_verified("log_aggregation_active", issues, "Log aggregation evidence is not connected to this validation"))
+        checks.append(self._not_verified("tracing_pipeline_active", issues, "Tracing delivery evidence is not connected to this validation"))
 
         # Alert routing
         from modules.observability.alert_enrichment import ALERT_RULES
@@ -190,8 +173,7 @@ class ProductionEnvService:
             checks.append({"name": "alert_routing_active", "status": "warn"})
             issues.append(f"Only {len(ALERT_RULES)} alert rules configured (need >= 10)")
 
-        # Health dashboard
-        checks.append({"name": "health_dashboard_active", "status": "pass"})
+        checks.append(self._not_verified("health_dashboard_active", issues, "Health dashboard evidence is not connected to this validation"))
 
         passed = sum(1 for c in checks if c["status"] == "pass")
         return {
