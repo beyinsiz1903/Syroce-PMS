@@ -76,12 +76,14 @@ class WhatsAppConciergeService:
             ai_reply = await self._generate_ai_response(tenant_id, phone, guest_name, text_body)
 
             if ai_reply:
-                # Update conversation
-                await db.ai_conversations.update_one({"id": conversation_id}, {"$set": {"ai_response": ai_reply, "answered": True, "action_taken": "replied"}})
+                delivered = await self._send_whatsapp_message(tenant_id, phone, ai_reply)
+                if delivered:
+                    await db.ai_conversations.update_one(
+                        {"id": conversation_id}, {"$set": {"ai_response": ai_reply, "answered": True, "action_taken": "replied"}}
+                    )
+                    return {"status": "success", "reply": ai_reply}
 
-                # Send reply via WhatsApp API
-                await self._send_whatsapp_message(tenant_id, phone, ai_reply)
-                return {"status": "success", "reply": ai_reply}
+                return {"status": "failed", "reason": "WhatsApp reply was not delivered"}
 
             return {"status": "failed", "reason": "No AI reply generated"}
 
@@ -116,19 +118,19 @@ Provide concise, friendly answers. If you don't know the answer, politely inform
             logger.exception("[ai] Error generating LLM response for WhatsApp")
             return None
 
-    async def _send_whatsapp_message(self, tenant_id: str, phone: str, text: str) -> None:
+    async def _send_whatsapp_message(self, tenant_id: str, phone: str, text: str) -> bool:
         """Send message back to user via WhatsApp Cloud API."""
         config = await self.get_tenant_config(tenant_id)
         if not config:
-            logger.warning(f"[ai] No WhatsApp config found for tenant {tenant_id}")
-            return
+            logger.warning("[ai] No WhatsApp config found")
+            return False
 
         phone_number_id = config.get("phone_number_id")
         access_token = config.get("access_token")
 
         if not phone_number_id or not access_token:
-            logger.warning(f"[ai] Incomplete WhatsApp config for tenant {tenant_id}")
-            return
+            logger.warning("[ai] Incomplete WhatsApp config")
+            return False
 
         url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
         headers = {
@@ -146,8 +148,10 @@ Provide concise, friendly answers. If you don't know the answer, politely inform
             try:
                 resp = await client.post(url, headers=headers, json=payload, timeout=10.0)
                 resp.raise_for_status()
+                return True
             except Exception as e:
-                logger.error(f"[ai] Failed to send WhatsApp message to {phone}: {e}")
+                logger.error("[ai] Failed to send WhatsApp message: %s", e)
+                return False
 
 
 _whatsapp_concierge_instance = None

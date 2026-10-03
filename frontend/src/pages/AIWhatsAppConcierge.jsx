@@ -22,6 +22,7 @@ const AIWhatsAppConcierge = () => {
   const [configLoading, setConfigLoading] = useState(false);
   const [phoneSelectionData, setPhoneSelectionData] = useState(null);
   const [selectedPhoneId, setSelectedPhoneId] = useState('');
+  const [integrationConfigured, setIntegrationConfigured] = useState(false);
   const [config, setConfig] = useState({
     phone_number_id: '',
     access_token: '',
@@ -66,9 +67,10 @@ const AIWhatsAppConcierge = () => {
       if (response.data.config) {
         setConfig({
           phone_number_id: response.data.config.phone_number_id || '',
-          access_token: response.data.config.access_token || '',
-          verify_token: response.data.config.verify_token || ''
+          access_token: '',
+          verify_token: ''
         });
+        setIntegrationConfigured(Boolean(response.data.config.configured));
       }
     } catch (error) {
       console.error('Config yüklenemedi', error);
@@ -136,6 +138,7 @@ const AIWhatsAppConcierge = () => {
         phone_number_id: phoneId
       });
       toast.success(t('messages.success.saved'));
+      setIntegrationConfigured(true);
       setConfigOpen(false);
       setPhoneSelectionData(null);
       loadConfig();
@@ -151,6 +154,7 @@ const AIWhatsAppConcierge = () => {
     try {
       await api.post('/whatsapp/config', config);
       toast.success(t('messages.success.saved'));
+      setIntegrationConfigured(true);
       setConfigOpen(false);
     } catch (error) {
       toast.error(t('messages.error.generic'));
@@ -217,8 +221,8 @@ const AIWhatsAppConcierge = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1 text-sm rounded-full">
-            {t('ai.whatsapp.moduleActive')}
+          <Badge variant="outline" className={`${integrationConfigured ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-800 border-amber-200'} px-3 py-1 text-sm rounded-full`}>
+            {integrationConfigured ? 'Bağlantı ayarlandı' : 'Kurulum bekliyor'}
           </Badge>
           <Dialog open={configOpen} onOpenChange={setConfigOpen}>
             <DialogTrigger asChild>
@@ -280,6 +284,9 @@ const AIWhatsAppConcierge = () => {
                       <p className="text-sm text-gray-500 text-center mb-6">
                         {t('ai.whatsapp.fastSetupDesc')}
                       </p>
+                      <p className="text-xs text-amber-700 text-center mb-4">
+                        OAuth sunucu ayarları yoksa bağlantı başarılı gösterilmez.
+                      </p>
                       <Button 
                         onClick={handleFacebookLogin} 
                         className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white h-12 text-base font-medium"
@@ -315,6 +322,7 @@ const AIWhatsAppConcierge = () => {
                           placeholder="EAAL..."
                           type="password"
                         />
+                        <p className="text-xs text-gray-500">Boş bırakırsanız kayıtlı token korunur.</p>
                       </div>
                       <div className="space-y-2">
                         <label className="text-sm font-medium">{t('ai.whatsapp.verifyToken')}</label>
@@ -323,6 +331,7 @@ const AIWhatsAppConcierge = () => {
                           onChange={(e) => setConfig({ ...config, verify_token: e.target.value })}
                           placeholder="my_custom_verify_token"
                         />
+                        <p className="text-xs text-gray-500">Boş bırakırsanız kayıtlı doğrulama tokenı korunur.</p>
                         <p className="text-xs text-gray-500 mt-1">{t('ai.whatsapp.verifyTokenDesc')}</p>
                       </div>
                     </div>

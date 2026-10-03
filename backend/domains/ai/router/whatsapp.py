@@ -15,9 +15,9 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 
 class WhatsAppConfig(BaseModel):
-    phone_number_id: str
-    access_token: str
-    verify_token: str
+    phone_number_id: str | None = None
+    access_token: str | None = None
+    verify_token: str | None = None
 
 
 @router.get("/config")
@@ -26,13 +26,33 @@ async def get_whatsapp_config(current_user: User = Depends(get_current_user)):
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     config = tenant.get("whatsapp_config", {})
-    # For security, we might mask the tokens in a real scenario, but we return them for the setup UI
-    return {"config": config}
+    # Credentials must never be returned to the browser after saving.  The UI
+    # only needs the non-sensitive setup state and the selected sender ID.
+    return {
+        "config": {
+            "phone_number_id": config.get("phone_number_id", ""),
+            "access_token_configured": bool(config.get("access_token")),
+            "verify_token_configured": bool(config.get("verify_token")),
+            "configured": bool(config.get("phone_number_id") and config.get("access_token") and config.get("verify_token")),
+        }
+    }
 
 
 @router.post("/config")
 async def save_whatsapp_config(payload: WhatsAppConfig, current_user: User = Depends(get_current_user)):
-    await db.tenants.update_one({"id": current_user.tenant_id}, {"$set": {"whatsapp_config": payload.dict()}})
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    existing = tenant.get("whatsapp_config", {})
+    submitted = payload.model_dump(exclude_none=True)
+    updates = {key: value.strip() for key, value in submitted.items() if value and value.strip()}
+    config = {**existing, **updates}
+    required = ("phone_number_id", "access_token", "verify_token")
+    if any(not config.get(key) for key in required):
+        raise HTTPException(status_code=422, detail="phone_number_id, access_token and verify_token are required for WhatsApp setup")
+
+    await db.tenants.update_one({"id": current_user.tenant_id}, {"$set": {"whatsapp_config": config}})
     return {"message": "WhatsApp configuration saved successfully"}
 
 
@@ -52,15 +72,9 @@ async def whatsapp_oauth_exchange(payload: WhatsAppOAuthRequest, current_user: U
     app_secret = os.getenv("FACEBOOK_APP_SECRET")
 
     if not app_id or not app_secret:
-        # Dev/Mock fallback
-        mock_verify = "mock_verify_token_" + secrets.token_hex(8)
-        mock_phone = payload.phone_number_id or "mock_phone_id"
-        return {
-            "message": "Mock OAuth successful, missing FACEBOOK_APP_ID in env",
-            "access_token": payload.access_token,
-            "verify_token": mock_verify,
-            "phone_numbers": [{"id": mock_phone, "display_phone_number": "+90 555 123 4567", "verified_name": "Mock Hotel"}],
-        }
+        # A fabricated OAuth success can make an operator believe that guest
+        # messages are being delivered.  Fail closed in every environment.
+        raise HTTPException(status_code=503, detail="WhatsApp OAuth is not configured on this server")
 
     async with httpx.AsyncClient() as client:
         response = await client.get(
