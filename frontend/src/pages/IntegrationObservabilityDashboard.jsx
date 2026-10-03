@@ -145,9 +145,12 @@ export default function IntegrationObservabilityDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {financeLogs.length === 0 ? <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-400">No sync logs found.</td></tr> : financeLogs.map((log, i) => {
+                        {financeLogs.length === 0 ? <tr><td colSpan="8" className="px-4 py-8 text-center text-slate-400">No sync logs found.</td></tr> : financeLogs.map((log, i) => {
                       const statusDict = log.provider_response_status || {};
                       return <tr key={log.id || i} className="hover:bg-zinc-800/20 transition-colors">
+                              <td className="px-4 py-3 text-slate-700">
+                                {log.tenant_name || log.tenant_id || '—'}
+                              </td>
                               <td className="px-4 py-3 text-slate-700">
                                 {format(new Date(log.synced_at || log.created_at), 'MMM dd, HH:mm:ss')}
                               </td>
