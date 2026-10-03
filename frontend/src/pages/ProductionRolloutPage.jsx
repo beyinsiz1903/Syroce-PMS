@@ -71,6 +71,10 @@ function StatusBadge({
     manual_required: {
       color: "bg-violet-500/20 text-violet-400 border-violet-500/30",
       label: "Manual"
+    },
+    not_run: {
+      color: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+      label: "Evidence required"
     }
   };
   const s = map[status] || map.pending;
@@ -634,15 +638,19 @@ function LoadTab({
   running
 }) {
   const items = scenarios?.scenarios || [];
+  const runnerConfigured = Boolean(scenarios?.runner_configured);
   return <div className="space-y-4">
       <SectionHeader icon={Zap} title={t("cm.pages_ProductionRolloutPage.production_load_validation")} count={items.length} />
+      {!runnerConfigured && <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200" data-testid="load-runner-required">
+        Gerçek üretim yük kanıtı için harici ölçüm koşucusu yapılandırılmalı. Bu ekran simülasyon sonucu üretmez ve başarı göstermez.
+      </div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {items.map(s => <Card key={s.id} className="bg-zinc-900/50 border-zinc-800" data-testid={`load-scenario-${s.id}`}>
             <CardContent className="p-3">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-medium text-zinc-200">{s.name}</p>
-                <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => onRun(s.id)} disabled={running} data-testid={`run-load-${s.id}`}>
-                  {running ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-0.5" />}{t("cm.pages_ProductionRolloutPage.run")}</Button>
+                <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => onRun(s.id)} disabled={running || s.execution_mode === "external_runner_required"} data-testid={`run-load-${s.id}`}>
+                  {running ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 mr-0.5" />}{s.execution_mode === "external_runner_required" ? "External runner required" : t("cm.pages_ProductionRolloutPage.run")}</Button>
               </div>
               <p className="text-[10px] text-zinc-500 mb-2">{s.description}</p>
               <div className="flex flex-wrap gap-1">
