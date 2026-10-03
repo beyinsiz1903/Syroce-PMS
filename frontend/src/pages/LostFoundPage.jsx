@@ -48,6 +48,16 @@ const CATEGORY_CONFIG = {
   other: { label: 'Diğer', icon: '' },
 };
 
+export const canReturnLostFoundItem = (item) => Boolean(
+  item?.status === 'claimed' && (item.guest_name || item.booking_id)
+);
+
+export const hasLostFoundMatchCriteria = (match) => [
+  match?.guest_name,
+  match?.guest_contact,
+  match?.booking_id,
+].some((value) => String(value || '').trim());
+
 const LostFoundPage = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const [items, setItems] = useState([]);
@@ -66,6 +76,7 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
     room_number: '', guest_name: '', guest_contact: '', storage_location: '',
   });
   const [matchForm, setMatchForm] = useState({ guest_name: '', guest_contact: '', booking_id: '' });
+  const [statusUpdatingId, setStatusUpdatingId] = useState(null);
 
   const loadItems = useCallback(async () => {
     try {
@@ -104,21 +115,33 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const handleStatusUpdate = async (itemId, newStatus) => {
+  const handleStatusUpdate = async (item, newStatus) => {
+    if (!item?.id || statusUpdatingId) return;
+    if (newStatus === 'returned' && !canReturnLostFoundItem(item)) {
+      toast.error('Teslimden önce eşyanın sahibiyle eşleştirilmesi gerekir');
+      return;
+    }
+    setStatusUpdatingId(item.id);
     try {
-      await axios.put(`/pms/lost-found/${itemId}`, { status: newStatus });
+      await axios.put(`/pms/lost-found/${item.id}`, { status: newStatus });
       toast.success(`Durum "${STATUS_CONFIG[newStatus]?.label}" olarak güncellendi`);
       loadItems();
-      if (showDetail?.id === itemId) {
+      if (showDetail?.id === item.id) {
         setShowDetail(prev => ({ ...prev, status: newStatus }));
       }
     } catch (e) {
       toast.error('Güncelleme hatası');
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
   const handleMatchGuest = async () => {
     if (!showMatch) return;
+    if (!hasLostFoundMatchCriteria(matchForm)) {
+      toast.error('Eşleştirmek için misafir adı, iletişim bilgisi veya rezervasyon ID girin');
+      return;
+    }
     try {
       const params = new URLSearchParams();
       if (matchForm.guest_name) params.append('guest_name', matchForm.guest_name);
@@ -366,17 +389,23 @@ const LostFoundPage = ({ user, tenant, onLogout }) => {
                     {showDetail.status !== 'returned' && (
                       <>
                         {showDetail.status === 'found' && (
-                          <Button size="sm" variant="outline" onClick={() => handleStatusUpdate(showDetail.id, 'stored')}>
+                          <Button size="sm" variant="outline" disabled={Boolean(statusUpdatingId)} onClick={() => handleStatusUpdate(showDetail, 'stored')}>
                             <Archive className="w-3 h-3 mr-1" /> Depola
                           </Button>
                         )}
                         {(showDetail.status === 'found' || showDetail.status === 'stored') && (
-                          <Button size="sm" variant="outline" onClick={() => handleStatusUpdate(showDetail.id, 'claimed')}>
+                          <Button size="sm" variant="outline" disabled={Boolean(statusUpdatingId)} onClick={() => handleStatusUpdate(showDetail, 'claimed')}>
                             <UserCheck className="w-3 h-3 mr-1" /> Sahiplenildi
                           </Button>
                         )}
                         {showDetail.status === 'claimed' && (
-                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleStatusUpdate(showDetail.id, 'returned')}>
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            disabled={Boolean(statusUpdatingId) || !canReturnLostFoundItem(showDetail)}
+                            title={canReturnLostFoundItem(showDetail) ? 'Eşyayı misafire teslim et' : 'Teslim için misafir eşleştirin'}
+                            onClick={() => handleStatusUpdate(showDetail, 'returned')}
+                          >
                             <Send className="w-3 h-3 mr-1" /> Teslim Edildi
                           </Button>
                         )}
