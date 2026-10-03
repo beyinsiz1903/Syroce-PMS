@@ -436,7 +436,7 @@ async def _build_agency_grid(tenant_id, start_date, end_date):
     names = sorted({str(room.get("room_type") or "").strip() for room in rooms if room.get("room_type")})
     room_types = [{"code": name, "name": name} for name in names]
     rate_plans = [{"code": "AGENCY", "name": "Acente Satış"}]
-    calendar_data = await db.rate_calendar.find(
+    calendar_task = db.rate_calendar.find(
         {
             "tenant_id": tenant_id,
             "room_type_code": {"$in": names},
@@ -445,12 +445,17 @@ async def _build_agency_grid(tenant_id, start_date, end_date):
         },
         {"_id": 0},
     ).to_list(5000)
+    room_counts_task = _get_room_counts(tenant_id)
+    bookings_task = _get_active_bookings(tenant_id, start_date, end_date)
+    pricing_task = db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+    calendar_data, (room_counts, room_ids_by_type), active_bookings, pricing_docs = await asyncio.gather(
+        calendar_task, room_counts_task, bookings_task, pricing_task
+    )
     cal_index = {
         f"{entry['room_type_code']}|{entry['rate_plan_code']}|{entry['date']}": entry
         for entry in calendar_data
     }
-    room_counts, room_ids_by_type = await _get_room_counts(tenant_id)
-    active_bookings = await _get_active_bookings(tenant_id, start_date, end_date)
+    sold_counts = _build_sold_count_index(room_ids_by_type, active_bookings, start_date, end_date)
     grid = []
     for room_type in room_types:
         code = room_type["code"]
@@ -464,11 +469,10 @@ async def _build_agency_grid(tenant_id, start_date, end_date):
                 "pms_room_type": code,
                 "total_rooms": counts["total"],
                 "dates": _build_dates(
-                    start_date, end_date, code, "AGENCY", cal_index, code, counts, room_ids_by_type, active_bookings
+                    start_date, end_date, code, "AGENCY", cal_index, code, counts, room_ids_by_type, active_bookings, sold_counts
                 ),
             }
         )
-    pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map, pricing_rules = _pricing_payload(pricing_docs)
     return {
         "grid": grid,
@@ -501,21 +505,24 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
 
     room_types, rate_plans = _extract_hr_room_types(cached_rooms)
 
-    mappings = await db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
-    mapping_by_inv = {m.get("hr_inv_code", ""): m.get("pms_room_type", "") for m in mappings}
-
-    calendar_data = await db.hr_rate_calendar.find(
+    mappings_task = db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
+    calendar_task = db.hr_rate_calendar.find(
         {"tenant_id": tenant_id, "date": {"$gte": start_date, "$lte": end_date}},
         {"_id": 0, "room_type_code": 1, "rate_plan_code": 1, "date": 1, "availability": 1, "rate": 1, "min_stay": 1, "stop_sell": 1},
     ).to_list(5000)
+    room_counts_task = _get_room_counts(tenant_id)
+    bookings_task = _get_active_bookings(tenant_id, start_date, end_date)
+    pricing_task = db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+    mappings, calendar_data, (room_counts, room_ids_by_type), active_bookings, pricing_docs = await asyncio.gather(
+        mappings_task, calendar_task, room_counts_task, bookings_task, pricing_task
+    )
+    mapping_by_inv = {m.get("hr_inv_code", ""): m.get("pms_room_type", "") for m in mappings}
 
     cal_index = {}
     for entry in calendar_data:
         key = f"{entry['room_type_code']}|{entry['rate_plan_code']}|{entry['date']}"
         cal_index[key] = entry
-
-    room_counts, room_ids_by_type = await _get_room_counts(tenant_id)
-    active_bookings = await _get_active_bookings(tenant_id, start_date, end_date)
+    sold_counts = _build_sold_count_index(room_ids_by_type, active_bookings, start_date, end_date)
 
     valid_pairs = set()
     for room in cached_rooms:
@@ -542,6 +549,7 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
                 counts,
                 room_ids_by_type,
                 active_bookings,
+                sold_counts,
             )
             grid.append(
                 {
@@ -555,7 +563,6 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
                 }
             )
 
-    pricing_docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map, pricing_rules = _pricing_payload(pricing_docs)
 
     currency = cached_rooms[0].get("sales_currency", "TRY") if cached_rooms else "TRY"
@@ -597,18 +604,22 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
             rate_plans.append({"code": rate_code, "name": discovered_rate_names.get(mapping.get("pms_api_rate_plan_code")) or rate_code})
             known_rate_codes.add(rate_code)
 
-    calendar_data = await db.rate_calendar.find(
+    calendar_task = db.rate_calendar.find(
         {"tenant_id": tenant_id, "date": {"$gte": start_date, "$lte": end_date}},
         {"_id": 0},
     ).to_list(5000)
+    room_counts_task = _get_room_counts(tenant_id)
+    bookings_task = _get_active_bookings(tenant_id, start_date, end_date)
+    pricing_task = db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+    calendar_data, (room_counts, room_ids_by_type), active_bookings, pricing_docs = await asyncio.gather(
+        calendar_task, room_counts_task, bookings_task, pricing_task
+    )
 
     cal_index = {}
     for entry in calendar_data:
         key = f"{entry['room_type_code']}|{entry['rate_plan_code']}|{entry['date']}"
         cal_index[key] = entry
-
-    room_counts, room_ids_by_type = await _get_room_counts(tenant_id)
-    active_bookings = await _get_active_bookings(tenant_id, start_date, end_date)
+    sold_counts = _build_sold_count_index(room_ids_by_type, active_bookings, start_date, end_date)
 
     grid = []
     for rt in room_types:
@@ -633,6 +644,7 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
                 counts,
                 room_ids_by_type,
                 active_bookings,
+                sold_counts,
             )
             grid.append(
                 {
@@ -646,7 +658,6 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
                 }
             )
 
-    pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map, pricing_rules = _pricing_payload(pricing_docs)
 
     currency = conn.get("currency", "TRY")
@@ -724,7 +735,38 @@ def _count_sold(pms_room_type, day_str, room_ids_by_type, active_bookings):
     return sold
 
 
-def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, counts, room_ids_by_type, active_bookings):
+def _build_sold_count_index(room_ids_by_type, active_bookings, start_date, end_date):
+    """Precompute occupancy once instead of scanning every booking per grid cell."""
+    room_type_by_id = {
+        room_id: room_type
+        for room_type, room_ids in room_ids_by_type.items()
+        for room_id in room_ids
+    }
+    if not room_type_by_id:
+        return {}
+
+    start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    sold_counts = {}
+    for booking in active_bookings:
+        room_type = room_type_by_id.get(booking.get("room_id"))
+        if not room_type:
+            continue
+        try:
+            check_in = datetime.strptime((booking.get("check_in") or "")[:10], "%Y-%m-%d").date()
+            check_out = datetime.strptime((booking.get("check_out") or "")[:10], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        day = max(start, check_in)
+        last_day = min(end, check_out - timedelta(days=1))
+        while day <= last_day:
+            key = (room_type, day.isoformat())
+            sold_counts[key] = sold_counts.get(key, 0) + 1
+            day += timedelta(days=1)
+    return sold_counts
+
+
+def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, counts, room_ids_by_type, active_bookings, sold_counts=None):
     dates_data = []
     d = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -733,7 +775,11 @@ def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, co
         key = f"{rt_code}|{rp_code}|{ds}"
         entry = cal_index.get(key, {})
         base_avail = entry.get("availability")
-        sold_count = _count_sold(pms_type, ds, room_ids_by_type, active_bookings) if pms_type else 0
+        sold_count = (
+            sold_counts.get((pms_type, ds), 0)
+            if sold_counts is not None and pms_type
+            else _count_sold(pms_type, ds, room_ids_by_type, active_bookings) if pms_type else 0
+        )
         if base_avail is not None:
             real_avail = max(base_avail - sold_count, 0)
         else:
