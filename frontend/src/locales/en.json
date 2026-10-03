@@ -9969,6 +9969,21 @@
       "defaultDescription": "Adjust your filters or create the first record to get started.",
       "comingSoon": "Coming soon",
       "setupRequired": "Setup required"
+    },
+    "states": {
+      "empty": { "title": "Nothing to show yet", "description": "Adjust your filters or create the first record to get started." },
+      "forbidden": { "title": "You do not have access to this screen", "description": "Your role or user-specific access does not allow this screen. Ask your hotel administrator for access." },
+      "setup": { "title": "Setup required", "description": "This module is not enabled for your property or its connection is not complete. Check your plan, module and integration settings." },
+      "error": { "title": "Data cannot be loaded right now", "description": "Your existing records were not affected. Try again once the connection is restored." },
+      "throttled": { "title": "Request limit reached", "description": "Too many requests were sent. Wait briefly and try again." },
+      "staleVersion": { "title": "The latest application version could not be loaded", "description": "The files on this page do not match the current version. Reloading may discard unsaved forms and selections." }
+    },
+    "actions": {
+      "retry": "Try again",
+      "retryAgain": "Retry",
+      "loadLatestVersion": "Load latest version",
+      "continue": "Continue",
+      "backToDashboard": "Back to dashboard"
     }
   }
 }

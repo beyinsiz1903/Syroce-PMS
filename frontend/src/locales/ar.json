@@ -9878,5 +9878,16 @@
     "verificationCode": "Doğrulama kodu",
     "notFoundTitle": "Sertifika bulunamadı",
     "notFoundDesc": "Bu doğrulama koduna ait geçerli bir sertifika bulunamadı. Lütfen kodu kontrol edip tekrar deneyin."
+  },
+  "uiQuality": {
+    "states": {
+      "empty": { "title": "لا توجد سجلات لعرضها بعد", "description": "عدّل عوامل التصفية أو أنشئ السجل الأول للبدء." },
+      "forbidden": { "title": "ليس لديك إذن للوصول إلى هذه الشاشة", "description": "لا يسمح دورك أو وصولك المخصص بهذه الشاشة. اطلب الوصول من مسؤول الفندق." },
+      "setup": { "title": "الإعداد مطلوب", "description": "هذه الوحدة غير مفعّلة لمنشأتك أو أن الاتصال لم يكتمل بعد." },
+      "error": { "title": "لا يمكن تحميل البيانات الآن", "description": "لم تتأثر سجلاتك الحالية. أعد المحاولة بعد استعادة الاتصال." },
+      "throttled": { "title": "تم الوصول إلى حد الطلبات", "description": "انتظر قليلاً ثم أعد المحاولة." },
+      "staleVersion": { "title": "تعذر تحميل أحدث إصدار من التطبيق", "description": "ملفات هذه الصفحة لا تطابق الإصدار الحالي. قد يؤدي إعادة التحميل إلى فقدان النماذج والاختيارات غير المحفوظة." }
+    },
+    "actions": { "retry": "أعد المحاولة", "retryAgain": "إعادة المحاولة", "loadLatestVersion": "تحميل أحدث إصدار", "continue": "متابعة", "backToDashboard": "العودة إلى لوحة التحكم" }
   }
 }

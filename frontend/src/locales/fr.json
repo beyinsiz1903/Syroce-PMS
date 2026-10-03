@@ -9878,5 +9878,16 @@
     "verificationCode": "Doğrulama kodu",
     "notFoundTitle": "Sertifika bulunamadı",
     "notFoundDesc": "Bu doğrulama koduna ait geçerli bir sertifika bulunamadı. Lütfen kodu kontrol edip tekrar deneyin."
+  },
+  "uiQuality": {
+    "states": {
+      "empty": { "title": "Aucun enregistrement pour le moment", "description": "Modifiez les filtres ou créez le premier enregistrement." },
+      "forbidden": { "title": "Vous n'avez pas accès à cet écran", "description": "Votre rôle ou accès individuel ne permet pas cet écran. Demandez l'accès à l'administrateur de l'hôtel." },
+      "setup": { "title": "Configuration requise", "description": "Ce module n'est pas activé pour votre établissement ou sa connexion est incomplète." },
+      "error": { "title": "Les données ne peuvent pas être chargées", "description": "Vos enregistrements existants ne sont pas affectés. Réessayez." },
+      "throttled": { "title": "Limite de requêtes atteinte", "description": "Patientez un instant puis réessayez." },
+      "staleVersion": { "title": "La dernière version de l'application n'a pas pu être chargée", "description": "Les fichiers de cette page ne correspondent pas à la version actuelle. Le rechargement peut perdre les formulaires et sélections non enregistrés." }
+    },
+    "actions": { "retry": "Réessayer", "retryAgain": "Réessayer", "loadLatestVersion": "Charger la dernière version", "continue": "Continuer", "backToDashboard": "Retour au tableau de bord" }
   }
 }

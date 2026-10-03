@@ -10006,6 +10006,21 @@
       "defaultDescription": "Filtreleri değiştirin veya ilk kaydı oluşturarak başlayın.",
       "comingSoon": "Yakında",
       "setupRequired": "Kurulum gerekli"
+    },
+    "states": {
+      "empty": { "title": "Henüz gösterilecek kayıt yok", "description": "Filtreleri değiştirin veya ilk kaydı oluşturarak başlayın." },
+      "forbidden": { "title": "Bu ekran için yetkiniz yok", "description": "Rolünüz veya kullanıcıya özel erişiminiz bu ekranı açmaya yetmiyor. Otel yöneticinizden erişim isteyin." },
+      "setup": { "title": "Kurulum gerekli", "description": "Bu modül tesisinizde etkin değil veya bağlantısı henüz tamamlanmadı. Paket, modül ve entegrasyon ayarlarını kontrol edin." },
+      "error": { "title": "Veriler şu anda yüklenemiyor", "description": "Mevcut kayıtlarınız etkilenmedi. Bağlantı düzeldiğinde yeniden deneyebilirsiniz." },
+      "throttled": { "title": "İstek sınırına ulaşıldı", "description": "Çok fazla istek gönderildi. Biraz bekleyip yeniden deneyin." },
+      "staleVersion": { "title": "Uygulamanın yeni sürümü yüklenemedi", "description": "Sayfadaki eski dosyalar güncel sürümle uyuşmuyor. Yenileme işlemi açık form ve seçimleri koruyamayabilir." }
+    },
+    "actions": {
+      "retry": "Yeniden dene",
+      "retryAgain": "Tekrar dene",
+      "loadLatestVersion": "Güncel sürümü yükle",
+      "continue": "Devam et",
+      "backToDashboard": "Kontrol paneline dön"
     }
   }
 }

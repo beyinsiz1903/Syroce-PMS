@@ -77,7 +77,7 @@ describe('ErrorBoundary stale chunk recovery', () => {
       </ErrorBoundary>,
     );
 
-    expect(screen.getByText('Beklenmeyen bir hata oluştu')).toBeInTheDocument();
+    expect(screen.getByText('Veriler şu anda yüklenemiyor')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tekrar dene' })).toBeInTheDocument();
     expect(window.__syroceForceFreshReload).not.toHaveBeenCalled();
   });
