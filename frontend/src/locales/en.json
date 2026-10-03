@@ -9962,5 +9962,13 @@
       "noResultsTitle": "Eşleşen lead bulunamadı",
       "noResultsDesc": "Arama veya aşama filtrenizi değiştirerek tekrar deneyin."
     }
+  },
+  "uiQuality": {
+    "emptyState": {
+      "defaultTitle": "Nothing to show yet",
+      "defaultDescription": "Adjust your filters or create the first record to get started.",
+      "comingSoon": "Coming soon",
+      "setupRequired": "Setup required"
+    }
   }
 }
