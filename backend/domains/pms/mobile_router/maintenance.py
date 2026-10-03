@@ -114,7 +114,11 @@ router = APIRouter(prefix="/api", tags=["mobile"])
 
 # ── GET /maintenance/mobile/preventive-maintenance-schedule ──
 @router.get("/maintenance/mobile/preventive-maintenance-schedule")
-async def get_pm_schedule_mobile(days: int = 7, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_pm_schedule_mobile(
+    days: int = 7,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get preventive maintenance schedule for mobile"""
     current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
@@ -219,7 +223,10 @@ async def create_quick_issue_mobile(
 
 # ── GET /maintenance/mobile/sla-configurations ──
 @router.get("/maintenance/mobile/sla-configurations")
-async def get_sla_configurations(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_sla_configurations(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get SLA configurations for different priorities"""
     current_user = await get_current_user(credentials)
 
@@ -401,7 +408,12 @@ async def get_task_photos_mobile(task_id: str, credentials: HTTPAuthorizationCre
 
 # ── GET /maintenance/mobile/spare-parts ──
 @router.get("/maintenance/mobile/spare-parts")
-async def get_spare_parts_mobile(low_stock_only: bool = False, warehouse_location: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_spare_parts_mobile(
+    low_stock_only: bool = False,
+    warehouse_location: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get spare parts inventory"""
     current_user = await get_current_user(credentials)
 
@@ -522,7 +534,11 @@ async def use_spare_part_mobile(
 
 # ── GET /maintenance/mobile/asset/{asset_id}/history ──
 @router.get("/maintenance/mobile/asset/{asset_id}/history")
-async def get_asset_history_mobile(asset_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_asset_history_mobile(
+    asset_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get maintenance history for an asset with MTBF calculation"""
     current_user = await get_current_user(credentials)
 
@@ -587,7 +603,11 @@ async def get_asset_history_mobile(asset_id: str, credentials: HTTPAuthorization
 
 # ── GET /maintenance/mobile/planned-maintenance ──
 @router.get("/maintenance/mobile/planned-maintenance")
-async def get_planned_maintenance_mobile(upcoming_days: int = 30, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_planned_maintenance_mobile(
+    upcoming_days: int = 30,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get planned maintenance calendar"""
     current_user = await get_current_user(credentials)
 
@@ -649,6 +669,7 @@ async def get_filtered_tasks_mobile(
     start_date: str | None = None,
     end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
 ):
     """Get filtered maintenance tasks"""
     current_user = await get_current_user(credentials)
