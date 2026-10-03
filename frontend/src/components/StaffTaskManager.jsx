@@ -200,34 +200,66 @@ const StaffTaskManager = ({ currentUser }) => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="bg-gray-50 border-gray-200 cursor-pointer" onClick={() => setFilterStatus('all')}>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('all')}
+          aria-label={`${ts('total')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'all'}
+        >
+        <Card className="bg-gray-50 border-gray-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <ClipboardList className="w-5 h-5 mx-auto mb-1 text-gray-600" />
             <p className="text-xs text-gray-500">{ts('total')}</p>
             <p className="text-2xl font-bold text-gray-700">{counts.total}</p>
           </CardContent>
         </Card>
-        <Card className="bg-amber-50 border-amber-200 cursor-pointer" onClick={() => setFilterStatus('pending')}>
+        </button>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('pending')}
+          aria-label={`${ts('pending')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'pending'}
+        >
+        <Card className="bg-amber-50 border-amber-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <AlertCircle className="w-5 h-5 mx-auto mb-1 text-amber-500" />
             <p className="text-xs text-amber-600">{ts('pending')}</p>
             <p className="text-2xl font-bold text-amber-700">{counts.pending}</p>
           </CardContent>
         </Card>
-        <Card className="bg-blue-50 border-blue-200 cursor-pointer" onClick={() => setFilterStatus('in_progress')}>
+        </button>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('in_progress')}
+          aria-label={`${ts('inProgress')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'in_progress'}
+        >
+        <Card className="bg-blue-50 border-blue-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <Clock className="w-5 h-5 mx-auto mb-1 text-blue-500" />
             <p className="text-xs text-blue-600">{ts('inProgress')}</p>
             <p className="text-2xl font-bold text-blue-700">{counts.in_progress}</p>
           </CardContent>
         </Card>
-        <Card className="bg-green-50 border-green-200 cursor-pointer" onClick={() => setFilterStatus('completed')}>
+        </button>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('completed')}
+          aria-label={`${ts('completed')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'completed'}
+        >
+        <Card className="bg-green-50 border-green-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <CheckCircle className="w-5 h-5 mx-auto mb-1 text-green-500" />
             <p className="text-xs text-green-600">{ts('completed')}</p>
             <p className="text-2xl font-bold text-green-700">{counts.completed}</p>
           </CardContent>
         </Card>
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
