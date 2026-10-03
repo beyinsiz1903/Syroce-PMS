@@ -113,7 +113,15 @@ export default function YieldRulesPanel() {
         <Card className="border-sky-200 bg-sky-50/30" data-testid="yield-rule-form">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm">{editId ? 'Kuralı Düzenle' : 'Yeni Kural Ekle'}</CardTitle>
-            <Button size="icon" variant="ghost" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setShowForm(false)}
+              aria-label="Kural formunu kapat"
+              title="Kapat"
+            >
+              <X className="w-4 h-4" />
+            </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -196,10 +204,24 @@ export default function YieldRulesPanel() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-rule-${r.id}`}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => openEdit(r)}
+                    data-testid={`edit-rule-${r.id}`}
+                    aria-label={`${r.name} kuralını düzenle`}
+                    title="Kuralı düzenle"
+                  >
                     <Pencil className="w-4 h-4 text-slate-400" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => handleDelete(r.id)} data-testid={`delete-rule-${r.id}`}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => handleDelete(r.id)}
+                    data-testid={`delete-rule-${r.id}`}
+                    aria-label={`${r.name} kuralını sil`}
+                    title="Kuralı sil"
+                  >
                     <Trash2 className="w-4 h-4 text-red-400" />
                   </Button>
                 </div>
