@@ -151,6 +151,13 @@ def _require_maintenance_priority(priority: str) -> str:
         raise HTTPException(status_code=400, detail="Invalid maintenance priority")
     return normalized
 
+def _maintenance_task_filter(tenant_id: str, task_id: str | None = None) -> dict:
+    """Scope mobile maintenance actions to maintenance tasks in one tenant."""
+    query = {"tenant_id": tenant_id, "department": "maintenance"}
+    if task_id is not None:
+        query["id"] = task_id
+    return query
+
 
 # ── GET /maintenance/mobile/preventive-maintenance-schedule ──
 @router.get("/maintenance/mobile/preventive-maintenance-schedule")
@@ -357,12 +364,13 @@ async def update_task_status_mobile(
     if new_status not in _MAINTENANCE_TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid maintenance task status")
 
-    task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
+    task_filter = _maintenance_task_filter(current_user.tenant_id, task_id)
+    task = await db.tasks.find_one(task_filter)
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    update_data = {"status": new_status, "updated_at": datetime.now(UTC)}
+    update_data = {"status": new_status, "updated_at": datetime.now(UTC), "updated_by": current_user.username}
 
     if new_status == "in_progress":
         if not task.get("started_at"):
@@ -388,7 +396,7 @@ async def update_task_status_mobile(
         if reason:
             update_data["on_hold_reason"] = reason
 
-    await db.tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
+    await db.tasks.update_one(task_filter, {"$set": update_data})
 
     return {"message": f"Task status updated to {new_status}", "task_id": task_id, "new_status": new_status, "updated_at": update_data["updated_at"].isoformat()}
 
@@ -410,7 +418,8 @@ async def upload_task_photo_mobile(
         raise HTTPException(status_code=400, detail="Invalid maintenance photo type")
     canonical_photo_url, content_type = _decode_maintenance_photo(photo_data)
 
-    task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
+    task_filter = _maintenance_task_filter(current_user.tenant_id, task_id)
+    task = await db.tasks.find_one(task_filter)
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -432,7 +441,7 @@ async def upload_task_photo_mobile(
     await db.task_photos.insert_one(photo)
 
     # Update task with photo reference
-    await db.tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$push": {"photos": photo_id}})
+    await db.tasks.update_one(task_filter, {"$push": {"photos": photo_id}})
 
     return {"message": "Photo uploaded successfully", "photo_id": photo_id, "task_id": task_id, "photo_type": photo_type}
 
@@ -446,6 +455,10 @@ async def get_task_photos_mobile(
 ):
     """Get all photos for a task"""
     current_user = await get_current_user(credentials)
+
+    task = await db.tasks.find_one(_maintenance_task_filter(current_user.tenant_id, task_id), {"_id": 1})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
 
     photos = []
     async for photo in db.task_photos.find({"tenant_id": current_user.tenant_id, "task_id": task_id}).sort("uploaded_at", -1):
@@ -535,7 +548,8 @@ async def use_spare_part_mobile(
         raise HTTPException(status_code=400, detail="Spare part quantity must be positive")
 
     # Validate task
-    task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
+    task_filter = _maintenance_task_filter(current_user.tenant_id, task_id)
+    task = await db.tasks.find_one(task_filter)
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -578,7 +592,7 @@ async def use_spare_part_mobile(
     await db.spare_parts.update_one({"id": spare_part_id, "tenant_id": current_user.tenant_id}, {"$set": {"current_stock": new_stock, "updated_at": datetime.now(UTC)}})
 
     # Add part to task
-    await db.tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$push": {"parts_list": f"{part.get('part_name')} x{quantity}"}})
+    await db.tasks.update_one(task_filter, {"$push": {"parts_list": f"{part.get('part_name')} x{quantity}"}})
 
     return {
         "message": "Spare part usage recorded",
@@ -733,7 +747,7 @@ async def get_filtered_tasks_mobile(
     """Get filtered maintenance tasks"""
     current_user = await get_current_user(credentials)
 
-    query = {"tenant_id": current_user.tenant_id}
+    query = _maintenance_task_filter(current_user.tenant_id)
 
     if status:
         query["status"] = status
