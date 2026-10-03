@@ -7,6 +7,7 @@ night audit concurrency, websocket event stream.
 """
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -63,7 +64,24 @@ class ProductionLoadValidationService:
         self._db = db
 
     async def get_scenarios(self) -> ServiceResult:
-        return ServiceResult.success({"scenarios": LOAD_SCENARIOS})
+        # The UI must never present local random numbers as production load
+        # evidence.  A scenario becomes executable only when an externally
+        # operated, measured load runner has been configured.
+        runner_configured = bool(os.environ.get("PRODUCTION_LOAD_RUNNER_URL", "").strip())
+        return ServiceResult.success(
+            {
+                "scenarios": [
+                    {
+                        **scenario,
+                        "execution_mode": "external_runner_required",
+                        "evidence_status": "ready_to_run" if runner_configured else "not_configured",
+                    }
+                    for scenario in LOAD_SCENARIOS
+                ],
+                "runner_configured": runner_configured,
+                "runner_requirement": "Measured production validation requires PRODUCTION_LOAD_RUNNER_URL.",
+            }
+        )
 
     async def run_scenario(self, ctx: OperationContext, scenario_id: str) -> ServiceResult:
         scenario = next((s for s in LOAD_SCENARIOS if s["id"] == scenario_id), None)
@@ -71,38 +89,23 @@ class ProductionLoadValidationService:
             return ServiceResult.fail(f"Unknown scenario: {scenario_id}", "INVALID_SCENARIO")
 
         now = datetime.now(UTC)
-        # Execute scenario simulation
-        results = await self._execute_scenario(scenario)
-
-        # Evaluate thresholds
-        passed_metrics = 0
-        total_metrics = len(scenario["thresholds"])
-        metric_results = []
-        for metric_key, threshold in scenario["thresholds"].items():
-            actual = results.get(metric_key, 0)
-            passed = actual <= threshold
-            if passed:
-                passed_metrics += 1
-            metric_results.append(
-                {
-                    "metric": metric_key,
-                    "threshold": threshold,
-                    "actual": actual,
-                    "passed": passed,
-                }
-            )
-
-        overall_passed = passed_metrics == total_metrics
-
-        run_entry = {
+        runner_configured = bool(os.environ.get("PRODUCTION_LOAD_RUNNER_URL", "").strip())
+        # No runner adapter exists in this process yet.  Record the request as
+        # unverified rather than generating synthetic values that always look
+        # healthy.  This makes the operational gap visible without turning a
+        # button click into a false green go-live signal.
+        run_entry: dict[str, object] = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
             "scenario_id": scenario_id,
             "scenario_name": scenario["name"],
-            "status": "passed" if overall_passed else "failed",
-            "metrics": metric_results,
-            "passed_count": passed_metrics,
-            "total_count": total_metrics,
+            "status": "not_run",
+            "evidence_status": "runner_configured_but_not_connected" if runner_configured else "not_configured",
+            "execution_mode": "external_runner_required",
+            "message": "No measured load-runner result is available; this is not a passed production validation.",
+            "metrics": [],
+            "passed_count": 0,
+            "total_count": len(scenario["thresholds"]),
             "started_at": now.isoformat(),
             "completed_at": datetime.now(UTC).isoformat(),
         }
@@ -133,18 +136,5 @@ class ProductionLoadValidationService:
                 "pass_rate": round(passed / max(len(runs), 1) * 100, 1),
             }
         )
-
-    async def _execute_scenario(self, scenario: dict) -> dict:
-        """Execute scenario and return metric values."""
-        # Simulated results — within healthy thresholds
-        import random
-
-        results = {}
-        for metric_key, threshold in scenario["thresholds"].items():
-            # Generate value within 30-80% of threshold (healthy range)
-            ratio = random.uniform(0.3, 0.8)
-            results[metric_key] = round(threshold * ratio, 1)
-        return results
-
 
 production_load_validation_service = ProductionLoadValidationService()
