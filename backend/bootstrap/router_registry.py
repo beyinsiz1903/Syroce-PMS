@@ -230,6 +230,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.system_health_dashboard", "router", ["System Health"], None, None),
     ("routers.system_health_normalized", "router", ["System Health Normalized"], None, None),
     ("routers.system_health_live", "router", ["System Health Live"], None, None),
+    ("routers.module_health", "router", ["Module Health"], None, None),
     ("domains.pms.frontdesk_router_v2", "router", ["Front Desk v2"], None, None),
     ("domains.pms.pos_fnb_router_v2", "router", ["POS & F&B v2"], None, None),
     ("domains.pms.pos_extensions.pos_currency", "router", ["POS Ext / Multi-Currency"], None, None),
