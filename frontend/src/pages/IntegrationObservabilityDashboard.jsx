@@ -249,14 +249,16 @@ export default function IntegrationObservabilityDashboard() {
                         <tr>
                           <th className="px-4 py-2">Otel (Tenant)</th>
                           <th className="px-4 py-2">Timestamp</th>
-                          <th className="px-4 py-2">Otel (Tenant)</th>
                           <th className="px-4 py-2">Provider</th>
                           <th className="px-4 py-2">Trigger</th>
                           <th className="px-4 py-2">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {outboundLogs.length === 0 ? <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">No outbound logs.</td></tr> : outboundLogs.map((log, i) => <tr key={log.id || i}>
+                        {outboundLogs.length === 0 ? <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-400">No outbound logs.</td></tr> : outboundLogs.map((log, i) => <tr key={log.id || i}>
+                            <td className="px-4 py-2 text-slate-700">
+                              {log.tenant_name || log.tenant_id || '—'}
+                            </td>
                             <td className="px-4 py-2 whitespace-nowrap text-slate-700">
                               {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
                             </td>
