@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
@@ -119,6 +119,9 @@ const UnifiedRateManager = ({
     d.setDate(d.getDate() + 13);
     return d.toISOString().slice(0, 10);
   });
+  // Date navigation may start a second grid request before the first one
+  // completes. Only the newest response may update availability or rates.
+  const gridRequestRef = useRef(0);
   const headers = useMemo(() => ({}), []);
 
   // Fetch circuit breaker status (CM-Hardening Stop-Sale Circuit Breaker, May 2026)
@@ -170,6 +173,7 @@ const UnifiedRateManager = ({
   // Fetch grid
   const fetchGrid = useCallback(async () => {
     if (!provider) return;
+    const requestId = ++gridRequestRef.current;
     setLoading(true);
     try {
       const {
@@ -177,6 +181,7 @@ const UnifiedRateManager = ({
       } = await axios.get(`${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}&provider=${encodeURIComponent(provider)}`, {
         headers
       });
+      if (requestId !== gridRequestRef.current) return;
       setGrid(data.grid || []);
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
@@ -184,10 +189,13 @@ const UnifiedRateManager = ({
       if (data.occupancy_pricing_rules) setOccupancyPricingRules(data.occupancy_pricing_rules);
       if (data.currency) setCurrency(data.currency);
     } catch {
-      toast.error('Veriler yüklenemedi');
+      if (requestId === gridRequestRef.current) toast.error('Veriler yüklenemedi');
+    } finally {
+      if (requestId === gridRequestRef.current) {
+        setLoading(false);
+        setInitialGridSettled(true);
+      }
     }
-    setLoading(false);
-    setInitialGridSettled(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [startDate, endDate, provider]);
   useEffect(() => {
