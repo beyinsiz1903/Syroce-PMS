@@ -363,6 +363,21 @@ async def get_today_digest(
 
     urgent_tasks = [t for t in tasks if t.get("priority") in ("urgent", "high")]
 
+    response = {
+        "date": datetime.now(UTC).date().isoformat(),
+        "open_tasks": len(tasks),
+        "urgent_tasks": len(urgent_tasks),
+        "unread_feed": notif_unread + alert_unread,
+        "pending_approvals": pending_approvals,
+        "tasks_preview": tasks[:5],
+    }
+
+    # Hotel-wide operational figures are an executive snapshot, not part of a
+    # staff member's personal work queue. Gate both their calculation and
+    # serialization so regular staff neither receive nor trigger these queries.
+    if not _can(current_user, "view_executive_reports"):
+        return response
+
     # ── HUB "Bugün" operasyon KPI'ları (Task #507) ──────────────────────────
     # Doluluk / giriş / çıkış / açık arıza, GM snapshot'ı (dashboard_router/gm.py
     # `_compute_period_metrics` + snapshot) ile birebir aynı mantıkla, ama
@@ -424,13 +439,8 @@ async def get_today_digest(
     occupancy_pct = round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 1)
     hotel_name = (tenant_doc or {}).get("property_name") or None
 
-    return {
-        "date": today_iso,
-        "open_tasks": len(tasks),
-        "urgent_tasks": len(urgent_tasks),
-        "unread_feed": notif_unread + alert_unread,
-        "pending_approvals": pending_approvals,
-        "tasks_preview": tasks[:5],
+    response.update(
+        {
         "occupancy_pct": occupancy_pct,
         "occupied_rooms": occupied_rooms,
         "total_rooms": total_rooms,
@@ -438,7 +448,9 @@ async def get_today_digest(
         "check_outs": check_outs,
         "open_faults": open_faults,
         "hotel_name": hotel_name,
-    }
+        }
+    )
+    return response
 
 
 # ── 4. "Onaylarım" — unified approvals (finance + HR) ───────────────────────
