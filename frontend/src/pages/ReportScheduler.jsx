@@ -398,7 +398,7 @@ export default function ReportScheduler() {
                       <div className="flex items-center gap-1 shrink-0">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleSendNow(s._id)} disabled={!!actionLoading[s._id]}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleSendNow(s._id)} disabled={!!actionLoading[s._id]} aria-label={`${s.name} raporunu şimdi gönder`}>
                               {actionLoading[s._id] === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                             </Button>
                           </TooltipTrigger>
@@ -406,7 +406,7 @@ export default function ReportScheduler() {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggle(s._id)} disabled={!!actionLoading[s._id]}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggle(s._id)} disabled={!!actionLoading[s._id]} aria-label={`${s.name} zamanlamasını ${s.is_active ? 'duraklat' : 'etkinleştir'}`}>
                               {s.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                             </Button>
                           </TooltipTrigger>
@@ -414,7 +414,7 @@ export default function ReportScheduler() {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)} aria-label={`${s.name} zamanlamasını düzenle`}>
                               <Edit className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
@@ -422,7 +422,7 @@ export default function ReportScheduler() {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:text-rose-700" onClick={() => handleDelete(s._id)} disabled={!!actionLoading[s._id]}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:text-rose-700" onClick={() => handleDelete(s._id)} disabled={!!actionLoading[s._id]} aria-label={`${s.name} zamanlamasını sil`}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
@@ -489,7 +489,7 @@ export default function ReportScheduler() {
                             <div className="flex items-center justify-end gap-1">
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDetail(h)}>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDetail(h)} aria-label={`${h.schedule_name} gönderim detayını görüntüle`}>
                                     <Eye className="h-3.5 w-3.5" />
                                   </Button>
                                 </TooltipTrigger>
@@ -497,7 +497,7 @@ export default function ReportScheduler() {
                               </Tooltip>
                               {h.status === "failed" && <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600" onClick={() => handleRetry(h._id)} disabled={!!actionLoading[h._id]}>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600" onClick={() => handleRetry(h._id)} disabled={!!actionLoading[h._id]} aria-label={`${h.schedule_name} gönderimini tekrar dene`}>
                                       {actionLoading[h._id] === "retry" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                                     </Button>
                                   </TooltipTrigger>

@@ -57,5 +57,9 @@ describe('ReportScheduler', () => {
 
     await waitFor(() => expect(screen.getByText('Test zamanlaması')).toBeInTheDocument());
     expect(screen.getByText('Günlük Özet Raporu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test zamanlaması raporunu şimdi gönder' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test zamanlaması zamanlamasını duraklat' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test zamanlaması zamanlamasını düzenle' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test zamanlaması zamanlamasını sil' })).toBeInTheDocument();
   });
 });
