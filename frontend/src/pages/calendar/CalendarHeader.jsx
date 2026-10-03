@@ -412,6 +412,7 @@ const CalendarHeader = ({
           onClick={onShowRoomBlockDialog}
           className="h-8 border-rose-200 text-xs text-rose-700 hover:bg-rose-50"
           data-testid="calendar-room-block-button"
+          aria-label="Odayı blokla veya arıza bildir"
         >
           <Wrench className="mr-1 h-3.5 w-3.5" />
           <span className={compactMode ? 'hidden 2xl:inline' : ''}>Odayı Blokla</span>
