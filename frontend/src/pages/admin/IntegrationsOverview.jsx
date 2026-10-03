@@ -66,6 +66,7 @@ function IntegrationCard({ item, status }) {
   const isReady = status === "ready";
   const isNeeds = status === "needs";
   const isDev = status === "dev";
+  const isTenantSetup = status === "tenant_setup";
   const firstEnv = (item.required_envs && item.required_envs.length > 0)
     ? item.required_envs[0]
     : null;
@@ -127,6 +128,21 @@ function IntegrationCard({ item, status }) {
         <div className="flex items-start gap-1.5 text-[11px] text-slate-500 bg-slate-50 px-2 py-1.5 rounded">
           <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>{t('cm.pages_admin_IntegrationsOverview.otele_ozel_kimlik_bilgileri_her_otel_ken')}</span>
+        </div>
+      )}
+
+      {isTenantSetup && item.operational_summary && (
+        <div className="flex flex-wrap gap-1.5" aria-label={`${item.name} operasyonel bağlantı özeti`}>
+          {[
+            ["production_verified", "Üretim doğrulandı", "bg-emerald-50 text-emerald-800 border-emerald-200"],
+            ["trial", "Deneme", "bg-amber-50 text-amber-800 border-amber-200"],
+            ["setup_pending", "Kurulum/doğrulama bekliyor", "bg-slate-50 text-slate-700 border-slate-200"],
+            ["connection_error", "Bağlantı hatası", "bg-rose-50 text-rose-800 border-rose-200"],
+          ].filter(([key]) => item.operational_summary[key] > 0).map(([key, label, tone]) => (
+            <span key={key} className={`text-[10px] px-1.5 py-0.5 rounded border ${tone}`}>
+              {label}: {item.operational_summary[key]}
+            </span>
+          ))}
         </div>
       )}
 
@@ -230,7 +246,7 @@ function ColumnHeader({ icon: Icon, title, count, intent }) {
 
 export default function IntegrationsOverview() {
   const { t } = useTranslation();
-  const [data, setData] = useState({ ready: [], needs_credentials: [], in_development: [], totals: {} });
+  const [data, setData] = useState({ ready: [], needs_credentials: [], tenant_setup: [], in_development: [], totals: {} });
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -260,6 +276,7 @@ export default function IntegrationsOverview() {
   };
   const ready = useMemo(() => [...(data.ready || [])].sort(sortByCategory), [data.ready]);
   const needs = useMemo(() => [...(data.needs_credentials || [])].sort(sortByCategory), [data.needs_credentials]);
+  const tenantSetup = useMemo(() => [...(data.tenant_setup || [])].sort(sortByCategory), [data.tenant_setup]);
   const dev = useMemo(() => [...(data.in_development || [])].sort(sortByCategory), [data.in_development]);
 
   return (
@@ -284,7 +301,7 @@ export default function IntegrationsOverview() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <KpiCard
           icon={ShieldCheck}
           label={t('cm.pages_admin_IntegrationsOverview.toplam_entegrasyon')}
@@ -296,8 +313,15 @@ export default function IntegrationsOverview() {
           icon={CheckCircle2}
           label={t('cm.pages_admin_IntegrationsOverview.hazir_3ae38')}
           value={totals.ready || 0}
-          sub="Otellere atanabilir"
+          sub="Platform yapılandırması tamam"
           intent="success"
+        />
+        <KpiCard
+          icon={Settings2}
+          label="Otel kurulumu"
+          value={totals.tenant_setup || 0}
+          sub="Canlı bağlantı ayrı doğrulanır"
+          intent="default"
         />
         <KpiCard
           icon={KeyRound}
@@ -315,7 +339,7 @@ export default function IntegrationsOverview() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* HAZIR */}
         <div className="flex flex-col">
           <ColumnHeader icon={CheckCircle2} title={t('cm.pages_admin_IntegrationsOverview.hazir_3ae38')} count={ready.length} intent="success" />
@@ -326,6 +350,19 @@ export default function IntegrationsOverview() {
             )}
             {ready.map((it) => (
               <IntegrationCard key={it.key} item={it} status="ready" />
+            ))}
+          </div>
+        </div>
+
+        {/* OTEL KURULUMU / DOĞRULAMA */}
+        <div className="flex flex-col">
+          <ColumnHeader icon={Settings2} title="Otel kurulumu / doğrulama" count={tenantSetup.length} intent="neutral" />
+          <div className="border border-t-0 border-slate-200 rounded-b-md p-3 space-y-3 bg-white min-h-[200px]">
+            {!loading && tenantSetup.length === 0 && (
+              <div className="text-xs text-slate-400 text-center py-8">Otel-başı kurulum gerektiren entegrasyon yok.</div>
+            )}
+            {tenantSetup.map((it) => (
+              <IntegrationCard key={it.key} item={it} status="tenant_setup" />
             ))}
           </div>
         </div>
@@ -363,7 +400,7 @@ export default function IntegrationsOverview() {
       <div className="mt-6 p-3 bg-sky-50 border border-sky-200 rounded text-xs text-sky-900 flex items-start gap-2">
         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
         <div>
-          <strong>{t('cm.pages_admin_IntegrationsOverview.otomatik_gecis')}</strong> {t('cm.pages_admin_IntegrationsOverview.api_bilgileri_gerekli_sutunundaki_bir_en')}
+          <strong>{t('cm.pages_admin_IntegrationsOverview.otomatik_gecis')}</strong> Platform anahtarı tanımlı olması, otel-başı bağlantının üretimde olduğu anlamına gelmez. Deneme, kurulum/doğrulama ve üretim durumları ayrı gösterilir.
         </div>
       </div>
     </div>

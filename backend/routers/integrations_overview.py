@@ -4,8 +4,9 @@ Integrations Overview (Super-Admin)
 
 Tek bakışta tüm 3. parti entegrasyonların durumunu döner:
 
-  • ready              — kod tamam + tüm gerekli credential'lar mevcut
+  • ready              — kod tamam + platform credential'ları mevcut
   • needs_credentials  — kod tamam, eksik API key/secret var
+  • tenant_setup       — otel-başı entegrasyon; kurulum/deneme/üretim kanıtı ayrı
   • in_development     — kod henüz tamamlanmamış (UI gri pasif)
 
 Her entegrasyon ayrı bir kalem olarak listelenir (Quick-ID, Sadakat,
@@ -18,7 +19,8 @@ Credential mevcudiyeti kontrolü:
   • integration_credentials koleksiyonu (DB'de şifreli saklanan)
 
 Bir env eksiği DB'den ya da Secrets'tan girilince bir sonraki refresh'te
-entegrasyon otomatik olarak `needs_credentials` → `ready` geçer.
+entegrasyon otomatik olarak `needs_credentials` → `ready` geçer. Otel-başı
+bağlantılar ise sırf katalogda kodu var diye "üretimde" sayılmaz.
 """
 
 from __future__ import annotations
@@ -289,6 +291,57 @@ def _env_set(key: str) -> bool:
     return bool(v and v.strip())
 
 
+_TENANT_CONNECTION_SOURCES = {
+    "whatsapp": ("messaging_provider_configs", {"provider_type": "whatsapp"}),
+    "smtp": ("messaging_provider_configs", {"provider_type": "smtp_email"}),
+    "exely": ("provider_connections", {"provider": "exely"}),
+    "hotelrunner": ("provider_connections", {"provider": "hotelrunner"}),
+}
+
+
+async def _tenant_operational_summary(integration_key: str) -> dict[str, int]:
+    """Count only evidence-backed tenant connection states.
+
+    A saved credential is deliberately not treated as production proof. Only an
+    enabled, non-sandbox provider with a successful health check is marked as
+    production verified; all other configurations remain actionable states.
+    """
+    summary = {
+        "production_verified": 0,
+        "trial": 0,
+        "setup_pending": 0,
+        "connection_error": 0,
+    }
+    source = _TENANT_CONNECTION_SOURCES.get(integration_key)
+    if not source:
+        summary["setup_pending"] = 1
+        return summary
+
+    collection, selector = source
+    try:
+        rows = await db[collection].find(selector, {"_id": 0}).to_list(10_000)
+    except Exception:
+        logger.exception("tenant connection summary could not be loaded: %s", integration_key)
+        summary["setup_pending"] = 1
+        return summary
+
+    if not rows:
+        summary["setup_pending"] = 1
+        return summary
+
+    for row in rows:
+        health = str(row.get("health_status", "unknown")).lower()
+        if row.get("is_sandbox"):
+            summary["trial"] += 1
+        elif health in {"failed", "error", "unhealthy"}:
+            summary["connection_error"] += 1
+        elif row.get("enabled", row.get("status") == "active") and health == "healthy":
+            summary["production_verified"] += 1
+        else:
+            summary["setup_pending"] += 1
+    return summary
+
+
 @router.get("")
 async def overview():
     """Tüm entegrasyonları durumlarına göre 3 gruba ayırarak döner."""
@@ -296,6 +349,7 @@ async def overview():
 
     ready: list[dict[str, Any]] = []
     needs: list[dict[str, Any]] = []
+    tenant_setup: list[dict[str, Any]] = []
     in_dev: list[dict[str, Any]] = []
 
     for it in INTEGRATIONS:
@@ -307,9 +361,12 @@ async def overview():
 
         if it["code_status"] == "in_development":
             effective = "in_development"
-        elif per_tenant or not required:
-            # per-tenant credential'lar bu owner ekranında "hazır" sayılır;
-            # otele atanırken kendi panelinden girilecek.
+        elif per_tenant:
+            # Katalog/uygulama kodu hazır olabilir; fakat her otelin canlı
+            # bağlantısı ayrıca kanıtlanmalıdır. Bu nedenle asla "hazır" sütununa
+            # düşürme.
+            effective = "tenant_setup"
+        elif not required:
             effective = "ready"
         elif missing:
             effective = "needs_credentials"
@@ -330,22 +387,29 @@ async def overview():
             "module_key": it.get("module_key", ""),
             "doc_url": it.get("doc_url", ""),
             "pricing_note": it.get("pricing_note", ""),
+            "operational_summary": await _tenant_operational_summary(it["key"])
+            if per_tenant
+            else None,
         }
 
         if effective == "ready":
             ready.append(item)
         elif effective == "needs_credentials":
             needs.append(item)
+        elif effective == "tenant_setup":
+            tenant_setup.append(item)
         else:
             in_dev.append(item)
 
     return {
         "ready": ready,
         "needs_credentials": needs,
+        "tenant_setup": tenant_setup,
         "in_development": in_dev,
         "totals": {
             "ready": len(ready),
             "needs_credentials": len(needs),
+            "tenant_setup": len(tenant_setup),
             "in_development": len(in_dev),
             "all": len(INTEGRATIONS),
         },
