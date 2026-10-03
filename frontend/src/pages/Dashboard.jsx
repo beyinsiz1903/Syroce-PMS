@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { canAccessPath } from '@/utils/moduleAccess';
 import { useNavigate } from 'react-router-dom';
@@ -56,6 +56,7 @@ const dashboardCache = {
   stats: null,
   aiBriefing: null,
   timestamp: null,
+  tenantKey: null,
   CACHE_DURATION: 30000 // 30 seconds
 };
 const Dashboard = ({
@@ -73,9 +74,13 @@ const Dashboard = ({
     format: fmtMoney,
     symbol: currencySymbol
   } = useCurrency();
-  const [stats, setStats] = useState(dashboardCache.stats);
-  const [loading, setLoading] = useState(!dashboardCache.stats);
-  const [aiBriefing, setAiBriefing] = useState(dashboardCache.aiBriefing);
+  const tenantCacheKey = tenant?.id || tenant?._id || tenant?.tenant_id || user?.tenant_id || 'unknown';
+  const isCurrentTenantCache = dashboardCache.tenantKey === tenantCacheKey;
+  const activeTenantKeyRef = useRef(tenantCacheKey);
+  activeTenantKeyRef.current = tenantCacheKey;
+  const [stats, setStats] = useState(() => isCurrentTenantCache ? dashboardCache.stats : null);
+  const [loading, setLoading] = useState(() => !(isCurrentTenantCache && dashboardCache.stats));
+  const [aiBriefing, setAiBriefing] = useState(() => isCurrentTenantCache ? dashboardCache.aiBriefing : null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [occupancyData, setOccupancyData] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
@@ -89,22 +94,37 @@ const Dashboard = ({
   // render kararı `isLite` flag'ine göre tüm hook'lar deklare edildikten
   // sonra alınır.
 
-  const loadAIBriefing = useCallback(async () => {
+  // Süperadmin tesis değiştirdiğinde önceki tesisin KPI veya yapay zekâ özeti
+  // hiç görünmemeli. Layout effect bu state'i tarayıcı boyamadan sıfırlar;
+  // böylece hızlı çalışma alanı geçişinde kısa bir veri sızıntısı oluşmaz.
+  useLayoutEffect(() => {
+    const cacheMatchesTenant = dashboardCache.tenantKey === tenantCacheKey;
+    setStats(cacheMatchesTenant ? dashboardCache.stats : null);
+    setAiBriefing(cacheMatchesTenant ? dashboardCache.aiBriefing : null);
+    setOccupancyData([]);
+    setRevenueData([]);
+    setTrendData([]);
+    setHeatmapData([]);
+    setLoading(!(cacheMatchesTenant && dashboardCache.stats));
+  }, [tenantCacheKey]);
+
+  const loadAIBriefing = useCallback(async (requestTenantKey) => {
     setLoadingAI(true);
     try {
       const response = await axios.get(`/ai/dashboard/briefing?lang=${i18n.language}`);
       const data = response.data;
+      if (activeTenantKeyRef.current !== requestTenantKey) return;
       setAiBriefing(data);
-      dashboardCache.aiBriefing = data;
+      if (dashboardCache.tenantKey === requestTenantKey) dashboardCache.aiBriefing = data;
     } catch (error) {
       console.error('Failed to load AI briefing:', error);
       // Fail silently - AI features are optional
     } finally {
-      setLoadingAI(false);
+      if (activeTenantKeyRef.current === requestTenantKey) setLoadingAI(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-  const loadChartData = useCallback(async () => {
+  const loadChartData = useCallback(async (requestTenantKey) => {
     const endpoints = [{
       url: '/analytics/occupancy-trend?days=30',
       key: 'trend',
@@ -123,6 +143,7 @@ const Dashboard = ({
       set: setHeatmapData
     }];
     const results = await Promise.allSettled(endpoints.map(e => axios.get(e.url)));
+    if (activeTenantKeyRef.current !== requestTenantKey) return;
     results.forEach((res, i) => {
       const {
         key,
@@ -137,7 +158,7 @@ const Dashboard = ({
       }
     });
   }, []);
-  const loadDashboardStats = useCallback(async () => {
+  const loadDashboardStats = useCallback(async (requestTenantKey) => {
     try {
       // Use Promise.all for parallel requests - faster!
       const [pmsResponse, invoiceResponse] = await Promise.all([axios.get('/pms/dashboard').catch(() => ({
@@ -149,13 +170,15 @@ const Dashboard = ({
         pms: pmsResponse.data || {},
         invoices: invoiceResponse.data || {}
       };
+      if (activeTenantKeyRef.current !== requestTenantKey) return;
       setStats(statsData);
       dashboardCache.stats = statsData;
       dashboardCache.timestamp = Date.now();
+      dashboardCache.tenantKey = requestTenantKey;
     } catch (error) {
       console.error('Failed to load stats:', error);
     } finally {
-      setLoading(false);
+      if (activeTenantKeyRef.current === requestTenantKey) setLoading(false);
     }
   }, []);
   const renderAIBriefingText = briefing => {
@@ -219,16 +242,16 @@ const Dashboard = ({
   };
   useEffect(() => {
     const now = Date.now();
-    const isCacheValid = dashboardCache.timestamp && now - dashboardCache.timestamp < dashboardCache.CACHE_DURATION;
+    const isCacheValid = dashboardCache.tenantKey === tenantCacheKey && dashboardCache.timestamp && now - dashboardCache.timestamp < dashboardCache.CACHE_DURATION;
     let cancelIdle = () => {};
     if (!isCacheValid) {
       // KPI'lar (PMS dashboard + invoice stats) ana ekranın görsel iskeleti
       // — hemen yüklensin. AI briefing ve grafik verileri (4 chart endpoint)
       // ikincil; idle'a alınınca KPI'lar saniyeler önce ekrana basılır.
-      loadDashboardStats();
+      loadDashboardStats(tenantCacheKey);
       cancelIdle = runIdle(() => {
-        loadAIBriefing();
-        loadChartData();
+        loadAIBriefing(tenantCacheKey);
+        loadChartData(tenantCacheKey);
       }, {
         timeout: 4000
       });
@@ -240,7 +263,7 @@ const Dashboard = ({
     // isteği ve yanıt işleme maliyeti çıkarıyordu. KPI isteği zaten axios
     // önbelleği üzerinden bu verileri yüklediği için ek bir prefetch yok.
     return () => cancelIdle();
-  }, [loadDashboardStats, loadAIBriefing, loadChartData]);
+  }, [tenantCacheKey, loadDashboardStats, loadAIBriefing, loadChartData]);
   const visibleModules = useMemo(() => [{
     title: t('nav.pms'),
     description: t('dashboard.propertyManagement'),
