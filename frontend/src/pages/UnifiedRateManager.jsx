@@ -52,6 +52,7 @@ const UnifiedRateManager = ({
 }) => {
   const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const [initialGridSettled, setInitialGridSettled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState('bulk');
   const [mobileBulkStep, setMobileBulkStep] = useState(1);
@@ -75,6 +76,7 @@ const UnifiedRateManager = ({
 
   // Agencies
   const [agencies, setAgencies] = useState([]);
+  const [agenciesLoading, setAgenciesLoading] = useState(false);
   const [selectedAgencies, setSelectedAgencies] = useState(new Set());
   const [agencyPanelOpen, setAgencyPanelOpen] = useState(true);
   const [agencyOverrides, setAgencyOverrides] = useState({});
@@ -134,10 +136,11 @@ const UnifiedRateManager = ({
     }
   }, [headers]);
   useEffect(() => {
+    if (!provider || !initialGridSettled) return undefined;
     fetchBreakers();
     const id = setInterval(fetchBreakers, 30000);
     return () => clearInterval(id);
-  }, [fetchBreakers]);
+  }, [fetchBreakers, initialGridSettled, provider]);
 
   // Lookup helper: current provider's breaker state ('closed' | 'half_open' | 'open')
   const activeBreaker = useMemo(() => breakers.find(b => b.provider === provider) || null, [breakers, provider]);
@@ -171,7 +174,7 @@ const UnifiedRateManager = ({
     try {
       const {
         data
-      } = await axios.get(`${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}`, {
+      } = await axios.get(`${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}&provider=${encodeURIComponent(provider)}`, {
         headers
       });
       setGrid(data.grid || []);
@@ -184,6 +187,7 @@ const UnifiedRateManager = ({
       toast.error('Veriler yüklenemedi');
     }
     setLoading(false);
+    setInitialGridSettled(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [startDate, endDate, provider]);
   useEffect(() => {
@@ -192,20 +196,20 @@ const UnifiedRateManager = ({
 
   // Fetch push providers
   useEffect(() => {
-    if (!provider) return;
+    if (!provider || !initialGridSettled) return;
     axios.get(`${UNIFIED_PREFIX}/push-providers`, {
       headers
     }).then(res => setPushProviders(res.data?.providers || [])).catch(e => {
       console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Bildirim sağlayıcıları yüklenemedi');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [provider]);
+  }, [initialGridSettled, provider]);
 
   // HotelRunner's /infos/channels response is the complete catalogue, not the
   // hotel's active destinations. The connections overview exposes only the
   // provider-verified connected_channels list.
   useEffect(() => {
-    if (provider !== 'hotelrunner') {
+    if (!initialGridSettled || provider !== 'hotelrunner') {
       setActiveChannels([]);
       setActiveChannelsStale(false);
       return;
@@ -223,17 +227,19 @@ const UnifiedRateManager = ({
       setActiveChannelsStale(true);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cookie auth headers are stable for this mounted view
-  }, [provider]);
+  }, [initialGridSettled, provider]);
 
   // Fetch agencies
   useEffect(() => {
+    if (!initialGridSettled) return;
+    setAgenciesLoading(true);
     axios.get(`${UNIFIED_PREFIX}/agencies`, {
       headers
     }).then(res => setAgencies(res.data?.agencies || [])).catch(e => {
-      console.warn('[UnifiedRateManager] fetchAgencies failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Acenteler yuklenemedi');
-    });
+      console.warn('[UnifiedRateManager] fetchAgencies failed (non-critical):', e?.response?.status ?? e?.message);
+    }).finally(() => setAgenciesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, []);
+  }, [initialGridSettled]);
 
   // Room type tree
   const roomTypeTree = useMemo(() => {
@@ -806,7 +812,9 @@ const UnifiedRateManager = ({
               </CardHeader>
 
               {agencyPanelOpen && <CardContent className="px-4 pb-4 space-y-3">
-                  {agencies.length === 0 ? <p className="text-xs text-zinc-400 text-center py-3">
+                  {agenciesLoading ? <p className="text-xs text-zinc-400 text-center py-3" data-testid="agency-panel-loading">
+                      Acenteler yükleniyor...
+                    </p> : agencies.length === 0 ? <p className="text-xs text-zinc-400 text-center py-3">
                       {t('cm.pages_UnifiedRateManager.henuz_aktif_acente_tanimlanmamis')}
                     </p> : <>
                       {/* Select all */}
