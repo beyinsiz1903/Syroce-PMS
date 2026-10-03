@@ -63,6 +63,23 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('SystemHealthDashboard — RNL duplicate live socket refresh', () => {
+  it('does not present missing health measurements as successful', async () => {
+    mockInitialFetch();
+
+    await act(async () => {
+      render(<SystemHealthDashboard user={{ role: 'superadmin' }} />);
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('superadmin-global-view')).toBeInTheDocument()
+    );
+
+    const channelPanel = screen.getByTestId('sa-panel-cm');
+    expect(channelPanel).toHaveTextContent('Veri bekleniyor');
+    expect(channelPanel).not.toHaveTextContent('100%');
+    expect(screen.getByTestId('sa-panel-security')).toHaveTextContent('Veri bekleniyor');
+  });
+
   it('refetches summary on rnl_duplicate_alert_state_changed and renders/hides the widget', async () => {
     mockInitialFetch();
 
