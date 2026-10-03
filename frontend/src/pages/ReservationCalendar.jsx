@@ -1632,6 +1632,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onNavigateNext={navigateNext}
           onGoToDate={goToDate}
           onGoToToday={goToOperationalToday}
+          businessDate={hotelBusinessDate}
           onSyncReservations={handleSyncReservations}
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
           onShowNewBookingDialog={() => {

@@ -68,6 +68,18 @@ describe('CalendarHeader mobile toolbar', () => {
     expect(onNext).toHaveBeenCalledTimes(1);
   });
 
+  it('names operational-date navigation honestly when the PMS business date differs', () => {
+    render(
+      <MemoryRouter>
+        <CalendarHeader {...defaultProps} businessDate="2026-09-05" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('mobile-calendar-nav-today')).toHaveTextContent('PMS İş Günü');
+    expect(screen.getByTestId('calendar-nav-today')).toHaveTextContent('PMS İş Günü');
+    expect(screen.getByTestId('calendar-nav-today')).toHaveAccessibleName('PMS iş günü çevresine git (5.09.2026)');
+  });
+
   it('does not expose mutation controls to a read-only calendar user', async () => {
     const user = userEvent.setup();
     render(
