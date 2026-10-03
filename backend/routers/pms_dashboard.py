@@ -89,7 +89,10 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         {
             "$match": {
                 "tenant_id": current_user.tenant_id,
-                "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
+                "$and": [
+                    {"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]},
+                    {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
+                ],
             }
         },
         {"$group": {"_id": None, "total_rooms": {"$sum": 1}, "occupied_rooms": {"$sum": {"$cond": [{"$eq": ["$status", "occupied"]}, 1, 0]}}}},

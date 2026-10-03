@@ -14,7 +14,11 @@ class _FailingCursor:
 
 
 class _FailingRooms:
-    def aggregate(self, _pipeline):
+    def __init__(self):
+        self.pipeline = None
+
+    def aggregate(self, pipeline):
+        self.pipeline = pipeline
         return _FailingCursor()
 
 
@@ -29,7 +33,8 @@ async def test_dashboard_resolves_the_authoritative_open_business_date(monkeypat
 
 @pytest.mark.asyncio
 async def test_dashboard_returns_retryable_503_for_transient_atlas_failure(monkeypatch):
-    monkeypatch.setattr(pms_dashboard.db, "rooms", _FailingRooms())
+    rooms = _FailingRooms()
+    monkeypatch.setattr(pms_dashboard.db, "rooms", rooms)
     monkeypatch.setattr(pms_dashboard, "cache_warmer", None, raising=False)
     monkeypatch.setattr(
         pms_dashboard,
@@ -43,6 +48,8 @@ async def test_dashboard_returns_retryable_503_for_transient_atlas_failure(monke
     assert error.value.status_code == 503
     assert error.value.headers == {"Retry-After": "3"}
     assert error.value.detail["code"] == "DATABASE_TRANSIENT_UNAVAILABLE"
+    room_filters = rooms.pipeline[0]["$match"]["$and"]
+    assert {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]} in room_filters
 
 
 @pytest.mark.asyncio
