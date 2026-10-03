@@ -79,6 +79,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
     activity_type: 'call', subject: '', description: '', follow_up_at: '',
   });
   const [actSaving, setActSaving] = useState(false);
+  const [completingFollowUpId, setCompletingFollowUpId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // ── Listeleme ──
@@ -199,6 +200,20 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
       toast.error(err?.response?.data?.detail || 'Aktivite kaydedilemedi');
     } finally {
       setActSaving(false);
+    }
+  };
+
+  const completeFollowUp = async (activityId) => {
+    if (!detail?.lead || !activityId) return;
+    setCompletingFollowUpId(activityId);
+    try {
+      const result = await axios.post(`/sales/activity/${activityId}/complete`);
+      toast.success(result.data?.idempotent ? 'Takip zaten tamamlanmış' : 'Takip tamamlandı');
+      await Promise.all([openDetail(detail.lead.id), loadFunnel()]);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Takip tamamlanamadı');
+    } finally {
+      setCompletingFollowUpId(null);
     }
   };
 
@@ -625,7 +640,27 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                           {a.description && (
                             <p className="text-xs text-gray-600 mt-0.5">{a.description}</p>
                           )}
-                          {a.follow_up_at && <p className="text-xs font-medium text-amber-700 mt-1">Takip: {new Date(a.follow_up_at).toLocaleString('tr-TR')}</p>}
+                          {a.follow_up_at && (
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <p className={`text-xs font-medium ${a.follow_up_completed_at ? 'text-green-700' : 'text-amber-700'}`}>
+                                {a.follow_up_completed_at
+                                  ? `Takip tamamlandı: ${new Date(a.follow_up_completed_at).toLocaleString('tr-TR')}`
+                                  : `Takip: ${new Date(a.follow_up_at).toLocaleString('tr-TR')}`}
+                              </p>
+                              {!a.follow_up_completed_at && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => completeFollowUp(a.id)}
+                                  disabled={completingFollowUpId === a.id}
+                                >
+                                  {completingFollowUpId === a.id ? 'Tamamlanıyor…' : 'Tamamla'}
+                                </Button>
+                              )}
+                            </div>
+                          )}
                         </li>
                       ))}
                     </ul>

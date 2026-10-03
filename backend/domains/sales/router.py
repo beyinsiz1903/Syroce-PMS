@@ -63,6 +63,19 @@ def _active_lead_query(tenant_id: str, **extra: object) -> dict:
     return {"_kind": LEAD_KIND, "tenant_id": tenant_id, "deleted_at": {"$exists": False}, **extra}
 
 
+def _open_follow_up_query(tenant_id: str, activity_id: str | None = None) -> dict:
+    """Build the tenant-scoped selector for a follow-up that is still open."""
+    query: dict = {
+        "_kind": ACTIVITY_KIND,
+        "tenant_id": tenant_id,
+        "follow_up_at": {"$nin": [None, ""]},
+        "follow_up_completed_at": {"$exists": False},
+    }
+    if activity_id:
+        query["id"] = activity_id
+    return query
+
+
 # ── Sales CRM & Lead Management ────────────────────────────────────
 
 
@@ -280,6 +293,55 @@ async def log_sales_activity(
     return {"success": True, "message": "Aktivite kaydedildi", "activity_id": activity["id"]}
 
 
+@router.post("/sales/activity/{activity_id}/complete")
+async def complete_sales_follow_up(
+    activity_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Mark one scheduled sales follow-up complete without deleting its audit trail."""
+    completed_at = _now()
+    result = await db.mice_opportunity_activities.update_one(
+        _open_follow_up_query(current_user.tenant_id, activity_id),
+        {"$set": {"follow_up_completed_at": completed_at, "follow_up_completed_by": current_user.id}},
+    )
+    if result.matched_count:
+        activity = await db.mice_opportunity_activities.find_one(
+            {"_kind": ACTIVITY_KIND, "tenant_id": current_user.tenant_id, "id": activity_id},
+            {"_id": 0, "lead_id": 1},
+        )
+        # The update selector and tenant scope guarantee a document exists;
+        # retain the defensive branch for adapters with eventual reads.
+        lead_id = activity.get("lead_id") if activity else None
+        await create_audit_log(
+            current_user.tenant_id,
+            current_user,
+            "sales_follow_up_completed",
+            "sales_activity",
+            activity_id,
+            {"lead_id": lead_id},
+        )
+        return {"success": True, "activity_id": activity_id, "completed_at": completed_at, "idempotent": False}
+
+    # Two operators can complete the same task together. The second request
+    # is a safe replay, not an error, but a non-follow-up/foreign ID remains
+    # invisible or invalid.
+    activity = await db.mice_opportunity_activities.find_one(
+        {"_kind": ACTIVITY_KIND, "tenant_id": current_user.tenant_id, "id": activity_id},
+        {"_id": 0, "follow_up_at": 1, "follow_up_completed_at": 1},
+    )
+    if not activity:
+        raise HTTPException(status_code=404, detail="Takip kaydı bulunamadı")
+    if activity.get("follow_up_completed_at"):
+        return {
+            "success": True,
+            "activity_id": activity_id,
+            "completed_at": activity["follow_up_completed_at"],
+            "idempotent": True,
+        }
+    raise HTTPException(status_code=409, detail="Bu aktivite için planlanmış açık takip yok")
+
+
 @router.get("/sales/attention")
 async def get_sales_attention(
     current_user: User = Depends(get_current_user),
@@ -293,8 +355,10 @@ async def get_sales_attention(
     lead_by_id = {lead["id"]: lead for lead in active_leads}
     if not lead_by_id:
         return {"overdue": [], "upcoming": [], "data_available": False}
+    follow_up_query = _open_follow_up_query(current_user.tenant_id)
+    follow_up_query["lead_id"] = {"$in": list(lead_by_id)}
     rows = await db.mice_opportunity_activities.find(
-        {"_kind": ACTIVITY_KIND, "tenant_id": current_user.tenant_id, "lead_id": {"$in": list(lead_by_id)}, "follow_up_at": {"$nin": [None, ""]}},
+        follow_up_query,
         {"_id": 0, "id": 1, "lead_id": 1, "subject": 1, "activity_type": 1, "follow_up_at": 1},
     ).sort("follow_up_at", 1).to_list(500)
     now = datetime.now(UTC)
