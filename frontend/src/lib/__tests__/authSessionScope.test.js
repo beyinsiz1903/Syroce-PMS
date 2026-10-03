@@ -42,6 +42,19 @@ describe("authSessionScope", () => {
     expect(readTabAuthSubject()).toBe("user-b:hotel-b");
   });
 
+  it("blocks a duplicated tab when shared browser login changes hotel", () => {
+    // A duplicated tab inherits its own sessionStorage snapshot from Hotel A;
+    // browser-level localStorage can then be changed by a Hotel B login.
+    rememberTabAuthSubject(hotelAUser);
+    localStorage.setItem("user", JSON.stringify(hotelBUser));
+
+    expect(isForeignIdentityForTab(readSharedAuthUser())).toBe(true);
+    blockTabAfterExternalSessionChange();
+
+    expect(isTabAuthBlocked()).toBe(true);
+    expect(readTabAuthSubject()).toBeNull();
+  });
+
   it("parses the shared snapshot defensively", () => {
     localStorage.setItem("user", JSON.stringify(hotelAUser));
     expect(readSharedAuthUser()).toEqual(hotelAUser);
