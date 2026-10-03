@@ -9,6 +9,7 @@ Domain Router: Mobile
 
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
+import math
 import uuid
 from datetime import UTC, datetime
 
@@ -276,6 +277,8 @@ async def update_menu_item_price_mobile(
     current_user = await get_current_user(credentials)
     new_price = request.new_price
     reason = request.reason
+    if not math.isfinite(new_price) or new_price < 0:
+        raise HTTPException(status_code=400, detail="Menu price must be a finite non-negative amount")
 
     # Find menu item
     menu_item = await db.pos_menu_items.find_one({"id": item_id, "tenant_id": current_user.tenant_id})
@@ -283,11 +286,22 @@ async def update_menu_item_price_mobile(
     if not menu_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
 
-    old_price = menu_item.get("price")
+    old_price = menu_item.get("unit_price", menu_item.get("price"))
 
     # Update price
     await db.pos_menu_items.update_one(
-        {"id": item_id, "tenant_id": current_user.tenant_id}, {"$set": {"price": new_price, "price_updated_at": datetime.now(UTC), "price_updated_by": current_user.username}}
+        {
+            "id": item_id,
+            "tenant_id": current_user.tenant_id,
+        },
+        {
+            "$set": {
+                "price": new_price,
+                "unit_price": new_price,
+                "price_updated_at": datetime.now(UTC),
+                "price_updated_by": current_user.username,
+            }
+        },
     )
 
     # Log price change
@@ -295,7 +309,7 @@ async def update_menu_item_price_mobile(
         {
             "id": str(uuid.uuid4()),
             "tenant_id": current_user.tenant_id,
-            "user_id": current_user.user_id,
+            "user_id": getattr(current_user, "user_id", None) or current_user.id,
             "user_name": current_user.username,
             "action": "MENU_PRICE_UPDATE",
             "entity_type": "menu_item",
