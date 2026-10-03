@@ -10,6 +10,7 @@ from typing import NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
@@ -29,6 +30,15 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["pms"])
 logger = logging.getLogger(__name__)
+
+
+async def _open_business_date(tenant_id: str) -> str:
+    """Return the hotel's authoritative open PMS day for dashboard decisions."""
+    state = await ensure_business_date_initialized(db, tenant_id)
+    business_date = str(state.get("business_date") or "")[:10]
+    if len(business_date) != 10:
+        raise RuntimeError(f"PMS business date is invalid for tenant {tenant_id}")
+    return business_date
 
 
 def _raise_transient_database_unavailable(exc: BaseException) -> NoReturn:
@@ -79,7 +89,10 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         {
             "$match": {
                 "tenant_id": current_user.tenant_id,
-                "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
+                "$and": [
+                    {"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]},
+                    {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
+                ],
             }
         },
         {"$group": {"_id": None, "total_rooms": {"$sum": 1}, "occupied_rooms": {"$sum": {"$cond": [{"$eq": ["$status", "occupied"]}, 1, 0]}}}},
@@ -94,9 +107,10 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
     total_rooms = room_stats[0]["total_rooms"] if room_stats else 0
     physically_occupied = room_stats[0]["occupied_rooms"] if room_stats else 0
 
-    # Count bookings overlapping today using date-only comparison (matches AI briefing).
-    # This avoids tz/format inconsistencies and uses the same logic everywhere.
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    # The dashboard is an operational PMS surface: "today" means the open
+    # business day, not the server's wall-clock date. This keeps occupancy and
+    # arrivals aligned with night audit, front desk and housekeeping.
+    today = await _open_business_date(current_user.tenant_id)
     try:
         bookings_today = await db.bookings.find(
             {
@@ -171,7 +185,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
 async def get_operational_alerts(current_user: User = Depends(get_current_user)):
     """Decision-driven operational intelligence: what needs attention NOW."""
     tenant_id = current_user.tenant_id
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    today = await _open_business_date(tenant_id)
 
     # Redis cache (15s TTL) — dashboard ekranı sık yüklendiği için en pahalı çağrıyı sıcak tutar
     cache_key = f"operational_alerts:{tenant_id}"
