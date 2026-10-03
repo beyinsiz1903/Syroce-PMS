@@ -280,6 +280,8 @@ async def update_menu_item_price_mobile(
     if not math.isfinite(new_price) or new_price < 0:
         raise HTTPException(status_code=400, detail="Menu price must be a finite non-negative amount")
 
+    new_price = round(new_price, 2)
+
     # Find menu item
     menu_item = await db.pos_menu_items.find_one({"id": item_id, "tenant_id": current_user.tenant_id})
 
