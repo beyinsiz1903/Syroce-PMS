@@ -16,6 +16,18 @@ const STEPS = [
   { n: 3, label: 'Tutar & Onay' },
 ];
 
+export const clampWalkinNights = (value) => Math.min(14, Math.max(1, Number.parseInt(value, 10) || 1));
+
+export const validateWalkinCheckin = ({ adults, children, totalAmount, paymentAmount, paymentMethod }) => {
+  if (!Number.isInteger(Number(adults)) || Number(adults) < 1) return 'Yetişkin sayısı en az 1 olmalı';
+  if (!Number.isInteger(Number(children)) || Number(children) < 0) return 'Çocuk sayısı negatif olamaz';
+  if (!Number.isFinite(Number(totalAmount)) || Number(totalAmount) <= 0) return 'Tutar gerekli';
+  if (!Number.isFinite(Number(paymentAmount)) || Number(paymentAmount) < 0) return 'Ödenen tutar negatif olamaz';
+  if (Number(paymentAmount) > Number(totalAmount) + 0.001) return 'Ödenen tutar toplam tutarı aşamaz';
+  if (paymentMethod === 'none' && Number(paymentAmount) > 0) return 'Ödeme yöntemi seçin veya ödenen tutarı sıfırlayın';
+  return null;
+};
+
 function Stepper({ step }) {
   const { t, i18n } = useTranslation();
   return (
@@ -146,7 +158,14 @@ export default function WalkinPage({ user, tenant, onLogout }) {
   const submit = async () => {
     if (!form.guest_name.trim()) return toast.error('Misafir adı gerekli');
     if (!form.room_id) return toast.error('Oda seçin');
-    if (!(form.total_amount > 0)) return toast.error('Tutar gerekli');
+    const validationError = validateWalkinCheckin({
+      adults: form.adults,
+      children: form.children,
+      totalAmount: form.total_amount,
+      paymentAmount: form.payment_amount,
+      paymentMethod: form.payment_method,
+    });
+    if (validationError) return toast.error(validationError);
     setSubmitting(true);
     try {
       const { data } = await api.post('/pms/walkin/checkin', { ...form, nights });
@@ -168,6 +187,15 @@ export default function WalkinPage({ user, tenant, onLogout }) {
   };
 
   const goBack = () => setStep(s => Math.max(1, s - 1));
+
+  const changeNights = (value) => {
+    const nextNights = clampWalkinNights(value);
+    if (nextNights === nights) return;
+    // Müsaitlik gece sayısına bağlıdır. Önceki seçimi ve fiyatı taşımak,
+    // artık müsait olmayan bir odayla hatalı check-in oluşturabilir.
+    setNights(nextNights);
+    setForm((current) => ({ ...current, room_id: '', total_amount: 0 }));
+  };
 
   // Sticky özet metni
   const summaryText = (() => {
@@ -250,7 +278,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                   <div className="flex items-center gap-2">
                     <Label className="text-xs">{t('cm.pages_WalkinPage.gece_sayisi')}</Label>
                     <Input type="number" min={1} max={14} value={nights}
-                      onChange={e => setNights(Math.max(1, parseInt(e.target.value || '1')))}
+                      onChange={e => changeNights(e.target.value)}
                       className="h-8 w-20" />
                     <Button size="sm" variant="outline" onClick={() => loadRooms(nights)} disabled={loadingRooms} className="border-slate-300">
                       {loadingRooms ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yenile'}
