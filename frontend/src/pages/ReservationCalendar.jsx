@@ -528,11 +528,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         referenceDataRef.current = { loadedAt: Date.now(), guests: referenceData.guests, companies: referenceData.companies };
       }
       calendarDataLoadedRef.current = true;
-      setGuests(referenceData.guests);
-      setCompanies(referenceData.companies);
-      if (!useCachedReferenceData) {
-        referenceDataRef.current = { loadedAt: Date.now(), guests: referenceData.guests, companies: referenceData.companies };
-      }
       setRoomBlocks(normalizeRoomBlocksResponse(blocksRes.data));
       setCalendarSafetyError(null);
       if (calendarRatesRes.rateLoadError) {
