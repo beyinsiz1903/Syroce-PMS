@@ -445,7 +445,15 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
 
   // Final close never bypasses blockers. A dry run remains available so the
   // operator can inspect the result without posting or advancing the date.
-  const runBlocked = (previewData?.blockers?.length > 0) && !runOptions.dry_run;
+  const businessDateCatchupRequired = Number(previewData?.date_drift_days || 0) > 1;
+  const runBlocked = ((previewData?.blockers?.length > 0) || businessDateCatchupRequired) && !runOptions.dry_run;
+  const openRunDialog = (options = {}) => {
+    setRunOptions((current) => ({
+      ...current,
+      dry_run: options.dryRun ?? current.dry_run,
+    }));
+    setShowRunDialog(true);
+  };
 
   const ctx = {
     t,
@@ -496,16 +504,35 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               {canRunAudit && <Button
                 data-testid="run-audit-btn"
                 size="sm"
-                onClick={() => setShowRunDialog(true)}
+                onClick={() => openRunDialog({ dryRun: businessDateCatchupRequired })}
                 disabled={running}
               >
                 <Play className="w-4 h-4 mr-1.5" />
-                Denetim Başlat
+                {businessDateCatchupRequired ? "Simülasyon Başlat" : "Denetim Başlat"}
               </Button>}
             </>
           }
         />
         <h1 data-testid="night-audit-title" className="sr-only">Gece Denetimi</h1>
+
+        {businessDateCatchupRequired && (
+          <Card
+            className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950"
+            data-testid="business-date-catchup-banner"
+            role="alert"
+          >
+            <CardContent className="flex items-start gap-3 py-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div className="text-sm text-amber-950 dark:text-amber-100">
+                <p className="font-semibold">Canlı gün sonu beklemede</p>
+                <p className="mt-0.5 text-xs">
+                  PMS iş günü takvimden {previewData.date_drift_days} gün geride.
+                  Günleri kontrollü olarak kapatmadan finansal kayıt oluşturulamaz; yalnızca simülasyon başlatabilirsiniz.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {blockedRunDetail && (
           <Card className="border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950" data-testid="blocked-run-details">
@@ -647,7 +674,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           <TabsContent value="preparation" className="space-y-4 mt-4">
             <PreparationTab
               canRunAudit={canRunAudit}
-              onStartRun={() => setShowRunDialog(true)}
+              onStartRun={openRunDialog}
               onPreviewLoaded={handlePreviewLoaded}
               onOpenRun={ctx.onOpenRun}
               refreshKey={prepRefreshKey}
@@ -841,6 +868,18 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </p>
               </div>
 
+              {businessDateCatchupRequired && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2" data-testid="catchup-required-warning">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-amber-900">
+                    <p className="font-semibold">Kontrollü gün kapatma gerekli</p>
+                    <p className="mt-0.5">
+                      PMS iş günü takvimden {previewData.date_drift_days} gün geride. Canlı gün sonu kapalıdır; yalnızca simülasyon çalıştırabilirsiniz.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Engelleyici uyarısı */}
               {previewData && (previewData.blockers?.length > 0) && !runOptions.skip_validations && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2" data-testid="modal-blockers-warn">
@@ -892,7 +931,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
 
               {runBlocked && (
                 <p className="text-xs text-rose-700 pt-1" data-testid="run-blocked-hint">
-                  Engelleyici sorunlar çözülmeden canlı gün sonu başlatılamaz. Hazırlık sekmesinden çözün veya yalnızca simülasyon çalıştırın.
+                  {businessDateCatchupRequired
+                    ? "PMS iş günü takvimden geride. Kontrollü kapatma planı oluşturun; burada yalnızca simülasyon çalıştırılabilir."
+                    : "Engelleyici sorunlar çözülmeden canlı gün sonu başlatılamaz. Hazırlık sekmesinden çözün veya yalnızca simülasyon çalıştırın."}
                 </p>
               )}
 
