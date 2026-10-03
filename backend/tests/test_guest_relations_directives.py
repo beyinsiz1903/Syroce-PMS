@@ -8,18 +8,18 @@ Locks in regressions for:
 """
 from __future__ import annotations
 
-import sys
 import datetime as dt
-if not hasattr(dt, "UTC"):
-    dt.UTC = dt.timezone.utc
 
+if not hasattr(dt, "UTC"):
+    dt.UTC = dt.UTC
+
+from datetime import datetime, timedelta
 from types import SimpleNamespace
-from typing import Any
+
 import pytest
-from datetime import datetime, timedelta, timezone
-from datetime import timezone as dt_timezone
-UTC = dt_timezone.utc
-from fastapi import FastAPI, HTTPException
+
+UTC = dt.UTC
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routers import guest_relations as gr_router
@@ -215,7 +215,14 @@ def test_get_guest_profile_analysis(env):
     assert "Soda" in data["minibar_preference"]
 
 
-def test_trigger_room_preparations(env):
+def test_trigger_room_preparations(env, monkeypatch):
+    audit_events = []
+
+    async def _audit(*args, **kwargs):
+        audit_events.append({"args": args, **kwargs})
+
+    monkeypatch.setattr(gr_router, "create_audit_log", _audit)
+
     r = env.client.post("/api/guest-relations/preparations/trigger")
     assert r.status_code == 200, r.text
     res = r.json()
@@ -241,6 +248,8 @@ def test_trigger_room_preparations(env):
     # Verify booking special requests updated
     booking = env.db.bookings.docs[_BOOKING_ID]
     assert "[MİSAFİR İLİŞKİLERİ DİREKTİFİ]" in booking["special_requests"]
+    assert audit_events[0]["args"][2] == "guest_preparation_triggered"
+    assert audit_events[0]["args"][5] == {"processed_bookings": 1, "directives_generated": 1}
 
 
 def test_guest_profile_analysis_resolves_tenant_local_booking_number(env):

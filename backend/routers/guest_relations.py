@@ -222,6 +222,18 @@ async def trigger_room_preparations(
 
         generated_count += 1
 
+    await create_audit_log(
+        tenant_id,
+        current_user,
+        "guest_preparation_triggered",
+        "guest_preparation_directive",
+        None,
+        {
+            "processed_bookings": len(tomorrow_bookings),
+            "directives_generated": generated_count,
+        },
+    )
+
     return {"success": True, "processed_bookings": len(tomorrow_bookings), "directives_generated": generated_count}
 
 
