@@ -41,8 +41,8 @@ function loadWorker(fetchImpl, overrides = {}) {
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(extensionDir, "background.js"), "utf8"), context);
-  return (message) => new Promise((resolve) => {
-    const keepOpen = listener(message, { id: "test-extension", tab: { id: 1 } }, resolve);
+  return (message, sender = { id: "test-extension", tab: { id: 1 } }) => new Promise((resolve) => {
+    const keepOpen = listener(message, sender, resolve);
     assert.equal(keepOpen, true);
   });
 }
@@ -200,5 +200,31 @@ test("Jandarma SOAP can use the explicitly remembered device password after Chro
     type: "KBS_SEND", authority: "jandarma",
     body: { action: "checkout", nationality: "TR", id_number: "10000000146", check_out: "2026-08-23" },
   });
+  assert.equal(result.ok, true);
+});
+
+test("Jandarma connection test can use the explicitly remembered device password after Chrome restarts", async () => {
+  const send = loadWorker(async (_url, init) => {
+    assert.match(init.body, /<Sifre>remembered-secret<\/Sifre>/);
+    return new Response(
+      "<TesisBilgisiGetirResult><Basarili>true</Basarili><HataKodu>Basarili</HataKodu><Mesaj>İşlem başarılı</Mesaj></TesisBilgisiGetirResult>",
+      { status: 200, headers: { "content-type": "text/xml" } },
+    );
+  }, {
+    kbsConfig: {
+      polis: { mode: "test" },
+      jandarma: {
+        mode: "jandarma-soap",
+        endpoint: "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc",
+        userTc: "11111111110", facilityCode: "12345", liveConfirmed: true,
+      },
+    },
+    session: {},
+    local: { jandarmaPersistentWebServicePassword: "remembered-secret" },
+  });
+  const result = await send(
+    { type: "KBS_TEST_JANDARMA_CONNECTION" },
+    { id: "test-extension", url: "chrome-extension://test-extension/options.html" },
+  );
   assert.equal(result.ok, true);
 });

@@ -130,13 +130,22 @@ async function save() {
   await chrome.storage.local.set({ kbsConfig: cfg });
   const password = $("jandarma_password").value;
   const rememberPassword = $("jandarma_rememberPassword").checked;
+  let sessionPassword = "";
   if (password) {
     await chrome.storage.session.set({ [SESSION_PASSWORD_KEY]: password });
     hasSessionPassword = true;
+    sessionPassword = password;
+  } else if (rememberPassword && hasSessionPassword) {
+    // Kullanıcı Chrome kapanmadan önce "Bu resepsiyon cihazında hatırla"
+    // seçeneğini açarsa şifreyi yeniden yazmasını istemeyelim. Parola zaten
+    // extension'ın session deposunda; yalnızca açık cihaz-onayıyla kalıcı
+    // cihaz deposuna yükseltilir.
+    const session = await chrome.storage.session.get(SESSION_PASSWORD_KEY);
+    sessionPassword = session[SESSION_PASSWORD_KEY] || "";
   }
-  if (rememberPassword && password) {
-    await chrome.storage.local.set({ [PERSISTENT_PASSWORD_KEY]: password });
-    hasPersistentPassword = true;
+  if (rememberPassword && sessionPassword) {
+    await chrome.storage.local.set({ [PERSISTENT_PASSWORD_KEY]: sessionPassword });
+    hasPersistentPassword = Boolean(sessionPassword);
   } else if (!rememberPassword) {
     await chrome.storage.local.remove(PERSISTENT_PASSWORD_KEY);
     hasPersistentPassword = false;
