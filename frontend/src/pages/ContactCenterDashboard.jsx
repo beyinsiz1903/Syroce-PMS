@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { toast } from 'sonner';
 
 // Stat Card Component
 const StatCard = ({ title, value, icon: Icon, colorClass, subtitle }) => (
@@ -75,6 +76,12 @@ const AGENT_STATE_LABELS = {
   meeting: "Toplantı",
   training: "Eğitim",
   offline: "Çevrimdışı",
+};
+
+const INTERVENTION_LABELS = {
+  listen: 'dinleme',
+  whisper: 'fısıldama',
+  barge: 'görüşmeye katılma',
 };
 
 export default function ContactCenterDashboard({ user }) {
@@ -182,7 +189,7 @@ export default function ContactCenterDashboard({ user }) {
       });
       fetchSupervisorData();
     } catch (err) {
-      alert("Durum güncellenirken hata oluştu.");
+      toast.error('Durum güncellenirken hata oluştu.');
     }
   };
 
@@ -193,9 +200,9 @@ export default function ContactCenterDashboard({ user }) {
         call_sid: callSid
       });
       setActiveIntervention({ action, callSid });
-      alert(`Görüşmeye '${action}' moduyla başarıyla bağlanıldı.`);
+      toast.success(`Görüşmeye ${INTERVENTION_LABELS[action] || action} moduyla bağlanıldı.`);
     } catch (err) {
-      alert("Müdahale başlatılamadı.");
+      toast.error('Müdahale başlatılamadı.');
     }
   };
 
