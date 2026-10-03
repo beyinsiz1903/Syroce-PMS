@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from bson import ObjectId
 from bson.decimal128 import Decimal128
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from common.context import OperationContext
@@ -22,10 +22,96 @@ from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 from security.guest_data_visibility import protect_guest_row, visibility_mode_for_field
 from security.log_sanitizer import is_sensitive_field, sanitize_string
+from core.audit_export import SIGNING_KEY_ENV, build_signed_export, canonical_json
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/audit", tags=["Audit Timeline"])
+
+
+ENTITY_ALIASES = {
+    "user": ("user", "users", "auth"),
+    "reservation": ("reservation", "booking", "bookings"),
+    "invoice": ("invoice", "invoices", "folio"),
+    "room": ("room", "rooms"),
+}
+
+REPORT_IMPACT_LINKS = {
+    "user": [
+        {"report": "security_access", "label": "Erişim ve oturum raporu", "path": "/security-center"},
+    ],
+    "reservation": [
+        {"report": "occupancy", "label": "Doluluk raporu", "path": "/reports"},
+        {"report": "revenue", "label": "Gelir raporu", "path": "/reports"},
+    ],
+    "invoice": [
+        {"report": "invoice", "label": "Fatura ve vergi raporu", "path": "/invoice-module"},
+        {"report": "ledger", "label": "Genel muhasebe raporu", "path": "/general-ledger"},
+    ],
+    "room": [
+        {"report": "housekeeping", "label": "Kat hizmetleri raporu", "path": "/housekeeping"},
+        {"report": "occupancy", "label": "Doluluk raporu", "path": "/reports"},
+    ],
+}
+
+
+def _canonical_entity_type(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    return "reservation" if normalized in {"booking", "bookings", "reservation"} else normalized
+
+
+def _entity_timeline_query(tenant_id: str, entity_type: str, entity_id: str) -> tuple[str, dict]:
+    """Build a tenant-bound relation query for the four operational entities."""
+    canonical_type = _canonical_entity_type(entity_type)
+    if canonical_type not in ENTITY_ALIASES:
+        raise HTTPException(422, "Desteklenen kayıt türleri: kullanıcı, rezervasyon, fatura ve oda")
+    entity_id = (entity_id or "").strip()
+    if not entity_id or len(entity_id) > 160:
+        raise HTTPException(422, "Kayıt kimliği geçersiz")
+
+    aliases = ENTITY_ALIASES[canonical_type]
+    relations = [
+        {"target_id": entity_id},
+        {"entity_id": entity_id},
+        {"metadata.entity_id": entity_id},
+    ]
+    if canonical_type == "user":
+        relations.extend([{"actor_id": entity_id}, {"user_id": entity_id}, {"metadata.user_id": entity_id}])
+    elif canonical_type == "reservation":
+        relations.extend([{"booking_id": entity_id}, {"reservation_id": entity_id}, {"metadata.booking_id": entity_id}, {"metadata.reservation_id": entity_id}])
+    elif canonical_type == "invoice":
+        relations.extend([{"invoice_id": entity_id}, {"metadata.invoice_id": entity_id}, {"folio_id": entity_id}])
+    elif canonical_type == "room":
+        relations.extend([{"room_id": entity_id}, {"room_number": entity_id}, {"metadata.room_id": entity_id}, {"metadata.room_number": entity_id}])
+
+    scope_terms = [{"target_type": {"$in": aliases}}, {"entity_type": {"$in": aliases}}]
+    if canonical_type == "user":
+        scope_terms.append({"actor_id": entity_id})
+    else:
+        # Legacy audit events often did not name their entity type; preserve
+        # them only when one of the explicit relation fields matches below.
+        scope_terms.extend([{"target_type": {"$exists": False}}, {"entity_type": {"$exists": False}}])
+
+    return canonical_type, {
+        "tenant_id": tenant_id,
+        "$and": [
+            {"$or": scope_terms},
+            {"$or": relations},
+        ],
+    }
+
+
+async def _retention_status(tenant_id: str) -> dict:
+    policy = await db.gdpr_retention_policies.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    days = int((policy or {}).get("audit_log_retention_days") or 3650)
+    return {
+        "configured": bool((policy or {}).get("configured")),
+        "audit_log_retention_days": days,
+        "hot_store_days": min(days, 365),
+        "archive_enabled": True,
+        "archive_immutable": True,
+        "policy_source": "gdpr_retention_policy" if policy else "platform_default",
+    }
 
 
 def _protect_audit_value(value, current_user):
@@ -297,6 +383,95 @@ async def export_audit_timeline_csv(
     )
 
 
+@router.get("/timeline.signed-export")
+async def export_signed_audit_timeline(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    actor_id: str | None = None,
+    action: str | None = None,
+    severity: str | None = None,
+    entity_type: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """Download a redacted, cryptographically signed audit evidence package.
+
+    This deliberately fails closed when the deployment has not configured its
+    dedicated signing key. Returning an unsigned file would make a compliance
+    export look stronger than it is.
+    """
+    result = await get_audit_timeline(
+        start_date=start_date,
+        end_date=end_date,
+        actor_id=actor_id,
+        action=action,
+        severity=severity,
+        entity_type=entity_type,
+        ip_address=None,
+        user_agent=None,
+        limit=5000,
+        cursor=None,
+        current_user=current_user,
+        _perm=_perm,
+    )
+    if result.get("degraded"):
+        raise HTTPException(503, "Denetim zaman çizgisi şu anda doğrulanamıyor")
+
+    ctx = OperationContext.from_user(current_user)
+    try:
+        from core.audit_chain import verify_chain
+
+        chain_status = await verify_chain(ctx.tenant_id, limit=50000)
+        package = build_signed_export(
+            tenant_id=ctx.tenant_id,
+            actor_id=str(getattr(current_user, "id", None) or getattr(current_user, "email", None) or "unknown"),
+            events=result.get("events", []),
+            filters={
+                "start_date": start_date,
+                "end_date": end_date,
+                "actor_id": actor_id,
+                "action": action,
+                "severity": severity,
+                "entity_type": entity_type,
+            },
+            chain_status=chain_status,
+        )
+    except RuntimeError as exc:
+        if SIGNING_KEY_ENV in str(exc):
+            raise HTTPException(503, "İmzalı denetim dışa aktarımı henüz yapılandırılmadı") from exc
+        raise
+
+    from core.audit import log_audit_event
+
+    await log_audit_event(
+        tenant_id=ctx.tenant_id,
+        user_id=str(getattr(current_user, "id", None) or getattr(current_user, "email", None) or "unknown"),
+        action="audit.signed_exported",
+        entity_type="audit_export",
+        entity_id=package["signature"]["payload_sha256"],
+        details="İmzalı denetim izi paketi dışa aktarıldı",
+        after_value={"event_count": len(result.get("events", [])), "key_id": package["signature"]["key_id"]},
+        db=db,
+    )
+    payload = canonical_json(package)
+    filename = f"denetim-izi-imzali-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.json"
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/retention")
+async def get_audit_retention_status(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """Expose the active audit retention contract without allowing edits here."""
+    ctx = OperationContext.from_user(current_user)
+    return await _retention_status(ctx.tenant_id)
+
+
 @router.get("/timeline/{entity_type}/{entity_id}")
 async def get_entity_audit_trail(
     entity_type: str,
@@ -310,13 +485,7 @@ async def get_entity_audit_trail(
     with before/after snapshot diffs.
     """
     ctx = OperationContext.from_user(current_user)
-    query = {
-        "tenant_id": ctx.tenant_id,
-        "$or": [
-            {"target_type": entity_type, "target_id": entity_id},
-            {"entity_type": entity_type, "entity_id": entity_id},
-        ],
-    }
+    canonical_type, query = _entity_timeline_query(ctx.tenant_id, entity_type, entity_id)
 
     logs = await db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
 
@@ -350,10 +519,11 @@ async def get_entity_audit_trail(
         trail.append(_json_safe(entry))
 
     return {
-        "entity_type": entity_type,
+        "entity_type": canonical_type,
         "entity_id": entity_id,
         "trail": trail,
         "count": len(trail),
+        "report_impact_links": REPORT_IMPACT_LINKS.get(canonical_type, []),
     }
 
 
