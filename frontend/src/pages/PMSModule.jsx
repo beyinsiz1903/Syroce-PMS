@@ -627,6 +627,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     } catch (error) { console.error('Failed to load rate plans/packages', error); toast.error('Fiyat planları yüklenemedi'); }
   };
 
+  // Fiyat planı ve paket seçenekleri kayıt düğmesine basıldıktan sonra değil,
+  // rezervasyon formu açılır açılmaz hazır olmalı. Böylece operatör gerçek
+  // seçenekleri görür; gönderim de yalnızca bu görünüm verisini yenilemek için
+  // beklemez (backend fiyatı yine işlem anında doğrular).
+  useEffect(() => {
+    if (openDialog !== 'booking') return;
+    loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
+    // Dialog açılışı bilinçli tetikleyicidir; form alanları değiştikçe ağ
+    // isteği başlatmayız, kullanıcı seçimini kaybetmez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDialog]);
+
   const loadAuditLogs = async () => {
     try { const response = await axios.get('/audit-logs?limit=20'); setAuditLogs(response.data.logs || []);
     } catch (error) { if (error.response?.status !== 403) console.error('Failed to load audit logs:', error); }
@@ -810,7 +822,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Fiyat değişikliği için açıklama girin'); return; }
     if (!newBooking.guest_id && !inlineGuestName) { toast.error('Misafir seçin veya misafir adını yazın'); return; }
     if (!newBooking.check_in || !newBooking.check_out) { toast.error('Giriş ve çıkış tarihlerini seçin'); return; }
-    await loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
     if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('En az bir oda ekleyin'); return; }
     if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Her satır için oda seçin'); return; }
     try {
