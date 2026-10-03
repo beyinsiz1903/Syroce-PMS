@@ -456,6 +456,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [hasLoadedAllBookings, setHasLoadedAllBookings] = useState(false);
   const [ratePlans, setRatePlans] = useState([]);
   const [packages, setPackages] = useState([]);
+  const rateDataRequestRef = useRef(0);
 
   // Initial load: kritik verileri (rooms/guests/bookings/companies) hemen çek;
   // ikincil veriler (audit log + channel manager pending items) initial paint
@@ -619,13 +620,29 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const loadRateData = async (channel, companyId, stayDate) => {
+    const requestId = ++rateDataRequestRef.current;
     try {
       const params = {};
       if (channel) params.channel = channel; if (companyId) params.company_id = companyId; if (stayDate) params.stay_date = stayDate;
       const [rpRes, pkgRes] = await Promise.all([axios.get('/rates/rate-plans', { params }), axios.get('/rates/packages')]);
+      if (requestId !== rateDataRequestRef.current) return;
       setRatePlans(rpRes.data || []); setPackages(pkgRes.data || []);
-    } catch (error) { console.error('Failed to load rate plans/packages', error); toast.error('Fiyat planları yüklenemedi'); }
+    } catch (error) {
+      if (requestId !== rateDataRequestRef.current) return;
+      console.error('Failed to load rate plans/packages', error); toast.error('Fiyat planları yüklenemedi');
+    }
   };
+
+  // Fiyat planı ve paket seçenekleri kayıt düğmesine basıldıktan sonra değil,
+  // rezervasyon formu açılır açılmaz ve fiyat bağlamı değiştiğinde hazır olmalı.
+  // Gönderim yalnızca bu görünüm verisini yenilemek için beklemez; backend
+  // fiyatı yine işlem anında doğrular. Eski yanıtların yeni bağlamı ezmesini
+  // request id ile engelleriz.
+  useEffect(() => {
+    if (openDialog !== 'booking') return;
+    loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDialog, newBooking.channel, newBooking.company_id, newBooking.check_in]);
 
   const loadAuditLogs = async () => {
     try { const response = await axios.get('/audit-logs?limit=20'); setAuditLogs(response.data.logs || []);
@@ -757,9 +774,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/companies', newCompany);
-      toast.success('Şirket oluşturuldu'); setOpenDialog(null); loadData();
-      const company = response.data; handleCompanySelect(company.id);
+      await axios.post('/companies', newCompany);
+      // Quick-created companies intentionally start pending, so they cannot be
+      // attached to a reservation until their approval is complete.
+      toast.success('Şirket oluşturuldu; onaylandıktan sonra rezervasyona bağlayabilirsiniz.');
+      setOpenDialog('booking');
+      loadData();
       setNewCompany({ name: '', corporate_code: '', tax_number: '', billing_address: '', contact_person: '', contact_email: '', contact_phone: '', contracted_rate: '', default_rate_type: '', default_market_segment: '', default_cancellation_policy: '', payment_terms: '', status: 'pending' });
     } catch (error) { toast.error('Şirket oluşturulamadı'); }
   };
@@ -810,7 +830,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Fiyat değişikliği için açıklama girin'); return; }
     if (!newBooking.guest_id && !inlineGuestName) { toast.error('Misafir seçin veya misafir adını yazın'); return; }
     if (!newBooking.check_in || !newBooking.check_out) { toast.error('Giriş ve çıkış tarihlerini seçin'); return; }
-    await loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
     if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('En az bir oda ekleyin'); return; }
     if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Her satır için oda seçin'); return; }
     try {
