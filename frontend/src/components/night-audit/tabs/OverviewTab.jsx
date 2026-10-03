@@ -86,25 +86,16 @@ export default function OverviewTab(props) {
               <div className="rounded-lg p-2 bg-blue-100">
                 <Zap className="w-4 h-4 text-blue-600" />
               </div>
-              <div>
-                <div className="flex flex-wrap gap-1">
-                  {schedule.auto_retry && (
+                <div>
+                  <div className="flex flex-wrap gap-1">
                     <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px]">
-                      Otomatik Yeniden Deneme
+                      Altyapı hatasında en fazla 2 yeniden deneme
                     </Badge>
-                  )}
-                  {schedule.skip_validations && (
-                    <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">
-                      {t('cm.components_nightaudit_tabs_OverviewTab.dogrulama_atla')}
+                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
+                      Doğrulamalar zorunlu
                     </Badge>
-                  )}
-                  {!schedule.auto_retry && !schedule.skip_validations && (
-                    <Badge className="bg-gray-50 text-gray-500 border border-gray-200 text-[10px]">
-                      Standart Ayarlar
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">{t('cm.components_nightaudit_tabs_OverviewTab.ozellikler')}</p>
+                  </div>
+                <p className="text-xs text-gray-500 mt-0.5">Platform güvenlik politikası</p>
               </div>
             </div>
           </div>

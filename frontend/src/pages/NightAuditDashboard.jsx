@@ -14,7 +14,7 @@ import {
   Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle,
   RefreshCw, Calendar, FileText, ChevronDown, ChevronUp,
   Users, Building2, BarChart3, Eye, Loader2,
-  Shield, Info, Timer, Settings2, Zap, RotateCcw,
+  Shield, Info, Timer, Settings2, Zap,
   TrendingUp, CreditCard, ShieldCheck, Scale, Receipt,
   PieChart, ArrowUpDown, Banknote, AlertOctagon, Search
 } from "lucide-react";
@@ -779,39 +779,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </select>
               </div>
 
-              {/* Options */}
-              <div className="space-y-2">
-                <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <RotateCcw className="w-4 h-4 text-blue-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">Otomatik Yeniden Deneme</p>
-                      <p className="text-xs text-gray-500">Başarısız olursa tekrar dener</p>
-                    </div>
-                  </div>
-                  <Switch
-                    data-testid="schedule-auto-retry-switch"
-                    checked={schedule.auto_retry}
-                    onCheckedChange={(checked) => setSchedule({ ...schedule, auto_retry: checked })}
-                  />
-                </label>
-
-                {schedule.auto_retry && (
-                  <div className="ml-8">
-                    <label className="text-xs text-gray-600 mb-1 block">Maks. Deneme Sayısı</label>
-                    <select
-                      data-testid="schedule-max-retries-select"
-                      value={schedule.max_retries}
-                      onChange={(e) => setSchedule({ ...schedule, max_retries: parseInt(e.target.value) })}
-                      className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-                    >
-                      {[1, 2, 3, 5].map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <p className="font-medium text-slate-800">Sabit güvenlik politikası</p>
+                <p className="mt-1">
+                  Zamanlanmış gün sonu doğrulamaları atlayamaz. Beklenmedik altyapı hatalarında sistem en fazla iki kez yeniden dener; iş günü gerideyse işlem engellenir ve kayda alınır.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
