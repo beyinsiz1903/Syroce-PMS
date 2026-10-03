@@ -30,6 +30,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from security.guest_data_visibility import protect_guest_row
 from security.search_normalize import prefix_conditions
 
 try:  # pragma: no cover - mirrors pms_guests import guard
@@ -52,7 +53,7 @@ def _decrypt_guest(doc: dict) -> dict:
     return doc
 
 
-async def _search_guests(tenant_id: str, q: str) -> list[dict]:
+async def _search_guests(tenant_id: str, q: str, current_user: User) -> list[dict]:
     """Guest search: plaintext name prefix + encrypted-PII blind index."""
     name_conditions = prefix_conditions(["name", "first_name", "last_name"], q)
     if _fenc:
@@ -103,16 +104,19 @@ async def _search_guests(tenant_id: str, q: str) -> list[dict]:
         else:
             name = g.get("name") or g.get("email") or "—"
         results.append(
-            {
+            protect_guest_row(
+                {
                 "id": g.get("id", ""),
                 "name": name,
                 "vip_status": bool(g.get("vip_status", False)),
-            }
+                },
+                current_user,
+            )
         )
     return results
 
 
-async def _search_reservations(tenant_id: str, q: str) -> list[dict]:
+async def _search_reservations(tenant_id: str, q: str, current_user: User) -> list[dict]:
     """Reservation search: index-serviceable prefix on guest_name + booking_number."""
     conds = prefix_conditions(["guest_name", "booking_number"], q)
     if not conds:
@@ -145,7 +149,8 @@ async def _search_reservations(tenant_id: str, q: str) -> list[dict]:
         return str(value)
 
     return [
-        {
+        protect_guest_row(
+            {
             "id": b.get("id", ""),
             "booking_number": b.get("booking_number", ""),
             "guest_name": b.get("guest_name", ""),
@@ -153,7 +158,9 @@ async def _search_reservations(tenant_id: str, q: str) -> list[dict]:
             "status": b.get("status", ""),
             "check_in": _iso(b.get("check_in")),
             "check_out": _iso(b.get("check_out")),
-        }
+            },
+            current_user,
+        )
         for b in raw
     ]
 
@@ -212,8 +219,8 @@ async def unified_search(
         q = q[:200]
 
     tenant_id = current_user.tenant_id
-    guests = await _search_guests(tenant_id, q)
-    reservations = await _search_reservations(tenant_id, q)
+    guests = await _search_guests(tenant_id, q, current_user)
+    reservations = await _search_reservations(tenant_id, q, current_user)
     rooms = await _search_rooms(tenant_id, q)
 
     return {
