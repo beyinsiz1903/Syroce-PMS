@@ -423,8 +423,9 @@ function EnvironmentTab({
             </CardHeader>
             <CardContent className="px-4 pb-3 space-y-1.5">
               {catData.checks?.map(check => <div key={check.name} className="flex items-center gap-2" data-testid={`env-check-${check.name}`}>
-                  {check.status === "pass" ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : check.status === "warn" ? <AlertTriangle className="w-3 h-3 text-amber-400" /> : <XCircle className="w-3 h-3 text-red-400" />}
+                  {check.status === "pass" ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : check.status === "warn" || check.status === "not_verified" ? <AlertTriangle className="w-3 h-3 text-amber-400" /> : <XCircle className="w-3 h-3 text-red-400" />}
                   <span className="text-[11px] text-zinc-300">{check.name.replace(/_/g, " ")}</span>
+                  {check.status === "not_verified" && <span className="text-[9px] text-amber-400">Kanıt gerekli</span>}
                 </div>)}
               {catData.issues?.length > 0 && catData.issues.map((issue, i) => <p key={issue.id || i} className="text-[10px] text-amber-400/80 flex items-center gap-1 mt-1">
                   <AlertTriangle className="w-2.5 h-2.5 shrink-0" /> {issue}
