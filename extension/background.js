@@ -30,6 +30,8 @@ const DEFAULT_REFERENCE_KEYS = [
 ];
 const SEND_TIMEOUT_MS = 30000;
 const JANDARMA_SOAP_ENDPOINT = "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc";
+const JANDARMA_SESSION_PASSWORD_KEY = "jandarmaWebServicePassword";
+const JANDARMA_PERSISTENT_PASSWORD_KEY = "jandarmaPersistentWebServicePassword";
 
 function randHex(n) {
   const a = new Uint8Array(n);
@@ -85,6 +87,16 @@ async function getProfile(authority) {
   return all[normalizeAuthority(authority)];
 }
 
+async function getJandarmaWebServicePassword() {
+  const session = await chrome.storage.session.get(JANDARMA_SESSION_PASSWORD_KEY);
+  if (session[JANDARMA_SESSION_PASSWORD_KEY]) return session[JANDARMA_SESSION_PASSWORD_KEY];
+  // Persistent storage is opt-in from the extension's options page.  It is
+  // intentionally device-local and never sent to Syroce; it is only placed in
+  // the official Jandarma SOAP request when a notification is dispatched.
+  const local = await chrome.storage.local.get(JANDARMA_PERSISTENT_PASSWORD_KEY);
+  return local[JANDARMA_PERSISTENT_PASSWORD_KEY] || "";
+}
+
 async function getInstallId() {
   let { kbsInstallId } = await chrome.storage.local.get("kbsInstallId");
   if (!kbsInstallId) {
@@ -115,7 +127,7 @@ function configState(profile, hasSessionPassword = false) {
 
 async function allStates() {
   const all = await getAllConfig();
-  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const jandarmaWebServicePassword = await getJandarmaWebServicePassword();
   const states = {};
   for (const a of AUTHORITIES) states[a] = configState(all[a], a === "jandarma" && Boolean(jandarmaWebServicePassword));
   return states;
@@ -186,7 +198,7 @@ function payloadMissingFields(body) {
 async function sendToKbs(body, authority) {
   const auth = normalizeAuthority(authority);
   const cfg = await getProfile(auth);
-  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const jandarmaWebServicePassword = await getJandarmaWebServicePassword();
   const state = configState(cfg, Boolean(jandarmaWebServicePassword));
 
   // Test modu dahil, eksik operasyon verisini "basarili prova" gibi gosterme.
