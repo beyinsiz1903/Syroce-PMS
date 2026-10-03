@@ -107,9 +107,10 @@ async def get_unified_feed(
     names = _assignee_names(current_user)
 
     notif_query: dict[str, Any] = {
+        "tenant_id": current_user.tenant_id,
         "$or": [
             {"user_id": current_user.id},
-            {"tenant_id": current_user.tenant_id, "user_id": None},
+            {"user_id": None},
         ]
     }
     if unread_only:
@@ -196,9 +197,10 @@ async def mark_feed_item_read(
         result = await db.notifications.update_one(
             {
                 "id": request.id,
+                "tenant_id": current_user.tenant_id,
                 "$or": [
                     {"user_id": current_user.id},
-                    {"tenant_id": current_user.tenant_id},
+                    {"user_id": None},
                 ],
             },
             {"$set": {"read": True, "read_at": now}},
@@ -330,9 +332,10 @@ async def get_today_digest(
     names = _assignee_names(current_user)
     notif_unread = await db.notifications.count_documents(
         {
+            "tenant_id": current_user.tenant_id,
             "$or": [
                 {"user_id": current_user.id},
-                {"tenant_id": current_user.tenant_id, "user_id": None},
+                {"user_id": None},
             ],
             "read": False,
         }
