@@ -188,7 +188,9 @@ class SecurityChecklistValidator:
         try:
             from security.log_sanitizer import sanitize_string
 
-            sample_secret = "token=sk_live_12345678901234567890"
+            # Keep this intentionally non-production-looking so secret scanners
+            # do not mistake the self-test fixture for a leaked credential.
+            sample_secret = "token=go_live_sanitizer_fixture"
             filtered = sanitize_string(sample_secret)
             filtering_works = filtered != sample_secret
 
