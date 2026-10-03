@@ -57,15 +57,18 @@ export default function OverviewTab(props) {
                 <p className="text-xs text-gray-500">{schedule.timezone || "Europe/Istanbul"}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className={`rounded-lg p-2 ${
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div className={`rounded-lg p-2 ${
                 scheduleStatus?.last_auto_run_status === "completed" ? "bg-emerald-100"
-                  : scheduleStatus?.last_auto_run_status === "failed" ? "bg-red-100" : "bg-gray-100"
+                  : scheduleStatus?.last_auto_run_status === "failed" ? "bg-red-100"
+                  : scheduleStatus?.last_auto_run_status === "blocked" ? "bg-amber-100" : "bg-gray-100"
               }`}>
                 {scheduleStatus?.last_auto_run_status === "completed" ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 ) : scheduleStatus?.last_auto_run_status === "failed" ? (
                   <XCircle className="w-4 h-4 text-red-600" />
+                ) : scheduleStatus?.last_auto_run_status === "blocked" ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
                 ) : (
                   <Clock className="w-4 h-4 text-gray-400" />
                 )}
@@ -116,6 +119,8 @@ export default function OverviewTab(props) {
                         <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                       ) : log.status === "failed" ? (
                         <XCircle className="w-3 h-3 text-red-500" />
+                      ) : log.status === "blocked" ? (
+                        <AlertTriangle className="w-3 h-3 text-amber-500" />
                       ) : (
                         <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
                       )}
