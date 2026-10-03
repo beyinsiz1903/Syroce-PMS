@@ -195,6 +195,11 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
 });
 
 const DEBUG_ROOMS = false;
+// Guests and companies are reference data for labels/forms. They do not affect
+// room availability, blocks or prices, so a short in-memory cache prevents two
+// large downloads on every date navigation without making sellable inventory
+// stale.
+const CALENDAR_REFERENCE_DATA_TTL_MS = 60_000;
 // YYYY-MM-DD string'e UTC-guvenli gun ekle (tut-surukle cok-gece secimi icin)
 const addDaysToDateStr = (dStr, n) => {
   const d = new Date(`${dStr}T00:00:00Z`);
@@ -233,6 +238,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [bookings, setBookings] = useState([]);
   const bookingsRef = useRef(bookings);
   bookingsRef.current = bookings;
+  const referenceDataRef = useRef({ loadedAt: 0, guests: null, companies: null });
   const [guests, setGuests] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [roomBlocks, setRoomBlocks] = useState([]);
@@ -472,11 +478,20 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const endDate = new Date(currentDate);
       endDate.setDate(endDate.getDate() + daysToShow + 7);
 
-      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, calendarRatesRes] = await Promise.all([
+      const cachedReferenceData = referenceDataRef.current;
+      const useCachedReferenceData = cachedReferenceData.guests && cachedReferenceData.companies
+        && Date.now() - cachedReferenceData.loadedAt < CALENDAR_REFERENCE_DATA_TTL_MS;
+      const referenceDataRequest = useCachedReferenceData
+        ? Promise.resolve({ guests: cachedReferenceData.guests, companies: cachedReferenceData.companies })
+        : Promise.all([
+          axios.get('/pms/guests').catch(() => ({ data: [] })),
+          axios.get('/companies').catch(() => ({ data: [] })),
+        ]).then(([guestsRes, companiesRes]) => ({ guests: guestsRes.data || [], companies: companiesRes.data || [] }));
+
+      const [roomsRes, bookingsRes, referenceData, blocksRes, calendarRatesRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
-        axios.get('/pms/guests').catch(() => ({ data: [] })),
-        axios.get('/companies').catch(() => ({ data: [] })),
+        referenceDataRequest,
         // Blok verisi satılabilirliği belirler. Bir hata asla "blok yok"
         // anlamına gelmemeli; bu istek özellikle kritik tutulur.
         axios.get('/pms/room-blocks?status=active'),
@@ -497,8 +512,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       });
       setRooms(roomsRes.data || []);
       setBookings(bookingsRes.data || []);
-      setGuests(guestsRes.data || []);
-      setCompanies(companiesRes.data || []);
+      setGuests(referenceData.guests);
+      setCompanies(referenceData.companies);
+      if (!useCachedReferenceData) {
+        referenceDataRef.current = { loadedAt: Date.now(), guests: referenceData.guests, companies: referenceData.companies };
+      }
       setRoomBlocks(normalizeRoomBlocksResponse(blocksRes.data));
       setCalendarSafetyError(null);
       if (calendarRatesRes.rateLoadError) {
@@ -525,7 +543,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           totalAmount: groupItems.reduce((sum, x) => sum + (x.total_amount || 0), 0),
           master,
           bookings: groupItems,
-          guest_name: master.guest_name || guestsRes.data.find(g => g.id === master.guest_id)?.name || 'Group Guest'
+          guest_name: master.guest_name || referenceData.guests.find(g => g.id === master.guest_id)?.name || 'Group Guest'
         };
       });
       setGroupBookings(groupSummary);
