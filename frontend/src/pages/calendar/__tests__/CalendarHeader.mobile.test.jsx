@@ -77,7 +77,7 @@ describe('CalendarHeader mobile toolbar', () => {
 
     expect(screen.getByTestId('mobile-calendar-nav-today')).toHaveTextContent('PMS İş Günü');
     expect(screen.getByTestId('calendar-nav-today')).toHaveTextContent('PMS İş Günü');
-    expect(screen.getByTestId('calendar-nav-today')).toHaveAccessibleName('PMS iş günü çevresine git (5.09.2026)');
+    expect(screen.getByTestId('calendar-nav-today')).toHaveAccessibleName('PMS iş günü çevresine git (05.09.2026)');
   });
 
   it('does not expose mutation controls to a read-only calendar user', async () => {
