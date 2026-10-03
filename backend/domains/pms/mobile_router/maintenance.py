@@ -9,6 +9,8 @@ Domain Router: Mobile
 
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
+import base64
+import binascii
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -21,6 +23,7 @@ from core.security import get_current_user, security
 from modules.pms_core.role_permission_service import (
     require_module,  # v89 DW
 )
+from security.upload_validator import MAX_IMAGE_BYTES, validate_image_bytes
 
 # ============================================================================
 # MOBILE ENDPOINTS - Department-Based Mobile Dashboard APIs
@@ -114,6 +117,32 @@ router = APIRouter(prefix="/api", tags=["mobile"])
 _MAINTENANCE_PRIORITIES = {"low", "normal", "high", "urgent", "emergency"}
 _MAINTENANCE_TASK_STATUSES = {"new", "assigned", "in_progress", "on_hold", "waiting_parts", "completed", "cancelled"}
 _MAINTENANCE_PHOTO_TYPES = {"before", "during", "after"}
+_MAX_BASE64_IMAGE_CHARS = ((MAX_IMAGE_BYTES + 2) // 3) * 4 + 16
+
+
+def _decode_maintenance_photo(photo_data: str) -> tuple[str, str]:
+    """Verify Base64 image bytes and return a safe canonical data URL."""
+    value = (photo_data or "").strip()
+    if value.startswith("data:"):
+        header, separator, value = value.partition(",")
+        if not separator or not header.lower().endswith(";base64"):
+            raise HTTPException(status_code=400, detail="Photo must be Base64 encoded")
+    if not value:
+        raise HTTPException(status_code=400, detail="Photo is required")
+    if len(value) > _MAX_BASE64_IMAGE_CHARS:
+        raise HTTPException(status_code=413, detail="Photo is too large")
+    try:
+        image_bytes = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(status_code=400, detail="Photo must be valid Base64")
+
+    content_type, _ = validate_image_bytes(
+        image_bytes,
+        max_bytes=MAX_IMAGE_BYTES,
+        field_label="Maintenance photo",
+    )
+    canonical_data = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{content_type};base64,{canonical_data}", content_type
 
 
 def _require_maintenance_priority(priority: str) -> str:
@@ -379,6 +408,7 @@ async def upload_task_photo_mobile(
     photo_type = photo_type.strip().lower()
     if photo_type not in _MAINTENANCE_PHOTO_TYPES:
         raise HTTPException(status_code=400, detail="Invalid maintenance photo type")
+    canonical_photo_url, content_type = _decode_maintenance_photo(photo_data)
 
     task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
 
@@ -391,7 +421,8 @@ async def upload_task_photo_mobile(
         "id": photo_id,
         "tenant_id": current_user.tenant_id,
         "task_id": task_id,
-        "photo_url": photo_data,  # In production, upload to S3/storage
+        "photo_url": canonical_photo_url,
+        "content_type": content_type,
         "photo_type": photo_type,
         "description": description,
         "uploaded_by": current_user.username,
