@@ -27,6 +27,8 @@ const PRIORITIES = [
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+export const isSameShiftTransfer = (shift, toShift) => Boolean(shift && toShift && shift === toShift);
+
 export default function ShiftHandoverPage({ user, tenant, onLogout }) {
   const { t, i18n } = useTranslation();
   const [items, setItems] = useState([]);
@@ -60,6 +62,10 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
 
   const create = async () => {
     if (!form.note.trim()) { toast.error('Not boş olamaz'); return; }
+    if (isSameShiftTransfer(form.shift, form.to_shift)) {
+      toast.error('Devreden ve devralan vardiya aynı olamaz');
+      return;
+    }
     setCreating(true);
     try {
       const payload = { ...form };
@@ -233,7 +239,14 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
                           <Check className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_ShiftHandoverPage.onayla')}
                         </Button>
                       )}
-                      <Button size="sm" variant="ghost" onClick={() => remove(it.id)} className="h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => remove(it.id)}
+                        className="h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                        aria-label="Devir notunu sil"
+                        title="Devir notunu sil"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
