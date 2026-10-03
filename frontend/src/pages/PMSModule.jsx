@@ -456,6 +456,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [hasLoadedAllBookings, setHasLoadedAllBookings] = useState(false);
   const [ratePlans, setRatePlans] = useState([]);
   const [packages, setPackages] = useState([]);
+  const rateDataRequestRef = useRef(0);
 
   // Initial load: kritik verileri (rooms/guests/bookings/companies) hemen çek;
   // ikincil veriler (audit log + channel manager pending items) initial paint
@@ -619,25 +620,29 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const loadRateData = async (channel, companyId, stayDate) => {
+    const requestId = ++rateDataRequestRef.current;
     try {
       const params = {};
       if (channel) params.channel = channel; if (companyId) params.company_id = companyId; if (stayDate) params.stay_date = stayDate;
       const [rpRes, pkgRes] = await Promise.all([axios.get('/rates/rate-plans', { params }), axios.get('/rates/packages')]);
+      if (requestId !== rateDataRequestRef.current) return;
       setRatePlans(rpRes.data || []); setPackages(pkgRes.data || []);
-    } catch (error) { console.error('Failed to load rate plans/packages', error); toast.error('Fiyat planları yüklenemedi'); }
+    } catch (error) {
+      if (requestId !== rateDataRequestRef.current) return;
+      console.error('Failed to load rate plans/packages', error); toast.error('Fiyat planları yüklenemedi');
+    }
   };
 
   // Fiyat planı ve paket seçenekleri kayıt düğmesine basıldıktan sonra değil,
-  // rezervasyon formu açılır açılmaz hazır olmalı. Böylece operatör gerçek
-  // seçenekleri görür; gönderim de yalnızca bu görünüm verisini yenilemek için
-  // beklemez (backend fiyatı yine işlem anında doğrular).
+  // rezervasyon formu açılır açılmaz ve fiyat bağlamı değiştiğinde hazır olmalı.
+  // Gönderim yalnızca bu görünüm verisini yenilemek için beklemez; backend
+  // fiyatı yine işlem anında doğrular. Eski yanıtların yeni bağlamı ezmesini
+  // request id ile engelleriz.
   useEffect(() => {
     if (openDialog !== 'booking') return;
     loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
-    // Dialog açılışı bilinçli tetikleyicidir; form alanları değiştikçe ağ
-    // isteği başlatmayız, kullanıcı seçimini kaybetmez.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openDialog]);
+  }, [openDialog, newBooking.channel, newBooking.company_id, newBooking.check_in]);
 
   const loadAuditLogs = async () => {
     try { const response = await axios.get('/audit-logs?limit=20'); setAuditLogs(response.data.logs || []);
