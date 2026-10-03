@@ -254,6 +254,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [daysToShow, setDaysToShow] = useState(14);
   const [calendarMeta, setCalendarMeta] = useState({});
   const [hotelBusinessDate, setHotelBusinessDate] = useState(null);
+  const [businessDateReady, setBusinessDateReady] = useState(false);
   const [viewPreferences, setViewPreferences] = useState(readCalendarViewPreferences);
 
   // UI State
@@ -436,6 +437,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // İlk yüklemede gecikme olmasın diye bookings boşken (ilk render) anında çağırılır.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
+    if (!businessDateReady) return undefined;
     let cancelled = false;
     const isInitial = bookings.length === 0;
     const delay = isInitial ? 0 : 250;
@@ -446,7 +448,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [currentDate, daysToShow]);
+  }, [businessDateReady, currentDate, daysToShow]);
 
   // Fetch hotel business date once on mount
   useEffect(() => {
@@ -465,6 +467,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       .catch(() => {
         // Fallback: use today if business date endpoint fails
         setHotelBusinessDate(new Date().toISOString().split('T')[0]);
+      })
+      .finally(() => {
+        // Takvim, başlangıç tarihini PMS iş gününe göre belirler. Bu istek
+        // çözülmeden yükleme başlatmak iki farklı tarih aralığı için paralel
+        // ve birincisi boşa giden ağır istekler üretiyordu.
+        setBusinessDateReady(true);
       });
   }, []);
 
