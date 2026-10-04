@@ -95,6 +95,7 @@
     "lint": "eslint src/",
     "postinstall": "node scripts/patch-vite-client.js",
     "check:vite-compat": "node scripts/check-vite-compat.js",
+    "check:route-bundle-budgets": "node scripts/check-route-bundle-budgets.mjs",
     "check:i18n-quality": "node scripts/check-quality-locales.mjs"
   },
   "devDependencies": {

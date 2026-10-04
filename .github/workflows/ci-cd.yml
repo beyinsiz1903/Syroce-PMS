@@ -802,6 +802,7 @@ jobs:
       - name: Check bundle size
         run: |
           cd frontend
+          yarn check:route-bundle-budgets
           du -sh build/
           echo "--- JS Bundle Sizes ---"
           find build/ -name "*.js" -exec du -sh {} \; | sort -rh | head -10
