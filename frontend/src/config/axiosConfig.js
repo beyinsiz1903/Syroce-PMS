@@ -138,15 +138,28 @@ function _hardLogout() {
  * interception disabled so only a fresh server response is trusted.
  */
 export async function verifyActiveSession() {
+  const verification = await _verifyActiveSessionState();
+  return verification.active;
+}
+
+// A failed identity request is not automatically proof that the session has
+// ended.  During a deploy, a brief network interruption, or a proxy timeout,
+// `/auth/me` can be unreachable while the browser still has a valid signed-in
+// session.  Only the identity endpoint's own 401 is definitive; every other
+// failure must preserve local state and let the next retry decide.
+async function _verifyActiveSessionState() {
   try {
     await axios.get("/auth/me", {
       _skipAuthRetry: true,
       _skipRetry: true,
       _noCache: true,
     });
-    return true;
-  } catch {
-    return false;
+    return { active: true, definitive: false };
+  } catch (error) {
+    return {
+      active: false,
+      definitive: error?.response?.status === 401,
+    };
   }
 }
 
@@ -248,7 +261,9 @@ export async function keepActiveSessionAlive() {
   if (result?.contextRestored) return { contextRestored: true };
   if (result?.transient) return { transient: true };
 
-  if (await verifyActiveSession()) return { sessionRecovered: true };
+  const verification = await _verifyActiveSessionState();
+  if (verification.active) return { sessionRecovered: true };
+  if (!verification.definitive) return { transient: true };
 
   _hardLogout();
   return { invalid: true };
@@ -287,8 +302,17 @@ axios.interceptors.response.use(
         console.warn("Refresh transient failure (5xx/network); session preserved");
         return Promise.reject(error);
       }
-      if (await verifyActiveSession()) {
+      const verification = await _verifyActiveSessionState();
+      if (verification.active) {
         console.warn("401 response was operation-specific; active session preserved. URL:", original.url);
+        return Promise.reject(error);
+      }
+      if (!verification.definitive) {
+        // App's startup request is itself a 401.  Mark it explicitly so its
+        // catch block keeps the last verified identity instead of treating an
+        // inconclusive retry as a real logout.
+        error._sessionVerificationTransient = true;
+        console.warn("401 response could not be verified due to a transient identity check; session preserved. URL:", original.url);
         return Promise.reject(error);
       }
       console.warn("401 Unauthorized - refresh failed, clearing session. URL:", original.url);
@@ -298,9 +322,13 @@ axios.interceptors.response.use(
       // credential (PIN, one-time action token, provider auth, etc.). Only the
       // canonical identity endpoint is allowed to decide that the user session
       // itself is invalid.
-      if (!(await verifyActiveSession())) {
+      const verification = await _verifyActiveSessionState();
+      if (verification.definitive) {
         console.warn("401 Unauthorized after retry and session verification - clearing session. URL:", original.url);
         _hardLogout();
+      } else if (!verification.active) {
+        error._sessionVerificationTransient = true;
+        console.warn("401 Unauthorized after retry could not be verified; session preserved. URL:", original.url);
       } else {
         console.warn("401 Unauthorized after retry; active session preserved. URL:", original.url);
       }
