@@ -1,4 +1,5 @@
 /* global console */
+import { writeFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 import { loginAsDemo } from './fixtures/auth.js';
 import {
@@ -39,8 +40,10 @@ test.describe('Critical route performance budgets', () => {
     }
 
     const report = { schemaVersion: 1, generatedAt: new Date().toISOString(), results };
+    const reportPath = testInfo.outputPath('critical-route-performance.json');
+    await writeFile(reportPath, JSON.stringify(report, null, 2));
     await testInfo.attach('critical-route-performance.json', {
-      body: JSON.stringify(report, null, 2),
+      path: reportPath,
       contentType: 'application/json',
     });
     console.table(results.map(({ route, readyMs, interactionMs, scriptBytes, longTaskMs, domNodes, violations }) => ({
