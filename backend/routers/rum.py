@@ -13,10 +13,43 @@ from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api/observability/rum", tags=["RUM Performance"])
 
-ALLOWED_ROUTES = {
-    "/app/dashboard", "/app/pms", "/app/reservation-calendar",
-    "/app/raporlar", "/app/channel-manager",
+# Recurrent operational module entries only. Detail and redirect routes are
+# intentionally excluded: they create duplicate/noisy samples and are not an
+# honest measure of the workspace a hotel operator opens for their work.
+# The browser maintains the equivalent path list to avoid sending telemetry
+# for untracked routes; this server-side map remains the acceptance and alert
+# authority.
+RUM_ROUTE_BUDGETS = {
+    "/app/dashboard": {"route": 5000, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/pms": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/reservation-calendar": {"route": 6500, "lcp": 4500, "inp": 500, "api": 2500},
+    "/arrival-list": {"route": 5000, "lcp": 4000, "inp": 500, "api": 2000},
+    "/departure-list": {"route": 5000, "lcp": 4000, "inp": 500, "api": 2000},
+    "/night-audit": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/housekeeping": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/pos": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/cashier": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/invoices": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/general-ledger": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/raporlar": {"route": 6500, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/rms": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/sales": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/guest-relations": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/procurement": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/mice": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/channel-manager": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/channels": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/integration-hub": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/settings": {"route": 5000, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/folio-management": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/room-requests": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/tasks": {"route": 5000, "lcp": 4000, "inp": 500, "api": 2000},
+    "/hr": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/app/xchange": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
+    "/app/revenue-hub": {"route": 6000, "lcp": 4500, "inp": 600, "api": 2500},
+    "/messaging-center": {"route": 5500, "lcp": 4000, "inp": 500, "api": 2000},
 }
+ALLOWED_ROUTES = frozenset(RUM_ROUTE_BUDGETS)
 MAX_EVENTS_PER_BATCH = 10
 _indexes_ready = False
 
@@ -110,6 +143,7 @@ async def performance_summary(
         lcp = _p95([row["lcp_ms"] for row in items if row.get("lcp_ms") is not None])
         inp = _p95([row["inp_ms"] for row in items if row.get("inp_ms") is not None])
         api = _p95([row["api_p95_ms"] for row in items if row.get("api_p95_ms") is not None])
-        alerts = [name for name, value, budget in (("route", duration, 5000), ("navigation", navigation, 2000), ("lcp", lcp, 4000), ("inp", inp, 500), ("api", api, 2000)) if value is not None and value > budget]
-        result.append({"route": route, "samples": len(items), "p95_route_ms": duration, "p95_navigation_ms": navigation, "p95_lcp_ms": lcp, "p95_inp_ms": inp, "p95_api_ms": api, "alerts": alerts})
+        budget = RUM_ROUTE_BUDGETS[route]
+        alerts = [name for name, value, limit in (("route", duration, budget["route"]), ("navigation", navigation, 2000), ("lcp", lcp, budget["lcp"]), ("inp", inp, budget["inp"]), ("api", api, budget["api"])) if value is not None and value > limit]
+        result.append({"route": route, "samples": len(items), "p95_route_ms": duration, "p95_navigation_ms": navigation, "p95_lcp_ms": lcp, "p95_inp_ms": inp, "p95_api_ms": api, "budget_ms": budget, "alerts": alerts})
     return {"since": since, "hours": hours, "routes": result}
