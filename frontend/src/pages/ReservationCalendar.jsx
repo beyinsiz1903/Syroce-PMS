@@ -221,6 +221,26 @@ const newBookingDraft = (overrides = {}) => ({
   ...overrides,
 });
 
+const buildGroupBookingsSummary = (rawBookings, guests = []) => {
+  const groupMap = new Map();
+  rawBookings.forEach((booking) => {
+    if (!booking.group_booking_id) return;
+    if (!groupMap.has(booking.group_booking_id)) groupMap.set(booking.group_booking_id, []);
+    groupMap.get(booking.group_booking_id).push(booking);
+  });
+  return Array.from(groupMap.entries()).map(([groupId, groupItems]) => {
+    const master = groupItems[0];
+    return {
+      group_booking_id: groupId,
+      totalRooms: groupItems.length,
+      totalAmount: groupItems.reduce((sum, item) => sum + (item.total_amount || 0), 0),
+      master,
+      bookings: groupItems,
+      guest_name: master.guest_name || guests.find((guest) => guest.id === master.guest_id)?.name || 'Group Guest',
+    };
+  });
+};
+
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const effectivePermissions = user?.effective_permissions || [];
@@ -436,7 +456,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // cleanup hem timer'ı hem aktif fetch'i iptal eder (eski response state'i ezmesin).
   // İlk yüklemede gecikme olmasın diye yalnızca veri henüz hiç yüklenmemişken
   // anında çağırılır. Boş tesis de geçerli bir yüklenmiş durumdur.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     if (!businessDateReady) return undefined;
     let cancelled = false;
@@ -449,7 +468,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [businessDateReady, currentDate, daysToShow]);
+  // `loadCalendarData` intentionally stays outside useCallback: it reads the
+  // latest operational state and the timer above owns cancellation.
+  }, [businessDateReady, currentDate, daysToShow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch hotel business date once on mount
   useEffect(() => {
@@ -492,17 +513,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const cachedReferenceData = referenceDataRef.current;
       const useCachedReferenceData = cachedReferenceData.guests && cachedReferenceData.companies
         && Date.now() - cachedReferenceData.loadedAt < CALENDAR_REFERENCE_DATA_TTL_MS;
-      const referenceDataRequest = useCachedReferenceData
-        ? Promise.resolve({ guests: cachedReferenceData.guests, companies: cachedReferenceData.companies })
-        : Promise.all([
-          axios.get('/pms/guests').catch(() => ({ data: [] })),
-          axios.get('/companies').catch(() => ({ data: [] })),
-        ]).then(([guestsRes, companiesRes]) => ({ guests: guestsRes.data || [], companies: companiesRes.data || [] }));
 
-      const [roomsRes, bookingsRes, referenceData, blocksRes, calendarRatesRes] = await Promise.all([
+      // Rooms, stays, blocks and rates determine the sellable calendar. Guest
+      // and company pick-lists can be large and are only needed when opening a
+      // form, so do not block the first calendar paint on them.
+      const [roomsRes, bookingsRes, blocksRes, calendarRatesRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
-        referenceDataRequest,
         // Blok verisi satılabilirliği belirler. Bir hata asla "blok yok"
         // anlamına gelmemeli; bu istek özellikle kritik tutulur.
         axios.get('/pms/room-blocks?status=active'),
@@ -523,11 +540,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       });
       setRooms(roomsRes.data || []);
       setBookings(bookingsRes.data || []);
-      setGuests(referenceData.guests);
-      setCompanies(referenceData.companies);
-      if (!useCachedReferenceData) {
-        referenceDataRef.current = { loadedAt: Date.now(), guests: referenceData.guests, companies: referenceData.companies };
-      }
       calendarDataLoadedRef.current = true;
       setRoomBlocks(normalizeRoomBlocksResponse(blocksRes.data));
       setCalendarSafetyError(null);
@@ -539,26 +551,32 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         setCalendarRates(buildCalendarRateLookup(calendarRatesRes.data?.grid || []));
       }
 
-      // Build group bookings summary
       const rawBookings = bookingsRes.data || [];
-      const groupMap = new Map();
-      rawBookings.forEach(b => {
-        if (!b.group_booking_id) return;
-        if (!groupMap.has(b.group_booking_id)) groupMap.set(b.group_booking_id, []);
-        groupMap.get(b.group_booking_id).push(b);
-      });
-      const groupSummary = Array.from(groupMap.entries()).map(([groupId, groupItems]) => {
-        const master = groupItems[0];
-        return {
-          group_booking_id: groupId,
-          totalRooms: groupItems.length,
-          totalAmount: groupItems.reduce((sum, x) => sum + (x.total_amount || 0), 0),
-          master,
-          bookings: groupItems,
-          guest_name: master.guest_name || referenceData.guests.find(g => g.id === master.guest_id)?.name || 'Group Guest'
-        };
-      });
-      setGroupBookings(groupSummary);
+      const cachedGuests = useCachedReferenceData ? cachedReferenceData.guests : [];
+      if (useCachedReferenceData) {
+        setGuests(cachedReferenceData.guests);
+        setCompanies(cachedReferenceData.companies);
+      }
+      setGroupBookings(buildGroupBookingsSummary(rawBookings, cachedGuests));
+
+      if (!useCachedReferenceData) {
+        // Deliberately start after core data is painted. This keeps form
+        // reference data warm without competing with the operational view.
+        void Promise.all([
+          axios.get('/pms/guests').catch(() => ({ data: [] })),
+          axios.get('/companies').catch(() => ({ data: [] })),
+        ]).then(([guestsRes, companiesRes]) => {
+          if (isCancelled()) return;
+          const guestsData = guestsRes.data || [];
+          const companiesData = companiesRes.data || [];
+          referenceDataRef.current = { loadedAt: Date.now(), guests: guestsData, companies: companiesData };
+          setGuests(guestsData);
+          setCompanies(companiesData);
+          // Upgrade group labels once the reference lookup arrives without a
+          // second calendar request.
+          setGroupBookings(buildGroupBookingsSummary(rawBookings, guestsData));
+        });
+      }
     } catch (error) {
       console.error('Takvim verileri yüklenemedi:', error);
       setCalendarSafetyError('Oda blokları veya takvim verileri yüklenemedi. Müsaitlik güvenilir değildir; yeniden deneyin.');
