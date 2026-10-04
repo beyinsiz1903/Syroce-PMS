@@ -172,6 +172,8 @@ export default function AuditTimelinePage({
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState(null);
   const [chain, setChain] = useState(null);
+  const [retention, setRetention] = useState(null);
+  const [exportError, setExportError] = useState("");
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     severity: "",
@@ -200,16 +202,19 @@ export default function AuditTimelinePage({
       params.append("limit", filters.limit);
       if (filters.ip_address) params.append("ip_address", filters.ip_address);
       if (filters.user_agent) params.append("user_agent", filters.user_agent);
-      const [timelineRes, summaryRes, chainRes] = await Promise.all([axios.get(`/audit/timeline?${params}`, {
+      const [timelineRes, summaryRes, chainRes, retentionRes] = await Promise.all([axios.get(`/audit/timeline?${params}`, {
         headers
       }), axios.get(`/audit/summary?period=24h`, {
         headers
       }), axios.get(`/audit/chain/verify`, {
         headers
+      }).catch(() => null), axios.get(`/audit/retention`, {
+        headers
       }).catch(() => null)]);
       setEvents(timelineRes.data?.events || timelineRes.data?.data?.events || []);
       setSummary(summaryRes.data?.data || summaryRes.data || null);
       setChain(chainRes ? chainRes.data?.data || chainRes.data || null : null);
+      setRetention(retentionRes ? retentionRes.data?.data || retentionRes.data || null : null);
     } catch (err) {
       console.error("Failed to fetch timeline:", err);
     }
@@ -251,6 +256,28 @@ export default function AuditTimelinePage({
     link.click();
     URL.revokeObjectURL(url);
   };
+  const exportSigned = async () => {
+    setExportError("");
+    try {
+      const params = new URLSearchParams();
+      if (filters.severity) params.append("severity", filters.severity);
+      if (filters.actor) params.append("actor_id", filters.actor);
+      if (filters.action) params.append("action", filters.action);
+      if (filters.entity_type) params.append("entity_type", filters.entity_type);
+      const res = await axios.get(`/audit/timeline.signed-export?${params}`, {
+        headers,
+        responseType: "blob"
+      });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "denetim-izi-imzali.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError("İmzalı dışa aktarım şu anda kullanılamıyor. Sistem yöneticiniz denetim dışa aktarma anahtarını yapılandırmalıdır.");
+    }
+  };
   return <>
     <div data-testid="audit-timeline-page" className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -264,12 +291,18 @@ export default function AuditTimelinePage({
             </div>
           </div>
           <div className="flex gap-2">
+            <Button data-testid="export-signed-timeline-btn" size="sm" variant="outline" onClick={exportSigned}>
+              <ShieldCheck className="w-3 h-3 mr-1" />İmzalı kanıt paketi</Button>
             <Button data-testid="export-timeline-btn" size="sm" variant="outline" onClick={exportCsv}>
               <Download className="w-3 h-3 mr-1" />CSV indir</Button>
             <Button data-testid="refresh-timeline-btn" size="sm" variant="outline" onClick={fetchTimeline}>
               {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}{t("cm.pages_AuditTimelinePage.refresh")}</Button>
           </div>
         </div>
+
+        {exportError && <div data-testid="signed-export-error" role="alert" className="mb-4 px-3 py-2 rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+            {exportError}
+          </div>}
 
         <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded border border-sky-200 bg-sky-50 text-sky-900 text-sm">
           <LockKeyhole className="w-4 h-4 mt-0.5 shrink-0" />
@@ -280,6 +313,15 @@ export default function AuditTimelinePage({
         {chain && <div data-testid="chain-status" className={`flex items-center gap-2 mb-4 px-3 py-2 rounded border text-sm ${chain.degraded ? "bg-amber-50 border-amber-300 text-amber-800" : chain.ok ? "bg-emerald-50 border-emerald-300 text-emerald-800" : "bg-red-50 border-red-300 text-red-800"}`}>
             {chain.degraded ? <><AlertTriangle className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.zincir_do\u011Frulanamad\u0131_ge\xE7ici_ha")}</> : chain.ok ? <><ShieldCheck className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.denetim_zinciri_b\xFCt\xFCnl\xFC\u011F\xFC_do\u011Fr")}{chain.checked || 0}{t("cm.pages_AuditTimelinePage.kay\u0131t_kurcalama_tespit_edilmed")}</> : <><ShieldAlert className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.uyari_denetim_zinciri_k\u0131r\u0131k")}{(chain.breaks || []).length}{t("cm.pages_AuditTimelinePage.kay\u0131t_de\u011Fi\u015Ftirilmi\u015F_silinmi\u015F_o")}{(chain.breaks || []).length > 0 && <span className="font-mono ml-1">{t("cm.pages_AuditTimelinePage._seq")}{(chain.breaks || []).slice(0, 5).map(b => b.seq).join(", ")})</span>}.</>}
           </div>}
+
+        {retention && <Card data-testid="audit-retention-status" className="mb-6 border-slate-200">
+            <CardContent className="p-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600">
+              <span className="font-medium text-slate-800">Denetim saklama politikası</span>
+              <span>{retention.audit_log_retention_days} gün saklama</span>
+              <span>{retention.archive_immutable ? "Arşiv değiştirilemez" : "Arşiv durumu bilinmiyor"}</span>
+              <span>{retention.policy_source === "gdpr_retention_policy" ? "Otel politikası uygulanıyor" : "Platform varsayılanı uygulanıyor"}</span>
+            </CardContent>
+          </Card>}
 
         {/* Summary Cards */}
         {summary && <div data-testid="audit-summary" className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -333,6 +375,8 @@ export default function AuditTimelinePage({
                     <option value="">{t("cm.pages_AuditTimelinePage.all_entities")}</option>
                     <option value="booking">{t("cm.pages_AuditTimelinePage.booking")}</option>
                     <option value="folio">{t("cm.pages_AuditTimelinePage.folio")}</option>
+                    <option value="invoice">Fatura</option>
+                    <option value="user">Kullanıcı</option>
                     <option value="room">{t("cm.pages_AuditTimelinePage.room")}</option>
                     <option value="pos_transaction">{t("cm.pages_AuditTimelinePage.pos")}</option>
                     <option value="keycard">{t("cm.pages_AuditTimelinePage.keycard")}</option>
@@ -387,10 +431,10 @@ export default function AuditTimelinePage({
                   type: e.target.value
                 }))} className="w-full bg-white border border-gray-300 rounded text-xs px-2 py-1.5 text-gray-700">
                   <option value="">{t("cm.pages_AuditTimelinePage.select_entity_type")}</option>
-                  <option value="booking">{t("cm.pages_AuditTimelinePage.booking")}</option>
-                  <option value="folio">{t("cm.pages_AuditTimelinePage.folio")}</option>
+                  <option value="reservation">{t("cm.pages_AuditTimelinePage.booking")}</option>
+                  <option value="invoice">Fatura</option>
                   <option value="room">{t("cm.pages_AuditTimelinePage.room")}</option>
-                  <option value="guest">{t("cm.pages_AuditTimelinePage.guest")}</option>
+                  <option value="user">Kullanıcı</option>
                 </select>
                 <Input data-testid="entity-id-input" aria-label="İzlenecek kayıt kimliği" placeholder={t("cm.pages_AuditTimelinePage.entity_id")} value={searchEntity.id} onChange={e => setSearchEntity(p => ({
                   ...p,
@@ -405,6 +449,13 @@ export default function AuditTimelinePage({
                         <p className="text-gray-800">{auditActionLabel(t.operation_name || t.action)}</p>
                         <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString(i18n.language) : "—"}</p>
                       </div>)}
+                    {(entityTrail.report_impact_links || []).length > 0 && <div className="pt-1">
+                        <p className="text-xs font-medium text-gray-700 mb-1">Rapor etkisi</p>
+                        <div className="flex flex-wrap gap-1">
+                          {entityTrail.report_impact_links.map(link => <Button key={link.report} size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(link.path)}>
+                              {link.label}</Button>)}
+                        </div>
+                      </div>}
                   </div>}
               </CardContent>
             </Card>
