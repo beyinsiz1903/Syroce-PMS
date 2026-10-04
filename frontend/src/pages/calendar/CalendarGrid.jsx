@@ -25,6 +25,17 @@ const CELL_H = 60;
 const BOOKING_H = 54;
 const LANE_H = 40;
 const LANE_BAR_H = 58;
+export const LARGE_PROPERTY_ROOM_THRESHOLD = 80;
+export const CALENDAR_ROW_OVERSCAN = 8;
+const ESTIMATED_ROOM_ROW_HEIGHT = 64;
+
+export const getVirtualRoomWindow = ({ roomCount, offset, scrollTop, viewportHeight, enabled }) => {
+  if (!enabled) return { start: 0, end: roomCount };
+  const relativeTop = Math.max(0, scrollTop - offset);
+  const start = Math.max(0, Math.floor(relativeTop / ESTIMATED_ROOM_ROW_HEIGHT) - CALENDAR_ROW_OVERSCAN);
+  const end = Math.min(roomCount, Math.ceil((relativeTop + viewportHeight) / ESTIMATED_ROOM_ROW_HEIGHT) + CALENDAR_ROW_OVERSCAN);
+  return { start, end: Math.max(start, end) };
+};
 
 const cardDateFormatter = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short' });
 
@@ -126,6 +137,8 @@ const CalendarGrid = ({
   onOpenRoomBlock,
   showOccupancyBand = false,
   dailyRates = {},
+  showPrices = true,
+  onPerformanceSample,
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
@@ -134,6 +147,9 @@ const CalendarGrid = ({
   const pointerResizeRef = useRef(null);
   const suppressCardClickUntilRef = useRef(0);
   const bookingClickTimerRef = useRef(null);
+  const renderStartedAt = typeof performance !== 'undefined' ? performance.now() : 0;
+  const [scrollWindow, setScrollWindow] = useState({ top: 0, height: 800 });
+  const scrollFrameRef = useRef(null);
 
   const startBookingDrag = (event, booking, date) => {
     suppressCardClickUntilRef.current = Date.now() + 350;
@@ -167,6 +183,10 @@ const CalendarGrid = ({
   }, []);
 
   useEffect(() => () => window.clearTimeout(bookingClickTimerRef.current), []);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
 
   const openContextMenu = (event, payload) => {
     event.preventDefault();
@@ -343,18 +363,67 @@ const CalendarGrid = ({
     if (bIndex === -1) return -1;
     return aIndex - bIndex;
   });
+  const virtualRowsEnabled = rooms.length >= LARGE_PROPERTY_ROOM_THRESHOLD;
+  const typeVirtualWindows = useMemo(() => {
+    let offset = 0;
+    const windows = new Map();
+    sortedTypes.forEach((roomType) => {
+      const typeRooms = groupedRooms[roomType] || [];
+      // Room-type title and any unassigned lane stay materialized so users can
+      // still discover collapsed and incoming work while room rows are virtual.
+      offset += 60;
+      const unassigned = getUnassignedBookingsForType(roomType, bookings, dateRange);
+      if (unassigned.length) {
+        const { maxLane } = computeUnassignedLanes(unassigned);
+        offset += (maxLane + 1) * LANE_H + 6;
+      }
+      const window = getVirtualRoomWindow({
+        roomCount: typeRooms.length,
+        offset,
+        scrollTop: scrollWindow.top,
+        viewportHeight: scrollWindow.height,
+        enabled: virtualRowsEnabled && !collapsedTypes.has(roomType),
+      });
+      windows.set(roomType, window);
+      offset += typeRooms.length * ESTIMATED_ROOM_ROW_HEIGHT;
+    });
+    return windows;
+  }, [bookings, collapsedTypes, dateRange, groupedRooms, scrollWindow.height, scrollWindow.top, sortedTypes, virtualRowsEnabled]);
+
+  useEffect(() => {
+    if (!onPerformanceSample || !renderStartedAt) return;
+    onPerformanceSample({
+      roomCount: rooms.length,
+      renderedRoomRows: [...typeVirtualWindows.values()].reduce((sum, window) => sum + window.end - window.start, 0),
+      virtualized: virtualRowsEnabled,
+      renderMs: Math.max(0, Math.round(performance.now() - renderStartedAt)),
+    });
+  }, [onPerformanceSample, renderStartedAt, rooms.length, typeVirtualWindows, virtualRowsEnabled]);
+
+  const handleScroll = (event) => {
+    const target = event.currentTarget;
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+    const schedule = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 0));
+    scrollFrameRef.current = schedule(() => {
+      setScrollWindow((previous) => {
+        const next = { top: target.scrollTop, height: target.clientHeight || previous.height };
+        return Math.abs(next.top - previous.top) < 24 && next.height === previous.height ? previous : next;
+      });
+    });
+  };
 
   return (
     <div
       className="relative flex h-full flex-col overflow-hidden border-y border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] select-none"
       data-testid="calendar-grid"
+      data-large-property-mode={virtualRowsEnabled ? 'virtualized' : 'standard'}
       onPointerDown={clearCalendarTextSelection}
       onPointerMove={updatePointerResize}
       onPointerUp={completePointerResize}
       onPointerCancel={cancelPointerResize}
     >
       {/* Date Header Row - STICKY */}
-      <div className="overflow-auto flex-1">
+      <div className="overflow-auto flex-1" onScroll={handleScroll} data-testid="calendar-scroll-viewport">
         <div className="min-w-max">
           {showOccupancyBand && (
             <OccupancyBand
@@ -477,9 +546,9 @@ const CalendarGrid = ({
                               past || weekend ? 'bg-slate-100 border-slate-300' : 'bg-slate-50 border-slate-300'
                             }`}
                           >
-                            <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
+                            {showPrices && <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
                               {displayRate > 0 ? formatCurrency(displayRate, typeRooms[0]?.currency || cachedTenantCurrency(), { decimals: 0 }) : '-'}
-                            </div>
+                            </div>}
                             <div className="flex items-center justify-center gap-0.5 mt-0.5"
                               title={`${occupiedCount} rezervasyon / ${totalTypeRooms} satılabilir oda · ${capacity.blocked} bloklu · ${capacity.total} toplam`}
                             >
@@ -591,7 +660,12 @@ const CalendarGrid = ({
                   })()}
 
                   {/* Rooms of this type */}
-                  {!collapsedTypes.has(roomType) && typeRooms.map((room) => {
+                  {!collapsedTypes.has(roomType) && (() => {
+                    const virtualWindow = typeVirtualWindows.get(roomType) || { start: 0, end: typeRooms.length };
+                    const visibleRooms = typeRooms.slice(virtualWindow.start, virtualWindow.end);
+                    return <>
+                      {virtualWindow.start > 0 && <div aria-hidden="true" data-testid="calendar-virtual-top-spacer" style={{ height: `${virtualWindow.start * ESTIMATED_ROOM_ROW_HEIGHT}px` }} />}
+                      {visibleRooms.map((room) => {
                     const refTodayStr = businessDate || toDateStringUTC(new Date());
                     const isActiveOn = (b, dStr) => {
                       const ci = toDateStringUTC(b.check_in);
@@ -873,7 +947,10 @@ const CalendarGrid = ({
                         </div>
                       </div>
                     );
-                  })}
+                      })}
+                      {virtualWindow.end < typeRooms.length && <div aria-hidden="true" data-testid="calendar-virtual-bottom-spacer" style={{ height: `${(typeRooms.length - virtualWindow.end) * ESTIMATED_ROOM_ROW_HEIGHT}px` }} />}
+                    </>;
+                  })()}
                 </div>
               );
             })

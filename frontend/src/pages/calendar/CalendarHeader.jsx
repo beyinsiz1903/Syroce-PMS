@@ -442,6 +442,13 @@ const CalendarHeader = ({
             >
               Kompakt araç çubuğu
             </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={Boolean(viewPreferences?.showPrices)}
+              onCheckedChange={(checked) => onViewPreferenceChange?.('showPrices', checked)}
+              data-testid="calendar-price-visibility-toggle"
+            >
+              Günlük fiyatları göster
+            </DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem
               checked={Boolean(viewPreferences?.showOccupancy)}
