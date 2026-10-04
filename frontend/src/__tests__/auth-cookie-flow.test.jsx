@@ -77,6 +77,32 @@ describe('Auth Cookie Flow in App.jsx', () => {
     });
   });
 
+  it('opens the verified workspace without waiting for subscription metadata', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Cached User', tenant_id: 't1' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', property_name: 'Test Hotel' }));
+
+    let resolveSubscription;
+    axios.get.mockImplementation((url) => {
+      if (url === '/auth/me') {
+        return Promise.resolve({ data: { id: 'u1', name: 'Fresh User', tenant_id: 't1', role: 'admin' } });
+      }
+      if (url === '/subscription/current') {
+        return new Promise((resolve) => { resolveSubscription = resolve; });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/subscription/current');
+      expect(screen.getByTestId('nav-dashboard-button')).toBeInTheDocument();
+    });
+
+    resolveSubscription({ data: { modules: { pms: true } } });
+  });
+
   it('should recover a missing tenant snapshot and modules from the server', async () => {
     localStorage.setItem('token_ts', Date.now().toString());
     localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Cached User' }));
