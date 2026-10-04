@@ -435,6 +435,19 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showConflictsModal, setShowConflictsModal] = useState(false);
 
   const dateRange = getDateRange(currentDate, daysToShow);
+  const calendarPerformanceRef = useRef(null);
+
+  const recordCalendarPerformance = (sample) => {
+    const previous = calendarPerformanceRef.current;
+    // Keep the signal low-volume: scrolling may render many windows, but the
+    // latest materially different view is what operators need to inspect.
+    if (previous
+      && previous.roomCount === sample.roomCount
+      && previous.renderedRoomRows === sample.renderedRoomRows
+      && previous.virtualized === sample.virtualized) return;
+    calendarPerformanceRef.current = sample;
+    window.dispatchEvent(new CustomEvent('syroce:calendar-performance', { detail: sample }));
+  };
 
   useEffect(() => {
     document.body.classList.add('syroce-dense-workspace');
@@ -1772,6 +1785,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           }}
           showOccupancyBand={viewPreferences.showOccupancy && !viewPreferences.operationMode}
           dailyRates={calendarRates}
+          showPrices={viewPreferences.showPrices}
+          onPerformanceSample={recordCalendarPerformance}
         />
         </div>
         {viewPreferences.showTimeline && !viewPreferences.operationMode && (

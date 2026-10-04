@@ -12,6 +12,7 @@ describe('reservation calendar view preferences', () => {
     expect(readCalendarViewPreferences(storage)).toEqual({
       operationMode: true,
       compactMode: true,
+      showPrices: true,
       showOccupancy: false,
       showTimeline: false,
     });
@@ -46,5 +47,16 @@ describe('reservation calendar view preferences', () => {
       showTimeline: false,
     });
   });
-});
 
+  it('keeps price visibility independent from the analytical view choice', () => {
+    const next = applyCalendarViewPreference({
+      operationMode: true,
+      compactMode: true,
+      showPrices: true,
+      showOccupancy: false,
+      showTimeline: false,
+    }, 'showPrices', false);
+
+    expect(next).toMatchObject({ operationMode: true, showPrices: false });
+  });
+});
