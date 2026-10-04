@@ -208,8 +208,9 @@ function App() {
             // short-lived workspace context.
             return;
           }
+          const sessionVerificationTransient = Boolean(error?._sessionVerificationTransient);
           const status = error?.response?.status;
-          if (status === 401) {
+          if (status === 401 && !sessionVerificationTransient) {
             clearAuthStorage();
             setIsAuthenticated(false);
             return;
@@ -218,7 +219,8 @@ function App() {
           // A deployment restart or a short network outage must not turn
           // into an implicit logout. Keep the last verified local identity;
           // API authorization remains enforced by the server and the global
-          // interceptor will still hard-logout on a definitive 401.
+          // interceptor will still hard-logout on a definitive 401. This also
+          // covers a 401 whose refresh retry could not be verified.
           try {
             const cachedUser = JSON.parse(storedUser);
             // Network fallback is safe only for the identity already verified

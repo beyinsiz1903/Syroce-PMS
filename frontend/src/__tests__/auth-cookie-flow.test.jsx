@@ -172,6 +172,29 @@ describe('Auth Cookie Flow in App.jsx', () => {
     });
   });
 
+  it('preserves the cached session when a 401 could not be verified because identity is temporarily unavailable', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Test User' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', name: 'Test Hotel' }));
+
+    axios.get.mockRejectedValueOnce({
+      response: { status: 401 },
+      _sessionVerificationTransient: true,
+    });
+
+    try {
+      render(<App />);
+    } catch (e) {
+      // Providers are intentionally minimal in this focused auth test.
+    }
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/auth/me');
+      expect(localStorage.getItem('token_ts')).not.toBeNull();
+      expect(localStorage.getItem('user')).not.toBeNull();
+    });
+  });
+
   it('should preserve the verified local session when /auth/me denies an operation', async () => {
     localStorage.setItem('token_ts', Date.now().toString());
     localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Test User' }));
@@ -281,6 +304,19 @@ describe('Auth Cookie Flow in App.jsx', () => {
       _skipRetry: true,
       _noCache: true,
     });
+    expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('does not log out when refresh is rejected but the identity check is temporarily unavailable', async () => {
+    const oldMarker = Date.now() - (91 * 60 * 1000);
+    localStorage.setItem('token_ts', String(oldMarker));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    localStorage.setItem('refresh_token', 'possibly-stale-refresh-token');
+    axios.post.mockRejectedValueOnce({ response: { status: 401 } });
+    axios.get.mockRejectedValueOnce({ response: { status: 503 } });
+
+    await expect(keepActiveSessionAlive()).resolves.toEqual({ transient: true });
     expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
     expect(localStorage.getItem('user')).not.toBeNull();
   });
