@@ -82,10 +82,17 @@
         "origin": false
       },
       "certPins": [],
-      "certPinningRequired": false
+      "certPinningRequired": false,
+      "eas": {
+        "projectId": "ea230577-f8d5-40b1-8df1-5b58dd1ea73a"
+      }
     },
     "runtimeVersion": {
       "policy": "appVersion"
+    },
+    "owner": "syroces-team",
+    "updates": {
+      "url": "https://u.expo.dev/ea230577-f8d5-40b1-8df1-5b58dd1ea73a"
     }
   }
 }
