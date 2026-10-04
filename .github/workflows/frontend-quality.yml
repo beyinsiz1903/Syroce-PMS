@@ -213,3 +213,10 @@ jobs:
                   name: playwright-report
                   path: frontend/playwright-report/
                   retention-days: 14
+            - name: Upload critical route performance measurements
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: critical-route-performance
+                  path: frontend/test-results/**/critical-route-performance.json
+                  retention-days: 14
