@@ -45,14 +45,14 @@ import { moduleWorkspaceRoutes } from "./sections/moduleWorkspaces";
 export { AuthPage, Dashboard, LandingPage, PrivacyPolicy, GuestPortal };
 
 function applyUserModuleScope(routeConfig) {
+  const scopes = moduleScopesForRoute(routeConfig);
   // A small number of authenticated self-service detail routes deliberately
   // sit outside workspace/module navigation. Their APIs still enforce tenant
   // and object-level authorization, so do not block them with the user's
   // workspace scope before the page can make that authorization request.
   if (routeConfig.skipModuleScopeBoundary === true) {
-    return routeConfig;
+    return { ...routeConfig, moduleScopes: scopes };
   }
-  const scopes = moduleScopesForRoute(routeConfig);
   if (routeConfig.type === "public" || routeConfig.type === "redirect") {
     return routeConfig;
   }
