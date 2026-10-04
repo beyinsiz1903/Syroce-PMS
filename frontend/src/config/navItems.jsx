@@ -1265,6 +1265,15 @@ export const NAV_ITEMS = [
     navSection: "properties",
   },
   {
+    key: "module_health_center",
+    label: "Modül Sağlık Merkezi",
+    path: "/admin/module-health",
+    requireSuperAdmin: true,
+    group: "admin",
+    navGroup: "admin",
+    navSection: "platform",
+  },
+  {
     key: "admin_leads",
     label: "Leads",
     path: "/app/admin/leads",

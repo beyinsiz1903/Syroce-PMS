@@ -1,7 +1,7 @@
 import {
   GDPRCompliance, EncryptionManagementPage, CentralOfficeDashboard,
   CentralPricingManager, CrossPropertyGuests, MLDashboard, AdminTenants, AdminMarketplaceAgencies,
-  AdminVendors, QuickIdSettings, RoomQrCodes, RoomRequests, ModuleReport,
+  AdminVendors, QuickIdSettings, RoomQrCodes, RoomRequests, ModuleReport, ModuleHealthCenter,
   AdminLeads, GovernancePanel, UserRoleManager, TenantUsers, HousekeepingDashboard,
   POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
   ModuleDiscovery, AdminModuleControlCenter, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
@@ -44,6 +44,7 @@ export function securityAdminRoutes({ p, pa, pm }) {
     { path: "/admin/room-qr-codes", ...p(RoomQrCodes), wrapLayout: true, layoutModule: "room_qr_codes" },
     { path: "/app/room-requests", ...p(RoomRequests), wrapLayout: true, layoutModule: "room_qr_requests" },
     { path: "/admin/module-report", ...pa(ModuleReport), wrapLayout: true, layoutModule: "admin-module-report" },
+    { path: "/admin/module-health", ...pa(ModuleHealthCenter), wrapLayout: true, layoutModule: "module-health-center" },
     { path: "/app/admin/leads", ...pa(AdminLeads), wrapLayout: true, layoutModule: "admin-leads" },
     { path: "/admin/governance", ...pa(GovernancePanel), wrapLayout: true, layoutModule: "governance" },
     { path: "/admin/user-roles", ...pa(UserRoleManager), wrapLayout: true, layoutModule: "user-role-manager" },
