@@ -299,6 +299,9 @@ async def get_daily_summary(
     for row in posted_rows:
         currency = _currency_code(row)
         posted_revenue_by_currency[currency] = posted_revenue_by_currency.get(currency, 0.0) + _charge_amount(row)
+    gross_posted_revenue_by_currency = {
+        currency: round(amount, 2) for currency, amount in posted_revenue_by_currency.items()
+    }
     for currency, adjustment in adjustments_by_currency.items():
         posted_revenue_by_currency[currency] = posted_revenue_by_currency.get(currency, 0.0) - adjustment
     posted_revenue_by_currency = {currency: round(amount, 2) for currency, amount in posted_revenue_by_currency.items()}
@@ -313,6 +316,7 @@ async def get_daily_summary(
         "collections_by_currency": collections_by_currency,
         "daily_revenue": _single_currency_value(posted_revenue_by_currency),
         "daily_revenue_by_currency": posted_revenue_by_currency,
+        "gross_posted_revenue_by_currency": gross_posted_revenue_by_currency,
         "revenue_adjustments_by_currency": adjustments_by_currency,
         "daily_revenue_basis": "posted_folio_and_pos_charges_net_of_financial_adjustments",
     }

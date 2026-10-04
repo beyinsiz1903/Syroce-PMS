@@ -255,7 +255,7 @@ const ReportsTab = () => {
                 <CardDescription>{dailySummary.date}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-3 md:grid-cols-5 gap-4 text-center">
+                <div className="grid grid-cols-3 md:grid-cols-7 gap-4 text-center">
                   <div>
                     <p className="text-lg font-bold">{dailySummary.arrivals}</p>
                     <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.giris_1ffbd')}</p>
@@ -273,8 +273,16 @@ const ReportsTab = () => {
                     <p className="text-xs text-gray-500">Doluluk</p>
                   </div>
                   <div>
-                    <p className="text-lg font-bold">{formatCurrencyBreakdown(dailySummary.daily_revenue_by_currency, dailySummary.daily_revenue)}</p>
-                    <p className="text-xs text-gray-500">Folyoya İşlenen Gelir</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(dailySummary.gross_posted_revenue_by_currency, dailySummary.daily_revenue)}</p>
+                    <p className="text-xs text-gray-500">Brüt Folyo Geliri</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-rose-700">− {formatCurrencyBreakdown(dailySummary.revenue_adjustments_by_currency, 0)}</p>
+                    <p className="text-xs text-gray-500">Fiyat Düzeltmesi</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-emerald-700">{formatCurrencyBreakdown(dailySummary.daily_revenue_by_currency, dailySummary.daily_revenue)}</p>
+                    <p className="text-xs text-gray-500">Net Folyo Geliri</p>
                   </div>
                 </div>
               </CardContent>
