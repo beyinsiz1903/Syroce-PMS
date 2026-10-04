@@ -34,6 +34,7 @@ import {
   reconcileAdminTenantContext,
 } from "@/lib/adminTenantContext";
 import { resolvePostLoginDestination } from "@/lib/postLoginWorkspace";
+import RouteRumReporter from "@/components/RouteRumReporter";
 import {
   blockTabAfterExternalSessionChange,
   clearAuthScopedSessionStorage,
@@ -565,6 +566,7 @@ function App() {
           {isAuthenticated && <OfflineStatusBar />}
           <BrowserRouter>
             <SimulationProvider>
+              <RouteRumReporter />
               <SimulationOverlay />
               <ErrorBoundary>
               <PlanRouteGuard tenant={tenant} user={user}>

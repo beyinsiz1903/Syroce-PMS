@@ -149,6 +149,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.data_pipeline", "router", ["data-pipeline"], None, None),
     ("routers.event_bus", "router", ["event-bus"], None, None),
     ("routers.observability", "router", ["observability"], None, None),
+    ("routers.rum", "router", ["RUM Performance"], None, None),
     ("routers.security_hardening", "router", ["security-hardening"], None, None),
     ("routers.runtime_infrastructure", "router", ["runtime-infrastructure"], None, None),
     ("routers.infra_hardening", "router", ["infrastructure-hardening"], None, None),
