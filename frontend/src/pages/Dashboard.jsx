@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { canAccessPath } from '@/utils/moduleAccess';
 import { useNavigate } from 'react-router-dom';
@@ -11,7 +11,8 @@ import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, 
 import CommandCenter from '@/components/CommandCenter';
 import { runIdle } from '@/lib/idle';
 import { useCurrency } from '@/context/CurrencyContext';
-import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+const DashboardAnalytics = lazy(() => import('@/components/DashboardAnalytics'));
 
 // Dashboard cards are shortcuts to product modules, not a second catalogue.
 // Keep their entitlement key explicit: an unknown/missing key must never turn
@@ -119,7 +120,7 @@ const Dashboard = ({
   const [occupancyData, setOccupancyData] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
   const [trendData, setTrendData] = useState([]);
-  const [heatmapData, setHeatmapData] = useState([]);
+  const [analyticsReady, setAnalyticsReady] = useState(false);
   const plan = tenant?.subscription_plan || tenant?.plan || tenant?.subscription_tier || "core_small_hotel";
   const isLite = plan === "pms_lite";
 
@@ -138,7 +139,7 @@ const Dashboard = ({
     setOccupancyData([]);
     setRevenueData([]);
     setTrendData([]);
-    setHeatmapData([]);
+    setAnalyticsReady(false);
     setLoading(!(cacheMatchesTenant && dashboardCache.stats));
   }, [tenantCacheKey]);
 
@@ -171,10 +172,6 @@ const Dashboard = ({
       url: '/analytics/booking-trends?days=30',
       key: 'trend',
       set: setTrendData
-    }, {
-      url: '/rms/demand-heatmap?days=30',
-      key: 'heatmap',
-      set: setHeatmapData
     }];
     const results = await Promise.allSettled(endpoints.map(e => axios.get(e.url)));
     if (activeTenantKeyRef.current !== requestTenantKey) return;
@@ -280,16 +277,20 @@ const Dashboard = ({
     let cancelIdle = () => {};
     if (!isCacheValid) {
       // KPI'lar (PMS dashboard + invoice stats) ana ekranın görsel iskeleti
-      // — hemen yüklensin. AI briefing ve grafik verileri (4 chart endpoint)
+      // — hemen yüklensin. AI briefing ve grafik verileri
       // ikincil; idle'a alınınca KPI'lar saniyeler önce ekrana basılır.
       loadDashboardStats(tenantCacheKey);
-      cancelIdle = runIdle(() => {
-        loadAIBriefing(tenantCacheKey);
-        loadChartData(tenantCacheKey);
-      }, {
-        timeout: 4000
-      });
     }
+    // Grafikler sunucu tarafında önbelleğe alınmış KPI verisinden bağımsızdır.
+    // Her mount'ta idle slotunda istenir; böylece sıcak dashboard'da boş grafik
+    // bırakılmaz, ama ilk ekran ağ ve CPU kaynaklarıyla yarışmaz.
+    cancelIdle = runIdle(() => {
+      loadAIBriefing(tenantCacheKey);
+      loadChartData(tenantCacheKey);
+      setAnalyticsReady(true);
+    }, {
+      timeout: 4000
+    });
 
     // API base URL'si /api olduğundan, burada document'a eklenen
     // "/pms/dashboard" ve "/invoices/stats" linkleri API önbelleğini
@@ -755,180 +756,9 @@ const Dashboard = ({
             {/* Modules Grid - Categorized with Accordion */}
 
 
-            {/* Analytics & Charts Section */}
-            <div className="space-y-4">
-              <h2 className="text-xl md:text-2xl font-bold" style={{
-            fontFamily: 'Space Grotesk'
-          }}>
-                {t('dashboard.analyticsInsights')}
-              </h2>
-              
-              {/* Occupancy & Revenue Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Occupancy Trend */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t("dashboard.occupancyTrend")}</CardTitle>
-                    <CardDescription>{t("dashboard.dailyOccupancy")}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <AreaChart data={occupancyData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => `${(typeof value === 'number' ? value : 0).toFixed(1)}%`} />
-                        <Area type="monotone" dataKey="occupancy_rate" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} name={t('dashboard.chartOccupancy')} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                {/* Revenue Trend */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t("dashboard.revenueTrend")}</CardTitle>
-                    <CardDescription>{t("dashboard.dailyRevenue")}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={revenueData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => fmtMoney(value, { decimals: 0 })} />
-                        <Legend wrapperStyle={{
-                      fontSize: '12px'
-                    }} />
-                        <Bar dataKey="room_revenue" fill="#10b981" name={t('dashboard.chartRoom')} />
-                        <Bar dataKey="fnb_revenue" fill="#f59e0b" name={t('dashboard.chartFnB')} />
-                        <Bar dataKey="other_revenue" fill="#6366f1" name={t('dashboard.chartOther')} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Booking Trends & ADR */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Booking Trends */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t('dashboard.stayTrends', 'Konaklama Trendleri')}</CardTitle>
-                    <CardDescription>{t("dashboard.dailyBookings")}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis yAxisId="left" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <YAxis yAxisId="right" orientation="right" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} />
-                        <Legend wrapperStyle={{
-                      fontSize: '12px'
-                    }} />
-                        <Line yAxisId="left" type="monotone" dataKey="occupied_rooms" stroke="#8b5cf6" strokeWidth={2} name={t('dashboard.occupiedRooms', 'Dolu Odalar')} />
-                        <Line yAxisId="right" type="monotone" dataKey="adr" stroke="#10b981" strokeWidth={2} name={`ADR (${currencySymbol})`} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                {/* RevPAR & Performance */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t('dashboard.revPARPerformance')}</CardTitle>
-                    <CardDescription>{t('dashboard.revPARDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <AreaChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => fmtMoney(value, { decimals: 2 })} />
-                        <Area type="monotone" dataKey="revpar" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.4} name="RevPAR" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Occupancy Heatmap */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">{t('dashboard.heatmap30Day')}</CardTitle>
-                  <CardDescription>{t('dashboard.heatmapDesc')}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-10 gap-1">
-                    {occupancyData.slice(0, 30).map((day, index) => {
-                  const rawRate = typeof day.occupancy_rate === 'number' ? day.occupancy_rate : 0;
-                  const rate = Math.min(Math.max(rawRate, 0), 100);
-                  const color = rate >= 90 ? 'bg-red-600' : rate >= 80 ? 'bg-amber-500' : rate >= 70 ? 'bg-yellow-500' : rate >= 60 ? 'bg-green-500' : rate >= 50 ? 'bg-blue-500' : 'bg-gray-300';
-                  return <div key={day.id || index} className={`${color} rounded p-2 text-center text-white text-xs font-semibold cursor-pointer hover:scale-110 transition-transform`} title={rawRate > 100 ? `${new Date(day.date).toLocaleDateString()}: %${rate.toFixed(1)} (ham: %${rawRate.toFixed(1)} — overbooking)` : `${new Date(day.date).toLocaleDateString()}: %${rate.toFixed(1)} doluluk`}>
-                          {new Date(day.date).getDate()}
-                          <div className="text-[10px]">{rate.toFixed(0)}%</div>
-                        </div>;
-                })}
-                  </div>
-                  <div className="flex justify-center gap-4 mt-4 text-xs">
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-gray-300 rounded"></div>
-                      <span>&lt;50%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                      <span>50-60%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-green-500 rounded"></div>
-                      <span>60-70%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-                      <span>70-80%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-amber-500 rounded"></div>
-                      <span>80-90%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-red-600 rounded"></div>
-                      <span>&gt;90%</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            {analyticsReady && <Suspense fallback={<div className="h-24" aria-hidden="true" />}>
+                <DashboardAnalytics occupancyData={occupancyData} revenueData={revenueData} trendData={trendData} formatMoney={fmtMoney} currencySymbol={currencySymbol} />
+              </Suspense>}
 
             <div className="space-y-4">
               <h2 className="text-xl md:text-2xl font-bold mb-4" style={{
