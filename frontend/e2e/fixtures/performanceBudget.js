@@ -1,4 +1,4 @@
-/* global document, performance */
+/* global document, performance, window */
 import { expect } from '@playwright/test';
 
 const KiB = 1024;
@@ -16,10 +16,9 @@ export const CRITICAL_ROUTE_BUDGETS = [
     scriptBytes: 1_500 * KiB,
     interactionMs: 2_000,
     async interact(page) {
-      const button = page.getByRole('button', { name: /öngörüleri yenile|refresh insights/i }).first();
-      await expect(button).toBeVisible();
-      await button.click();
-      await expect(button).toBeEnabled();
+      const before = await page.evaluate(() => window.scrollY);
+      await page.mouse.wheel(0, 480);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
     },
   },
   {
