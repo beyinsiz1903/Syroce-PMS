@@ -29,7 +29,7 @@ export class RouteRum {
   }
 
   markTransition(pathname) {
-    if (this.enabled && CRITICAL_ROUTES.has(pathname)) {
+    if (this.enabled && isRumRoute(pathname)) {
       this.pendingTransition = { pathname, startedAt: this.now() };
     }
   }
