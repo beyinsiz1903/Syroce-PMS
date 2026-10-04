@@ -31,13 +31,24 @@ export class RouteRum {
     this.now = now;
     this.current = null;
     this.observers = [];
+    this.pendingTransition = null;
+  }
+
+  markTransition(pathname) {
+    if (this.enabled && CRITICAL_ROUTES.has(pathname)) {
+      this.pendingTransition = { pathname, startedAt: this.now() };
+    }
   }
 
   start(pathname) {
     this.flush();
     if (!this.enabled || !CRITICAL_ROUTES.has(pathname)) return;
 
-    this.current = { pathname, startedAt: this.now(), lcp: null, inp: null, cls: 0 };
+    const transition = this.pendingTransition?.pathname === pathname
+      ? Math.round(this.now() - this.pendingTransition.startedAt)
+      : null;
+    this.pendingTransition = null;
+    this.current = { pathname, startedAt: this.now(), navigation_ms: transition, lcp: null, inp: null, cls: 0 };
     this.observe("largest-contentful-paint", (entry) => {
       if (this.current) this.current.lcp = Math.round(entry.startTime);
     });
@@ -74,6 +85,7 @@ export class RouteRum {
     const payload = JSON.stringify({ events: [{
       route: current.pathname,
       route_duration_ms: routeDurationMs,
+      navigation_ms: current.navigation_ms,
       lcp_ms: current.lcp,
       inp_ms: current.inp,
       cls: Math.round(current.cls * 1000) / 1000,

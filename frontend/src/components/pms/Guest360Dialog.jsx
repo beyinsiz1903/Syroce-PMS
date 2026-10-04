@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -50,6 +51,7 @@ const Guest360Dialog = ({
   initialSection = 'profile',
 }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [newNote, setNewNote] = useState('');
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
@@ -157,7 +159,7 @@ const Guest360Dialog = ({
                 ...(g.email ? { email: g.email } : {}),
                 ...(g.phone ? { phone: g.phone } : {}),
               }).toString();
-              window.location.href = `/ota-messaging-hub?${params}`;
+              navigate(`/ota-messaging-hub?${params}`);
             }}
             className="flex-1 bg-green-600 hover:bg-green-700"
           >
@@ -199,7 +201,7 @@ const Guest360Dialog = ({
           <Button 
             onClick={() => {
               // Navigate to messaging center with pre-filled guest
-              window.location.href = `/ota-messaging-hub?guest=${guest360Data.guest?.id}&name=${guest360Data.guest?.name}`;
+              navigate(`/ota-messaging-hub?guest=${guest360Data.guest?.id}&name=${guest360Data.guest?.name}`);
             }}
             variant="outline"
             className="flex-1 border-amber-400 hover:bg-amber-50"
