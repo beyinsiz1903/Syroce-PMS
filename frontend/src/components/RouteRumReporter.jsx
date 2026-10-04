@@ -14,8 +14,8 @@ export default function RouteRumReporter() {
 
   useEffect(() => {
     const flush = () => reporter.current.flush();
-    addEventListener("pagehide", flush);
-    return () => removeEventListener("pagehide", flush);
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
   }, []);
   return null;
 }
