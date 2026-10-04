@@ -15,7 +15,7 @@ import {
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
-import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
+import { calculateFinancialLine, parseMoney, parseQuantity, parseTaxRate } from '@/lib/financialInput';
 const VAT_OPTIONS = [{
   value: '0',
   label: '%0'
@@ -93,19 +93,19 @@ const FolioViewDialog = ({
     notes: ''
   });
   const chargePreview = useMemo(() => {
-    const sub = (parseMoneyInput(newFolioCharge.amount) || 0) * (parseFloat(newFolioCharge.quantity) || 0);
-    const disc = Math.max(0, Math.min(sub, parseMoneyInput(newFolioCharge.discount_amount) || 0));
-    const net = sub - disc;
-    const rate = parseFloat(newFolioCharge.vat_rate) || 0;
-    const vat = net * rate / 100;
-    const total = net + vat;
+    const line = calculateFinancialLine({
+      unitAmount: newFolioCharge.amount,
+      quantity: newFolioCharge.quantity,
+      discountAmount: newFolioCharge.discount_amount,
+      vatRate: newFolioCharge.vat_rate,
+    });
     return {
-      sub,
-      disc,
-      net,
-      rate,
-      vat,
-      total
+      sub: line.subtotal,
+      disc: line.discount,
+      net: line.net,
+      rate: line.vatRate,
+      vat: line.vat,
+      total: line.total
     };
   }, [newFolioCharge.amount, newFolioCharge.quantity, newFolioCharge.discount_amount, newFolioCharge.vat_rate]);
   const handlePostCharge = async e => {
@@ -115,15 +115,23 @@ const FolioViewDialog = ({
       toast.error('İndirim için neden zorunlu');
       return;
     }
+    const amount = parseMoney(newFolioCharge.amount);
+    const quantity = parseQuantity(newFolioCharge.quantity);
+    const vatRate = parseTaxRate(newFolioCharge.vat_rate);
+    const discountAmount = parseMoney(newFolioCharge.discount_amount);
+    if (!newFolioCharge.description.trim() || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(vatRate) || vatRate < 0 || !Number.isFinite(discountAmount) || discountAmount < 0) {
+      toast.error('Birim fiyat, adet, indirim ve KDV değerlerini doğru girin.');
+      return;
+    }
     try {
       await axios.post(`/folio/${selectedFolio.id}/charge`, {
         charge_category: newFolioCharge.charge_category,
         description: newFolioCharge.description,
-        amount: parseMoneyInput(newFolioCharge.amount) || 0,
-        quantity: parseFloat(newFolioCharge.quantity) || 1,
+        amount,
+        quantity,
         auto_calculate_tax: !!newFolioCharge.auto_calculate_tax,
-        vat_rate: parseFloat(newFolioCharge.vat_rate) || 0,
-        discount_amount: parseMoneyInput(newFolioCharge.discount_amount) || 0,
+        vat_rate: vatRate,
+        discount_amount: discountAmount,
         discount_reason: newFolioCharge.discount_reason.trim() || null
       });
       toast.success('İşlem eklendi');
@@ -146,16 +154,10 @@ const FolioViewDialog = ({
   const handlePostPayment = async e => {
     e.preventDefault();
     if (!selectedFolio) return;
-    const amount = parseMoneyInput(newFolioPayment.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error('Geçerli bir ödeme tutarı girin');
-      return;
-    }
     try {
       await axios.post(`/folio/${selectedFolio.id}/payment`, {
         ...newFolioPayment,
-        amount,
-        payment_type: classifyGuestPayment(amount, selectedFolio.balance),
+        payment_type: classifyGuestPayment(newFolioPayment.amount, selectedFolio.balance),
       });
       toast.success('Ödeme alındı');
       onPaymentPosted(selectedFolio.id);
@@ -599,14 +601,14 @@ th{background:#f5f5f5}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Birim Fiyat ({folioCurrency})</Label>
-                <Input {...moneyInputProps} placeholder="Örn. 150,74" value={newFolioCharge.amount} onChange={e => setNewFolioCharge({
+                <Input type="text" inputMode="decimal" value={newFolioCharge.amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 amount: e.target.value
               })} required />
               </div>
               <div>
                 <Label>Adet</Label>
-                <Input type="number" step="1" min="1" value={newFolioCharge.quantity} onChange={e => setNewFolioCharge({
+                <Input type="text" inputMode="decimal" value={newFolioCharge.quantity} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 quantity: e.target.value
               })} required />
@@ -615,7 +617,7 @@ th{background:#f5f5f5}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>İndirim ({folioCurrency})</Label>
-                <Input {...moneyInputProps} placeholder="Örn. 150,74" value={newFolioCharge.discount_amount} onChange={e => setNewFolioCharge({
+                <Input type="text" inputMode="decimal" value={newFolioCharge.discount_amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 discount_amount: e.target.value
               })} />
@@ -651,9 +653,9 @@ th{background:#f5f5f5}
           <form onSubmit={handlePostPayment} className="space-y-4">
             <div>
               <Label>Tutar ({folioCurrency})</Label>
-              <Input {...moneyInputProps} placeholder="Örn. 150,74" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
+              <Input type="number" step="0.01" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
               ...newFolioPayment,
-              amount: e.target.value
+              amount: parseFloat(e.target.value)
             })} required />
             </div>
             <div>

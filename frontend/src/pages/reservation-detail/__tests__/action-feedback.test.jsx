@@ -135,7 +135,7 @@ describe('reservation detail action feedback', () => {
     const [source, target] = within(panel).getAllByRole('combobox');
     fireEvent.change(source, { target: { value: 'agency-a' } });
     fireEvent.change(target, { target: { value: 'agency-a' } });
-    fireEvent.change(within(panel).getByPlaceholderText('Örn. 150,74'), { target: { value: '10' } });
+    fireEvent.change(within(panel).getAllByRole('textbox')[0], { target: { value: '10' } });
     fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
 
     await waitFor(() => {
@@ -172,7 +172,8 @@ describe('reservation detail action feedback', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Kola' } });
-    fireEvent.change(screen.getByPlaceholderText('Örn. 150,74'), { target: { value: '0' } });
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[1], { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: '0 TL Ekle' }));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
@@ -195,9 +196,9 @@ describe('reservation detail action feedback', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Kahve' } });
-    fireEvent.change(screen.getByPlaceholderText('Örn. 150,74'), { target: { value: '15' } });
-    const inputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(inputs[0], { target: { value: '3' } });
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[1], { target: { value: '15' } });
+    fireEvent.change(inputs[2], { target: { value: '3' } });
 
     expect(screen.getByTestId('extra-charge-total-preview')).toHaveTextContent('15 TL × 3 = 45 TL');
     fireEvent.click(screen.getByRole('button', { name: '45 TL Ekle' }));
@@ -247,7 +248,7 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(selects[1], { target: { value: 'TRY' } });
     await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/exchange-rates', { timeout: 10000 }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Türk kahvesi' } });
-    fireEvent.change(screen.getByPlaceholderText('Örn. 150,74'), { target: { value: '390' } });
+    fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '390' } });
     expect(await screen.findByText(/7,8 EUR olarak folyoya yansır/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '390 TL (7,8 EUR) Ekle' }));
 
@@ -273,8 +274,8 @@ describe('reservation detail action feedback', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
     fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Hatalı kalem' } });
-    fireEvent.change(screen.getByPlaceholderText('Örn. 150,74'), { target: { value: '-1' } });
-    fireEvent.click(screen.getByRole('button', { name: '0 TL Ekle' }));
+    fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /TL Ekle/ }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('sıfır veya üzeri tutar');
     expect(axiosPost).not.toHaveBeenCalled();

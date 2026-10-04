@@ -13,7 +13,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
-import { isMoneyInput, moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
+import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
+import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import PrintableFolio from '@/components/PrintableFolio';
 import {
@@ -25,7 +26,7 @@ const normalizeCurrency = (value) => String(value || 'TL').toUpperCase() === 'TL
 const COMMON_PAYMENT_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF'];
 
 export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurrency, rates) {
-  const numericAmount = typeof amount === 'string' ? parseMoneyInput(amount) : Number(amount);
+  const numericAmount = parseMoney(amount);
   const base = normalizeCurrency(bookingCurrency);
   const received = normalizeCurrency(receivedCurrency);
   if (!Number.isFinite(numericAmount) || numericAmount <= 0) return null;
@@ -420,8 +421,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showCashExchange && (
         <FormPanel color="emerald" title="Döviz Bozdur" testid="currency-exchange-form" onClose={() => setShowCashExchange(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            const amount = parseMoneyInput(cashExchangeForm.source_amount);
-            const rate = parseMoneyInput(cashExchangeForm.rate);
+            const amount = Number(cashExchangeForm.source_amount);
+            const rate = Number(cashExchangeForm.rate);
             if (!(amount > 0) || !(rate > 0)) throw new Error('Tutar ve kur 0’dan büyük olmalıdır');
             await axios.post('/cashier/currency-exchange', { booking_id: booking.id, ...cashExchangeForm, source_amount: amount, rate }, {
               headers: { 'X-Idempotency-Key': globalThis.crypto?.randomUUID?.() || `${booking.id}-${Date.now()}` },
@@ -434,9 +435,9 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               const receipt = exchangeableReceipts.find(item => item.currency === value);
               setCashExchangeForm(form => ({ ...form, source_currency: value, source_amount: receipt ? receipt.amount.toFixed(2) : '', rate: String(tcmbRates[value] || '') }));
             }} options={exchangeableReceipts.map(item => [item.currency, `${item.currency} · kullanılabilir ${item.amount.toFixed(2)}`])} />
-            <FormField label={`Bozdurulan Tutar (${cashExchangeForm.source_currency})`} type="money" value={cashExchangeForm.source_amount} onChange={value => setCashExchangeForm(form => ({ ...form, source_amount: value }))} />
-            <FormField label={`Kur (1 ${cashExchangeForm.source_currency} = kaç TL)`} type="money" value={cashExchangeForm.rate} onChange={value => setCashExchangeForm(form => ({ ...form, rate: value }))} />
-            <FormField label="Kasaya Girecek Tutar (TL)" value={((parseMoneyInput(cashExchangeForm.source_amount) || 0) * (parseMoneyInput(cashExchangeForm.rate) || 0)).toFixed(2)} onChange={() => {}} disabled />
+            <FormField label={`Bozdurulan Tutar (${cashExchangeForm.source_currency})`} type="number" value={cashExchangeForm.source_amount} onChange={value => setCashExchangeForm(form => ({ ...form, source_amount: value }))} />
+            <FormField label={`Kur (1 ${cashExchangeForm.source_currency} = kaç TL)`} type="number" value={cashExchangeForm.rate} onChange={value => setCashExchangeForm(form => ({ ...form, rate: value }))} />
+            <FormField label="Kasaya Girecek Tutar (TL)" value={(Number(cashExchangeForm.source_amount || 0) * Number(cashExchangeForm.rate || 0)).toFixed(2)} onChange={() => {}} disabled />
           </div>
           <FormField label="Açıklama" value={cashExchangeForm.note} onChange={value => setCashExchangeForm(form => ({ ...form, note: value }))} placeholder="Döviz bürosu / fiş numarası (opsiyonel)" />
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800">Orijinal tahsilat değişmez. Kasa raporuna döviz çıkışı ve aynı işlemde TL girişi kaydedilir.</div>
@@ -468,9 +469,15 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <FormPanel color="emerald" title={t('common.paymentRecord')} testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
           onSubmit={() => exec(async () => {
             if (payForm.method === 'discount' && !payForm.reference) { toast.error('Lütfen indirim sebebini yazın'); return; }
-            const amount = parseMoneyInput(payForm.amount);
+            const amount = parseMoney(payForm.amount);
             if (!Number.isFinite(amount) || amount <= 0) {
               toast.error('Ödeme tutarını virgül veya nokta ile doğru girin.');
+              return;
+            }
+            const receivedAmount = parseMoney(foreignAmount);
+            const appliedExchangeRate = parseExchangeRate(exchangeRate);
+            if (useCurrencyConverter && (!Number.isFinite(receivedAmount) || receivedAmount <= 0 || !Number.isFinite(appliedExchangeRate) || appliedExchangeRate <= 0)) {
+              toast.error('Alınan döviz tutarı ve kur virgül veya nokta ile doğru girilmelidir.');
               return;
             }
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
@@ -478,11 +485,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               amount,
               currency: normalizeCurrency(currency),
               payment_type: classifyGuestPayment(amount, reservationTotalDue),
-              ...(useCurrencyConverter && foreignAmount && exchangeRate ? {
+              ...(useCurrencyConverter ? {
                 received_currency: normalizeCurrency(foreignCurrency),
-                received_amount: Number(foreignAmount),
-                exchange_rate: Number(exchangeRate),
-                notes: `[Döviz Çevirici] ${Number(amount).toFixed(2)} ${currency} = ${Number(foreignAmount).toFixed(2)} ${foreignCurrency}. Kur: 1 ${currency} = ${exchangeRate} ${foreignCurrency}`
+                received_amount: receivedAmount,
+                exchange_rate: appliedExchangeRate,
+                notes: `[Döviz Çevirici] ${amount.toFixed(2)} ${currency} = ${receivedAmount.toFixed(2)} ${foreignCurrency}. Kur: 1 ${currency} = ${appliedExchangeRate} ${foreignCurrency}`
               } : {
                 received_currency: normalizeCurrency(currency),
                 received_amount: amount,
@@ -496,7 +503,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             setManualExchangeRate(false);
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label={`Tutar (${currency})`} type="money" hint="Virgül veya nokta ile en fazla iki ondalık basamak girebilirsiniz." value={payForm.amount} onChange={v => { if (!isMoneyInput(v)) return; setPayForm(p => ({ ...p, amount: v })); const amount = parseMoneyInput(v); const rate = parseMoneyInput(exchangeRate); if (useCurrencyConverter && manualExchangeRate && Number.isFinite(amount) && Number.isFinite(rate)) setForeignAmount((amount * rate).toFixed(2)); }} />
+            <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile en fazla iki ondalık basamak girebilirsiniz." value={payForm.amount} onChange={v => { if (!isMoneyInput(v)) return; setPayForm(p => ({ ...p, amount: v })); const amount = parseMoney(v); const rate = parseExchangeRate(exchangeRate); if (useCurrencyConverter && manualExchangeRate && Number.isFinite(amount) && Number.isFinite(rate) && rate > 0) setForeignAmount((amount * rate).toFixed(2)); }} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
           </div>
@@ -533,12 +540,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                   </div>
                   <div>
                     <Label className="text-xs">Uygulanan Kur (1 {currency} = kaç {foreignCurrency})</Label>
-            <Input {...moneyInputProps} className="h-8 mt-1" value={exchangeRate} onChange={e => {
+                    <Input type="text" inputMode="decimal" className="h-8 mt-1" value={exchangeRate} onChange={e => {
                       setExchangeRate(e.target.value);
                       setManualExchangeRate(true);
-              const rate = parseMoneyInput(e.target.value);
-              const baseAmt = parseMoneyInput(payForm.amount);
-                      if (!isNaN(rate) && !isNaN(baseAmt)) setForeignAmount((baseAmt * rate).toFixed(2));
+                      const rate = parseExchangeRate(e.target.value);
+                      const baseAmt = parseMoney(payForm.amount);
+                      if (Number.isFinite(rate) && Number.isFinite(baseAmt) && rate > 0) setForeignAmount((baseAmt * rate).toFixed(2));
                     }} />
                   </div>
                 </div>
@@ -546,23 +553,23 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                 {ratesError && <div className="text-xs text-amber-700" role="alert">{ratesError}</div>}
                 <div>
                   <Label className="text-xs">Misafirden Alınacak Tutar ({foreignCurrency})</Label>
-                  <Input type="number" step="0.01" className="h-8 mt-1 font-semibold text-emerald-600" value={foreignAmount} onChange={e => {
+                  <Input type="text" inputMode="decimal" className="h-8 mt-1 font-semibold text-emerald-600" value={foreignAmount} onChange={e => {
                     setForeignAmount(e.target.value);
-                    const fAmt = parseFloat(e.target.value);
-                    const rate = parseFloat(exchangeRate);
-                    if (!isNaN(fAmt) && !isNaN(rate) && rate > 0) setPayForm(p => ({...p, amount: (fAmt / rate).toFixed(2)}));
+                    const fAmt = parseMoney(e.target.value);
+                    const rate = parseExchangeRate(exchangeRate);
+                    if (Number.isFinite(fAmt) && Number.isFinite(rate) && rate > 0) setPayForm(p => ({...p, amount: (fAmt / rate).toFixed(2)}));
                   }} />
                 </div>
                 {exchangeRate && foreignAmount && (
                   <div className="text-xs text-slate-600" data-testid="currency-conversion-summary">
-                    {(parseMoneyInput(payForm.amount) || 0).toFixed(2)} {currency} = {Number(foreignAmount).toFixed(2)} {foreignCurrency} · 1 {currency} = {exchangeRate} {foreignCurrency}
+                    {(parseMoney(payForm.amount) || 0).toFixed(2)} {currency} = {(parseMoney(foreignAmount) || 0).toFixed(2)} {foreignCurrency} · 1 {currency} = {exchangeRate} {foreignCurrency}
                   </div>
                 )}
               </div>
             )}
           </div>
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
-            <div className="font-medium">{guestPaymentClassificationLabel(parseMoneyInput(payForm.amount), reservationTotalDue)}</div>
+            <div className="font-medium">{guestPaymentClassificationLabel(parseMoney(payForm.amount), reservationTotalDue)}</div>
             <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>
           </div>
         </FormPanel>
@@ -571,11 +578,13 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showCari && (
         <FormPanel color="amber" title="Cariye Aktar" testid="cari-transfer-form" onClose={() => setShowCari(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            await axios.post(`/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount: parseFloat(cariForm.amount) });
+            const amount = parseMoney(cariForm.amount);
+            if (!Number.isFinite(amount) || amount <= 0) throw new Error('Tutarı virgül veya nokta ile doğru girin.');
+            await axios.post(`/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount });
             toast.success('Cariye aktarıldı'); setShowCari(false); setCariForm({ amount: '', cari_account_id: '', description: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label={`Tutar (${currency})`} type="number" value={cariForm.amount} onChange={v => setCariForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile iki ondalık basamak." value={cariForm.amount} onChange={v => setCariForm(p => ({ ...p, amount: v }))} />
             <SelectField label="Cari Hesap" value={cariForm.cari_account_id} onChange={v => setCariForm(p => ({ ...p, cari_account_id: v }))}
               options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
           </div>
@@ -586,11 +595,13 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showAgency && (
         <FormPanel color="blue" title="Acente Ödemesi" testid="agency-payment-form" onClose={() => setShowAgency(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            await axios.post(`/pms/reservations/${booking.id}/record-agency-payment`, { ...agencyForm, amount: parseFloat(agencyForm.amount) });
+            const amount = parseMoney(agencyForm.amount);
+            if (!Number.isFinite(amount) || amount <= 0) throw new Error('Tutarı virgül veya nokta ile doğru girin.');
+            await axios.post(`/pms/reservations/${booking.id}/record-agency-payment`, { ...agencyForm, amount });
             toast.success('Acente ödemesi kaydedildi'); setShowAgency(false); setAgencyForm({ amount: '', agency_name: '', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label={`Tutar (${currency})`} type="number" value={agencyForm.amount} onChange={v => setAgencyForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile iki ondalık basamak." value={agencyForm.amount} onChange={v => setAgencyForm(p => ({ ...p, amount: v }))} />
             <FormField label="Acente Adı" value={agencyForm.agency_name} onChange={v => setAgencyForm(p => ({ ...p, agency_name: v }))} />
           </div>
           <FormField label="Referans" value={agencyForm.reference} onChange={v => setAgencyForm(p => ({ ...p, reference: v }))} placeholder="Voucher No" />
@@ -603,7 +614,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             if (!cariTransferForm.source_id || !cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap seçiniz'); return; }
             if (cariTransferForm.source_id === cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap farklı olmalı'); return; }
             await axios.post(`/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, {
-              amount: parseMoneyInput(cariTransferForm.amount),
+              amount: (() => {
+                const amount = parseMoney(cariTransferForm.amount);
+                if (!Number.isFinite(amount) || amount <= 0) throw new Error('Tutarı virgül veya nokta ile doğru girin.');
+                return amount;
+              })(),
               cari_account_id: cariTransferForm.target_id,
               description: cariTransferForm.description || 'Acenteye aktarım'
             });
@@ -621,7 +636,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label={`Tutar (${currency})`} type="money" value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile iki ondalık basamak." value={cariTransferForm.amount} onChange={v => setCariTransferForm(p => ({ ...p, amount: v }))} />
             <FormField label="Açıklama" value={cariTransferForm.description} onChange={v => setCariTransferForm(p => ({ ...p, description: v }))} placeholder="Opsiyonel" />
           </div>
         </FormPanel>
@@ -665,7 +680,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           onSubmit={() => exec(async () => {
             if (!reconcileForm.cari_account_id) { toast.error('Cari hesap seçiniz'); return; }
             await axios.post(`/pms/cari-accounts/${reconcileForm.cari_account_id}/reconcile`, {
-              amount: parseMoneyInput(reconcileForm.amount),
+              amount: (() => {
+                const amount = parseMoney(reconcileForm.amount);
+                if (!Number.isFinite(amount) || amount <= 0) throw new Error('Tutarı virgül veya nokta ile doğru girin.');
+                return amount;
+              })(),
               description: reconcileForm.description || 'Mahsuplaştırma'
             });
             toast.success('Mahsuplaştırma kaydedildi');
@@ -675,7 +694,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <div className="grid grid-cols-2 gap-3">
             <SelectField label="Cari Hesap" value={reconcileForm.cari_account_id} onChange={v => setReconcileForm(p => ({ ...p, cari_account_id: v }))}
               options={[['','Hesap Seçiniz...'], ...cariAccounts.map(a => [a.id, `${a.name} (${a.account_type || ''})`])]} />
-            <FormField label={`Tutar (${currency})`} type="money" value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile iki ondalık basamak." value={reconcileForm.amount} onChange={v => setReconcileForm(p => ({ ...p, amount: v }))} />
           </div>
           <FormField label="Açıklama" value={reconcileForm.description} onChange={v => setReconcileForm(p => ({ ...p, description: v }))} placeholder="Mahsuplaştırma açıklaması" />
         </FormPanel>
@@ -684,7 +703,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showPriceCorrection && (
         <FormPanel color="amber" title="Kapanmış gece fiyat düzeltmesi" testid="posted-stay-rate-correction-form" onClose={() => setShowPriceCorrection(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            const targetTotal = parseMoneyInput(priceCorrectionForm.target_total);
+            const targetTotal = parseMoney(priceCorrectionForm.target_total);
             if (!Number.isFinite(targetTotal) || targetTotal < 0) throw new Error('Hedef konaklama toplamını girin');
             if (!priceCorrectionForm.reason.trim()) throw new Error('Fiyat düzeltme gerekçesi zorunludur');
             const result = await axios.post(`/pms/reservations/${booking.id}/apply-posted-stay-rate-correction`, {
@@ -696,7 +715,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             await onRefresh?.();
           })}>
           <p className="text-xs leading-5 text-amber-900">Night Audit ile kapanmış oda tahakkukları değişmez. Sistem, hedef toplam ile mevcut net tahakkuk arasındaki farkı denetim izli indirim kaydı olarak folyoya işler.</p>
-          <FormField label={`Hedef konaklama toplamı (${currency})`} type="money" value={priceCorrectionForm.target_total} onChange={v => setPriceCorrectionForm(p => ({ ...p, target_total: v }))} />
+          <FormField label={`Hedef konaklama toplamı (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile iki ondalık basamak." value={priceCorrectionForm.target_total} onChange={v => setPriceCorrectionForm(p => ({ ...p, target_total: v }))} />
           <FormField label="Düzeltme gerekçesi" value={priceCorrectionForm.reason} onChange={v => setPriceCorrectionForm(p => ({ ...p, reason: v }))} placeholder="Örn. son gece fiyatı hatalı girildi" />
         </FormPanel>
       )}
