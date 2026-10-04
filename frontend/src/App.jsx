@@ -147,7 +147,7 @@ function App() {
     // session alive until logout, account revocation, or refresh rejection.
     if (hasAuthCookieSession && storedUser) {
       axios.get("/auth/me")
-        .then(async (meResponse) => {
+        .then((meResponse) => {
           const freshUser = meResponse.data;
           if (isForeignIdentityForTab(freshUser)) {
             // Never repaint an existing workspace as another hotel/user. This
@@ -170,34 +170,46 @@ function App() {
           if (storedModules) {
             try { parsedModules = JSON.parse(storedModules); } catch { /* ignore parse error */ }
           }
-          let subscriptionContext = null;
-          if (freshUser?.tenant_id) {
-            try {
-              const subscriptionResponse = await axios.get("/subscription/current");
-              subscriptionContext = subscriptionResponse?.data || null;
-            } catch {
-              // Session verification succeeded. A temporary subscription read
-              // failure must not log the user out; the last verified local
-              // snapshot remains the safe fallback.
-            }
-          }
-          const serverTenant = subscriptionContext?.tenant || null;
-          const serverModules = subscriptionContext?.modules || null;
-          const recoveredTenant = serverTenant || parsedTenant;
-          const recoveredModules = serverModules || parsedModules || recoveredTenant?.modules || null;
-          const reconciled = reconcileAdminTenantContext(freshUser, recoveredTenant, recoveredModules);
-          const reconciledTenant = reconciled.tenant
-            ? (reconciled.modules ? { ...reconciled.tenant, modules: reconciled.modules } : reconciled.tenant)
-            : null;
-          localStorage.setItem("user", JSON.stringify(reconciled.user));
-          localStorage.setItem("tenant", reconciledTenant ? JSON.stringify(reconciledTenant) : "null");
-          if (reconciled.modules) localStorage.setItem("modules", JSON.stringify(reconciled.modules));
-          setUser(reconciled.user);
-          setModules(reconciled.modules);
-          setTenant(reconciledTenant);
-          setIsAuthenticated(true);
-          rememberTabAuthSubject(reconciled.user);
+          const applyAuthenticatedSnapshot = (nextTenant, nextModules) => {
+            const recoveredTenant = nextTenant || parsedTenant;
+            const recoveredModules = nextModules || parsedModules || recoveredTenant?.modules || null;
+            const reconciled = reconcileAdminTenantContext(freshUser, recoveredTenant, recoveredModules);
+            const reconciledTenant = reconciled.tenant
+              ? (reconciled.modules ? { ...reconciled.tenant, modules: reconciled.modules } : reconciled.tenant)
+              : null;
+            localStorage.setItem("user", JSON.stringify(reconciled.user));
+            localStorage.setItem("tenant", reconciledTenant ? JSON.stringify(reconciledTenant) : "null");
+            if (reconciled.modules) localStorage.setItem("modules", JSON.stringify(reconciled.modules));
+            setUser(reconciled.user);
+            setModules(reconciled.modules);
+            setTenant(reconciledTenant);
+            setIsAuthenticated(true);
+            rememberTabAuthSubject(reconciled.user);
+          };
+
+          // Identity is the only blocking authentication check. Waiting for
+          // subscription data here left the application as a blank spinner
+          // after login even when this browser had a valid tenant snapshot.
+          // Render the verified user's workspace immediately, then reconcile
+          // package and module metadata in the background.
+          applyAuthenticatedSnapshot(parsedTenant, parsedModules);
           prefetchHeavyModules();
+
+          if (freshUser?.tenant_id) {
+            void axios.get("/subscription/current")
+              .then((subscriptionResponse) => {
+                const subscriptionContext = subscriptionResponse?.data || null;
+                applyAuthenticatedSnapshot(
+                  subscriptionContext?.tenant || parsedTenant,
+                  subscriptionContext?.modules || parsedModules,
+                );
+              })
+              .catch(() => {
+                // EntitlementContext independently refreshes this data. A
+                // delayed or unavailable subscription response must not make
+                // the already verified first screen wait or disappear.
+              });
+          }
         })
         .catch((error) => {
           if (error?._sessionContextRestored) {
