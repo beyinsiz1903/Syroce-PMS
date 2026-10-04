@@ -35,6 +35,20 @@ def test_deploy_installs_and_executes_versioned_healthwatch():
     assert workflow.index(execute, workflow.index(compose_up)) > workflow.index(compose_up)
 
 
+def test_deploy_validates_and_reloads_bind_mounted_nginx_configuration():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "deploy.yml").read_text(
+        encoding="utf-8"
+    )
+
+    compose_up = workflow.index("docker compose -f docker-compose.prod.yml up -d")
+    nginx_test = "docker compose -f docker-compose.prod.yml exec -T nginx nginx -t"
+    nginx_reload = "docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload"
+
+    assert nginx_test in workflow
+    assert nginx_reload in workflow
+    assert compose_up < workflow.index(nginx_test) < workflow.index(nginx_reload)
+
+
 def test_healthwatch_uses_compose_services_and_single_replica_defaults():
     script = (REPO_ROOT / "deploy" / "syroce-healthwatch.sh").read_text(
         encoding="utf-8"

@@ -61,6 +61,14 @@ jobs:
               exit 1
             fi
 
+            # Nginx receives its production configuration through a bind mount.
+            # Compose does not recreate a running container merely because that
+            # host file changed, so validate and reload it explicitly. This is a
+            # zero-downtime reload and makes proxy/cache policy changes effective
+            # in the deployment that introduced them.
+            docker compose -f docker-compose.prod.yml exec -T nginx nginx -t
+            docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload
+
             # Verify both local service topology and the public route before
             # considering the deployment successful.
             /usr/local/sbin/syroce-healthwatch
