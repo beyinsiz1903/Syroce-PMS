@@ -7,13 +7,9 @@ import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock, Gif
 import { API, fmtDate, fmtCurrency, fmtTs, FormField, SelectField } from './helpers';
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
-import { parseMoneyInput } from '@/lib/moneyInput';
+import { calculateFinancialLine, parseMoney, parseQuantity } from '@/lib/financialInput';
 
-const parseDecimalInput = value => {
-  const normalized = String(value ?? '').trim();
-  if (!/^\d+(?:[.,]\d+)?$/.test(normalized)) return Number.NaN;
-  return Number(normalized.replace(',', '.'));
-};
+const parseDecimalInput = value => parseMoney(value) ?? Number.NaN;
 
 export const distributeTotalAcrossEditableRates = (rates, total, isLocked = () => false) => {
   const totalValue = parseDecimalInput(total);
@@ -391,12 +387,13 @@ export function ExtraChargesTab({
   const extraExchangeRate = normalizedInputCurrency === currency
     ? 1
     : inputToTry / bookingToTry;
-  const unitAmount = parseMoneyInput(form.amount);
-  const quantity = Number(form.quantity);
+  const unitAmount = parseMoney(form.amount);
+  const quantity = parseQuantity(form.quantity);
+  const enteredLine = calculateFinancialLine({ unitAmount, quantity });
   const enteredTotal = Number.isFinite(unitAmount) && Number.isFinite(quantity)
-    ? unitAmount * quantity
+    ? enteredLine.total
     : Number.NaN;
-  const convertedTotal = enteredTotal * extraExchangeRate;
+  const convertedTotal = Number.isFinite(extraExchangeRate) ? calculateFinancialLine({ unitAmount: enteredTotal, quantity: 1, exchangeRate: extraExchangeRate }).accountingTotal : null;
   const inputCurrencyLabel = normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency;
   const buttonAmountLabel = normalizedInputCurrency === currency
     ? fmtCurrency(Number.isFinite(enteredTotal) ? enteredTotal : 0, currency)
@@ -458,7 +455,8 @@ export function ExtraChargesTab({
     setLoading(false);
   };
   const handleSplit = async chargeId => {
-    if (!splitForm.split_amount || !splitForm.target_booking_id) {
+    const splitAmount = parseMoney(splitForm.split_amount);
+    if (!Number.isFinite(splitAmount) || splitAmount <= 0 || !splitForm.target_booking_id) {
       toast.error('Tutar ve hedef seçimi zorunlu');
       return;
     }
@@ -467,7 +465,7 @@ export function ExtraChargesTab({
       await axios.post(`/pms/reservations/${booking.id}/split-charge`, {
         charge_id: chargeId,
         target_booking_id: splitForm.target_booking_id,
-        split_amount: parseMoneyInput(splitForm.split_amount),
+        split_amount: splitAmount,
         reason: splitForm.reason
       });
       toast.success('Masraf bölündü');
@@ -536,11 +534,11 @@ export function ExtraChargesTab({
               setForm(p => ({ ...p, input_currency: v }));
               if ((v === 'TL' ? 'TRY' : v) !== currency) void fetchExchangeRates();
             }} options={[[currency, currency === 'TRY' ? 'TL (Türk Lirası)' : currency], ...['TRY', 'EUR', 'USD', 'GBP', 'CHF'].filter(code => code !== currency).map(code => [code, code === 'TRY' ? 'TL (Türk Lirası)' : code])]} />
-            <FormField label={`Birim tutar (${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency})`} type="money" value={form.amount} onChange={v => setForm(p => ({
+            <FormField label={`Birim tutar (${inputCurrencyLabel})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile en fazla iki ondalık basamak." value={form.amount} onChange={v => setForm(p => ({
           ...p,
           amount: v
         }))} />
-            <FormField label="Adet" type="number" value={form.quantity} onChange={v => setForm(p => ({
+            <FormField label="Adet" type="text" inputMode="decimal" hint="En fazla üç ondalık basamak." value={form.quantity} onChange={v => setForm(p => ({
           ...p,
           quantity: v
         }))} />
@@ -589,7 +587,7 @@ export function ExtraChargesTab({
               {showSplit === c.id && <div className="mt-3 border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.masraf_bol')}</div>
                   <div className="grid grid-cols-3 gap-2">
-                    <FormField label={t('cm.pages_reservationdetail_PricingTabs.tutar')} type="money" value={splitForm.split_amount} onChange={v => setSplitForm(p => ({
+                    <FormField label={t('cm.pages_reservationdetail_PricingTabs.tutar')} type="number" value={splitForm.split_amount} onChange={v => setSplitForm(p => ({
               ...p,
               split_amount: v
             }))} />

@@ -242,7 +242,7 @@ const ROUTE_SCOPE_OVERRIDES = Object.freeze(Object.fromEntries([
     '/admin/capx-integration', '/admin/early-warning', '/admin/features',
     '/admin/governance', '/admin/housekeeping', '/admin/integration-credentials',
     '/admin/integrations-overview', '/admin/module-control', '/admin/module-discovery',
-    '/admin/module-report', '/admin/pos', '/admin/quick-id',
+    '/admin/module-health', '/admin/module-report', '/admin/pos', '/admin/quick-id',
     '/admin/rnl-auto-resolve-runs', '/admin/rnl-duplicates', '/admin/room-qr-codes',
     '/admin/site-content', '/admin/urgent-permissions', '/admin/user-roles',
     '/admin/vendors', '/admin/voice-numbers', '/admin/webhook-outbox',

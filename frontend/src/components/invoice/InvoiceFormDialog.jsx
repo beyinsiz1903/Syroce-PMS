@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus } from 'lucide-react';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
+import { calculateFinancialLine, parseExchangeRate, parseMoney, parseQuantity, parseTaxRate, roundMoney } from '@/lib/financialInput';
 
 export const createAccountingInvoice = (invoice) => axios.post('/accounting/invoices', invoice);
 
@@ -39,6 +40,12 @@ export const createInvoiceItem = (category = 'accommodation', accommodationVatRa
   vat_amount: 0,
   total: 0,
   additional_taxes: [],
+});
+
+export const calculateInvoiceItemTotals = (item) => calculateFinancialLine({
+  unitAmount: item?.unit_price,
+  quantity: item?.quantity,
+  vatRate: item?.vat_rate,
 });
 
 const InvoiceFormDialog = ({
@@ -110,9 +117,9 @@ const InvoiceFormDialog = ({
       }
     }
     if (field === 'quantity' || field === 'unit_price' || field === 'vat_rate' || field === 'category') {
-      const subtotal = items[index].quantity * items[index].unit_price;
-      items[index].vat_amount = subtotal * (items[index].vat_rate / 100);
-      items[index].total = subtotal + items[index].vat_amount;
+      const totals = calculateInvoiceItemTotals(items[index]);
+      items[index].vat_amount = totals.vat;
+      items[index].total = totals.total;
     }
     setNewInvoice({
       ...newInvoice,
@@ -130,19 +137,31 @@ const InvoiceFormDialog = ({
     const items = [...newInvoice.items];
     const item = items[currentItemIndex];
     let calculatedAmount = 0;
-    const subtotal = item.quantity * item.unit_price;
+    const subtotal = calculateInvoiceItemTotals(item).subtotal;
     if (newAdditionalTax.tax_type === 'withholding' && newAdditionalTax.withholding_rate) {
       const rateParts = newAdditionalTax.withholding_rate.split('/');
       const ratePercent = parseInt(rateParts[0]) / parseInt(rateParts[1]) * 100;
-      calculatedAmount = item.vat_amount * (ratePercent / 100);
+      calculatedAmount = roundMoney(item.vat_amount * (ratePercent / 100));
     } else if (newAdditionalTax.is_percentage) {
-      calculatedAmount = subtotal * (newAdditionalTax.rate / 100);
+      const rate = parseTaxRate(newAdditionalTax.rate);
+      if (!Number.isFinite(rate) || rate < 0) {
+        toast.error('Vergi oranını virgül veya nokta ile doğru girin.');
+        return;
+      }
+      calculatedAmount = roundMoney(subtotal * (rate / 100));
     } else {
-      calculatedAmount = newAdditionalTax.amount;
+      const amount = parseMoney(newAdditionalTax.amount);
+      if (!Number.isFinite(amount) || amount < 0) {
+        toast.error('Vergi tutarını virgül veya nokta ile doğru girin.');
+        return;
+      }
+      calculatedAmount = roundMoney(amount);
     }
     if (!item.additional_taxes) item.additional_taxes = [];
     item.additional_taxes.push({
       ...newAdditionalTax,
+      rate: newAdditionalTax.is_percentage ? parseTaxRate(newAdditionalTax.rate) : 0,
+      amount: newAdditionalTax.is_percentage ? 0 : parseMoney(newAdditionalTax.amount),
       calculated_amount: calculatedAmount
     });
     items[currentItemIndex] = item;
@@ -173,7 +192,19 @@ const InvoiceFormDialog = ({
     try {
       const dueDate = new FormData(e.currentTarget).get('due_date');
       const payload = withSubmittedDueDate(newInvoice, dueDate);
-      payload.exchange_rate = payload.currency === tenantCurrency ? 1 : Number(payload.exchange_rate);
+      const exchangeRate = payload.currency === tenantCurrency ? 1 : parseExchangeRate(payload.exchange_rate);
+      if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) throw new Error('Muhasebe döviz kuru virgül veya nokta ile doğru girilmelidir.');
+      payload.exchange_rate = exchangeRate;
+      payload.items = payload.items.map((item) => {
+        const quantity = parseQuantity(item.quantity);
+        const unitPrice = parseMoney(item.unit_price);
+        const vatRate = parseTaxRate(item.vat_rate);
+        if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(vatRate) || vatRate < 0) {
+          throw new Error('Fatura kalemlerinde adet, birim fiyat ve KDV oranını doğru girin.');
+        }
+        const totals = calculateFinancialLine({ unitAmount: unitPrice, quantity, vatRate });
+        return { ...item, quantity, unit_price: unitPrice, vat_rate: vatRate, vat_amount: totals.vat, total: totals.total };
+      });
       const response = await createAccountingInvoice(payload);
       if (!response.data?.id) throw new Error('Fatura kaydı doğrulanamadı.');
       toast.success('Fatura oluşturuldu');
@@ -182,8 +213,8 @@ const InvoiceFormDialog = ({
       toast.error(error.response?.data?.detail || error.message || 'Fatura oluşturulamadı');
     }
   };
-  const invoiceSubtotal = newInvoice.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const invoiceTotalVAT = newInvoice.items.reduce((sum, item) => sum + item.vat_amount, 0);
+  const invoiceSubtotal = newInvoice.items.reduce((sum, item) => sum + calculateInvoiceItemTotals(item).subtotal, 0);
+  const invoiceTotalVAT = newInvoice.items.reduce((sum, item) => sum + calculateInvoiceItemTotals(item).vat, 0);
   let invoiceVATWithholding = 0;
   let invoiceAdditionalTaxes = 0;
   newInvoice.items.forEach(item => {
@@ -196,7 +227,7 @@ const InvoiceFormDialog = ({
             invoiceVATWithholding += item.vat_amount * (ratePercent / 100);
           }
         } else {
-          const subtotal = item.quantity * item.unit_price;
+          const subtotal = calculateInvoiceItemTotals(item).subtotal;
           if (tax.is_percentage) {
             invoiceAdditionalTaxes += subtotal * (tax.rate / 100);
           } else {
@@ -209,10 +240,10 @@ const InvoiceFormDialog = ({
   const invoiceTotal = invoiceSubtotal + invoiceTotalVAT + invoiceAdditionalTaxes - invoiceVATWithholding;
   const selectedCurrency = newInvoice.currency || tenantCurrency || 'TRY';
   const isForeignCurrency = selectedCurrency !== tenantCurrency;
-  const selectedExchangeRate = Number(newInvoice.exchange_rate);
+  const selectedExchangeRate = parseExchangeRate(newInvoice.exchange_rate);
   const formatInvoiceMoney = value => formatCurrency(value, selectedCurrency, { decimals: 2 });
   const accountingEquivalent = Number.isFinite(selectedExchangeRate) && selectedExchangeRate > 0
-    ? invoiceTotal * selectedExchangeRate
+    ? calculateFinancialLine({ unitAmount: invoiceTotal, quantity: 1, exchangeRate: selectedExchangeRate }).accountingTotal
     : null;
   return <>
       <Dialog open={open} onOpenChange={o => !o && onClose()}>
@@ -272,9 +303,8 @@ const InvoiceFormDialog = ({
                   <Input
                     id="invoice-exchange-rate"
                     data-testid="invoice-exchange-rate"
-                    type="number"
-                    min="0.000001"
-                    step="0.000001"
+                    type="text"
+                    inputMode="decimal"
                     value={newInvoice.exchange_rate}
                     onChange={e => setNewInvoice({ ...newInvoice, exchange_rate: e.target.value })}
                     required
@@ -332,8 +362,8 @@ const InvoiceFormDialog = ({
                         </SelectContent>
                       </Select>
                       <Input placeholder={t('invoice.description')} value={item.description} onChange={e => calculateInvoiceItem(index, 'description', e.target.value)} required />
-                      <Input type="number" placeholder={t('invoice.qty')} value={item.quantity} onChange={e => calculateInvoiceItem(index, 'quantity', parseFloat(e.target.value))} required />
-                      <Input type="number" step="0.01" placeholder={t('invoice.price')} value={item.unit_price} onChange={e => calculateInvoiceItem(index, 'unit_price', parseFloat(e.target.value))} required />
+                      <Input type="text" inputMode="decimal" placeholder={t('invoice.qty')} value={item.quantity} onChange={e => calculateInvoiceItem(index, 'quantity', e.target.value)} required />
+                      <Input type="text" inputMode="decimal" placeholder={t('invoice.price')} value={item.unit_price} onChange={e => calculateInvoiceItem(index, 'unit_price', e.target.value)} required />
                       <Select value={item.vat_rate.toString()} onValueChange={v => calculateInvoiceItem(index, 'vat_rate', parseFloat(v))}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -345,7 +375,7 @@ const InvoiceFormDialog = ({
                           <SelectItem value="20">20%</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Input type="number" placeholder={t('invoice.total')} value={item.total.toFixed(2)} readOnly />
+                      <Input type="text" placeholder={t('invoice.total')} value={calculateInvoiceItemTotals(item).total.toFixed(2)} readOnly />
                       <Button type="button" size="sm" variant="outline" onClick={() => {
                     setCurrentItemIndex(index);
                     setShowAdditionalTaxDialog(true);
@@ -481,15 +511,15 @@ const InvoiceFormDialog = ({
 
                 {newAdditionalTax.is_percentage ? <div>
                     <Label>{t('invoice.taxRate')}</Label>
-                    <Input type="number" step="0.01" value={newAdditionalTax.rate} onChange={e => setNewAdditionalTax({
+                    <Input type="text" inputMode="decimal" value={newAdditionalTax.rate} onChange={e => setNewAdditionalTax({
                 ...newAdditionalTax,
-                rate: parseFloat(e.target.value)
+                rate: e.target.value
               })} />
                   </div> : <div>
                     <Label>{t('invoice.taxAmount')}</Label>
-                    <Input type="number" step="0.01" value={newAdditionalTax.amount} onChange={e => setNewAdditionalTax({
+                    <Input type="text" inputMode="decimal" value={newAdditionalTax.amount} onChange={e => setNewAdditionalTax({
                 ...newAdditionalTax,
-                amount: parseFloat(e.target.value)
+                amount: e.target.value
               })} />
                   </div>}
               </>}
