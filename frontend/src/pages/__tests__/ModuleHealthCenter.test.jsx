@@ -15,6 +15,7 @@ const snapshot = {
     {
       key: 'channel_manager', name: 'Kanal yöneticisi', status: 'healthy', installation_status: 'installed',
       license_status: 'licensed', integration_status: 'configured', last_used_at: '2026-10-04T09:20:00Z', last_error: null,
+      providers: [{ provider: 'hotelrunner', connected: true, operational_status: { key: 'production', label: 'Üretimde', intent: 'success' } }],
     },
     {
       key: 'whatsapp', name: 'WhatsApp Business', status: 'error', installation_status: 'installed',
@@ -34,6 +35,7 @@ describe('ModuleHealthCenter', () => {
     expect(await screen.findByText('Kanal yöneticisi')).toBeInTheDocument();
     expect(screen.getAllByText('Üretimde sağlıklı').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Bağlantı yapılandırılmış').length).toBeGreaterThan(0);
+    expect(screen.getByText('hotelrunner: Üretimde')).toBeInTheDocument();
     expect(screen.getByText('Sağlayıcı bağlantısı kesildi')).toBeInTheDocument();
     expect(screen.getAllByText('Hata var').length).toBeGreaterThan(0);
     expect(axios.get).toHaveBeenCalledWith('/module-health');

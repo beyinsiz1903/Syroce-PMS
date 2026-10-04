@@ -35,6 +35,17 @@ const INTEGRATION_META = {
   not_applicable: { label: 'Entegrasyon gerekmiyor', intent: 'neutral' },
 };
 
+const PROVIDER_META = {
+  production: { label: 'Üretimde', intent: 'success' },
+  first_sync_pending: { label: 'İlk senkronizasyon bekliyor', intent: 'warning' },
+  mapping_required: { label: 'Eşleme bekliyor', intent: 'warning' },
+  paused: { label: 'Senkronizasyon durduruldu', intent: 'warning' },
+  stale: { label: 'Senkronizasyon gecikmiş', intent: 'warning' },
+  sandbox: { label: 'Deneme ortamında', intent: 'neutral' },
+  error: { label: 'Senkronizasyon hatalı', intent: 'danger' },
+  setup_pending: { label: 'Yapılandırılmadı', intent: 'neutral' },
+};
+
 function dateTime(value) {
   if (!value) return 'Kayıt yok';
   const date = new Date(value);
@@ -85,7 +96,7 @@ export default function ModuleHealthCenter() {
   }, [filter, modules, query]);
 
   if (loading && !snapshot) {
-    return <ProductState state="error" moduleName="Modül Sağlık Merkezi" title="Modül sağlık verisi yükleniyor" description="Lisans, kurulum, bağlantı ve kullanım kanıtları okunuyor." compact showDashboardLink={false} />;
+    return <ProductState state="loading" moduleName="Modül Sağlık Merkezi" title="Modül sağlık verisi yükleniyor" description="Lisans, kurulum, bağlantı ve kullanım kanıtları okunuyor." compact showDashboardLink={false} />;
   }
 
   if (error) {
@@ -102,9 +113,10 @@ export default function ModuleHealthCenter() {
         actions={<Button variant="outline" onClick={load} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Yenile</Button>}
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Modül sağlık özeti">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6" aria-label="Modül sağlık özeti">
         <KpiCard icon={PackageCheck} label="İzlenen modül" value={summary.total ?? modules.length} intent="default" />
         <KpiCard icon={CheckCircle2} label="Üretimde sağlıklı" value={summary.healthy ?? 0} intent="success" active={filter === 'healthy'} onClick={() => setFilter((current) => current === 'healthy' ? 'all' : 'healthy')} />
+        <KpiCard icon={CircleHelp} label="Kanıt bekliyor" value={summary.unknown ?? 0} intent="default" active={filter === 'unknown'} onClick={() => setFilter((current) => current === 'unknown' ? 'all' : 'unknown')} />
         <KpiCard icon={Settings2} label="Kurulum bekliyor" value={summary.setup_required ?? 0} intent="warning" active={filter === 'setup_required'} onClick={() => setFilter((current) => current === 'setup_required' ? 'all' : 'setup_required')} />
         <KpiCard icon={AlertTriangle} label="Dikkat" value={summary.attention ?? 0} intent="warning" active={filter === 'attention'} onClick={() => setFilter((current) => current === 'attention' ? 'all' : 'attention')} />
         <KpiCard icon={XCircle} label="Hata" value={summary.error ?? 0} intent="danger" active={filter === 'error'} onClick={() => setFilter((current) => current === 'error' ? 'all' : 'error')} />
@@ -139,6 +151,18 @@ export default function ModuleHealthCenter() {
                   <div><dt className="text-xs text-slate-500">Bağlantı</dt><dd className="mt-1"><MetaBadge value={module.integration_status} catalog={INTEGRATION_META} /></dd></div>
                   <div><dt className="flex items-center gap-1 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" /> Son kullanım</dt><dd className="mt-1 text-sm font-medium text-slate-800">{dateTime(module.last_used_at)}</dd></div>
                 </dl>
+                {module.providers?.length > 0 && (
+                  <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-medium text-slate-600">Sağlayıcı üretim kanıtı</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {module.providers.map((provider) => {
+                        const providerStatus = provider.operational_status || {};
+                        const meta = PROVIDER_META[providerStatus.key] || { label: providerStatus.label || 'Bilinmiyor', intent: providerStatus.intent || 'neutral' };
+                        return <StatusBadge key={provider.provider} intent={meta.intent}>{provider.provider}: {providerStatus.label || meta.label}</StatusBadge>;
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className={`mt-4 rounded-lg border p-3 text-sm ${module.last_error ? 'border-rose-200 bg-rose-50 text-rose-900' : 'border-slate-100 bg-slate-50 text-slate-700'}`}>
                   <div className="flex items-center gap-1.5 font-medium"><PlugZap className="h-4 w-4" /> Son hata</div>
                   <p className="mt-1">{module.last_error || 'Son telemetri penceresinde hata kaydı yok.'}</p>

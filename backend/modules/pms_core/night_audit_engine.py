@@ -654,11 +654,15 @@ class NightAuditEngine:
 
     async def _create_daily_snapshot(self, tenant_id: str, business_date: str, room_charges_result: dict) -> dict:
         """Create a daily audit snapshot for reporting."""
-        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "status": 1}).to_list(2000)
-        total_rooms = len(rooms)
-        occupied = sum(1 for r in rooms if r.get("status") == "occupied")
+        from modules.pms_core.operational_snapshot_service import build_operational_snapshot
 
-        checked_in_count = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
+        operational = await build_operational_snapshot(
+            tenant_id,
+            business_date=business_date,
+            database=db,
+        )
+        total_rooms = operational["total_rooms"]
+        occupied = operational["occupied_rooms"]
 
         snapshot = {
             "id": str(uuid.uuid4()),
@@ -672,7 +676,9 @@ class NightAuditEngine:
             "total_revenue": room_charges_result.get("total_revenue", 0) + room_charges_result.get("total_tax", 0),
             "room_postings": room_charges_result.get("posted", 0),
             "failed_postings": room_charges_result.get("failed", 0),
-            "in_house_guests": checked_in_count,
+            "in_house_guests": operational["in_house_stays"],
+            "operational_snapshot_id": operational["snapshot_id"],
+            "inventory_scope": operational["inventory_scope"],
             "created_at": datetime.now(UTC).isoformat(),
         }
 

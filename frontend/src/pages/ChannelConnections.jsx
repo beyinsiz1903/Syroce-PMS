@@ -30,6 +30,7 @@ export function getChannelConnectionsErrorMessage(error, fallback = 'Bağlantı 
 }
 
 export function getChannelOperationalStatus(provider) {
+  if (provider?.operational_status?.key) return provider.operational_status;
   if (!provider?.connected) return { key: 'setup_pending', label: 'Kurulum bekliyor', intent: 'neutral' };
   if (Number(provider.room_mappings_count || 0) === 0) return { key: 'mapping_required', label: 'Oda eşlemesi bekliyor', intent: 'warning' };
   if (!provider.auto_sync_reservations) return { key: 'sync_paused', label: 'Senkronizasyon kapalı', intent: 'warning' };
@@ -648,7 +649,7 @@ function ProviderCard({
               <CardDescription className="text-xs mt-0.5">{description}</CardDescription>
             </div>
           </div>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <Badge className={`text-xs ${operationalStatus.intent === 'success' ? 'bg-green-100 text-green-700' : operationalStatus.intent === 'warning' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`} data-testid={`${provider}-status-badge`}>
+          {loading ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : <Badge className={`text-xs ${operationalStatus.intent === 'success' ? 'bg-green-100 text-green-700' : operationalStatus.intent === 'danger' ? 'bg-rose-100 text-rose-700' : operationalStatus.intent === 'warning' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`} data-testid={`${provider}-status-badge`}>
               {operationalStatus.label}
             </Badge>}
         </div>
@@ -686,11 +687,21 @@ function ProviderCard({
                   <Clock className="w-3 h-3" />
                   {t('cm.pages_ChannelConnections.baglanti')} {new Date(data.connected_at).toLocaleDateString('tr-TR')}
                 </div>}
-              {data.last_sync_at && <div className="flex items-center gap-1">
+              {(operationalStatus.last_successful_sync || data.last_successful_sync || data.last_sync_at) && <div className="flex items-center gap-1">
                   <ArrowDownUp className="w-3 h-3" />
-                  Son senk: {new Date(data.last_sync_at).toLocaleDateString('tr-TR')}
+                  Son başarılı: {new Date(operationalStatus.last_successful_sync || data.last_successful_sync || data.last_sync_at).toLocaleString('tr-TR')}
                 </div>}
             </div>
+
+            {operationalStatus.key !== 'production' && <div className={`flex items-start gap-2 rounded border p-2 text-xs ${operationalStatus.intent === 'danger' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`} data-testid={`${provider}-operational-guidance`}>
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">{operationalStatus.label}</p>
+                  {operationalStatus.last_error && <p className="mt-0.5">{operationalStatus.last_error}</p>}
+                  {operationalStatus.key === 'first_sync_pending' && <p className="mt-0.5">Bağlantı yapılandırıldı; ilk başarılı rezervasyon veya ARI senkronizasyonu tamamlanmadan üretimde sayılmaz.</p>}
+                  {operationalStatus.key === 'stale' && <p className="mt-0.5">Son başarılı senkronizasyon beklenen aralığı aştı. Bağlantıyı test edin ve kuyrukları kontrol edin.</p>}
+                </div>
+              </div>}
 
             {/* Extra Info (channels, room types) */}
             {extraInfo}

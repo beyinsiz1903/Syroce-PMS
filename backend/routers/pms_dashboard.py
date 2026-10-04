@@ -16,6 +16,7 @@ from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from core.transient_db_guard import is_transient_db_error
 from models.schemas import User
+from modules.pms_core.operational_snapshot_service import build_operational_snapshot
 
 try:
     from cache_manager import cached
@@ -84,70 +85,17 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         if cached_data:
             return cached_data
 
-    # Fallback: Ultra-fast aggregation — exclude virtual rooms
-    pipeline = [
-        {
-            "$match": {
-                "tenant_id": current_user.tenant_id,
-                "$and": [
-                    {"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]},
-                    {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
-                ],
-            }
-        },
-        {"$group": {"_id": None, "total_rooms": {"$sum": 1}, "occupied_rooms": {"$sum": {"$cond": [{"$eq": ["$status", "occupied"]}, 1, 0]}}}},
-    ]
-
     try:
-        room_stats = await db.rooms.aggregate(pipeline).to_list(1)
-    except Exception as exc:
-        if is_transient_db_error(exc):
-            _raise_transient_database_unavailable(exc)
-        raise
-    total_rooms = room_stats[0]["total_rooms"] if room_stats else 0
-    physically_occupied = room_stats[0]["occupied_rooms"] if room_stats else 0
-
-    # The dashboard is an operational PMS surface: "today" means the open
-    # business day, not the server's wall-clock date. This keeps occupancy and
-    # arrivals aligned with night audit, front desk and housekeeping.
-    today = await _open_business_date(current_user.tenant_id)
-    try:
-        bookings_today = await db.bookings.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-            },
-            {"_id": 0, "check_in": 1, "check_out": 1, "status": 1},
-        ).to_list(5000)
-    except Exception as exc:
-        if is_transient_db_error(exc):
-            _raise_transient_database_unavailable(exc)
-        raise
-
-    booking_occupied = 0
-    today_checkins = 0
-    for b in bookings_today:
-        ci = str(b.get("check_in", ""))[:10]
-        co = str(b.get("check_out", ""))[:10]
-        if ci <= today and co > today:
-            booking_occupied += 1
-        if ci == today:
-            today_checkins += 1
-
-    # Single source of truth: active bookings overlapping today (date-only).
-    # rooms.status='occupied' may drift if housekeeping flow misses an event,
-    # so we trust the booking ledger for KPI cards (matches AI briefing & front desk).
-    occupied_rooms = booking_occupied
-    total_guests = booking_occupied
-    if abs(physically_occupied - booking_occupied) >= 3:
-        import logging as _lg
-
-        _lg.getLogger(__name__).warning(
-            "[OCCUPANCY-DRIFT] tenant=%s rooms.status=occupied=%d but booking_overlap=%d (>=3 fark)",
+        business_date = await _open_business_date(current_user.tenant_id)
+        snapshot = await build_operational_snapshot(
             current_user.tenant_id,
-            physically_occupied,
-            booking_occupied,
+            business_date=business_date,
+            database=db,
         )
+    except Exception as exc:
+        if is_transient_db_error(exc):
+            _raise_transient_database_unavailable(exc)
+        raise
 
     try:
         currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
@@ -156,14 +104,8 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
             _raise_transient_database_unavailable(exc)
         raise
 
-    # Ultra-fast response
     result = {
-        "total_rooms": total_rooms,
-        "occupied_rooms": occupied_rooms,
-        "available_rooms": max(0, total_rooms - occupied_rooms),
-        "occupancy_rate": round(min((occupied_rooms / total_rooms * 100), 100.0), 2) if total_rooms > 0 else 0,
-        "today_checkins": today_checkins,
-        "total_guests": total_guests,
+        **snapshot,
         "currency": currency_code,
         "currency_symbol": currency_symbol,
     }

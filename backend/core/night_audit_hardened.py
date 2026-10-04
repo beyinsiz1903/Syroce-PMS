@@ -1927,28 +1927,19 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
     except Exception:
         pass
 
-    # 8) Oda durumlari ozeti
-    rooms_pipeline = [
-        # Routing/virtual rooms are operational placeholders, not sellable
-        # inventory. Keep this count aligned with the PMS dashboard KPI.
-        {
-            "$match": {
-                "tenant_id": tenant_id,
-                "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
-            }
-        },
-        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-    ]
-    room_status_counts: dict[str, int] = {}
-    try:
-        async for row in db.rooms.aggregate(rooms_pipeline):
-            room_status_counts[(row.get("_id") or "unknown").lower()] = row["count"]
-    except Exception:
-        pass
-    rooms_total = sum(room_status_counts.values())
+    # 8) Oda ve hareket özeti. Dashboard/AI/Night Audit aynı açık iş günü,
+    # aktif envanter ve rezervasyon-overlap sözleşmesini kullanır.
+    from modules.pms_core.operational_snapshot_service import build_operational_snapshot
+
+    operational = await build_operational_snapshot(
+        tenant_id,
+        business_date=bd,
+        database=db,
+    )
+    room_status_counts = operational["room_status"]
     rooms_summary = {
-        "total": rooms_total,
-        "occupied": room_status_counts.get("occupied", 0),
+        "total": operational["total_rooms"],
+        "occupied": operational["occupied_rooms"],
         "available": room_status_counts.get("available", 0) + room_status_counts.get("clean", 0),
         "dirty": room_status_counts.get("dirty", 0),
         "out_of_order": room_status_counts.get("out_of_order", 0) + room_status_counts.get("ooo", 0),
@@ -1956,21 +1947,9 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
     }
 
     # 9) Misafir hareketleri ozeti
-    in_house = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
-    arriving_today = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": bd,
-        }
-    )
-    departing_today = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": "checked_in",
-            "check_out": bd,
-        }
-    )
+    in_house = operational["in_house_stays"]
+    arriving_today = operational["today_checkins"]
+    departing_today = operational["today_checkouts"]
     cancellations_today = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
