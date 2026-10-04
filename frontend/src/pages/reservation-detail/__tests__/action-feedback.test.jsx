@@ -183,6 +183,32 @@ describe('reservation detail action feedback', () => {
     expect(toast.success).toHaveBeenCalledWith('Komp / ikram kaydı eklendi');
   });
 
+  it('shows the quantity-adjusted total before adding an extra charge', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(
+      <ExtraChargesTab
+        extra_charges={[]}
+        charges={[]}
+        booking={{ id: 'booking-a', currency: 'TRY' }}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Kahve' } });
+    const inputs = screen.getAllByRole('spinbutton');
+    fireEvent.change(inputs[0], { target: { value: '15' } });
+    fireEvent.change(inputs[1], { target: { value: '3' } });
+
+    expect(screen.getByTestId('extra-charge-total-preview')).toHaveTextContent('15 TL × 3 = 45 TL');
+    fireEvent.click(screen.getByRole('button', { name: '45 TL Ekle' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/add-extra-charge',
+      expect.objectContaining({ amount: 15, quantity: 3 }),
+    ));
+  });
+
   it('shows the reservation currency and can void a mistaken extra charge', async () => {
     axiosPost.mockResolvedValue({ data: { success: true } });
     vi.spyOn(window, 'prompt').mockReturnValue('Yanlış para birimi');
@@ -224,7 +250,7 @@ describe('reservation detail action feedback', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Türk kahvesi' } });
     fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '390' } });
     expect(await screen.findByText(/7,8 EUR olarak folyoya yansır/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '390 TL Ekle' }));
+    fireEvent.click(screen.getByRole('button', { name: '390 TL (7,8 EUR) Ekle' }));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
       '/pms/reservations/booking-a/add-extra-charge',

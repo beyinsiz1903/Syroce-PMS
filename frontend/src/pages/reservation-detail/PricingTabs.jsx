@@ -390,7 +390,16 @@ export function ExtraChargesTab({
   const extraExchangeRate = normalizedInputCurrency === currency
     ? 1
     : inputToTry / bookingToTry;
-  const convertedTotal = Number(form.amount || 0) * Number(form.quantity || 0) * extraExchangeRate;
+  const unitAmount = Number(form.amount);
+  const quantity = Number(form.quantity);
+  const enteredTotal = Number.isFinite(unitAmount) && Number.isFinite(quantity)
+    ? unitAmount * quantity
+    : Number.NaN;
+  const convertedTotal = enteredTotal * extraExchangeRate;
+  const inputCurrencyLabel = normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency;
+  const buttonAmountLabel = normalizedInputCurrency === currency
+    ? fmtCurrency(Number.isFinite(enteredTotal) ? enteredTotal : 0, currency)
+    : `${fmtCurrency(Number.isFinite(enteredTotal) ? enteredTotal : 0, normalizedInputCurrency)} (${fmtCurrency(Number.isFinite(convertedTotal) ? convertedTotal : 0, currency)})`;
 
   const fetchExchangeRates = async () => {
     if (Object.keys(exchangeRates).length) return;
@@ -407,8 +416,7 @@ export function ExtraChargesTab({
     }
   };
   const handleAdd = async () => {
-    const amount = Number(form.amount);
-    const quantity = Number(form.quantity);
+    const amount = unitAmount;
     if (!form.description.trim() || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(quantity) || quantity <= 0) {
       const message = 'Açıklama, sıfır veya üzeri tutar ve sıfırdan büyük adet zorunlu';
       setFormError(message);
@@ -527,7 +535,7 @@ export function ExtraChargesTab({
               setForm(p => ({ ...p, input_currency: v }));
               if ((v === 'TL' ? 'TRY' : v) !== currency) void fetchExchangeRates();
             }} options={[[currency, currency === 'TRY' ? 'TL (Türk Lirası)' : currency], ...['TRY', 'EUR', 'USD', 'GBP', 'CHF'].filter(code => code !== currency).map(code => [code, code === 'TRY' ? 'TL (Türk Lirası)' : code])]} />
-            <FormField label={`Tutar (${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency})`} type="number" value={form.amount} onChange={v => setForm(p => ({
+            <FormField label={`Birim tutar (${inputCurrencyLabel})`} type="number" value={form.amount} onChange={v => setForm(p => ({
           ...p,
           amount: v
         }))} />
@@ -537,13 +545,16 @@ export function ExtraChargesTab({
         }))} />
           </div>
           {normalizedInputCurrency !== currency && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-            {ratesLoading ? 'Güncel kur alınıyor…' : Number.isFinite(convertedTotal) && convertedTotal > 0 ? `${form.amount || 0} ${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency} × ${form.quantity || 1} = ${fmtCurrency(convertedTotal, currency)} olarak folyoya yansır.` : 'Tutar girildiğinde rezervasyon para birimi karşılığı gösterilir.'}
+            {ratesLoading ? 'Güncel kur alınıyor…' : Number.isFinite(convertedTotal) && convertedTotal > 0 ? `${form.amount || 0} ${inputCurrencyLabel} × ${form.quantity || 1} = ${fmtCurrency(convertedTotal, currency)} olarak folyoya yansır.` : 'Tutar girildiğinde rezervasyon para birimi karşılığı gösterilir.'}
           </div>}
+          {Number.isFinite(enteredTotal) && enteredTotal >= 0 && <p className="text-xs font-medium text-slate-700" data-testid="extra-charge-total-preview">
+            {form.amount || 0} {inputCurrencyLabel} × {form.quantity || 0} = {fmtCurrency(enteredTotal, normalizedInputCurrency)}
+          </p>}
           {ratesError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{ratesError}</div>}
           <p className="text-xs text-amber-800">{isFullComp ? `Tam ikram kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 ${currency === 'TRY' ? 'TL' : currency} yansır.` : `0 ${currency === 'TRY' ? 'TL' : currency} girilen kalemler bakiyeyi etkilemeden ikram olarak kaydedilir.`}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleAdd} disabled={loading || ratesLoading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : `${form.amount || '0'} ${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency} Ekle`}</Button>
+            <Button size="sm" onClick={handleAdd} disabled={loading || ratesLoading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : `${buttonAmountLabel} Ekle`}</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_PricingTabs.iptal')}</Button>
           </div>
         </div>}
