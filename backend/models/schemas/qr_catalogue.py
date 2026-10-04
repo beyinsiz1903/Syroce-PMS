@@ -238,6 +238,13 @@ class GuestServiceItem(BaseModel):
     estimated_minutes: int = 0
     is_chargeable: bool = False
     charge_warning: dict[str, str] | None = None
+    # Room-service pricing is always configured in minor units.  Keeping the
+    # price as an integer makes catalogue snapshots and folio postings immune
+    # to locale/float rounding differences (for example 150,74 vs 150.74).
+    unit_price_minor: int = Field(default=0, ge=0, le=100_000_000)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    room_charge_enabled: bool = False
+    folio_category: str = Field(default="room_service", min_length=1, max_length=64)
     service_hours: ServiceHoursConfig | None = None
     enabled: bool = True
     display_order: int = 0
@@ -277,6 +284,11 @@ class GuestServiceItem(BaseModel):
         if v < 0 or v > 1440:
             raise ValueError("estimated_minutes must be between 0 and 1440")
         return v
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, v):
+        return v.upper() if v else v
 
     @model_validator(mode="before")
     @classmethod
@@ -328,4 +340,11 @@ class GuestServiceItem(BaseModel):
             if not isinstance(config, DateTimeConstraints):
                 raise ValueError("datetime requires DateTimeConstraints")
 
+        if self.room_charge_enabled:
+            if not self.is_chargeable:
+                raise ValueError("room_charge_enabled requires is_chargeable")
+            if self.unit_price_minor <= 0:
+                raise ValueError("room_charge_enabled requires a positive unit_price_minor")
+            if not self.currency:
+                raise ValueError("room_charge_enabled requires currency")
         return self

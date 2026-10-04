@@ -63,11 +63,24 @@ export function useGuestCart() {
     return cart.some(item => item.catalogueItem?.is_chargeable);
   }, [cart]);
 
+  const roomChargeTotals = useMemo(() => cart.reduce((totals, item) => {
+    const service = item.catalogueItem;
+    if (!service?.room_charge_enabled || !service.currency) return totals;
+    const quantity = item.input_type === "quantity" ? (item.value?.quantity || 1) : 1;
+    const currency = service.currency;
+    totals[currency] = (totals[currency] || 0) + (Number(service.unit_price_minor) || 0) * quantity;
+    return totals;
+  }, {}), [cart]);
+
+  const hasRoomCharge = Object.values(roomChargeTotals).some(total => total > 0);
+
   return {
     cart,
     totalItems,
     uniqueServices,
     hasChargeable,
+    hasRoomCharge,
+    roomChargeTotals,
     updateItem,
     removeItem,
     clearCart,

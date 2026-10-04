@@ -49,6 +49,14 @@ function getLocalizedText(value, lang, fallback = "") {
   return fallback;
 }
 
+function formatRoomCharge(minor, currency, lang) {
+  try {
+    return new Intl.NumberFormat(LOCALE[lang] || "tr-TR", { style: "currency", currency }).format((Number(minor) || 0) / 100);
+  } catch {
+    return `${((Number(minor) || 0) / 100).toFixed(2)} ${currency}`;
+  }
+}
+
 function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow }) {
   const [messages, setMessages] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -433,6 +441,7 @@ export default function RoomRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submittedItems, setSubmittedItems] = useState([]);
+  const [roomChargeConsent, setRoomChargeConsent] = useState(false);
   const submitGuard = useRef(false);
 
   const loadData = useCallback(async () => {
@@ -582,7 +591,7 @@ export default function RoomRequestPage() {
     setSubmitError("");
 
     let key, payload;
-    if (cartState.snapshot) {
+    if (cartState.snapshot && cartState.snapshot.payload?.confirm_room_charge === roomChargeConsent) {
       key = cartState.snapshot.key;
       payload = cartState.snapshot.payload;
     } else {
@@ -590,6 +599,7 @@ export default function RoomRequestPage() {
       payload = {
         language: lang,
         idempotency_key: key,
+        confirm_room_charge: roomChargeConsent,
         items: cartState.cart.map(c => {
            const obj = { service_code: c.service_code };
            if (c.value && Object.keys(c.value).length > 0) obj.value = c.value;
@@ -608,6 +618,7 @@ export default function RoomRequestPage() {
         headers: { "X-Guest-Session": guestSession }
       });
       cartState.clearCart();
+      setRoomChargeConsent(false);
       setSubmittedItems(readableItems);
       setView("success");
     } catch (e) {
@@ -645,6 +656,7 @@ export default function RoomRequestPage() {
     setLegacyPriority("normal");
     setSubmitError("");
     setSubmittedItems([]);
+    setRoomChargeConsent(false);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -930,6 +942,11 @@ export default function RoomRequestPage() {
                              {chargeWarning}
                            </p>
                         )}
+                        {service.room_charge_enabled && service.currency && (
+                          <p className="mt-2 text-sm font-semibold text-slate-900" data-testid={`room-service-price-${service.service_code}`}>
+                            {formatRoomCharge(service.unit_price_minor, service.currency, lang)}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <ServiceInput 
@@ -1008,7 +1025,27 @@ export default function RoomRequestPage() {
                     </div>
                   )}
 
-                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0} className="mt-4 min-h-[48px] w-full rounded-xl font-semibold text-white" style={{ background: accent }} data-testid="button-structured-submit">
+                  {cartState.hasRoomCharge && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4" data-testid="room-charge-consent">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-emerald-950">{t.roomChargeTitle}</p>
+                          <p className="mt-1 text-sm text-emerald-800">{t.roomChargeDescription}</p>
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm font-bold text-emerald-900">
+                            {Object.entries(cartState.roomChargeTotals).map(([currency, total]) => (
+                              <span key={currency}>{formatRoomCharge(total, currency, lang)}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl bg-white/70 p-3 text-sm text-slate-800">
+                        <input type="checkbox" checked={roomChargeConsent} onChange={(e) => { setRoomChargeConsent(e.target.checked); cartState.clearSnapshot(); }} className="mt-0.5 h-4 w-4" />
+                        <span>{t.roomChargeConsent}</span>
+                      </label>
+                    </div>
+                  )}
+
+                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0 || (cartState.hasRoomCharge && !roomChargeConsent)} className="mt-4 min-h-[48px] w-full rounded-xl font-semibold text-white" style={{ background: accent }} data-testid="button-structured-submit">
                     {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}{submitting ? t.sending : t.submit}
                   </Button>
                 </div>
@@ -1026,6 +1063,7 @@ export default function RoomRequestPage() {
              <div className="flex flex-col">
                <span className="font-semibold text-slate-800">{cartState.totalItems} {t.items}</span>
                {cartState.hasChargeable && <span className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Ücretli</span>}
+               {cartState.hasRoomCharge && <span className="text-xs font-medium text-emerald-700">{Object.entries(cartState.roomChargeTotals).map(([currency, total]) => formatRoomCharge(total, currency, lang)).join(" · ")}</span>}
              </div>
              <Button onClick={() => setView("review")} className="min-h-[48px] flex-1 rounded-xl font-semibold text-white" style={{ background: accent }}>
                {t.reviewReq}
