@@ -13,6 +13,7 @@ import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationC
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ModuleAvailabilityState } from "@/components/shared/ModuleAvailabilityState";
+import ProductState from "@/components/shared/ProductState";
 import { Toaster } from "@/components/ui/sonner";
 import DialogHost from "@/components/DialogHost";
 import OfflineStatusBar from "@/components/OfflineStatusBar";
@@ -509,11 +510,12 @@ function App() {
 
   if (loading) {
     return (
-      <div className="loading-screen flex items-center justify-center h-screen bg-background text-foreground">
-        <div className="text-center">
-          <div className="spinner mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
-          <p className="text-muted-foreground">Yukleniyor...</p>
-        </div>
+      <div className="loading-screen bg-background text-foreground">
+        <ProductState
+          state="loading"
+          moduleName="Oturum"
+          showDashboardLink={false}
+        />
       </div>
     );
   }

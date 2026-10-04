@@ -12,24 +12,30 @@ import { cloneElement, isValidElement, Suspense, lazy } from "react";
 import { Navigate } from "react-router-dom";
 import { useEntitlements } from "@/context/EntitlementContext";
 import { ModuleAvailabilityState } from "@/components/shared/ModuleAvailabilityState";
+import ProductState from "@/components/shared/ProductState";
 
 const Layout = lazy(() => import("@/components/Layout"));
 
+// Every lazy route crosses this fallback. Keeping it on the shared product
+// state contract prevents a newly-added route from reintroducing a bare
+// spinner while its workspace bundle or initial data boundary is resolving.
 const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-screen">
-    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-  </div>
+  <ProductState
+    state="loading"
+    moduleName="Çalışma alanı"
+    showDashboardLink={false}
+  />
 );
 
 const RouteContentLoadingFallback = () => (
-  <div
-    data-testid="route-content-loading"
-    className="flex min-h-[40vh] items-center justify-center rounded-xl border border-slate-200 bg-white"
-  >
-    <div className="text-center">
-      <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-b-blue-600" />
-      <p className="text-sm font-medium text-slate-600">Sayfa hazırlanıyor…</p>
-    </div>
+  <div data-testid="route-content-loading">
+    <ProductState
+      state="loading"
+      moduleName="Sayfa"
+      title="Sayfa hazırlanıyor"
+      compact
+      showDashboardLink={false}
+    />
   </div>
 );
 
