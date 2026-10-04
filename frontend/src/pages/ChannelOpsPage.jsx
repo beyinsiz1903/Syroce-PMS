@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '@/components/MaybeLayout';
+import ProductState from '@/components/shared/ProductState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -608,10 +609,7 @@ const ChannelOpsPage = ({
   });
   if (loading) {
     return <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="channel_ops">
-        <div className="flex items-center justify-center h-96" data-testid="ops-loading">
-          <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-          <span className="ml-3 text-gray-600">Operasyon verileri yükleniyor...</span>
-        </div>
+        <div data-testid="ops-loading"><ProductState state="loading" moduleName="Kanal Operasyon Merkezi" compact showDashboardLink={false} /></div>
       </Layout>;
   }
   const wh = data?.webhook_delivery || {};
@@ -655,9 +653,7 @@ const ChannelOpsPage = ({
           </div>
         </div>
 
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-            {error}
-          </div>}
+        {error && <ProductState state="error" moduleName="Kanal Operasyon Merkezi" description={error} onRetry={handleRefresh} compact showDashboardLink={false} />}
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -791,7 +787,14 @@ const ChannelOpsPage = ({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {(connectorsHealth.connectors || []).length === 0 ? <p className="text-sm text-gray-500 text-center py-4">Bağlı connector bulunamadı</p> : <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(connectorsHealth.connectors || []).length === 0 ? <ProductState
+                  state="empty"
+                  moduleName="Kanal Operasyon Merkezi"
+                  title="Bağlı kanal bulunmuyor"
+                  description="Kanal sağlığını izlemek için önce bir kanal bağlantısı kurun."
+                  compact
+                  showDashboardLink={false}
+                /> : <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {(connectorsHealth.connectors || []).map(conn => <ConnectorHealthCard key={conn.connector_id} connector={conn} onOpenBreakdown={setBreakdownConnectorId} />)}
                   </div>}
               </CardContent>
@@ -1050,10 +1053,14 @@ const ChannelOpsPage = ({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {(connectorsHealth.connectors || []).length === 0 ? <div className="text-center py-8 text-gray-500">
-                    <WifiOff className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Bağlı connector bulunamadı</p>
-                  </div> : <div className="grid md:grid-cols-2 gap-4">
+                {(connectorsHealth.connectors || []).length === 0 ? <ProductState
+                    state="empty"
+                    moduleName="Kanal Operasyon Merkezi"
+                    title="Bağlı kanal bulunmuyor"
+                    description="Kanal bağlantısı kurulduğunda operasyon durumu burada gösterilecek."
+                    compact
+                    showDashboardLink={false}
+                  /> : <div className="grid md:grid-cols-2 gap-4">
                     {(connectorsHealth.connectors || []).filter(conn => !highlightProvider || (conn.provider || '').toLowerCase() === highlightProvider.toLowerCase()).map(conn => <ConnectorHealthCard key={conn.connector_id} connector={conn} onOpenBreakdown={setBreakdownConnectorId} />)}
                   </div>}
               </CardContent>

@@ -1,9 +1,14 @@
-import { AlertTriangle, ArrowLeft, RefreshCw, Settings2, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ArrowLeft, LoaderCircle, RefreshCw, Settings2, ShieldAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 
 const STATE_CONTENT = {
+  loading: {
+    icon: LoaderCircle,
+    title: "Veriler yükleniyor",
+    description: "En güncel bilgiler hazırlanıyor. Bu işlem tamamlandığında ekran otomatik olarak açılacak.",
+  },
   empty: {
     icon: Settings2,
     title: "Henüz gösterilecek kayıt yok",
@@ -77,7 +82,7 @@ export default function ProductState({
       className={isCompact ? "rounded-xl border border-slate-200 bg-white p-5" : "flex min-h-[45vh] items-center justify-center p-6"}
     >
       <div className={isCompact ? "flex max-w-2xl items-start gap-3" : "w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm"}>
-        <div className="rounded-full bg-slate-100 p-3 text-slate-700"><Icon aria-hidden="true" className="h-6 w-6" /></div>
+        <div className="rounded-full bg-slate-100 p-3 text-slate-700"><Icon aria-hidden="true" className={`h-6 w-6${state === "loading" ? " animate-spin" : ""}`} /></div>
         <div className={isCompact ? "flex-1" : "mt-4"}>
           <h2 className="text-lg font-semibold text-slate-900">{resolvedTitle}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">{resolvedDescription}</p>

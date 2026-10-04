@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
+import ProductState from '@/components/shared/ProductState';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck, Download, Printer, Search, Scale, FileSpreadsheet } from 'lucide-react';
@@ -378,27 +379,8 @@ const BasicReports = ({
     setTimeout(() => w.print(), 300);
   };
   const isInitialDashboardLoad = needsDashboard && data === null && !error;
-  if ((loading || isInitialDashboardLoad) && needsDashboard) return <>
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-sky-600 mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Raporlar yükleniyor...</p>
-        </div>
-      </div>
-    </>;
-  if (error && needsDashboard) return <>
-      <div className="p-6">
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-6 text-center">
-            <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-3" />
-            <p className="text-red-700">{error}</p>
-            <Button onClick={fetchData} className="mt-4" variant="outline">
-              <RefreshCw className="w-4 h-4 mr-2" />Tekrar Dene
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    </>;
+  if ((loading || isInitialDashboardLoad) && needsDashboard) return <ProductState state="loading" moduleName="Raporlar" showDashboardLink={false} />;
+  if (error && needsDashboard) return <ProductState state="error" moduleName="Raporlar" description={error} onRetry={fetchData} showDashboardLink={false} />;
   const s = data?.summary || {};
   const periodMetrics = data?.period_metrics || {};
   const periodActivity = data?.period_activity || {};
