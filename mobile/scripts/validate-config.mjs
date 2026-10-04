@@ -7,14 +7,19 @@ const eas = JSON.parse(readFileSync(resolve(root, 'eas.json'), 'utf8'));
 const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 const errors = [];
 const warnings = [];
+const easProjectId = 'ea230577-f8d5-40b1-8df1-5b58dd1ea73a';
 
 function assert(condition, message) {
   if (!condition) errors.push(message);
 }
 
 assert(app?.ios?.bundleIdentifier === 'com.syroce.pms', 'iOS bundleIdentifier com.syroce.pms olmalı.');
+assert(app?.owner === 'syroces-team', 'Expo owner syroces-team olmalı.');
+assert(app?.extra?.eas?.projectId === easProjectId, 'Syroce PMS EAS projectId eksik veya hatalı.');
+assert(app?.updates?.url === `https://u.expo.dev/${easProjectId}`, 'EAS Update URL proje kimliğiyle eşleşmeli.');
 assert(app?.android?.package === 'com.syroce.pms', 'Android package com.syroce.pms olmalı.');
 assert(/^[~^]?57\./.test(pkg?.dependencies?.expo || ''), 'Expo SDK 57 bekleniyor.');
+assert(/^[~^]?57\./.test(pkg?.dependencies?.['expo-updates'] || ''), 'Expo SDK 57 uyumlu expo-updates bekleniyor.');
 
 for (const profileName of ['pilot', 'production']) {
   const profile = eas?.build?.[profileName];
@@ -28,9 +33,6 @@ assert(eas?.submit?.pilot?.android?.releaseStatus === 'draft', 'Pilot Android s�
 
 const serialized = JSON.stringify(eas);
 assert(!serialized.includes('app.syroce.com'), 'Eski app.syroce.com alan adı EAS yapılandırmasında kalmamalı.');
-
-const projectId = app?.extra?.eas?.projectId || process.env.EAS_PROJECT_ID;
-if (!projectId) warnings.push('EAS_PROJECT_ID henüz tanımlı değil; EAS build öncesi eas init gerekli.');
 
 const iosSubmit = eas?.submit?.pilot?.ios || {};
 if (String(iosSubmit.ascAppId || '').startsWith('REPLACE_')) warnings.push('App Store Connect App ID henüz girilmedi.');
