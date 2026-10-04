@@ -7,6 +7,7 @@ import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock, Gif
 import { API, fmtDate, fmtCurrency, fmtTs, FormField, SelectField } from './helpers';
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
+import { parseMoneyInput } from '@/lib/moneyInput';
 
 const parseDecimalInput = value => {
   const normalized = String(value ?? '').trim();
@@ -390,7 +391,7 @@ export function ExtraChargesTab({
   const extraExchangeRate = normalizedInputCurrency === currency
     ? 1
     : inputToTry / bookingToTry;
-  const unitAmount = Number(form.amount);
+  const unitAmount = parseMoneyInput(form.amount);
   const quantity = Number(form.quantity);
   const enteredTotal = Number.isFinite(unitAmount) && Number.isFinite(quantity)
     ? unitAmount * quantity
@@ -466,7 +467,7 @@ export function ExtraChargesTab({
       await axios.post(`/pms/reservations/${booking.id}/split-charge`, {
         charge_id: chargeId,
         target_booking_id: splitForm.target_booking_id,
-        split_amount: parseFloat(splitForm.split_amount),
+        split_amount: parseMoneyInput(splitForm.split_amount),
         reason: splitForm.reason
       });
       toast.success('Masraf bölündü');
@@ -535,7 +536,7 @@ export function ExtraChargesTab({
               setForm(p => ({ ...p, input_currency: v }));
               if ((v === 'TL' ? 'TRY' : v) !== currency) void fetchExchangeRates();
             }} options={[[currency, currency === 'TRY' ? 'TL (Türk Lirası)' : currency], ...['TRY', 'EUR', 'USD', 'GBP', 'CHF'].filter(code => code !== currency).map(code => [code, code === 'TRY' ? 'TL (Türk Lirası)' : code])]} />
-            <FormField label={`Birim tutar (${inputCurrencyLabel})`} type="number" value={form.amount} onChange={v => setForm(p => ({
+            <FormField label={`Birim tutar (${normalizedInputCurrency === 'TRY' ? 'TL' : normalizedInputCurrency})`} type="money" value={form.amount} onChange={v => setForm(p => ({
           ...p,
           amount: v
         }))} />
@@ -588,7 +589,7 @@ export function ExtraChargesTab({
               {showSplit === c.id && <div className="mt-3 border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.masraf_bol')}</div>
                   <div className="grid grid-cols-3 gap-2">
-                    <FormField label={t('cm.pages_reservationdetail_PricingTabs.tutar')} type="number" value={splitForm.split_amount} onChange={v => setSplitForm(p => ({
+                    <FormField label={t('cm.pages_reservationdetail_PricingTabs.tutar')} type="money" value={splitForm.split_amount} onChange={v => setSplitForm(p => ({
               ...p,
               split_amount: v
             }))} />

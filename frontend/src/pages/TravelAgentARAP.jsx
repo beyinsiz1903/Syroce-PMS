@@ -20,6 +20,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { paymentMethodLabel } from '@/lib/accountingLabels';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 const CURRENCIES = ['TRY', 'EUR', 'USD', 'GBP'];
 
@@ -115,7 +116,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   }, [activeTab, loadPlans]);
 
   const handleRecordPayment = async () => {
-    const amount = parseFloat(paymentForm.amount);
+    const amount = parseMoneyInput(paymentForm.amount);
     if (!amount || amount <= 0) {
       toast.error(t('agentArap.invalidAmount'));
       return;
@@ -142,7 +143,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   };
 
   const handleCreatePlan = async () => {
-    const total = parseFloat(planForm.total_amount);
+    const total = parseMoneyInput(planForm.total_amount);
     if (!total || total <= 0) {
       toast.error(t('agentArap.invalidAmount'));
       return;
@@ -646,7 +647,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
             <div className="grid grid-cols-[1fr_120px] gap-3">
               <div>
                 <Label>{t('agentArap.amount')}</Label>
-                <Input type="number" value={paymentForm.amount} onChange={e => setPaymentForm(p => ({ ...p, amount: e.target.value }))} />
+              <Input {...moneyInputProps} placeholder="Örn. 150,74" value={paymentForm.amount} onChange={e => setPaymentForm(p => ({ ...p, amount: e.target.value }))} />
               </div>
               <div>
                 <Label>Para Birimi</Label>
@@ -698,7 +699,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
             <div className="grid grid-cols-[1fr_120px] gap-3">
               <div>
                 <Label>{t('agentArap.totalAmount')}</Label>
-                <Input type="number" value={planForm.total_amount} onChange={e => setPlanForm(p => ({ ...p, total_amount: e.target.value }))} />
+              <Input {...moneyInputProps} placeholder="Örn. 150,74" value={planForm.total_amount} onChange={e => setPlanForm(p => ({ ...p, total_amount: e.target.value }))} />
               </div>
               <div>
                 <Label>Para Birimi</Label>

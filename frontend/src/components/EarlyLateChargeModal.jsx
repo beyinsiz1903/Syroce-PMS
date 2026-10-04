@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Clock, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 import { formatCurrency } from '@/lib/currency';
 
 export default function EarlyLateChargeModal({ open, onClose, bookingId, direction, defaultHour = 10, onApplied }) {
@@ -34,7 +35,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
 
   const apply = async () => {
     if (!calc?.applicable && !overrideAmount) { toast.error('Uygulanacak bir tutar bulunamadı.'); return; }
-    const amount = overrideAmount ? parseFloat(overrideAmount) : calc.amount;
+    const amount = overrideAmount ? parseMoneyInput(overrideAmount) : calc.amount;
     const label = (calc?.label || (direction === 'early_checkin' ? 'Erken Giriş' : 'Geç Çıkış')) + ` (saat ${hour})`;
     const description = overrideAmount
       ? `${label} — Manuel: ${overrideReason || 'sebep belirtilmedi'}`
@@ -92,7 +93,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
           <div className="border-t pt-2">
             <Label className="text-xs text-gray-500">Manuel Override (opsiyonel)</Label>
             <div className="grid grid-cols-2 gap-2 mt-1">
-              <Input type="number" placeholder={t('cm.components_EarlyLateChargeModal.tutar')} value={overrideAmount} onChange={e => setOverrideAmount(e.target.value)} className="h-9" />
+              <Input {...moneyInputProps} placeholder={t('cm.components_EarlyLateChargeModal.tutar')} value={overrideAmount} onChange={e => setOverrideAmount(e.target.value)} className="h-9" />
               <Input placeholder="Sebep" value={overrideReason} onChange={e => setOverrideReason(e.target.value)} className="h-9" />
             </div>
           </div>

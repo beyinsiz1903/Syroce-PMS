@@ -9,6 +9,7 @@ import { Loader2, UserPlus, Bed, CheckCircle2, ChevronRight, ChevronLeft, Chevro
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 const STEPS = [
   { n: 1, label: 'Misafir' },
@@ -21,10 +22,12 @@ export const clampWalkinNights = (value) => Math.min(14, Math.max(1, Number.pars
 export const validateWalkinCheckin = ({ adults, children, totalAmount, paymentAmount, paymentMethod }) => {
   if (!Number.isInteger(Number(adults)) || Number(adults) < 1) return 'Yetişkin sayısı en az 1 olmalı';
   if (!Number.isInteger(Number(children)) || Number(children) < 0) return 'Çocuk sayısı negatif olamaz';
-  if (!Number.isFinite(Number(totalAmount)) || Number(totalAmount) <= 0) return 'Tutar gerekli';
-  if (!Number.isFinite(Number(paymentAmount)) || Number(paymentAmount) < 0) return 'Ödenen tutar negatif olamaz';
-  if (Number(paymentAmount) > Number(totalAmount) + 0.001) return 'Ödenen tutar toplam tutarı aşamaz';
-  if (paymentMethod === 'none' && Number(paymentAmount) > 0) return 'Ödeme yöntemi seçin veya ödenen tutarı sıfırlayın';
+  const total = parseMoneyInput(totalAmount);
+  const paid = parseMoneyInput(paymentAmount);
+  if (!Number.isFinite(total) || total <= 0) return 'Tutar gerekli';
+  if (!Number.isFinite(paid) || paid < 0) return 'Ödenen tutar negatif olamaz';
+  if (paid > total + 0.001) return 'Ödenen tutar toplam tutarı aşamaz';
+  if (paymentMethod === 'none' && paid > 0) return 'Ödeme yöntemi seçin veya ödenen tutarı sıfırlayın';
   return null;
 };
 
@@ -168,7 +171,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
     if (validationError) return toast.error(validationError);
     setSubmitting(true);
     try {
-      const { data } = await api.post('/pms/walkin/checkin', { ...form, nights });
+      const { data } = await api.post('/pms/walkin/checkin', { ...form, total_amount: parseMoneyInput(form.total_amount), payment_amount: parseMoneyInput(form.payment_amount), nights });
       toast.success(`Check-in tamam — Oda ${data.room_number}`);
       setDone(true);
       setTimeout(() => nav(`/reservations/${data.booking_id}`), 1200);
@@ -317,11 +320,11 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <Label className="text-xs">{t('cm.pages_WalkinPage.toplam_tutar')} <span className="text-rose-500">*</span></Label>
-                    <Input type="number" value={form.total_amount} onChange={e => setForm({ ...form, total_amount: parseFloat(e.target.value || '0') })} className="h-9" />
+                    <Input {...moneyInputProps} placeholder="Örn. 150,74" value={form.total_amount} onChange={e => setForm({ ...form, total_amount: e.target.value })} className="h-9" />
                   </div>
                   <div>
                     <Label className="text-xs">{t('cm.pages_WalkinPage.simdi_odenen')}</Label>
-                    <Input type="number" value={form.payment_amount} onChange={e => setForm({ ...form, payment_amount: parseFloat(e.target.value || '0') })} className="h-9" />
+                    <Input {...moneyInputProps} placeholder="Örn. 150,74" value={form.payment_amount} onChange={e => setForm({ ...form, payment_amount: e.target.value })} className="h-9" />
                   </div>
                   <div className="md:col-span-2">
                     <Label className="text-xs">{t('cm.pages_WalkinPage.odeme_turu')}</Label>

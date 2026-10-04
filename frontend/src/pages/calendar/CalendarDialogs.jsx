@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
 import { deduplicateGuestSearchResults, maskGuestDocument } from './guestIdentity';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 // New Booking Dialog
 export const NewBookingDialog = ({
@@ -445,9 +446,8 @@ export const NewBookingDialog = ({
                 : newBooking.manual_price_override ? 'Gecelik nihai fiyat' : 'Gecelik taban fiyat'}
             </Label>
             <Input
-              type="number"
-              min="0"
-              step="0.01"
+              {...moneyInputProps}
+              placeholder="Örn. 150,74"
               value={priceInputMode === 'total' ? newBooking.total_amount : newBooking.base_rate}
               onChange={(e) => {
                 const input = e.target.value;
@@ -618,9 +618,8 @@ export const NewBookingDialog = ({
               <div>
                 <Label>Ön ödeme tutarı</Label>
                 <Input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  {...moneyInputProps}
+                  placeholder="Örn. 150,74"
                   value={newBooking.prepayment_amount}
                   onChange={(e) => setNewBooking({ ...newBooking, prepayment_amount: e.target.value })}
                   required
@@ -741,7 +740,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
       room_change_reason: reason,
     };
     if (useNewPrice) {
-      const amount = parseFloat(newPrice);
+      const amount = parseMoneyInput(newPrice);
       if (Number.isNaN(amount) || amount < 0) { alertDialog({ message: 'Geçerli bir fiyat girin' }); return; }
       payload.total_amount = amount;
     }

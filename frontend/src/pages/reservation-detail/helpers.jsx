@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { moneyInputProps } from '@/lib/moneyInput';
 
 export const API = "";
 
@@ -150,7 +151,8 @@ export function SummaryCard({ label, value, color, currency }) {
 }
 
 export function FormField({ label, value, onChange, type = 'text', placeholder = '', inputMode, hint }) {
-  return <div><Label className="text-xs">{label}</Label><Input type={type} inputMode={inputMode} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder} />{hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}</div>;
+  const isMoney = type === 'money';
+  return <div><Label className="text-xs">{label}</Label><Input {...(isMoney ? moneyInputProps : { type, inputMode })} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder || (isMoney ? 'Örn. 150,74' : '')} />{hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}</div>;
 }
 
 export function SelectField({ label, value, onChange, options }) {
