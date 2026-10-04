@@ -10,8 +10,6 @@ import { queryClient } from "@/lib/queryClient";
 import usePushNotifications from "@/hooks/usePushNotifications";
 import useUserAccessRefresh from "@/hooks/useUserAccessRefresh";
 import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationContext";
-import InternalChatWidget from "@/components/InternalChatWidget";
-import CommunicationCenter from "@/components/CommunicationCenter";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ModuleAvailabilityState } from "@/components/shared/ModuleAvailabilityState";
@@ -54,6 +52,12 @@ const Softphone = lazy(() => import("@/components/contact-center/Softphone"));
 const SelfCheckinPage = lazy(() => import("@/pages/SelfCheckin"));
 const DigitalKeyPage = lazy(() => import("@/pages/DigitalKey"));
 const SupplierAuthPage = lazy(() => import("@/pages/SupplierAuthPage"));
+// İletişim launcher'ları ilk ekranın kritik parçası değildir: bildirim ve
+// okunmamış sayaçları NotificationProvider tarafından zaten tutulur. Bu iki
+// UI kabuğunu ilk paint ve dashboard verisi sakinleşene kadar ayırmak, login
+// sonrası gereksiz modül/ikon indirmesini kritik ağ yolundan çıkarır.
+const InternalChatWidget = lazy(() => import("@/components/InternalChatWidget"));
+const CommunicationCenter = lazy(() => import("@/components/CommunicationCenter"));
 
 function SelfCheckinRoute() {
   const { bookingId } = useParams();
@@ -75,6 +79,40 @@ function RouteAwareCommunicationCenter({ user }) {
   const { pathname } = useLocation();
   const isGuestRoomService = /^\/g\/(?:room\/|[^/]+\/room\/)/.test(pathname) || pathname.startsWith("/room-qr/");
   return isGuestRoomService ? null : <CommunicationCenter user={user} />;
+}
+
+function DeferredCommunicationTools({ user }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setReady(false);
+      return undefined;
+    }
+
+    // İlk dashboard route + kimlik istekleri önce bitsin. Idle callback varsa
+    // ana iş parçacığı boşaldığında çalışır; timeout eski Safari'lerde güvenli
+    // bir fallback'tir.
+    const mount = () => setReady(true);
+    const timer = window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(mount, { timeout: 4000 });
+      } else {
+        mount();
+      }
+    }, 1500);
+
+    return () => window.clearTimeout(timer);
+  }, [user]);
+
+  if (!ready) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <RouteAwareCommunicationCenter user={user} />
+      <InternalChatWidget user={user} hideLauncher />
+    </Suspense>
+  );
 }
 
 // Legacy bookmarks are kept working, but must converge on one workspace URL.
@@ -647,9 +685,8 @@ function App() {
               </PlanRouteGuard>
             </ErrorBoundary>
             </SimulationProvider>
-            {isAuthenticated && user && <RouteAwareCommunicationCenter user={user} />}
+            {isAuthenticated && user && <DeferredCommunicationTools user={user} />}
           </BrowserRouter>
-          {isAuthenticated && user && <InternalChatWidget user={user} hideLauncher />}
           {isAuthenticated && user && (
             <Suspense fallback={null}>
               <Softphone user={user} hideLauncher />
