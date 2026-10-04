@@ -22,6 +22,10 @@ class StructuredRequestSubmit(BaseModel):
     language: str = "tr"
     idempotency_key: str = Field(..., min_length=1, max_length=64)
     items: list[CatalogueItemSubmission] = Field(..., min_length=1, max_length=10)
+    # Explicit consent prevents a normal service request from silently
+    # becoming a financial posting. The server still decides which items and
+    # what amount are eligible from its catalogue snapshot.
+    confirm_room_charge: bool = False
 
 
 class LegacyRequestSubmit(BaseModel):

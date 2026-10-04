@@ -143,6 +143,29 @@ router = APIRouter(tags=["Room QR Requests"])
 COLL = "room_qr_requests"
 
 
+class RoomServiceProductInput(BaseModel):
+    """Manager-owned catalogue input for QR room-service products."""
+
+    service_code: str = Field(..., min_length=3, max_length=64)
+    labels: dict[str, str]
+    description: dict[str, str] | None = None
+    unit_price_minor: int = Field(..., ge=1, le=100_000_000)
+    currency: str = Field(..., min_length=3, max_length=3)
+    estimated_minutes: int = Field(default=30, ge=0, le=1440)
+    enabled: bool = True
+    icon: str = Field(default="utensils", min_length=1, max_length=64)
+
+
+class RoomServiceMenuInput(BaseModel):
+    property_id: str = Field(..., min_length=1, max_length=128)
+    items: list[RoomServiceProductInput] = Field(default_factory=list, max_length=100)
+
+
+def _require_qr_catalogue_manager(current_user):
+    if getattr(current_user, "role", "") not in {"admin", "super_admin", "general_manager", "owner", "manager"}:
+        raise HTTPException(status_code=403, detail="QR oda servisi kataloğunu yönetme yetkiniz yok")
+
+
 _INDEXES_READY = False
 
 
@@ -180,6 +203,12 @@ async def _ensure_indexes() -> None:
         await raw_db["guest_service_items"].create_index([("tenant_id", 1), ("property_id", 1), ("department_code", 1), ("enabled", 1), ("display_order", 1)], name="gsc_item_order")
         await raw_db["guest_service_submissions"].create_index([("tenant_id", 1), ("property_id", 1), ("booking_id", 1), ("idempotency_key", 1)], unique=True, name="gsc_ledger_unique")
         await raw_db["guest_service_submissions"].create_index([("tenant_id", 1), ("submission_reference", 1)], unique=True, name="gsc_ledger_reference_unique")
+        await raw_db["folio_charges"].create_index(
+            [("tenant_id", 1), ("folio_id", 1), ("external_reference", 1)],
+            unique=True,
+            partialFilterExpression={"external_reference": {"$exists": True}},
+            name="folio_external_reference_unique",
+        )
         await raw_db["qr_requests"].create_index(
             [("tenant_id", 1), ("submission_group_id", 1), ("service_code", 1)],
             unique=True,
@@ -945,6 +974,12 @@ async def public_get_catalogue(tenant_id: str, room_id: str, lang: str = Query("
                 "estimated_minutes": s.get("estimated_minutes", 0),
                 "is_chargeable": s.get("is_chargeable", False),
                 "charge_warning": local_process_lang_dict(s.get("charge_warning")),
+                # Pricing is only exposed for explicitly room-chargeable
+                # catalogue products; the submit endpoint recomputes it from
+                # the same server-side catalogue record.
+                "unit_price_minor": s.get("unit_price_minor", 0) if s.get("room_charge_enabled") else 0,
+                "currency": s.get("currency") if s.get("room_charge_enabled") else None,
+                "room_charge_enabled": bool(s.get("room_charge_enabled")),
             }
         )
         used_dept_codes.add(dept_code)
@@ -1073,6 +1108,78 @@ def _tenant_of(user) -> str:
     if not tid:
         raise HTTPException(status_code=400, detail="Tenant bulunamadı")
     return tid
+
+
+@router.get("/api/room-qr/room-service-menu")
+async def get_room_service_menu(property_id: str, current_user=Depends(get_current_user)):
+    """Return the manager-editable F&B catalogue for one property."""
+    _require_qr_catalogue_manager(current_user)
+    tenant_id = _tenant_of(current_user)
+    if not await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=404, detail="Tesis bulunamadı")
+    items = await raw_db["guest_service_items"].find(
+        {"tenant_id": tenant_id, "property_id": property_id, "department_code": "fnb", "room_charge_enabled": True},
+        {"_id": 0},
+    ).sort("display_order", 1).to_list(100)
+    return {"property_id": property_id, "items": items}
+
+
+@router.put("/api/room-qr/room-service-menu")
+async def replace_room_service_menu(payload: RoomServiceMenuInput, current_user=Depends(get_current_user)):
+    """Replace the chargeable F&B portion of a property's QR catalogue."""
+    _require_qr_catalogue_manager(current_user)
+    tenant_id = _tenant_of(current_user)
+    property_id = payload.property_id
+    if not await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=404, detail="Tesis bulunamadı")
+    if len({item.service_code for item in payload.items}) != len(payload.items):
+        raise HTTPException(status_code=422, detail="Ürün kodları benzersiz olmalı")
+
+    from domains.guest.qr_catalogue_defaults import get_default_catalogue
+    from models.schemas.qr_catalogue import GuestServiceDepartment, GuestServiceItem
+
+    now = datetime.now(UTC)
+    settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
+    # First save turns the static default into a property-owned catalogue, so
+    # saving a food menu never makes housekeeping or reception disappear.
+    if not settings or settings.get("mode") == "default":
+        for department in get_default_catalogue()["departments"]:
+            doc = GuestServiceDepartment.model_validate({**department, "tenant_id": tenant_id, "property_id": property_id, "created_at": now, "updated_at": now}).model_dump()
+            await raw_db["guest_service_departments"].update_one(
+                {"tenant_id": tenant_id, "property_id": property_id, "department_code": doc["department_code"]}, {"$setOnInsert": doc}, upsert=True
+            )
+        for service in get_default_catalogue()["services"]:
+            doc = GuestServiceItem.model_validate({**service, "tenant_id": tenant_id, "property_id": property_id, "created_at": now, "updated_at": now}).model_dump()
+            await raw_db["guest_service_items"].update_one(
+                {"tenant_id": tenant_id, "property_id": property_id, "service_code": doc["service_code"]}, {"$setOnInsert": doc}, upsert=True
+            )
+        await raw_db["guest_service_catalogue_settings"].update_one(
+            {"tenant_id": tenant_id, "property_id": property_id}, {"$set": {"mode": "configured"}, "$setOnInsert": {"tenant_id": tenant_id, "property_id": property_id}}, upsert=True
+        )
+
+    department = GuestServiceDepartment.model_validate({
+        "tenant_id": tenant_id, "property_id": property_id, "department_code": "fnb", "labels": {"tr": "Oda Servisi", "en": "Room Service"},
+        "icon": "utensils", "enabled": True, "display_order": 50, "created_at": now, "updated_at": now,
+    }).model_dump()
+    await raw_db["guest_service_departments"].update_one(
+        {"tenant_id": tenant_id, "property_id": property_id, "department_code": "fnb"}, {"$set": department}, upsert=True
+    )
+    await raw_db["guest_service_items"].delete_many({"tenant_id": tenant_id, "property_id": property_id, "department_code": "fnb", "room_charge_enabled": True})
+
+    menu_items = []
+    for index, product in enumerate(payload.items):
+        doc = GuestServiceItem.model_validate({
+            "tenant_id": tenant_id, "property_id": property_id, "service_code": product.service_code, "department_code": "fnb",
+            "labels": product.labels, "description": product.description, "icon": product.icon, "input_type": "quantity",
+            "input_config": {"min": 1, "max": 20, "default": 1}, "estimated_minutes": product.estimated_minutes,
+            "is_chargeable": True, "charge_warning": {"tr": "Tutar oda hesabınıza eklenecektir.", "en": "This amount will be posted to your room account."},
+            "unit_price_minor": product.unit_price_minor, "currency": product.currency, "room_charge_enabled": True,
+            "folio_category": "room_service", "enabled": product.enabled, "display_order": index, "created_at": now, "updated_at": now,
+        }).model_dump()
+        await raw_db["guest_service_items"].insert_one(doc)
+        doc.pop("_id", None)
+        menu_items.append(doc)
+    return {"success": True, "property_id": property_id, "items": menu_items}
 
 
 def _serialize(doc: dict) -> dict:

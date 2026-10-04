@@ -10,7 +10,7 @@ def normalize_string(s: str | None) -> str | None:
     return unicodedata.normalize("NFC", s)
 
 
-def compute_payload_fingerprint(lang: str, items: list) -> str:
+def compute_payload_fingerprint(lang: str, items: list, confirm_room_charge: bool = False) -> str:
     nl = lang.lower().strip()
     sorted_items = sorted(items, key=lambda x: x.service_code)
 
@@ -36,7 +36,7 @@ def compute_payload_fingerprint(lang: str, items: list) -> str:
             c_item["note"] = n_note
         canonical_items.append(c_item)
 
-    payload = {"lang": nl, "items": canonical_items}
+    payload = {"lang": nl, "items": canonical_items, "confirm_room_charge": bool(confirm_room_charge)}
     compact_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(compact_json.encode("utf-8")).hexdigest()
 

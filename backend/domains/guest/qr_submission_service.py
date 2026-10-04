@@ -3,6 +3,7 @@ import logging
 import secrets
 import string
 import uuid
+from decimal import Decimal
 
 from fastapi import HTTPException
 from pymongo import ReturnDocument
@@ -42,6 +43,83 @@ def _build_ledger_upsert_update(ledger_doc: dict, updated_at):
     return {"$setOnInsert": insert_doc, "$set": {"updated_at": updated_at}}
 
 
+def _room_charge_for_item(catalogue_item: dict, validated_value: dict) -> dict | None:
+    """Build an immutable, server-calculated room-charge snapshot.
+
+    Browser values only select a catalogue item and (when permitted) a
+    quantity.  Currency and price are never accepted from the guest.
+    """
+    if not catalogue_item.get("room_charge_enabled"):
+        return None
+    quantity = int(validated_value.get("quantity", 1))
+    unit_minor = int(catalogue_item.get("unit_price_minor") or 0)
+    currency = str(catalogue_item.get("currency") or "").upper()
+    if quantity < 1 or unit_minor < 1 or not currency:
+        raise HTTPException(status_code=503, detail="Oda servisi fiyatı şu anda kullanılamıyor")
+    return {
+        "unit_price_minor": unit_minor,
+        "quantity": quantity,
+        "total_minor": unit_minor * quantity,
+        "currency": currency,
+        "folio_category": catalogue_item.get("folio_category") or "room_service",
+    }
+
+
+async def _post_room_service_charges(tenant_id: str, tenant_db, booking_id: str, submission_group_id: str, prepared_items: list[dict]):
+    """Post confirmed QR menu items once to the active guest folio.
+
+    The folio service recognizes ``external_reference`` so an interrupted
+    request/retry converges to the original financial line rather than
+    duplicating it.
+    """
+    chargeable = [item for item in prepared_items if item.get("room_charge")]
+    if not chargeable:
+        return []
+
+    folio = await tenant_db["folios"].find_one(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
+        {"_id": 0},
+    )
+    if not folio:
+        raise HTTPException(status_code=409, detail="Açık oda folyosu bulunamadı; sipariş kaydedilmedi")
+
+    from modules.pms_core.folio_hardening_service import FolioHardeningService
+
+    posted = []
+    for item in chargeable:
+        room_charge = item["room_charge"]
+        reference = f"qr-room-service:{submission_group_id}:{item['service_code']}"
+        amount = Decimal(room_charge["unit_price_minor"]) / Decimal(100)
+        result = await FolioHardeningService().post_charge(
+            tenant_id=tenant_id,
+            folio_id=folio["id"],
+            booking_id=booking_id,
+            charge_data={
+                "category": room_charge["folio_category"],
+                "description": f"[QR Oda Servisi] {item['title']}",
+                "amount": float(amount),
+                "quantity": room_charge["quantity"],
+                "tax_rate": 0,
+                "department": "room_service",
+                "currency": room_charge["currency"],
+                "external_reference": reference,
+            },
+            posted_by="guest-qr-room-service",
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=409, detail="Oda hesabına yazılamadı; sipariş kaydedilmedi")
+        charge_id = (result.get("charge") or {}).get("id")
+        if not charge_id:
+            raise HTTPException(status_code=503, detail="Oda hesabı kaydı doğrulanamadı")
+        posted.append({"service_code": item["service_code"], "folio_charge_id": charge_id, **room_charge})
+
+    await tenant_db["guest_service_submissions"].update_one(
+        {"tenant_id": tenant_id, "property_id": prepared_items[0]["property_id"], "booking_id": booking_id, "submission_group_id": submission_group_id},
+        {"$set": {"room_charge_status": "posted", "room_charge_lines": posted, "updated_at": _utc_now()}},
+    )
+    return posted
+
+
 async def handle_structured_submission(
     tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None
 ):
@@ -52,7 +130,7 @@ async def handle_structured_submission(
             raise HTTPException(status_code=422, detail="Geçersiz girdi")
         seen_codes.add(it.service_code)
 
-    fingerprint = compute_payload_fingerprint(payload.language, payload.items)
+    fingerprint = compute_payload_fingerprint(payload.language, payload.items, payload.confirm_room_charge)
 
     # 1. Lookup existing ledger
     ledger = await tenant_db["guest_service_submissions"].find_one({"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "idempotency_key": payload.idempotency_key})
@@ -119,6 +197,10 @@ async def handle_structured_submission(
                 # Mask schema error
                 raise HTTPException(status_code=422, detail="Geçersiz girdi")
 
+            room_charge = _room_charge_for_item(cat_item, validated_val)
+            if room_charge and not payload.confirm_room_charge:
+                raise HTTPException(status_code=422, detail="Oda hesabına yazma onayı gerekli")
+
             cat, dept = map_legacy_routing(cat_item["service_code"], cat_item["department_code"])
             title_label = cat_item.get("labels", {}).get(payload.language) or cat_item.get("labels", {}).get("tr", cat_item["service_code"])
 
@@ -171,6 +253,9 @@ async def handle_structured_submission(
                     "timezone_snapshot": prop_tz,
                 },
             }
+            if room_charge:
+                doc["room_charge"] = room_charge
+                doc["catalogue_snapshot"]["room_charge_snapshot"] = room_charge
 
             if input_type in ("time", "datetime", "date") and "time_value" in val_obj:
                 doc["catalogue_snapshot"]["submitted_local_time"] = val_obj["time_value"]
@@ -203,6 +288,8 @@ async def handle_structured_submission(
             "created_at": now_utc,
             "updated_at": now_utc,
             "completed_at": None,
+            "room_charge_consent": payload.confirm_room_charge,
+            "room_charge_status": "not_required",
         }
 
         # 3. Write Ledger
@@ -311,6 +398,12 @@ async def handle_structured_submission(
     actual_pairs = {(d["service_code"], d.get("request_reference")) for d in actual_docs}
 
     if expected_set == actual_set and len(actual_docs) == len(prepared_items) and len(actual_docs) == len(actual_set) and expected_pairs == actual_pairs:
+        try:
+            posted_room_charges = await _post_room_service_charges(
+                tenant_id, tenant_db, booking_id, submission_group_id, prepared_items
+            )
+        except HTTPException:
+            raise
         upd_res = await tenant_db["guest_service_submissions"].update_one(
             {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id},
             {"$set": {"status": "completed", "completed_at": _utc_now(), "updated_at": _utc_now()}},
@@ -329,6 +422,7 @@ async def handle_structured_submission(
                     "submission_reference": submission_reference,
                     "request_references": final_refs,
                     "stats": {"created": created_count, "replayed": replayed_count},
+                    "room_charge_lines": posted_room_charges,
                     "docs_to_emit": docs_to_emit,
                 }
 

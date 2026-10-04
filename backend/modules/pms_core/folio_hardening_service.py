@@ -22,6 +22,17 @@ class FolioHardeningService:
         if folio.get("status") != "open":
             return {"success": False, "error": f"Folio is {folio.get('status')}, cannot post charges"}
 
+        # A public QR retry must never create a second financial line. This is
+        # deliberately useful to every caller, not just room service.
+        external_reference = charge_data.get("external_reference")
+        if external_reference:
+            existing = await db.folio_charges.find_one(
+                {"tenant_id": tenant_id, "folio_id": folio_id, "external_reference": external_reference},
+                {"_id": 0},
+            )
+            if existing:
+                return {"success": True, "charge": existing, "replayed": True}
+
         amount = charge_data.get("amount", 0)
         quantity = charge_data.get("quantity", 1.0)
         tax_rate = charge_data.get("tax_rate", 0)
@@ -46,6 +57,8 @@ class FolioHardeningService:
             "tax_amount": tax_amount,
             "total": total,
             "department": charge_data.get("department"),
+            "currency": charge_data.get("currency") or folio.get("currency") or "TRY",
+            "external_reference": external_reference,
             "posted_by": posted_by,
             "date": now.isoformat(),
             "voided": False,
