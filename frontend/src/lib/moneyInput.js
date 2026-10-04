@@ -24,6 +24,14 @@ export function parseMoneyInput(value) {
   const integerPart = decimalIndex >= 0 ? raw.slice(0, decimalIndex) : raw;
   const fractionPart = decimalIndex >= 0 ? raw.slice(decimalIndex + 1) : '';
 
+  // While an operator is still typing, `150,` is a valid editing state but
+  // not an amount that can be posted.  Likewise, a third fractional digit is
+  // rejected as an incomplete/invalid monetary value instead of being parsed
+  // and silently sent to the API.
+  if (decimalIndex >= 0 && (!fractionPart || fractionPart.length > 2)) {
+    return null;
+  }
+
   // A separator may be repeated only as the *other* thousands separator:
   // 1.500,74 and 1,500.74 are valid; 150,74,2 is not.
   const decimalSeparator = decimalIndex >= 0 ? raw[decimalIndex] : null;
