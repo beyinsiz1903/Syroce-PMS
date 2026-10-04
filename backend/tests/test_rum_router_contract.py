@@ -1,4 +1,4 @@
-from routers.rum import ALLOWED_ROUTES, RumBatch, SessionRumEvent, _p95
+from routers.rum import ALLOWED_ROUTES, RUM_ROUTE_BUDGETS, RumBatch, SessionRumEvent, _p95
 
 
 def test_rum_contract_accepts_only_operational_dimensions():
@@ -28,3 +28,18 @@ def test_rum_p95_uses_upper_nearest_rank():
 
 def test_session_rum_contract_accepts_only_lifecycle_names():
     assert SessionRumEvent.model_validate({"event": "refresh"}).event == "refresh"
+
+
+def test_rum_budgets_cover_primary_module_entries_with_finite_alert_limits():
+    expected = {
+        "/app/dashboard", "/app/pms", "/app/reservation-calendar",
+        "/night-audit", "/housekeeping", "/pos", "/app/cashier",
+        "/app/invoices", "/app/raporlar", "/app/rms", "/sales",
+        "/app/channel-manager", "/channels", "/app/integration-hub", "/hr",
+    }
+    assert expected <= ALLOWED_ROUTES
+    assert len(ALLOWED_ROUTES) == 28
+    for route, limits in RUM_ROUTE_BUDGETS.items():
+        assert route in ALLOWED_ROUTES
+        assert set(limits) == {"route", "lcp", "inp", "api"}
+        assert all(isinstance(value, int) and value > 0 for value in limits.values())

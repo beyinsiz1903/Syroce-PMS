@@ -1,10 +1,4 @@
-const CRITICAL_ROUTES = new Set([
-  "/app/dashboard",
-  "/app/pms",
-  "/app/reservation-calendar",
-  "/app/raporlar",
-  "/app/channel-manager",
-]);
+import { isRumRoute } from '@/lib/routeRumBudgets';
 
 const RUM_URL = "/observability/rum/events";
 const MAX_ROUTE_AGE_MS = 10 * 60 * 1000;
@@ -42,7 +36,7 @@ export class RouteRum {
 
   start(pathname) {
     this.flush();
-    if (!this.enabled || !CRITICAL_ROUTES.has(pathname)) return;
+    if (!this.enabled || !isRumRoute(pathname)) return;
 
     const transition = this.pendingTransition?.pathname === pathname
       ? Math.round(this.now() - this.pendingTransition.startedAt)
