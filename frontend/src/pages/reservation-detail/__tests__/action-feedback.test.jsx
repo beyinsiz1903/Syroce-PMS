@@ -194,10 +194,10 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Kahve' } });
+    fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Kahve' } });
+    fireEvent.change(screen.getByPlaceholderText('Örn. 150,74'), { target: { value: '15' } });
     const inputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(inputs[0], { target: { value: '15' } });
-    fireEvent.change(inputs[1], { target: { value: '3' } });
+    fireEvent.change(inputs[0], { target: { value: '3' } });
 
     expect(screen.getByTestId('extra-charge-total-preview')).toHaveTextContent('15 TL × 3 = 45 TL');
     fireEvent.click(screen.getByRole('button', { name: '45 TL Ekle' }));
