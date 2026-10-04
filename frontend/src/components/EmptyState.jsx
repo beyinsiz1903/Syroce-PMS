@@ -18,10 +18,10 @@ const EmptyState = ({
   const { t } = useTranslation();
   const titleId = useId();
   const descriptionId = useId();
-  const resolvedTitle = title || t('uiQuality.emptyState.defaultTitle', {
+  const resolvedTitle = title || t('uiQuality.states.empty.title', {
     defaultValue: 'Nothing to show yet',
   });
-  const resolvedDescription = description || t('uiQuality.emptyState.defaultDescription', {
+  const resolvedDescription = description || t('uiQuality.states.empty.description', {
     defaultValue: 'Adjust your filters or create the first record to get started.',
   });
 
@@ -64,7 +64,7 @@ const EmptyState = ({
         {setupRequired && (
           <Badge className="bg-blue-700 text-white mb-4">
             <Settings aria-hidden="true" className="w-3 h-3 mr-1" />
-            {t('uiQuality.emptyState.setupRequired', { defaultValue: 'Setup required' })}
+            {t('uiQuality.states.setup.title', { defaultValue: 'Setup required' })}
           </Badge>
         )}
 

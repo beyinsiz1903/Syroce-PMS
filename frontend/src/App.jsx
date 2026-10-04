@@ -595,7 +595,7 @@ function App() {
                         element = (
                           <ProtectedRoute
                             isAuthenticated={isAuthenticated}
-                            element={<ModuleAvailabilityState reason="disabled" />}
+                            element={<ModuleAvailabilityState reason="forbidden" />}
                             wrapLayout
                             layoutModule="dashboard"
                             user={user}

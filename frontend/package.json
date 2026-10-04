@@ -94,7 +94,8 @@
     "knip:fix": "knip --fix --allow-remove-files",
     "lint": "eslint src/",
     "postinstall": "node scripts/patch-vite-client.js",
-    "check:vite-compat": "node scripts/check-vite-compat.js"
+    "check:vite-compat": "node scripts/check-vite-compat.js",
+    "check:i18n-quality": "node scripts/check-quality-locales.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.23.0",

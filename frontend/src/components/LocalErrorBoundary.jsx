@@ -1,4 +1,5 @@
 import React from 'react';
+import ProductState from '@/components/shared/ProductState';
 class LocalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -13,10 +14,12 @@ class LocalErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-8 m-4 bg-red-50 border border-red-200 rounded text-red-800">
-          <h2 className="text-lg font-bold mb-2">Bileşen Yüklenirken Hata Oluştu</h2>
-          <pre className="text-sm overflow-auto">{this.state.error && this.state.error.toString()}</pre>
-        </div>
+        <ProductState
+          state="error"
+          compact
+          onRetry={() => this.setState({ hasError: false, error: null })}
+          showDashboardLink={false}
+        />
       );
     }
     return this.props.children;

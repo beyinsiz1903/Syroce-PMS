@@ -119,7 +119,7 @@ export function ModuleGuardedRoute({
   if (!hasAllowedRole(user, allowedRoles)) {
     return (
       <Suspense fallback={<LoadingFallback />}>
-        {withOptionalLayout(<ModuleAvailabilityState reason="disabled" />, { wrapLayout, layoutModule, user, tenant, onLogout })}
+        {withOptionalLayout(<ModuleAvailabilityState reason="forbidden" />, { wrapLayout, layoutModule, user, tenant, onLogout })}
       </Suspense>
     );
   }
