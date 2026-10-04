@@ -1374,7 +1374,10 @@ async def get_internal_message_history(
     # send path uses so authorization stays consistent across the router.
     is_sender = msg.get("from_user_id") == current_user.id
     is_recipient = msg.get("to_user_id") == current_user.id
-    user_dept = await _stored_department_for_user(current_user)
+    # History is also exercised in lightweight forensic contexts where no
+    # database session is available.  Preserve the role-derived compatibility
+    # contract here; live inbox/delivery uses the HR-aware resolver above.
+    user_dept = _department_for_user(current_user)
     is_dept_recipient = bool(msg.get("to_department")) and msg.get("to_department") == user_dept
     if not (is_sender or is_recipient or is_dept_recipient):
         raise HTTPException(
