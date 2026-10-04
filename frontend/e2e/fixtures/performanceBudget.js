@@ -1,4 +1,4 @@
-/* global document, performance, window */
+/* global document, performance */
 import { expect } from '@playwright/test';
 
 const KiB = 1024;
@@ -16,9 +16,15 @@ export const CRITICAL_ROUTE_BUDGETS = [
     scriptBytes: 1_500 * KiB,
     interactionMs: 2_000,
     async interact(page) {
-      const before = await page.evaluate(() => window.scrollY);
-      await page.mouse.wheel(0, 480);
-      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
+      // A newly provisioned or empty hotel dashboard can fit entirely in the
+      // viewport, so scrolling is not a reliable interaction. Toggling a
+      // dashboard module group is both a real user action and independent of
+      // the seed data's page height.
+      const trigger = page.locator('[role="main"] button[data-state]').first();
+      await expect(trigger).toBeVisible();
+      const before = await trigger.getAttribute('data-state');
+      await trigger.click();
+      await expect(trigger).not.toHaveAttribute('data-state', before || '');
     },
   },
   {
