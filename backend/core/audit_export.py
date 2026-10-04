@@ -14,7 +14,6 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-
 SIGNING_KEY_ENV = "AUDIT_EXPORT_SIGNING_KEY"
 SIGNATURE_ALGORITHM = "HMAC-SHA256"
 
