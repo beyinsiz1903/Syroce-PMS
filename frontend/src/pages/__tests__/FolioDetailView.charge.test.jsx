@@ -61,8 +61,7 @@ describe('FolioDetailView charge contract', () => {
     fireEvent.change(screen.getByPlaceholderText('Minibar - Kola vb.'), {
       target: { value: 'Test masrafı' },
     });
-    const spinbuttons = screen.getAllByRole('spinbutton');
-    fireEvent.change(spinbuttons[0], { target: { value: '10' } });
+    fireEvent.change(screen.getByPlaceholderText('Örn. 150,74'), { target: { value: '10' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Masraf Ekle' }).at(-1));
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));

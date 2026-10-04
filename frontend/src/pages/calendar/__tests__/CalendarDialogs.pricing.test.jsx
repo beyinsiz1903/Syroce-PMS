@@ -71,10 +71,10 @@ describe('NewBookingDialog pricing and prepayment', () => {
     const price = screen.getByTestId('new-booking-price-input');
 
     fireEvent.change(price, { target: { value: '' } });
-    expect(price).toHaveValue(null);
+    expect(price).toHaveValue('');
 
     fireEvent.change(price, { target: { value: '1250' } });
-    expect(price).toHaveValue(1250);
+    expect(price).toHaveValue('1250');
   });
 
   it('supports a total-stay price and exposes prepayment details on demand', () => {
@@ -83,14 +83,14 @@ describe('NewBookingDialog pricing and prepayment', () => {
     fireEvent.change(screen.getByTestId('new-booking-price-input-mode'), { target: { value: 'total' } });
     const total = screen.getByTestId('new-booking-price-input');
     fireEvent.change(total, { target: { value: '7500' } });
-    expect(total).toHaveValue(7500);
+    expect(total).toHaveValue('7500');
 
     expect(screen.queryByTestId('new-booking-prepayment-amount')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('new-booking-prepayment-toggle'));
     fireEvent.change(screen.getByTestId('new-booking-prepayment-amount'), { target: { value: '2500' } });
     fireEvent.change(screen.getByTestId('new-booking-prepayment-method'), { target: { value: 'bank_transfer' } });
 
-    expect(screen.getByTestId('new-booking-prepayment-amount')).toHaveValue(2500);
+    expect(screen.getByTestId('new-booking-prepayment-amount')).toHaveValue('2500');
     expect(screen.getByTestId('new-booking-prepayment-method')).toHaveValue('bank_transfer');
   });
 
