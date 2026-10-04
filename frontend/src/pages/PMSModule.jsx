@@ -43,9 +43,12 @@ const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal
 import LeadTimeCurve from '@/components/LeadTimeCurve';
 import RevenueDashboard from '@/components/RevenueDashboard';
 import AIActivityLog from '@/components/AIActivityLog';
-import StaffTaskManager from '@/components/StaffTaskManager';
-import FeedbackSystem from '@/components/FeedbackSystem';
-import AllotmentGrid from '@/components/AllotmentGrid';
+// These are independent operational workspaces, not front-desk dependencies.
+// Keep them outside the PMS shell so the default tab does not parse their
+// tables, form logic and network clients before the operator asks for them.
+const StaffTaskManager = lazy(() => import('@/components/StaffTaskManager'));
+const FeedbackSystem = lazy(() => import('@/components/FeedbackSystem'));
+const AllotmentGrid = lazy(() => import('@/components/AllotmentGrid'));
 import GroupRevenueByCompany from '@/components/GroupRevenueByCompany';
 import PickupPaceReport from '@/components/PickupPaceReport';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
