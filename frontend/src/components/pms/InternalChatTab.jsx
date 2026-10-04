@@ -18,8 +18,8 @@ import { Send, RefreshCw, CheckCheck, Plus } from 'lucide-react';
 // yardımcı modüle çıkarıldı (visibility-aware polling, Socket.IO event
 // handler'ları, mesaj action factory'leri).
 import {
-  STAFF_ROLES,
   CONVERSATION_DEPARTMENT_FILTERS,
+  DEPARTMENTS,
   POLL_INTERVAL_MS,
   PRESENCE_REFRESH_INTERVAL_MS,
   TYPING_EMIT_THROTTLE_MS,
@@ -80,6 +80,7 @@ const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
 
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState(DEPARTMENTS);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [usersAccessDenied, setUsersAccessDenied] = useState(false);
 
@@ -396,18 +397,22 @@ const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
 
   const loadUsers = useCallback(async () => {
     try {
-      const res = await axios.get('/admin/users', { params: { limit: 200 } });
+      const res = await axios.get('/messaging/internal/directory');
       if (!isMountedRef.current) return;
       const list = (res.data?.users || [])
-        .filter((u) => u.is_active !== false && STAFF_ROLES.has(u.role) && u.id !== currentUser?.id)
+        .filter((u) => u.id !== currentUser?.id)
         .map((u) => ({
           id: u.id,
           name: u.name || u.username || u.email || 'Kullanıcı',
           email: u.email || '',
           role: u.role,
+          department: u.department || 'General',
         }))
         .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
       setUsers(list);
+      const directoryDepartments = (res.data?.departments || [])
+        .filter((department) => department?.value && department?.label);
+      setDepartments(directoryDepartments.length > 0 ? directoryDepartments : DEPARTMENTS);
       setUsersLoaded(true);
       setUsersAccessDenied(false);
     } catch (err) {
@@ -468,6 +473,9 @@ const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
   // Sekme arka plana geçince timer'lar duraklar, geri gelince hemen tetikler.
   useVisibilityAwarePoller(useCallback(() => loadInbox(true), [loadInbox]), { intervalMs: POLL_INTERVAL_MS });
   useVisibilityAwarePoller(useCallback(() => loadConversations(true), [loadConversations]), { intervalMs: POLL_INTERVAL_MS });
+  // HR yöneticisi yeni personel veya departman eklediğinde dizin, sayfa
+  // yenilenmeden güncellenir. Diyalog açılışında ayrıca anlık yenileriz.
+  useVisibilityAwarePoller(loadUsers, { intervalMs: 120000 });
   useVisibilityAwarePoller(
     useCallback(() => {
       if (selectedConvUserId) loadThread(selectedConvUserId, { silent: true, markRead: true });
@@ -522,11 +530,9 @@ const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLocaleLowerCase('tr');
-    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find((opt) => opt.value === userDeptFilter);
-    const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
 
     const matches = users.filter((u) => {
-      if (allowedRoles && !allowedRoles.has(u.role || '')) return false;
+      if (userDeptFilter !== 'all' && u.department !== userDeptFilter) return false;
       if (onlineOnly && !onlineUsers.has(u.id)) return false;
       if (q) {
         const name = (u.name || '').toLocaleLowerCase('tr');
@@ -902,6 +908,7 @@ const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
             setRecipientType={setRecipientType}
             toDepartment={toDepartment}
             setToDepartment={setToDepartment}
+            departments={departments}
             usersAccessDenied={usersAccessDenied}
             userSearch={userSearch}
             setUserSearch={setUserSearch}
