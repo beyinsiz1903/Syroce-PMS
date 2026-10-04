@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key, fallback) => fallback || 'Ekle' }),
@@ -20,10 +21,11 @@ vi.mock('@/components/contact-center/CallButton', () => ({
 import Guest360Dialog from '@/components/pms/Guest360Dialog';
 
 afterEach(() => cleanup());
+const renderDialog = (ui) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 describe('Guest360Dialog sunum tutarlılığı', () => {
   it('Türkçe başlıkları ve API para biriminde finansal değerleri gösterir', () => {
-    render(
+    renderDialog(
       <Guest360Dialog
         open
         onClose={vi.fn()}
@@ -49,7 +51,7 @@ describe('Guest360Dialog sunum tutarlılığı', () => {
   });
 
   it('karma dövizli geçmişi tek para biriminde toplamak yerine ayrı gösterir', () => {
-    render(
+    renderDialog(
       <Guest360Dialog
         open
         onClose={vi.fn()}
@@ -79,7 +81,7 @@ describe('Guest360Dialog sunum tutarlılığı', () => {
   });
 
   it('yükleme durumunu kullanıcı dostu Türkçe metinle gösterir', () => {
-    render(
+    renderDialog(
       <Guest360Dialog
         open
         onClose={vi.fn()}
@@ -94,7 +96,7 @@ describe('Guest360Dialog sunum tutarlılığı', () => {
   });
 
   it('eski metin biçimindeki not ve etiketi sayfayı çökertmeden gösterir', () => {
-    render(
+    renderDialog(
       <Guest360Dialog
         open
         onClose={vi.fn()}
