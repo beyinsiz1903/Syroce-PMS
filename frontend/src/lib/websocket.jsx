@@ -13,7 +13,7 @@ const WEBSOCKET_PATH = '/ws/socket.io';
 
 let ioModule = null;
 
-class WebSocketManager {
+export class WebSocketManager {
   constructor() {
     this.socket = null;
     this.listeners = new Map();
@@ -21,6 +21,7 @@ class WebSocketManager {
     this.maxReconnectAttempts = 2; // Reduced from 5 to avoid console spam
     this.disabled = false;
     this._lastAuth = null;
+    this.connectPromise = null;
   }
 
   _readAuthFromStorage() {
@@ -45,13 +46,24 @@ class WebSocketManager {
       return this._getNoopSocket();
     }
 
-    if (this.socket?.connected) {
+    // Several first-screen providers (notifications, chat and calendar) can
+    // ask for realtime at the same time. A socket.io client is useful while
+    // it is connecting too; creating another one here multiplied failed
+    // handshakes and their retry timers on an unavailable websocket endpoint.
+    if (this.socket) {
       return this.socket;
     }
 
-    try {
+    if (this.connectPromise) return this.connectPromise;
+
+    this.connectPromise = (async () => {
+      try {
       // Lazy import socket.io-client to avoid blocking initial load
       const { io } = await import('socket.io-client');
+
+      // A concurrent caller may have completed the connection while the
+      // lazy import was resolving.
+      if (this.socket) return this.socket;
 
       const auth = this._readAuthFromStorage();
       this._lastAuth = auth;
@@ -71,12 +83,17 @@ class WebSocketManager {
 
       this.setupEventHandlers();
       return this.socket;
-    } catch (err) {
+      } catch (err) {
       // If socket.io fails to load, disable gracefully but warn loudly
       console.warn('[WebSocket] socket.io unavailable; real-time updates disabled.', err);
       this.disabled = true;
       return this._getNoopSocket();
-    }
+      } finally {
+        this.connectPromise = null;
+      }
+    })();
+
+    return this.connectPromise;
   }
 
   _getNoopSocket() {
