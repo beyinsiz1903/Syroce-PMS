@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { resetUnassignedListScroll } from './calendar/unassignedPanel';
 import { lazyWithPreload } from '@/routes/lazyWithPreload';
+import { runIdle } from '@/lib/idle';
 import { useCalendarRealtime } from './calendar/useCalendarRealtime';
 import { findOccupancyRule } from '@/utils/occupancyPricing';
 import { bookingSourceLabel } from '@/utils/bookingSource';
@@ -560,22 +561,27 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setGroupBookings(buildGroupBookingsSummary(rawBookings, cachedGuests));
 
       if (!useCachedReferenceData) {
-        // Deliberately start after core data is painted. This keeps form
-        // reference data warm without competing with the operational view.
-        void Promise.all([
-          axios.get('/pms/guests').catch(() => ({ data: [] })),
-          axios.get('/companies').catch(() => ({ data: [] })),
-        ]).then(([guestsRes, companiesRes]) => {
+        // Guest/company pick-lists can be substantially larger than the
+        // visible stay window. Let the room grid commit and accept input first;
+        // this is intentionally scheduled after a paint/idle opportunity.
+        // isCancelled keeps a rapid date change from warming stale data.
+        runIdle(() => {
           if (isCancelled()) return;
-          const guestsData = guestsRes.data || [];
-          const companiesData = companiesRes.data || [];
-          referenceDataRef.current = { loadedAt: Date.now(), guests: guestsData, companies: companiesData };
-          setGuests(guestsData);
-          setCompanies(companiesData);
-          // Upgrade group labels once the reference lookup arrives without a
-          // second calendar request.
-          setGroupBookings(buildGroupBookingsSummary(rawBookings, guestsData));
-        });
+          void Promise.all([
+            axios.get('/pms/guests').catch(() => ({ data: [] })),
+            axios.get('/companies').catch(() => ({ data: [] })),
+          ]).then(([guestsRes, companiesRes]) => {
+            if (isCancelled()) return;
+            const guestsData = guestsRes.data || [];
+            const companiesData = companiesRes.data || [];
+            referenceDataRef.current = { loadedAt: Date.now(), guests: guestsData, companies: companiesData };
+            setGuests(guestsData);
+            setCompanies(companiesData);
+            // Upgrade group labels once the reference lookup arrives without a
+            // second calendar request.
+            setGroupBookings(buildGroupBookingsSummary(rawBookings, guestsData));
+          });
+        }, { timeout: 4000 });
       }
     } catch (error) {
       console.error('Takvim verileri yüklenemedi:', error);
