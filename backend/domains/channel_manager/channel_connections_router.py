@@ -6,7 +6,7 @@ tek bir endpoint'ten döndürür. Yeni otel onboarding akışı için.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -24,6 +24,62 @@ router = APIRouter(
 
 
 _HOTELRUNNER_ACTIVE_STATES = {"active", "activated", "enabled", "live"}
+
+
+def _as_utc(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def build_channel_operational_status(provider: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    """Canonical provider lifecycle used by APIs, health centre and UI."""
+
+    now = now or datetime.now(UTC)
+    connected = bool(provider.get("connected"))
+    mappings = int(provider.get("room_mappings_count") or 0)
+    auto_sync = bool(provider.get("auto_sync_reservations"))
+    last_sync = _as_utc(provider.get("last_successful_sync") or provider.get("last_sync_at"))
+    last_error_at = _as_utc(provider.get("last_error_at"))
+    last_error = provider.get("last_error")
+    interval = max(5, int(provider.get("sync_interval_minutes") or 15))
+    stale_after_minutes = max(60, interval * 3)
+    environment = str(provider.get("environment") or provider.get("mode") or "unknown").lower()
+
+    if not connected:
+        key, label, intent = "setup_pending", "Yapılandırılmadı", "neutral"
+    elif last_error and last_error_at and (not last_sync or last_error_at >= last_sync):
+        key, label, intent = "error", "Senkronizasyon hatalı", "danger"
+    elif mappings == 0:
+        key, label, intent = "mapping_required", "Kimlik doğrulandı · eşleme bekliyor", "warning"
+    elif not auto_sync:
+        key, label, intent = "paused", "Senkronizasyon durduruldu", "warning"
+    elif not last_sync:
+        key, label, intent = "first_sync_pending", "İlk senkronizasyon bekliyor", "warning"
+    elif now - last_sync > timedelta(minutes=stale_after_minutes):
+        key, label, intent = "stale", "Senkronizasyon gecikmiş", "warning"
+    elif environment in {"sandbox", "test", "demo", "trial", "staging"}:
+        key, label, intent = "sandbox", "Deneme ortamında", "neutral"
+    else:
+        key, label, intent = "production", "Üretimde", "success"
+
+    return {
+        "key": key,
+        "label": label,
+        "intent": intent,
+        "environment": environment,
+        "last_successful_sync": last_sync.isoformat() if last_sync else None,
+        "last_error": last_error,
+        "last_error_at": last_error_at.isoformat() if last_error_at else None,
+        "stale_after_minutes": stale_after_minutes,
+        "production_ready": key == "production",
+    }
 
 
 def normalize_active_hotelrunner_channels(
@@ -157,6 +213,10 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
             "display_name": 1,
             "created_at": 1,
             "sync_reservations": 1,
+            "sync_interval_minutes": 1,
+            "last_successful_sync": 1,
+            "last_error": 1,
+            "last_error_at": 1,
         },
     )
     if prov_hr:
@@ -172,6 +232,10 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
                 "connected_at": prov_hr.get("created_at"),
                 "last_sync_at": None,
                 "auto_sync_reservations": prov_hr.get("sync_reservations", False),
+                "sync_interval_minutes": prov_hr.get("sync_interval_minutes", 15),
+                "last_successful_sync": prov_hr.get("last_successful_sync"),
+                "last_error": prov_hr.get("last_error"),
+                "last_error_at": prov_hr.get("last_error_at"),
             }
         else:
             # Legacy doc var ama is_active eksik/false → provider_connections
@@ -181,6 +245,9 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
                 hr_conn["hr_id"] = provider_hr_id
             if not hr_conn.get("property_name"):
                 hr_conn["property_name"] = prov_hr.get("display_name", "HotelRunner")
+            for field in ("last_successful_sync", "last_error", "last_error_at", "sync_interval_minutes"):
+                if prov_hr.get(field) is not None:
+                    hr_conn[field] = prov_hr[field]
     hr_active_channels, hr_channels_stale, hr_channels_refreshed_at = await _load_active_hotelrunner_channels(
         tid,
         hr_conn,
@@ -203,9 +270,14 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
         "channels_refreshed_at": hr_channels_refreshed_at,
         "connected_at": hr_conn.get("connected_at") if hr_conn else None,
         "last_sync_at": hr_conn.get("last_sync_at") if hr_conn else None,
+        "last_successful_sync": (hr_conn.get("last_successful_sync") or hr_conn.get("last_sync_at")) if hr_conn else None,
+        "last_error": hr_conn.get("last_error") if hr_conn else None,
+        "last_error_at": hr_conn.get("last_error_at") if hr_conn else None,
+        "sync_interval_minutes": hr_conn.get("sync_interval_minutes", 15) if hr_conn else 15,
         "auto_sync_reservations": hr_conn.get("auto_sync_reservations", False) if hr_conn else False,
         "room_mappings_count": hr_mappings,
     }
+    hr_status["operational_status"] = build_channel_operational_status(hr_status)
 
     # Exely status — aynı çift-kaynak okuma + zenginleştirme deseni.
     exely_conn = await db.exely_connections.find_one(
@@ -214,7 +286,7 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
     )
     prov_ex = await db.provider_connections.find_one(
         {"tenant_id": tid, "provider": "exely", "status": "active"},
-        {"_id": 0},
+        {"_id": 0, "credentials.password": 0, "credentials.username": 0, "credentials.token": 0},
     )
     if prov_ex:
         ex_creds = prov_ex.get("credentials", {})
@@ -230,6 +302,10 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
                 "connected_at": prov_ex.get("created_at"),
                 "last_sync_at": None,
                 "auto_sync_reservations": prov_ex.get("sync_reservations", False),
+                "sync_interval_minutes": prov_ex.get("sync_interval_minutes", 15),
+                "last_successful_sync": prov_ex.get("last_successful_sync"),
+                "last_error": prov_ex.get("last_error"),
+                "last_error_at": prov_ex.get("last_error_at"),
             }
         else:
             exely_conn["is_active"] = True
@@ -237,6 +313,9 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
                 exely_conn["hotel_code"] = ex_creds["hotel_code"]
             if not exely_conn.get("property_name"):
                 exely_conn["property_name"] = prov_ex.get("display_name", "Exely")
+            for field in ("last_successful_sync", "last_error", "last_error_at", "sync_interval_minutes"):
+                if prov_ex.get(field) is not None:
+                    exely_conn[field] = prov_ex[field]
     exely_mappings = await db.exely_room_mappings.count_documents({"tenant_id": tid})
     if exely_mappings == 0:
         exely_mappings = await db.cm_mappings.count_documents({"tenant_id": tid, "entity_type": "room_type", "connector_id": {"$regex": "ex"}, "status": "active"})
@@ -253,9 +332,14 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
         "rate_plans": exely_conn.get("rate_plans", []) if exely_conn else [],
         "connected_at": exely_conn.get("connected_at") if exely_conn else None,
         "last_sync_at": exely_conn.get("last_sync_at") if exely_conn else None,
+        "last_successful_sync": (exely_conn.get("last_successful_sync") or exely_conn.get("last_sync_at")) if exely_conn else None,
+        "last_error": exely_conn.get("last_error") if exely_conn else None,
+        "last_error_at": exely_conn.get("last_error_at") if exely_conn else None,
+        "sync_interval_minutes": exely_conn.get("sync_interval_minutes", 15) if exely_conn else 15,
         "auto_sync_reservations": exely_conn.get("auto_sync_reservations", False) if exely_conn else False,
         "room_mappings_count": exely_mappings,
     }
+    exely_status["operational_status"] = build_channel_operational_status(exely_status)
 
     # PMS room types (for reference)
     pms_rooms = await db.rooms.find(

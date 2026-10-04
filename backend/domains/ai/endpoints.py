@@ -14,6 +14,7 @@ from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from domains.ai.service import get_ai_service
 from models.schemas import User
+from modules.pms_core.operational_snapshot_service import build_operational_snapshot
 from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ api_router = APIRouter()
 
 
 @api_router.get("/ai/dashboard/briefing")
-@cached(ttl=300, key_prefix="ai_dashboard_briefing")
+@cached(ttl=30, key_prefix="ai_dashboard_briefing")
 async def get_daily_briefing(
     lang: str = Query("tr", description="Language code for briefing"),
     current_user: User = Depends(get_current_user),
@@ -32,16 +33,12 @@ async def get_daily_briefing(
     Get AI-generated daily briefing for dashboard
     """
     try:
-        # Get data from database — all 4 collections in parallel (1 RTT).
-        # Exclude virtual rooms so the briefing matches the dashboard KPI cards.
+        # Operational metrics come from the same open-business-day snapshot as
+        # the PMS dashboard and night audit.  AI may explain the truth, but it
+        # must never calculate a competing version of it from wall-clock time.
         # v95 — Projections: only fields actually used downstream (was full-doc fetch).
-        total_rooms, all_bookings, invoices, tenant = await _asyncio.gather(
-            db.rooms.count_documents(
-                {
-                    "tenant_id": current_user.tenant_id,
-                    "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
-                }
-            ),
+        operational, all_bookings, invoices, tenant = await _asyncio.gather(
+            build_operational_snapshot(current_user.tenant_id, database=db),
             db.bookings.find(
                 {"tenant_id": current_user.tenant_id},
                 {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "total_amount": 1},
@@ -56,38 +53,12 @@ async def get_daily_briefing(
             ),
         )
 
-        # Count today's date for overlap checks
-        today = datetime.now().date()
-        today_str = str(today)
-        month_start_str = today.replace(day=1).isoformat()
-
-        # Active statuses (exclude cancelled, checked_out, no_show)
-        active_statuses = {"confirmed", "guaranteed", "checked_in"}
-
-        # Occupancy: count rooms occupied today (checked_in + confirmed overlapping today)
-        occupied_rooms = 0
-        for b in all_bookings:
-            if b.get("status") not in active_statuses:
-                continue
-            ci = str(b.get("check_in", ""))[:10]
-            co = str(b.get("check_out", ""))[:10]
-            if ci <= today_str and co > today_str:
-                occupied_rooms += 1
-
+        business_date = operational["business_date"]
         confirmed_bookings = len([b for b in all_bookings if b.get("status") == "confirmed"])
-
-        # Count today's check-ins/outs (only active bookings)
-        today_checkins = 0
-        today_checkouts = 0
-        for b in all_bookings:
-            if b.get("status") in ("cancelled", "no_show"):
-                continue
-            ci = str(b.get("check_in", ""))[:10]
-            co = str(b.get("check_out", ""))[:10]
-            if ci == today_str:
-                today_checkins += 1
-            if co == today_str:
-                today_checkouts += 1
+        total_rooms = operational["total_rooms"]
+        occupied_rooms = operational["occupied_rooms"]
+        today_checkins = operational["today_checkins"]
+        today_checkouts = operational["today_checkouts"]
 
         pending_invoices = len([i for i in invoices if i.get("status") == "pending"])
 
@@ -97,7 +68,11 @@ async def get_daily_briefing(
             d = i.get("invoice_date") or i.get("created_at") or ""
             return str(d)[:10]
 
-        monthly_revenue = sum((i.get("total") or 0) for i in invoices if _inv_month(i) >= month_start_str)
+        monthly_revenue = sum(
+            (i.get("total") or 0)
+            for i in invoices
+            if _inv_month(i)[:7] == business_date[:7]
+        )
 
         # Fallback: if no invoice revenue this month, calculate from active bookings checking in this month.
         if monthly_revenue == 0:
@@ -105,13 +80,13 @@ async def get_daily_briefing(
                 if b.get("status") in ("cancelled", "no_show"):
                     continue
                 ci = str(b.get("check_in", ""))[:10]
-                if ci >= month_start_str:
+                if ci[:7] == business_date[:7]:
                     monthly_revenue += float(b.get("total_amount", 0) or 0)
 
         # Hotel name from tenant (already fetched above).
         hotel_name = tenant.get("property_name", "Hotel") if tenant else "Hotel"
 
-        occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
+        occupancy_rate = operational["occupancy_rate"]
 
         # Try to generate AI briefing, fallback to heuristic
         briefing_text = None
@@ -186,6 +161,11 @@ async def get_daily_briefing(
             "briefing": briefing_text,
             "ai_powered": ai_powered,
             "generated_at": datetime.now().isoformat(),
+            "snapshot_id": operational["snapshot_id"],
+            "as_of": operational["as_of"],
+            "business_date": business_date,
+            "calendar_date": operational["calendar_date"],
+            "inventory_scope": operational["inventory_scope"],
             "insights": insights,
             "metrics": {
                 "total_rooms": total_rooms,
@@ -198,6 +178,9 @@ async def get_daily_briefing(
                 "confirmed_bookings": confirmed_bookings,
                 "currency": currency_code,
                 "currency_symbol": currency_symbol,
+                "snapshot_id": operational["snapshot_id"],
+                "business_date": business_date,
+                "inventory_scope": operational["inventory_scope"],
             },
         }
     except Exception:

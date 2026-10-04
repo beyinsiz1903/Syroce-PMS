@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -17,9 +18,10 @@ class _Cursor:
 
 
 class _Collection:
-    def __init__(self, *, row=None, rows=None):
+    def __init__(self, *, row=None, rows=None, count=0):
         self.row = row
         self.rows = rows or []
+        self.count = count
         self.find_one_calls = []
 
     async def find_one(self, query, *args, **kwargs):
@@ -29,9 +31,13 @@ class _Collection:
     def find(self, *_args, **_kwargs):
         return _Cursor(self.rows)
 
+    async def count_documents(self, *_args, **_kwargs):
+        return self.count
+
 
 @pytest.mark.asyncio
 async def test_module_health_reports_license_setup_usage_and_errors_without_secrets(monkeypatch):
+    last_sync = datetime.now(UTC).isoformat()
     fake_db = SimpleNamespace(
         tenants=_Collection(row={
             "modules": {"messaging_whatsapp": True, "channel_exely": True},
@@ -56,6 +62,16 @@ async def test_module_health_reports_license_setup_usage_and_errors_without_secr
         channel_integrations=_Collection(row={"status": "active"}),
         messaging_provider_configs=_Collection(),
         invoice_integrations=_Collection(row={"status": "active"}),
+        hotelrunner_connections=_Collection(row={
+            "is_active": True,
+            "auto_sync_reservations": True,
+            "last_sync_at": last_sync,
+            "environment": "production",
+        }),
+        exely_connections=_Collection(),
+        provider_connections=_Collection(),
+        hotelrunner_room_mappings=_Collection(count=1),
+        exely_room_mappings=_Collection(),
     )
     monkeypatch.setattr(health_module, "db", fake_db)
 
@@ -67,6 +83,8 @@ async def test_module_health_reports_license_setup_usage_and_errors_without_secr
     assert by_key["frontdesk"]["last_used_at"] == "2026-10-03T08:30:00+00:00"
     assert by_key["channel_manager"]["status"] == "healthy"
     assert by_key["channel_manager"]["integration_status"] == "configured"
+    assert by_key["channel_manager"]["operational_status"] == "production"
+    assert by_key["channel_manager"]["providers"][0]["operational_status"]["production_ready"] is True
     assert by_key["whatsapp"]["status"] == "error"
     assert by_key["whatsapp"]["integration_status"] == "not_configured"
     assert by_key["whatsapp"]["last_error"] == "Webhook doğrulanamadı"
