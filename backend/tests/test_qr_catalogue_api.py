@@ -276,6 +276,10 @@ def test_api_modes_default(mock_session, mock_db):
     assert data["catalogue_version"] == 1
     assert "departments" in data
     assert "services" in data
+    assert "fnb" in {department["department_code"] for department in data["departments"]}
+    fallback = next(service for service in data["services"] if service["service_code"] == "fnb.request_menu")
+    assert fallback["room_charge_enabled"] is False
+    assert fallback["unit_price_minor"] == 0
     assert_privacy(data)
 
 def test_api_modes_disabled(mock_session, mock_db):

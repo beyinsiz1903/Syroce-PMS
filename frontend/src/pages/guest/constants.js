@@ -28,6 +28,9 @@ export const EXPERIENCE_COPY = {
     secureNote: "Talebiniz güvenli şekilde otel ekibine iletilir.",
     serviceAdd: "Talebe ekle",
     serviceAdded: "Eklendi",
+    selectTime: "Saat seçin",
+    estimatedTime: "Tahmini yanıt",
+    minutes: "dk",
     departmentFallback: "Otel hizmetleri ve destek",
   },
   en: {
@@ -39,6 +42,9 @@ export const EXPERIENCE_COPY = {
     secureNote: "Your request is securely delivered to the hotel team.",
     serviceAdd: "Add to request",
     serviceAdded: "Added",
+    selectTime: "Select time",
+    estimatedTime: "Estimated response",
+    minutes: "min",
     departmentFallback: "Hotel services and assistance",
   },
   de: {
@@ -50,6 +56,9 @@ export const EXPERIENCE_COPY = {
     secureNote: "Ihre Anfrage wird sicher an das Hotelteam übermittelt.",
     serviceAdd: "Zur Anfrage hinzufügen",
     serviceAdded: "Hinzugefügt",
+    selectTime: "Uhrzeit wählen",
+    estimatedTime: "Voraussichtliche Antwort",
+    minutes: "Min.",
     departmentFallback: "Hotelservice und Unterstützung",
   },
   ru: {
@@ -61,6 +70,9 @@ export const EXPERIENCE_COPY = {
     secureNote: "Ваш запрос будет безопасно передан команде отеля.",
     serviceAdd: "Добавить в запрос",
     serviceAdded: "Добавлено",
+    selectTime: "Выберите время",
+    estimatedTime: "Ожидаемый ответ",
+    minutes: "мин",
     departmentFallback: "Услуги и помощь в отеле",
   },
   ar: {
@@ -72,6 +84,9 @@ export const EXPERIENCE_COPY = {
     secureNote: "يتم إرسال طلبك بأمان إلى فريق الفندق.",
     serviceAdd: "إضافة إلى الطلب",
     serviceAdded: "تمت الإضافة",
+    selectTime: "اختر الوقت",
+    estimatedTime: "الوقت المتوقع للرد",
+    minutes: "د",
     departmentFallback: "خدمات الفندق والمساعدة",
   },
 };

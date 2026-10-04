@@ -558,11 +558,25 @@ async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
         raise HTTPException(status_code=410, detail="Oda kullanımda değil")
 
     tenant = await raw_db["tenants"].find_one({"id": tenant_id}) or {}
+    property_id = room.get("property_id") or tenant.get("property_id")
+    prop = {}
+    if property_id:
+        prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+
+    hotel_name = (
+        prop.get("property_name")
+        or prop.get("name")
+        or prop.get("display_name")
+        or tenant.get("property_name")
+        or tenant.get("name")
+        or tenant.get("display_name")
+        or "Hotel"
+    )
 
     return {
-        "hotel_name": tenant.get("name") or tenant.get("display_name") or "Hotel",
-        "hotel_logo": tenant.get("logo_url"),
-        "primary_color": tenant.get("primary_color") or "#0ea5e9",
+        "hotel_name": hotel_name,
+        "hotel_logo": prop.get("logo_url") or prop.get("logo") or tenant.get("logo_url"),
+        "primary_color": prop.get("primary_color") or tenant.get("primary_color") or "#0ea5e9",
         "room_number": room.get("room_number"),
         "room_type": room.get("room_type"),
         "categories": [

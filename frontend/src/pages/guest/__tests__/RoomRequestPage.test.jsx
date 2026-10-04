@@ -267,6 +267,16 @@ describe('RoomRequestPage', () => {
     expect(screen.queryByText('housekeeping.room_cleaning')).not.toBeInTheDocument();
   });
 
+  it('labels time controls instead of rendering an unexplained blank field', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-rooms"));
+    fireEvent.click(screen.getByTestId("dept-rooms"));
+
+    const timeInput = await screen.findByLabelText("Select time");
+    expect(timeInput).toHaveAttribute("type", "time");
+    expect(timeInput).toHaveAttribute("step", "900");
+  });
+
   it('quantity default/min/max and exact payload', async () => {
     setupCatalogue();
     await waitFor(() => screen.getByTestId("dept-rooms"));
