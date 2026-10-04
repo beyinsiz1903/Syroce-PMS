@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Activity, Bell, Radio, Users, Home, Wrench, AlertTriangle, CheckCircle, Clock, Eye, RefreshCw, Shield, MessageSquare, ClipboardList, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -66,6 +67,7 @@ export default function OperationalEventDashboard({
   tenant,
   onLogout
 }) {
+  const navigate = useNavigate();
   const [liveFeed, setLiveFeed] = useState(null);
   const [stats, setStats] = useState(null);
   const [unread, setUnread] = useState(null);
@@ -190,7 +192,7 @@ export default function OperationalEventDashboard({
             <Button variant="outline" size="sm" onClick={() => fetchAll(false)} data-testid="event-refresh-btn">
               <RefreshCw className="w-4 h-4 mr-2" /> Yenile
             </Button>
-            <Button size="sm" onClick={() => { window.location.href = '/app/tasks'; }}>
+            <Button size="sm" onClick={() => navigate('/app/tasks')}>
               <ClipboardList className="mr-2 h-4 w-4" /> Görevleri Yönet <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>

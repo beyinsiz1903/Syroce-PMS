@@ -11,6 +11,8 @@ import {
   restoreOriginTenantContext,
 } from "@/lib/adminTenantContext";
 import { clearAuthScopedSessionStorage } from "@/lib/authSessionScope";
+import { navigateInternal } from "@/lib/appNavigation";
+import { recordSessionEvent } from "@/lib/sessionTelemetry";
 
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
@@ -113,6 +115,7 @@ const _isRefreshableUrl = (url = "") =>
   !url.includes("/auth/reset-password");
 
 function _hardLogout() {
+  recordSessionEvent("expired");
   localStorage.removeItem("token");
   localStorage.removeItem("token_ts");
   localStorage.removeItem("refresh_token");
@@ -126,7 +129,7 @@ function _hardLogout() {
   clearAuthScopedSessionStorage();
   delete axios.defaults.headers.common["Authorization"];
   if (window.location.pathname !== "/auth" && window.location.pathname !== "/") {
-    window.location.assign("/auth");
+    navigateInternal("/auth", { replace: true });
   }
 }
 
@@ -202,10 +205,11 @@ async function _attemptRefresh(retryCount = 0) {
       // prevents an origin API session from being displayed under a stale
       // target-hotel header.
       if (wasAdminTenantContext && restoreOriginTenantContext()) {
-        window.location.assign("/admin/tenants");
+        navigateInternal("/admin/tenants", { replace: true });
         return { contextRestored: true };
       }
 
+      recordSessionEvent("refresh");
       return { token: newAccess };
     } catch (err) {
       const status = err?.response?.status;

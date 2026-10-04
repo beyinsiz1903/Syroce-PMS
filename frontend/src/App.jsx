@@ -35,6 +35,9 @@ import {
 } from "@/lib/adminTenantContext";
 import { resolvePostLoginDestination } from "@/lib/postLoginWorkspace";
 import RouteRumReporter from "@/components/RouteRumReporter";
+import AppNavigationBridge from "@/components/AppNavigationBridge";
+import { navigateInternal } from "@/lib/appNavigation";
+import { recordSessionEvent } from "@/lib/sessionTelemetry";
 import {
   blockTabAfterExternalSessionChange,
   clearAuthScopedSessionStorage,
@@ -232,6 +235,7 @@ function App() {
           // Render the verified user's workspace immediately, then reconcile
           // package and module metadata in the background.
           applyAuthenticatedSnapshot(parsedTenant, parsedModules);
+          recordSessionEvent("restore");
           scheduleHeavyModulePrefetch();
 
           if (freshUser?.tenant_id) {
@@ -431,6 +435,7 @@ function App() {
     setUser(canonicalUser);
     setTenant(tenantData);
     setIsAuthenticated(true);
+    recordSessionEvent("login");
     fetchModules();
     scheduleHeavyModulePrefetch();
 
@@ -460,7 +465,7 @@ function App() {
     const redirectAfterLogin = sessionStorage.getItem("postLoginRedirect");
     if (redirectAfterLogin) {
       sessionStorage.removeItem("postLoginRedirect");
-      window.location.assign(redirectAfterLogin);
+      navigateInternal(redirectAfterLogin, { replace: true });
     }
   };
 
@@ -473,6 +478,7 @@ function App() {
       axios.post("/auth/logout", refreshToken ? { refresh_token: refreshToken } : {})
         .catch(() => { /* non-fatal: local clear yine de uygulanır */ });
     } catch { /* ignore */ }
+    recordSessionEvent("logout");
     clearAuthStorage();
     try { sessionStorage.clear(); } catch { /* ignore */ }
     delete axios.defaults.headers.common["Authorization"];
@@ -485,7 +491,7 @@ function App() {
     // for the page reload below).
     notifyAuthChanged();
     try { websocket.disconnect?.(); } catch { /* noop */ }
-    window.location.replace("/auth");
+    navigateInternal("/auth", { replace: true });
   };
 
   const hasFeature = (key) => {
@@ -566,6 +572,7 @@ function App() {
           {isAuthenticated && <OfflineStatusBar />}
           <BrowserRouter>
             <SimulationProvider>
+              <AppNavigationBridge />
               <RouteRumReporter />
               <SimulationOverlay />
               <ErrorBoundary>

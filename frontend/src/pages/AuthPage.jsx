@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +39,7 @@ const CtaButton = ({ className = '', children, ...props }) => (
 
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -98,7 +100,7 @@ const AuthPage = ({ onLogin }) => {
       onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
       if (response.data?.user?.requires_password_change) {
         toast.info('Devam etmek icin sifrenizi degistirmelisiniz.');
-        setTimeout(() => { window.location.href = '/profile'; }, 300);
+        navigate('/profile', { replace: true });
         return;
       }
     } catch (error) {
@@ -123,7 +125,7 @@ const AuthPage = ({ onLogin }) => {
       onLogin(r.data.access_token, r.data.user, r.data.tenant, r.data.refresh_token);
       if (r.data?.user?.requires_password_change) {
         toast.info('Devam etmek icin sifrenizi degistirmelisiniz.');
-        setTimeout(() => { window.location.href = '/profile'; }, 300);
+        navigate('/profile', { replace: true });
         return;
       }
     } catch (err) {
@@ -196,9 +198,6 @@ const AuthPage = ({ onLogin }) => {
       toast.success(t('auth.accountCreated'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
 
-      setTimeout(() => {
-        window.location.href = '/';
-      }, 500);
     } catch (error) {
       toast.error(error.response?.data?.detail || t('auth.verificationFailed'));
     } finally {

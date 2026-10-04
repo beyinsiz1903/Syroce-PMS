@@ -1,6 +1,7 @@
 """Privacy-preserving real-user route performance telemetry."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -23,6 +24,7 @@ _indexes_ready = False
 class RumEvent(BaseModel):
     route: str
     route_duration_ms: int = Field(ge=0, le=600_000)
+    navigation_ms: int | None = Field(default=None, ge=0, le=120_000)
     lcp_ms: int | None = Field(default=None, ge=0, le=120_000)
     inp_ms: int | None = Field(default=None, ge=0, le=120_000)
     cls: float | None = Field(default=None, ge=0, le=10)
@@ -34,6 +36,10 @@ class RumBatch(BaseModel):
     events: list[RumEvent] = Field(min_length=1, max_length=MAX_EVENTS_PER_BATCH)
 
 
+class SessionRumEvent(BaseModel):
+    event: Literal["login", "restore", "refresh", "logout", "expired"]
+
+
 async def _ensure_indexes() -> None:
     """Keep sampled telemetry bounded even when no separate data-retention job runs."""
     global _indexes_ready
@@ -42,6 +48,9 @@ async def _ensure_indexes() -> None:
     collection = db.client_rum_events
     await collection.create_index([("tenant_id", 1), ("route", 1), ("received_at", -1)])
     await collection.create_index("received_at", expireAfterSeconds=30 * 24 * 60 * 60)
+    session_collection = db.client_rum_session_events
+    await session_collection.create_index([("tenant_id", 1), ("event", 1), ("received_at", -1)])
+    await session_collection.create_index("received_at", expireAfterSeconds=30 * 24 * 60 * 60)
     _indexes_ready = True
 
 
@@ -58,6 +67,18 @@ async def record_events(payload: RumBatch, current_user: User = Depends(get_curr
     if rows:
         await db.client_rum_events.insert_many(rows, ordered=False)
     return {"accepted": len(rows)}
+
+
+@router.post("/session-events", status_code=202)
+async def record_session_event(payload: SessionRumEvent, current_user: User = Depends(get_current_user)):
+    """Record a sampled session lifecycle event without client-supplied identity."""
+    await _ensure_indexes()
+    await db.client_rum_session_events.insert_one({
+        "event": payload.event,
+        "tenant_id": current_user.tenant_id,
+        "received_at": datetime.now(UTC),
+    })
+    return {"accepted": 1}
 
 
 def _p95(values: list[int | float]) -> int | float | None:
@@ -77,7 +98,7 @@ async def performance_summary(
     hours = min(max(hours, 1), 168)
     since = datetime.now(UTC) - timedelta(hours=hours)
     rows = await db.client_rum_events.find(
-        {"tenant_id": current_user.tenant_id, "received_at": {"$gte": since}}, {"_id": 0, "route": 1, "route_duration_ms": 1, "lcp_ms": 1, "inp_ms": 1, "api_p95_ms": 1},
+        {"tenant_id": current_user.tenant_id, "received_at": {"$gte": since}}, {"_id": 0, "route": 1, "route_duration_ms": 1, "navigation_ms": 1, "lcp_ms": 1, "inp_ms": 1, "api_p95_ms": 1},
     ).to_list(5_000)
     by_route: dict[str, list[dict]] = {}
     for row in rows:
@@ -85,9 +106,10 @@ async def performance_summary(
     result = []
     for route, items in sorted(by_route.items()):
         duration = _p95([row["route_duration_ms"] for row in items])
+        navigation = _p95([row["navigation_ms"] for row in items if row.get("navigation_ms") is not None])
         lcp = _p95([row["lcp_ms"] for row in items if row.get("lcp_ms") is not None])
         inp = _p95([row["inp_ms"] for row in items if row.get("inp_ms") is not None])
         api = _p95([row["api_p95_ms"] for row in items if row.get("api_p95_ms") is not None])
-        alerts = [name for name, value, budget in (("route", duration, 5000), ("lcp", lcp, 4000), ("inp", inp, 500), ("api", api, 2000)) if value is not None and value > budget]
-        result.append({"route": route, "samples": len(items), "p95_route_ms": duration, "p95_lcp_ms": lcp, "p95_inp_ms": inp, "p95_api_ms": api, "alerts": alerts})
+        alerts = [name for name, value, budget in (("route", duration, 5000), ("navigation", navigation, 2000), ("lcp", lcp, 4000), ("inp", inp, 500), ("api", api, 2000)) if value is not None and value > budget]
+        result.append({"route": route, "samples": len(items), "p95_route_ms": duration, "p95_navigation_ms": navigation, "p95_lcp_ms": lcp, "p95_inp_ms": inp, "p95_api_ms": api, "alerts": alerts})
     return {"since": since, "hours": hours, "routes": result}

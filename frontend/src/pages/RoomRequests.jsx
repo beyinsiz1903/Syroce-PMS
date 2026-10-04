@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,6 +109,7 @@ export default function RoomRequests({
   onLogout
 }) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState(ALL_DEPTS);
@@ -202,7 +204,7 @@ export default function RoomRequests({
                 <p className="text-sm text-violet-800">Departmana atama, işleme alma ve misafire sonuç bildirme işlemlerini Görevler ekranından yapın. Bu ekran kurulum ve denetim kaydı olarak kalır.</p>
               </div>
             </div>
-            <Button className="shrink-0 bg-violet-700 hover:bg-violet-800" onClick={() => { window.location.href = '/app/tasks?source=guest_qr'; }}>
+            <Button className="shrink-0 bg-violet-700 hover:bg-violet-800" onClick={() => navigate('/app/tasks?source=guest_qr')}>
               Görevlerde Yönet <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </CardContent>
@@ -284,7 +286,7 @@ export default function RoomRequests({
 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                   <p className="text-xs text-slate-500">Bu kayıt denetim amaçlıdır. Durum ve sonuç değişiklikleri ortak görev geçmişinden yürütülür.</p>
-                  <Button size="sm" onClick={() => { window.location.href = '/app/tasks?source=guest_qr'; }}>
+                  <Button size="sm" onClick={() => navigate('/app/tasks?source=guest_qr')}>
                     Görevi Aç <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </div>
