@@ -48,6 +48,14 @@ describe('complete offline application shell contract', () => {
     expect(entry).toContain('registerServiceWorker();');
   });
 
+  test('frontend serves the deployment manifest without cache retention', () => {
+    const nginx = readProjectFile('../../../nginx.conf');
+    const workerLocation = nginx.split('location = /service-worker.js', 2)[1];
+
+    expect(workerLocation).toContain('Cache-Control "no-cache, no-store, must-revalidate"');
+    expect(workerLocation).toContain('Service-Worker-Allowed "/"');
+  });
+
   test('stale deployment chunks recover again after a bounded reload cooldown', () => {
     const html = readProjectFile('../../../index.html');
 
