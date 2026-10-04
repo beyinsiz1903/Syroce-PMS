@@ -42,7 +42,9 @@ describe("module availability route gates", () => {
       onLogout: () => {},
       hasFeature: () => false,
     }).find((item) => item.path === "/staff/:id");
-    expect(composed.moduleScopes).toBeUndefined();
+    // The self-service route deliberately skips the visual module boundary,
+    // but it is still classified for the route-scope CI inventory.
+    expect(composed.moduleScopes).toEqual(['hr']);
   });
 
   it("opens hotel-owned setup workspaces through their licensed module gates", () => {
