@@ -9,11 +9,12 @@ import { Switch } from '@/components/ui/switch';
 import {
   Building2, Users, MessageSquare, Search, Send,
 } from 'lucide-react';
-import { DEPARTMENTS, ROLE_LABELS, CONVERSATION_DEPARTMENT_FILTERS } from './constants';
+import { ROLE_LABELS } from './constants';
 
 const ComposeForm = ({
   recipientType, setRecipientType,
   toDepartment, setToDepartment,
+  departments,
   usersAccessDenied,
   userSearch, setUserSearch,
   toUserId, setToUserId,
@@ -72,7 +73,7 @@ const ComposeForm = ({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {DEPARTMENTS.map((d) => (
+            {departments.map((d) => (
               <SelectItem key={d.value} value={d.value}>
                 {d.label}
               </SelectItem>
@@ -114,7 +115,8 @@ const ComposeForm = ({
               <SelectValue placeholder="Departman" />
             </SelectTrigger>
             <SelectContent>
-              {CONVERSATION_DEPARTMENT_FILTERS.map((opt) => (
+              <SelectItem value="all">Tüm departmanlar</SelectItem>
+              {departments.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>
@@ -152,6 +154,10 @@ const ComposeForm = ({
             {onlineUsers.size} çevrimiçi
           </span>
         </div>
+        <div className="flex items-center justify-between rounded-md bg-muted/55 px-3 py-2 text-xs text-muted-foreground">
+          <span><strong className="text-foreground">Canlı ekip dizini</strong> · yeni kullanıcılar ve departmanlar otomatik eklenir</span>
+          <span>{users.length} personel · {departments.length} departman</span>
+        </div>
         {!usersLoaded ? (
           <p className="text-xs text-muted-foreground">Personel listesi yükleniyor…</p>
         ) : users.length === 0 ? (
@@ -184,13 +190,22 @@ const ComposeForm = ({
                       />
                     )}
                     <span className="font-medium">{u.name}</span>
-                    {u.role && ROLE_LABELS[u.role] && (
+                    {u.role && (
                       <Badge
                         variant="secondary"
                         className="px-1.5 py-0 text-[10px] h-4 font-normal text-muted-foreground shrink-0"
                         data-testid={`badge-user-role-${u.id}`}
                       >
-                        {ROLE_LABELS[u.role]}
+                        {ROLE_LABELS[u.role] || u.role.replace(/[_-]/g, ' ')}
+                      </Badge>
+                    )}
+                    {u.department && (
+                      <Badge
+                        variant="outline"
+                        className="px-1.5 py-0 text-[10px] h-4 font-normal shrink-0"
+                        data-testid={`badge-user-department-${u.id}`}
+                      >
+                        {u.department}
                       </Badge>
                     )}
                   </div>

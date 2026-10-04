@@ -77,6 +77,9 @@ _ROLE_DEPARTMENT_MAPPING: dict[str, str] = {
     "finance": "Finance",
     "supervisor": "Management",
     "admin": "Management",
+    "super_admin": "Management",
+    "owner": "Management",
+    "sales": "Reception",
 }
 
 
@@ -96,6 +99,42 @@ def _department_for_user(user) -> str:
     if role_value is None:
         return "General"
     return _ROLE_DEPARTMENT_MAPPING.get(str(role_value), "General")
+
+
+async def _stored_department_for_user(user: User) -> str:
+    """Resolve a tenant user's actual department without trusting client input.
+
+    Older tenants only have role-derived departments, while newer HR tenants
+    keep an explicit department on the user record.  Internal messaging must
+    support both during the migration: new departments become addressable
+    immediately, and historic messages retain their existing labels.
+    """
+    tenant_id = getattr(user, "tenant_id", None)
+    user_id = getattr(user, "id", None)
+    if tenant_id and user_id:
+        stored = await db.users.find_one(
+            {"tenant_id": tenant_id, "id": user_id},
+            {"_id": 0, "department": 1, "department_name": 1, "department_code": 1},
+        )
+        if stored:
+            for key in ("department_name", "department", "department_code"):
+                value = stored.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return _department_for_user(user)
+
+
+def _directory_department_label(user: dict[str, Any], departments_by_code: dict[str, str]) -> str:
+    """Return the message address label for a user-directory record."""
+    for key in ("department_name", "department"):
+        value = user.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    code = user.get("department_code")
+    if isinstance(code, str) and code.strip():
+        return departments_by_code.get(code.strip().lower(), code.strip())
+    role = user.get("role")
+    return _ROLE_DEPARTMENT_MAPPING.get(str(role), "General")
 
 
 # ── Inline Models ──
@@ -326,6 +365,81 @@ async def get_ota_integrations(current_user: User = Depends(get_current_user)):
 # ========================================
 
 
+@router.get("/messaging/internal/directory")
+async def get_internal_messaging_directory(
+    current_user: User = Depends(get_current_user),
+):
+    """Return the active, tenant-scoped staff directory for internal chat.
+
+    This deliberately exposes only the contact fields needed to address an
+    internal message.  Unlike the administrator user-management endpoint it
+    is available to ordinary authenticated staff, so newly created users and
+    HR departments do not disappear from the message composer.
+    """
+    tenant_id = current_user.tenant_id
+    active_users = await db.users.find(
+        {
+            "tenant_id": tenant_id,
+            "$or": [{"is_active": {"$exists": False}}, {"is_active": True}],
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "name": 1,
+            "username": 1,
+            "email": 1,
+            "role": 1,
+            "department": 1,
+            "department_name": 1,
+            "department_code": 1,
+        },
+    ).sort("name", 1).to_list(500)
+    master_departments = await db.hr_departments.find(
+        {
+            "tenant_id": tenant_id,
+            "$or": [{"active": {"$exists": False}}, {"active": True}],
+        },
+        {"_id": 0, "id": 1, "name": 1, "code": 1},
+    ).sort("name", 1).to_list(200)
+
+    departments_by_code = {
+        str(item.get("code", "")).strip().lower(): item.get("name")
+        for item in master_departments
+        if item.get("code") and item.get("name")
+    }
+    member_counts: dict[str, int] = {}
+    users: list[dict[str, Any]] = []
+    for item in active_users:
+        if not item.get("id"):
+            continue
+        department = _directory_department_label(item, departments_by_code)
+        member_counts[department] = member_counts.get(department, 0) + 1
+        users.append(
+            {
+                "id": item["id"],
+                "name": item.get("name") or item.get("username") or item.get("email") or "Kullanıcı",
+                "email": item.get("email") or "",
+                "role": item.get("role") or "",
+                "department": department,
+            }
+        )
+
+    # Keep the familiar operational departments available on older tenants,
+    # then add HR master data and every department actually used by a person.
+    labels = set(_ROLE_DEPARTMENT_MAPPING.values()) | set(member_counts)
+    labels |= {item.get("name") for item in master_departments if item.get("name")}
+    departments = [
+        {"value": label, "label": label, "member_count": member_counts.get(label, 0)}
+        for label in sorted(labels, key=lambda value: value.casefold())
+    ]
+    return {
+        "users": users,
+        "departments": departments,
+        "total_users": len(users),
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
 @router.post("/messaging/internal/send")
 async def send_internal_message(
     message: str,
@@ -376,7 +490,7 @@ async def send_internal_message(
         to_user_name = to_user.get("name")
 
     # Determine from_department based on user role
-    from_department = _department_for_user(current_user)
+    from_department = await _stored_department_for_user(current_user)
 
     message_obj = InternalMessage(
         tenant_id=current_user.tenant_id,
@@ -577,19 +691,7 @@ async def subscribe_internal_chat_push(
     delivered as OS-level notifications even when no tab is open."""
     from domains.guest.messaging.web_push import store_subscription
 
-    department_mapping = {
-        "front_desk": "Reception",
-        "housekeeping": "Housekeeping",
-        "maintenance": "Maintenance",
-        "finance": "Finance",
-        "supervisor": "Management",
-        "admin": "Management",
-        "super_admin": "Management",
-        "owner": "Management",
-        "sales": "Reception",
-    }
-    role_value = current_user.role.value if hasattr(current_user.role, "value") else current_user.role
-    department = department_mapping.get(role_value, "General")
+    department = await _stored_department_for_user(current_user)
 
     try:
         await store_subscription(
@@ -628,9 +730,8 @@ async def get_internal_messages_inbox(department: str | None = None, unread_only
     - Messages sent to my department
     - Broadcast messages
     """
-    # Determine user's department
-    department_mapping = {"front_desk": "Reception", "housekeeping": "Housekeeping", "maintenance": "Maintenance", "finance": "Finance", "supervisor": "Management", "admin": "Management"}
-    my_department = department_mapping.get(current_user.role.value, "General")
+    # A user's HR department takes precedence over the legacy role mapping.
+    my_department = await _stored_department_for_user(current_user)
 
     match_criteria = {
         "tenant_id": current_user.tenant_id,
@@ -713,15 +814,7 @@ async def mark_internal_message_read(message_id: str, current_user: User = Depen
     broadcast. Otherwise returns 404 (no information disclosure about
     existence of messages outside the caller's scope).
     """
-    department_mapping = {
-        "front_desk": "Reception",
-        "housekeeping": "Housekeeping",
-        "maintenance": "Maintenance",
-        "finance": "Finance",
-        "supervisor": "Management",
-        "admin": "Management",
-    }
-    my_department = department_mapping.get(current_user.role.value, "General")
+    my_department = await _stored_department_for_user(current_user)
 
     result = await db.internal_messages.update_one(
         {
@@ -780,16 +873,7 @@ async def mark_all_internal_messages_read(
     second time. Returns the number of newly-marked messages so the UI
     can confirm the operation succeeded.
     """
-    department_mapping = {
-        "front_desk": "Reception",
-        "housekeeping": "Housekeeping",
-        "maintenance": "Maintenance",
-        "finance": "Finance",
-        "supervisor": "Management",
-        "admin": "Management",
-    }
-    role_value = current_user.role.value if hasattr(current_user.role, "value") else current_user.role
-    my_department = department_mapping.get(role_value, "General")
+    my_department = await _stored_department_for_user(current_user)
 
     now_iso = datetime.now(UTC).isoformat()
     result = await db.internal_messages.update_many(
@@ -1290,7 +1374,7 @@ async def get_internal_message_history(
     # send path uses so authorization stays consistent across the router.
     is_sender = msg.get("from_user_id") == current_user.id
     is_recipient = msg.get("to_user_id") == current_user.id
-    user_dept = _department_for_user(current_user)
+    user_dept = await _stored_department_for_user(current_user)
     is_dept_recipient = bool(msg.get("to_department")) and msg.get("to_department") == user_dept
     if not (is_sender or is_recipient or is_dept_recipient):
         raise HTTPException(
