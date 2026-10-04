@@ -210,11 +210,12 @@ const ROUTE_SCOPE_OVERRIDES = Object.freeze(Object.fromEntries([
   ]],
   [['channel_manager'], [
     '/app/revenue-hub', '/app/rms', '/rms', '/hotelrunner', '/exely',
-    '/app/integration-hub', '/integration-observability', '/integration-credentials',
+    '/integration-observability', '/integration-credentials',
     '/app/channels', '/mobile/channels', '/rate-manager', '/hr-rate-manager',
     '/unified-rate-manager', '/central-pricing', '/go-live-readiness',
     '/room-mapping-wizard', '/reservation-lineage',
   ]],
+  [['channel_manager', 'invoice'], ['/app/integration-hub']],
   [['hr'], ['/hrv2-ops', '/staff/:id']],
   [['contact_center'], [
     '/app/call-center', '/messaging-center', '/messaging-dashboard', '/ota-messaging-hub',
