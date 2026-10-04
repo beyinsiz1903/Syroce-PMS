@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
+import ProductState from '@/components/shared/ProductState';
 import { runIdle } from '@/lib/idle';
 import { useCurrency } from '@/context/CurrencyContext';
 
@@ -595,7 +596,7 @@ const Dashboard = ({
           <p className="text-sm md:text-base text-gray-600 dark:text-slate-300">{tenant?.property_name || 'Hotel Management System'}</p>
         </div>
 
-        {loading ? <div className="text-center py-12" role="status" aria-live="polite" aria-label="Veriler yükleniyor">{t('common.loading')}</div> : <>
+        {loading ? <ProductState state="loading" moduleName={t('dashboard.title', { defaultValue: 'Kontrol paneli' })} compact showDashboardLink={false} /> : <>
             {/* AI Daily Briefing Card */}
             {aiBriefing && <Card className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-4 border-0 shadow-lg" role="region" aria-label="Yapay zeka günlük brifing">
                 <CardHeader className="p-4">

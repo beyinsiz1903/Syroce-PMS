@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
+import ProductState from '@/components/shared/ProductState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown, Loader2 } from 'lucide-react';
@@ -1619,9 +1620,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   if (loading) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reservation_calendar" fullWidth>
-        <div className="flex items-center justify-center h-screen">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-        </div>
+        <ProductState state="loading" moduleName="Rezervasyon takvimi" showDashboardLink={false} />
       </Layout>
     );
   }
@@ -1629,13 +1628,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   if (calendarSafetyError && rooms.length === 0) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
-        <div className="flex min-h-[60vh] items-center justify-center p-6">
-          <div className="max-w-xl rounded-lg border border-red-300 bg-red-50 p-6 text-red-900 shadow-sm" role="alert">
-            <h2 className="text-lg font-semibold">Takvim güvenli olarak yüklenemedi</h2>
-            <p className="mt-2 text-sm">{calendarSafetyError}</p>
-            <Button className="mt-4" variant="destructive" onClick={() => loadCalendarData()}>Yeniden dene</Button>
-          </div>
-        </div>
+        <ProductState
+          state="error"
+          moduleName="Rezervasyon takvimi"
+          title="Takvim güvenli olarak yüklenemedi"
+          description={calendarSafetyError}
+          onRetry={() => loadCalendarData()}
+          showDashboardLink={false}
+        />
       </Layout>
     );
   }
