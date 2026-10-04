@@ -447,6 +447,27 @@ describe('FoliosTab — sade ödeme akışı', () => {
       },
     ));
   });
+
+  it('Ödeme Al tutarında Türkçe ondalık ayıracıyla girilen değeri aynen kaydeder', async () => {
+    render(<FoliosTab {...singleFolioProps()} />);
+
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+    const amountInput = within(panel).getByDisplayValue('100');
+
+    fireEvent.change(amountInput, { target: { value: '150,74' } });
+    expect(amountInput).toHaveValue('150,74');
+
+    fireEvent.click(within(panel).getAllByRole('button')[0]);
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/bk-1/record-payment',
+      expect.objectContaining({
+        amount: 150.74,
+        payment_type: 'final',
+      }),
+    ));
+  });
 });
 
 describe('FoliosTab — masraf var folio yok (Task #423)', () => {

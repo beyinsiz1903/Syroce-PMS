@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
+import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import PrintableFolio from '@/components/PrintableFolio';
 import {
@@ -24,7 +25,7 @@ const normalizeCurrency = (value) => String(value || 'TL').toUpperCase() === 'TL
 const COMMON_PAYMENT_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF'];
 
 export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurrency, rates) {
-  const numericAmount = Number(amount);
+  const numericAmount = typeof amount === 'string' ? parseMoneyInput(amount) : Number(amount);
   const base = normalizeCurrency(bookingCurrency);
   const received = normalizeCurrency(receivedCurrency);
   if (!Number.isFinite(numericAmount) || numericAmount <= 0) return null;
@@ -467,7 +468,11 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <FormPanel color="emerald" title={t('common.paymentRecord')} testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
           onSubmit={() => exec(async () => {
             if (payForm.method === 'discount' && !payForm.reference) { toast.error('Lütfen indirim sebebini yazın'); return; }
-            const amount = parseFloat(payForm.amount);
+            const amount = parseMoneyInput(payForm.amount);
+            if (!Number.isFinite(amount) || amount <= 0) {
+              toast.error('Ödeme tutarını virgül veya nokta ile doğru girin.');
+              return;
+            }
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
               ...payForm,
               amount,
@@ -491,7 +496,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             setManualExchangeRate(false);
           })}>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label={`Tutar (${currency})`} type="number" value={payForm.amount} onChange={v => { setPayForm(p => ({ ...p, amount: v })); if (useCurrencyConverter && manualExchangeRate && exchangeRate && !isNaN(parseFloat(v))) setForeignAmount((parseFloat(v) * parseFloat(exchangeRate)).toFixed(2)); }} />
+            <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile en fazla iki ondalık basamak girebilirsiniz." value={payForm.amount} onChange={v => { if (!isMoneyInput(v)) return; setPayForm(p => ({ ...p, amount: v })); const amount = parseMoneyInput(v); if (useCurrencyConverter && manualExchangeRate && exchangeRate && Number.isFinite(amount)) setForeignAmount((amount * parseFloat(exchangeRate)).toFixed(2)); }} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
           </div>
@@ -532,7 +537,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                       setExchangeRate(e.target.value);
                       setManualExchangeRate(true);
                       const rate = parseFloat(e.target.value);
-                      const baseAmt = parseFloat(payForm.amount);
+                      const baseAmt = parseMoneyInput(payForm.amount);
                       if (!isNaN(rate) && !isNaN(baseAmt)) setForeignAmount((baseAmt * rate).toFixed(2));
                     }} />
                   </div>
@@ -550,14 +555,14 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                 </div>
                 {exchangeRate && foreignAmount && (
                   <div className="text-xs text-slate-600" data-testid="currency-conversion-summary">
-                    {Number(payForm.amount).toFixed(2)} {currency} = {Number(foreignAmount).toFixed(2)} {foreignCurrency} · 1 {currency} = {exchangeRate} {foreignCurrency}
+                    {(parseMoneyInput(payForm.amount) || 0).toFixed(2)} {currency} = {Number(foreignAmount).toFixed(2)} {foreignCurrency} · 1 {currency} = {exchangeRate} {foreignCurrency}
                   </div>
                 )}
               </div>
             )}
           </div>
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
-            <div className="font-medium">{guestPaymentClassificationLabel(payForm.amount, reservationTotalDue)}</div>
+            <div className="font-medium">{guestPaymentClassificationLabel(parseMoneyInput(payForm.amount), reservationTotalDue)}</div>
             <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>
           </div>
         </FormPanel>
