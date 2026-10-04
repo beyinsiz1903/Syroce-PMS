@@ -365,7 +365,7 @@ describe('PMS manually discovered operation regressions', () => {
 
     fireEvent.click(screen.getByTestId('departure-payment-booking-payment'));
     expect(screen.getByRole('heading', { name: 'Hızlı Ödeme Al' })).toBeInTheDocument();
-    expect(screen.getByTestId('frontdesk-quick-payment-amount')).toHaveValue(125);
+    expect(screen.getByTestId('frontdesk-quick-payment-amount')).toHaveValue('125.00');
     expect(screen.queryByText('Ara Ödeme')).not.toBeInTheDocument();
     expect(screen.queryByText('Final Ödeme')).not.toBeInTheDocument();
 

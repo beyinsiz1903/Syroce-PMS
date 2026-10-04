@@ -149,8 +149,8 @@ export function SummaryCard({ label, value, color, currency }) {
   );
 }
 
-export function FormField({ label, value, onChange, type = 'text', placeholder = '' }) {
-  return <div><Label className="text-xs">{label}</Label><Input type={type} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder} /></div>;
+export function FormField({ label, value, onChange, type = 'text', placeholder = '', inputMode, hint }) {
+  return <div><Label className="text-xs">{label}</Label><Input type={type} inputMode={inputMode} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder} />{hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}</div>;
 }
 
 export function SelectField({ label, value, onChange, options }) {

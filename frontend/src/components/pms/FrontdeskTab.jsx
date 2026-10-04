@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 
 import { confirmDialog } from '@/lib/dialogs';
@@ -230,7 +231,7 @@ const FrontdeskTab = ({
 
   const submitQuickPayment = useCallback(async () => {
     if (!quickPaymentBooking?.id || quickPaymentSubmittingRef.current) return;
-    const amount = Number(quickPaymentAmount);
+    const amount = parseMoneyInput(quickPaymentAmount);
     const balance = effectiveBookingBalance(quickPaymentBooking);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error('Ödeme tutarı sıfırdan büyük olmalı.');
@@ -947,14 +948,19 @@ const FrontdeskTab = ({
                 <Input
                   id="frontdesk-quick-payment-amount"
                   data-testid="frontdesk-quick-payment-amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  max={effectiveBookingBalance(quickPaymentBooking) || undefined}
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  aria-describedby="frontdesk-quick-payment-amount-help"
                   value={quickPaymentAmount}
-                  onChange={(event) => setQuickPaymentAmount(event.target.value)}
+                  onChange={(event) => {
+                    if (isMoneyInput(event.target.value)) setQuickPaymentAmount(event.target.value);
+                  }}
                   disabled={quickPaymentInProgress}
                 />
+                <p id="frontdesk-quick-payment-amount-help" className="text-xs text-slate-500">
+                  Virgül veya nokta ile en fazla iki ondalık basamak girebilirsiniz.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Tahsilat / Aktarım Yöntemi</Label>
@@ -1014,7 +1020,7 @@ const FrontdeskTab = ({
                 <Button
                   type="button"
                   onClick={submitQuickPayment}
-                  disabled={quickPaymentInProgress || !Number.isFinite(Number(quickPaymentAmount)) || Number(quickPaymentAmount) <= 0 || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId)}
+                  disabled={quickPaymentInProgress || !(parseMoneyInput(quickPaymentAmount) > 0) || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId)}
                   data-testid="frontdesk-quick-payment-submit"
                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                 >
