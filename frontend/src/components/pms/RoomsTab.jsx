@@ -19,6 +19,7 @@ import { deduplicateGuestSearchResults, maskGuestDocument } from '@/pages/calend
 import { getRoomBlockForDate, normalizeRoomBlocksResponse } from '@/pages/calendar/calendarHelpers';
 import { bookingFinancials } from '@/lib/bookingFinancials';
 import { formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 export const formatCleaningDuration = (minutes) => {
   const roundedMinutes = Math.round(Number(minutes));
@@ -380,7 +381,7 @@ const RoomsTab = ({
       toast.error('Rezervasyon bilgisi bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin.');
       return;
     }
-    const amount = parseFloat(paymentAmount);
+    const amount = parseMoneyInput(paymentAmount);
     if (!amount || amount <= 0) {
       toast.error('Lutfen geçerli bir tutar giriniz');
       return;
@@ -396,8 +397,8 @@ const RoomsTab = ({
       
       if (useCurrencyConverter && foreignAmount && exchangeRate) {
         payload.received_currency = String(foreignCurrency || 'TRY').toUpperCase() === 'TL' ? 'TRY' : String(foreignCurrency || 'TRY').toUpperCase();
-        payload.received_amount = Number(foreignAmount);
-        payload.exchange_rate = Number(exchangeRate);
+        payload.received_amount = parseMoneyInput(foreignAmount);
+        payload.exchange_rate = parseMoneyInput(exchangeRate);
         payload.notes = `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`;
       } else {
         payload.received_currency = payload.currency;
@@ -500,7 +501,7 @@ const RoomsTab = ({
     if (!guest_name.trim()) { toast.error('Misafir adi giriniz'); return; }
     if (!check_in || !check_out) { toast.error('Tarih seciniz'); return; }
     if (check_in >= check_out) { toast.error('Çıkış tarihi giristen sonra olmalidir'); return; }
-    const amount = parseFloat(total_amount);
+    const amount = parseMoneyInput(total_amount);
     if (!amount || amount <= 0) { toast.error('Geçerli bir fiyat giriniz'); return; }
 
     setQuickResLoading(true);
@@ -1070,16 +1071,15 @@ const RoomsTab = ({
                 <Label className="text-sm font-medium">Ödeme Tutarı ({paymentTarget.currency})</Label>
                 <div className="flex gap-2 mt-1">
                   <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    {...moneyInputProps}
+                    placeholder="Örn. 150,74"
                     value={paymentAmount}
                     onChange={(e) => {
                       setPaymentAmount(e.target.value);
                       if (useCurrencyConverter && exchangeRate) {
-                        const baseAmt = parseFloat(e.target.value);
+                        const baseAmt = parseMoneyInput(e.target.value);
                         if (!isNaN(baseAmt)) {
-                          setForeignAmount((baseAmt * parseFloat(exchangeRate)).toFixed(2));
+                          setForeignAmount((baseAmt * parseMoneyInput(exchangeRate)).toFixed(2));
                         } else {
                           setForeignAmount('');
                         }
@@ -1097,7 +1097,7 @@ const RoomsTab = ({
                       onClick={() => {
                         setPaymentAmount(String(paymentTarget.balance));
                         if (useCurrencyConverter && exchangeRate) {
-                          setForeignAmount((paymentTarget.balance * parseFloat(exchangeRate)).toFixed(2));
+                          setForeignAmount((paymentTarget.balance * parseMoneyInput(exchangeRate)).toFixed(2));
                         }
                       }}
                       data-testid="quick-payment-fill-balance"
@@ -1120,9 +1120,9 @@ const RoomsTab = ({
                         const newRate = exchangeRate || tcmbRates[foreignCurrency].toFixed(4);
                         if (!exchangeRate) setExchangeRate(newRate);
                         
-                        const baseAmt = parseFloat(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
+                        const baseAmt = parseMoneyInput(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
                         if (baseAmt > 0) {
-                          setForeignAmount((baseAmt * parseFloat(newRate)).toFixed(2));
+                          setForeignAmount((baseAmt * parseMoneyInput(newRate)).toFixed(2));
                           if (!paymentAmount) setPaymentAmount(String(baseAmt));
                         }
                       }
@@ -1146,9 +1146,9 @@ const RoomsTab = ({
                               const newRate = tcmbRates[val].toFixed(4);
                               setExchangeRate(newRate);
                               
-                              const baseAmt = parseFloat(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
+                              const baseAmt = parseMoneyInput(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
                               if (baseAmt > 0) {
-                                setForeignAmount((baseAmt * parseFloat(newRate)).toFixed(2));
+                              setForeignAmount((baseAmt * parseMoneyInput(newRate)).toFixed(2));
                                 if (!paymentAmount) setPaymentAmount(String(baseAmt));
                               }
                             }
@@ -1168,13 +1168,13 @@ const RoomsTab = ({
                           Kur {tcmbRates[foreignCurrency] ? <span className="text-[10px] text-green-600 ml-1">(TCMB: {tcmbRates[foreignCurrency].toFixed(4)})</span> : null}
                         </Label>
                         <Input
-                          type="number" step="0.0001" min="0" placeholder="Örn: 35.00"
+                          {...moneyInputProps} placeholder="Örn: 35,00"
                           className="mt-1 h-8 text-sm"
                           value={exchangeRate}
                           onChange={(e) => {
                              setExchangeRate(e.target.value);
-                             const rate = parseFloat(e.target.value);
-                             const baseAmt = parseFloat(paymentAmount);
+                             const rate = parseMoneyInput(e.target.value);
+                             const baseAmt = parseMoneyInput(paymentAmount);
                              if (rate > 0 && !isNaN(baseAmt)) {
                                  setForeignAmount((baseAmt * rate).toFixed(2));
                              }
@@ -1185,13 +1185,13 @@ const RoomsTab = ({
                     <div>
                       <Label className="text-xs">Misafirden Alınan Tutar</Label>
                       <Input
-                        type="number" step="0.01" min="0" placeholder="Örn: 7500"
+                        {...moneyInputProps} placeholder="Örn: 7.500,00"
                         className="mt-1 h-8 text-sm"
                         value={foreignAmount}
                         onChange={(e) => {
                             setForeignAmount(e.target.value);
-                            const famt = parseFloat(e.target.value);
-                            const rate = parseFloat(exchangeRate);
+                            const famt = parseMoneyInput(e.target.value);
+                            const rate = parseMoneyInput(exchangeRate);
                             if (rate > 0 && famt > 0) {
                                 setPaymentAmount((famt / rate).toFixed(2));
                             }
@@ -1243,7 +1243,7 @@ const RoomsTab = ({
               <Button
                 className="w-full bg-amber-600 hover:bg-amber-700 text-white"
                 onClick={handlePaymentSubmit}
-                disabled={paymentLoading || !paymentAmount || parseFloat(paymentAmount) <= 0}
+                disabled={paymentLoading || !paymentAmount || parseMoneyInput(paymentAmount) <= 0}
                 data-testid="quick-payment-submit"
               >
                 {paymentLoading ? (
@@ -1426,9 +1426,8 @@ const RoomsTab = ({
               <div>
                 <Label className="text-sm font-medium">Toplam Fiyat *</Label>
                 <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  {...moneyInputProps}
+                  placeholder="Örn. 150,74"
                   value={quickResForm.total_amount}
                   onChange={(e) => setQuickResForm(f => ({ ...f, total_amount: e.target.value }))}
                   placeholder="0.00"

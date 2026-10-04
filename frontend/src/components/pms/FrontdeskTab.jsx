@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
-import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
+import { isMoneyInput, moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 
 import { confirmDialog } from '@/lib/dialogs';
@@ -948,10 +948,9 @@ const FrontdeskTab = ({
                 <Input
                   id="frontdesk-quick-payment-amount"
                   data-testid="frontdesk-quick-payment-amount"
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
+                  {...moneyInputProps}
                   aria-describedby="frontdesk-quick-payment-amount-help"
+                  placeholder="Örn. 150,74"
                   value={quickPaymentAmount}
                   onChange={(event) => {
                     if (isMoneyInput(event.target.value)) setQuickPaymentAmount(event.target.value);
@@ -1020,7 +1019,7 @@ const FrontdeskTab = ({
                 <Button
                   type="button"
                   onClick={submitQuickPayment}
-                  disabled={quickPaymentInProgress || !(parseMoneyInput(quickPaymentAmount) > 0) || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId)}
+                  disabled={quickPaymentInProgress || !Number.isFinite(parseMoneyInput(quickPaymentAmount)) || parseMoneyInput(quickPaymentAmount) <= 0 || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId)}
                   data-testid="frontdesk-quick-payment-submit"
                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                 >

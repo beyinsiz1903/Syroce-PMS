@@ -19,9 +19,10 @@ import {
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 export const validateCityLedgerPayment = (amountValue, balanceValue) => {
-  const amount = Number(amountValue);
+  const amount = parseMoneyInput(amountValue);
   const outstandingBalance = Number(balanceValue);
 
   if (!Number.isFinite(amount) || amount <= 0) return 'Geçerli bir ödeme tutarı girin';
@@ -34,12 +35,12 @@ export const validateCityLedgerPayment = (amountValue, balanceValue) => {
 
 export const getCityLedgerPaymentAllocations = (openItems, allocationValues) => (
   openItems
-    .map((item) => ({ booking_id: item.booking_id, amount: Number(allocationValues[item.booking_id] || 0) }))
+    .map((item) => ({ booking_id: item.booking_id, amount: parseMoneyInput(allocationValues[item.booking_id] || 0) }))
     .filter((allocation) => Number.isFinite(allocation.amount) && allocation.amount > 0)
 );
 
 export const validateCityLedgerPaymentAllocations = (amountValue, openItems, allocationValues) => {
-  const amount = Number(amountValue);
+  const amount = parseMoneyInput(amountValue);
   const allocations = getCityLedgerPaymentAllocations(openItems, allocationValues);
   if (!allocations.length) return null; // A general city-ledger payment remains supported.
 
@@ -234,7 +235,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
   const handlePostAdjustment = async () => {
     if (!adjustAccount) return;
-    const amount = parseFloat(adjustAmount);
+    const amount = parseMoneyInput(adjustAmount);
     const balance = Number(adjustAccount.current_balance || 0);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error('Geçerli bir tutar girin');
@@ -281,7 +282,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       toast.error(validationError);
       return;
     }
-    const amount = Number(paymentAmount);
+    const amount = parseMoneyInput(paymentAmount);
     const allocations = getCityLedgerPaymentAllocations(paymentOpenItems, paymentAllocations);
     const allocationError = validateCityLedgerPaymentAllocations(paymentAmount, paymentOpenItems, paymentAllocations);
     if (allocationError) {
@@ -324,7 +325,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
     try {
       const payload = {
         ...newAccountData,
-        credit_limit: newAccountData.credit_limit ? parseFloat(newAccountData.credit_limit) : 0,
+        credit_limit: newAccountData.credit_limit ? parseMoneyInput(newAccountData.credit_limit) : 0,
         payment_terms: newAccountData.payment_terms ? Number(newAccountData.payment_terms) : 30,
       };
       const response = await axios.post('/cashiering/city-ledger', payload);
@@ -614,7 +615,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div>
                     <label className="text-sm text-gray-600">Kredi Limiti ({currency})</label>
                     <Input
-                      type="number"
+                      {...moneyInputProps}
                       value={newAccountData.credit_limit}
                       onChange={field('credit_limit')}
                       placeholder="ör. 10000"
@@ -718,10 +719,10 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div>
                     <label className="text-sm text-gray-600">Tutar ({selectedAccount.currency || currency})</label>
                     <Input
-                      type="number"
+                      {...moneyInputProps}
                       value={paymentAmount}
                       onChange={(e) => setPaymentAmount(e.target.value)}
-                      placeholder="ör. 500.00"
+                      placeholder="ör. 500,00"
                     />
                   </div>
                   <div>
@@ -772,10 +773,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                           </div>
                           <Input
                             aria-label={`Oda ${item.room_number} tahsilat tutarı`}
-                            type="number"
-                            min="0"
-                            max={item.open_amount}
-                            step="0.01"
+                            {...moneyInputProps}
                             value={paymentAllocations[item.booking_id] || ''}
                             onChange={(event) => setPaymentAllocation(item.booking_id, event.target.value)}
                             placeholder="0,00"
@@ -784,9 +782,9 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                       ))}
                     </div>
                   )}
-                  {Object.values(paymentAllocations).some((value) => Number(value) > 0) && (
+                  {Object.values(paymentAllocations).some((value) => parseMoneyInput(value) > 0) && (
                     <div className="text-xs text-gray-600 pt-1 border-t">
-                      Oda dağıtım toplamı: <strong>{formatCurrency(Object.values(paymentAllocations).reduce((sum, value) => sum + (Number(value) || 0), 0), selectedAccount.currency || currency)}</strong>
+                      Oda dağıtım toplamı: <strong>{formatCurrency(Object.values(paymentAllocations).reduce((sum, value) => sum + (parseMoneyInput(value) || 0), 0), selectedAccount.currency || currency)}</strong>
                     </div>
                   )}
                 </div>
@@ -876,10 +874,10 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div>
                     <label className="text-sm text-gray-600">Tutar ({adjustAccount.currency || currency})</label>
                     <Input
-                      type="number"
+                      {...moneyInputProps}
                       value={adjustAmount}
                       onChange={(e) => setAdjustAmount(e.target.value)}
-                      placeholder="ör. 750.00"
+                      placeholder="ör. 750,00"
                     />
                   </div>
                   <div>
@@ -906,9 +904,9 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   />
                 </div>
 
-                {adjustAmount && parseFloat(adjustAmount) > 0 && (
+                {adjustAmount && parseMoneyInput(adjustAmount) > 0 && (
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-800">
-                    Bakiye <strong>{formatCurrency(adjustAccount.current_balance, adjustAccount.currency || currency)}</strong> → <strong>{formatCurrency(Math.max(0, (adjustAccount.current_balance || 0) - parseFloat(adjustAmount || 0)), adjustAccount.currency || currency)}</strong> olacak.
+                    Bakiye <strong>{formatCurrency(adjustAccount.current_balance, adjustAccount.currency || currency)}</strong> → <strong>{formatCurrency(Math.max(0, (adjustAccount.current_balance || 0) - (parseMoneyInput(adjustAmount) || 0)), adjustAccount.currency || currency)}</strong> olacak.
                   </div>
                 )}
 

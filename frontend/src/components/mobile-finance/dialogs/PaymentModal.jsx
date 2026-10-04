@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, ArrowDownCircle, ArrowUpCircle, Receipt, Banknote, Clock, CheckCircle, XCircle, Calendar, Filter, Download, Upload, Eye, Search, Plus, Minus, RefreshCw, ChevronRight, ChevronDown, BarChart3, PieChart, Activity, Users, Building, Briefcase, ShoppingCart, Coffee, Utensils, Bed, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 export default function PaymentModal(props) {
   const { t } = useTranslation();
@@ -27,7 +28,7 @@ export default function PaymentModal(props) {
             const formData = new FormData(e.target);
             handleRecordPayment({
               folio_id: selectedFolio.folio_id,
-              amount: parseFloat(formData.get('amount')),
+              amount: parseMoneyInput(formData.get('amount')),
               payment_method: formData.get('payment_method'),
               notes: formData.get('notes')
             });
@@ -45,9 +46,8 @@ export default function PaymentModal(props) {
                 <Label>{t('cm.components_mobilefinance_dialogs_PaymentModal.tahsilat_tutari')}</Label>
                 <Input 
                   name="amount" 
-                  type="number" 
-                  step="0.01" 
-                  max={selectedFolio.balance}
+                  {...moneyInputProps}
+                  placeholder="Örn. 150,74"
                   required 
                 />
               </div>

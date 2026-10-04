@@ -2,6 +2,7 @@ import { t } from "i18next";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, RefreshCw } from "lucide-react";
+import { parseMoneyInput } from '@/lib/moneyInput';
 const TABS = [{
   id: "currency",
   label: "Çoklu Döviz"
@@ -64,11 +65,12 @@ function Input({
   value,
   onChange,
   type = "text",
+  money = false,
   placeholder
 }) {
   return <label className="block mb-2">
       <span className="block text-xs font-medium text-gray-700 mb-1">{label}</span>
-      <input type={type} value={value ?? ""} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      <input type={money ? "text" : type} inputMode={money ? "decimal" : undefined} autoComplete={money ? "off" : undefined} value={value ?? ""} onChange={e => onChange(e.target.value)} placeholder={placeholder || (money ? "Örn. 150,74" : undefined)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
     </label>;
 }
 function Btn({
@@ -104,14 +106,14 @@ function CurrencyTab() {
   return <>
       <Section title={t("cm.pages_POSExtensions.kur_tan\u0131mla")}>
         <Input label={t("cm.pages_POSExtensions.d\xF6viz_kodu")} value={code} onChange={setCode} placeholder={t("cm.pages_POSExtensions.usd_eur_gbp")} />
-        <Input label={t("cm.pages_POSExtensions.try_kar\u015F\u0131l\u0131\u011F\u0131")} value={rate} onChange={setRate} type="number" />
+        <Input label={t("cm.pages_POSExtensions.try_kar\u015F\u0131l\u0131\u011F\u0131")} value={rate} onChange={setRate} money />
         <div className="flex gap-2 mt-2">
           <Btn onClick={async () => {
           const r = await apiFetch("/api/pos/ext/currency/rates", {
             method: "POST",
             body: JSON.stringify({
               currency_code: code,
-              rate_to_base: Number(rate)
+              rate_to_base: parseMoneyInput(rate)
             })
           });
           setLast(r);
@@ -194,13 +196,13 @@ function CouponsTab() {
       }}>{t("cm.pages_POSExtensions.kaydet")}</Btn>
       </Section>
       <Section title={t("cm.pages_POSExtensions.do\u011Frula")}>
-        <Input label={t("cm.pages_POSExtensions.tutar_tl")} value={validateAmount} onChange={setValidateAmount} type="number" />
+        <Input label={t("cm.pages_POSExtensions.tutar_tl")} value={validateAmount} onChange={setValidateAmount} money />
         <Btn variant="outline" onClick={async () => {
         const r = await apiFetch("/api/pos/ext/coupons/validate", {
           method: "POST",
           body: JSON.stringify({
             code,
-            amount: Number(validateAmount)
+            amount: parseMoneyInput(validateAmount)
           })
         });
         setLast(r.body);
@@ -261,13 +263,13 @@ function ShiftsTab() {
             <option value="">Satış noktası seçin</option>{outlets.map(row => <option key={row.id} value={row.id}>{row.outlet_name || row.name}</option>)}
           </select>
         </label>
-        <Input label={t("cm.pages_POSExtensions.a\xE7\u0131l\u0131\u015F_nakit")} value={opening} onChange={setOpening} type="number" />
+        <Input label={t("cm.pages_POSExtensions.a\xE7\u0131l\u0131\u015F_nakit")} value={opening} onChange={setOpening} money />
         <Btn disabled={!outlet} onClick={async () => {
         const response = await apiFetch("/api/pos/ext/shifts/open", {
           method: "POST",
           body: JSON.stringify({
             outlet_id: outlet,
-            opening_cash: Number(opening)
+            opening_cash: parseMoneyInput(opening)
           })
         });
         setMessage(response.ok ? "Vardiya açıldı." : response.body?.detail || "Vardiya açılamadı.");
@@ -279,7 +281,7 @@ function ShiftsTab() {
         {shifts.length === 0 ? <p className="text-sm text-gray-500">Henüz vardiya kaydı yok.</p> : <div className="space-y-3">
           {shifts.map(shift => <div key={shift.id} className="rounded-lg border p-3">
             <div className="flex items-start justify-between gap-3"><div><strong>{outlets.find(row => row.id === shift.outlet_id)?.outlet_name || outlets.find(row => row.id === shift.outlet_id)?.name || 'Satış noktası'}</strong><p className="text-xs text-gray-500">{shift.status === 'open' ? 'Açık vardiya' : 'Kapanmış vardiya'} · Açılış nakdi {Number(shift.opening_cash || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${shift.status === 'open' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{shift.status === 'open' ? 'Açık' : 'Kapalı'}</span></div>
-            {shift.status === 'open' ? <div className="mt-3 flex items-end gap-2"><div className="flex-1"><Input label="Sayılan kasa toplamı" value={counted} onChange={setCounted} type="number" /></div><Btn disabled={counted === ''} onClick={async () => { const response = await apiFetch(`/api/pos/ext/shifts/${shift.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_total: Number(counted) }) }); setMessage(response.ok ? `Vardiya kapandı. Kasa farkı: ${Number(response.body?.shift?.variance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL` : response.body?.detail || 'Vardiya kapatılamadı.'); if (response.ok) setCounted(''); await load(); }}>Sayımı Onayla ve Kapat</Btn></div> : <div className="mt-2 grid grid-cols-3 gap-2 text-sm"><div><span className="text-gray-500">Beklenen</span><strong className="block">{Number(shift.expected_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Sayılan</span><strong className="block">{Number(shift.counted_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Fark</span><strong className={`block ${Number(shift.variance || 0) === 0 ? 'text-emerald-700' : 'text-red-700'}`}>{Number(shift.variance || 0).toLocaleString('tr-TR')} TL</strong></div></div>}
+            {shift.status === 'open' ? <div className="mt-3 flex items-end gap-2"><div className="flex-1"><Input label="Sayılan kasa toplamı" value={counted} onChange={setCounted} money /></div><Btn disabled={!Number.isFinite(parseMoneyInput(counted))} onClick={async () => { const response = await apiFetch(`/api/pos/ext/shifts/${shift.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_total: parseMoneyInput(counted) }) }); setMessage(response.ok ? `Vardiya kapandı. Kasa farkı: ${Number(response.body?.shift?.variance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL` : response.body?.detail || 'Vardiya kapatılamadı.'); if (response.ok) setCounted(''); await load(); }}>Sayımı Onayla ve Kapat</Btn></div> : <div className="mt-2 grid grid-cols-3 gap-2 text-sm"><div><span className="text-gray-500">Beklenen</span><strong className="block">{Number(shift.expected_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Sayılan</span><strong className="block">{Number(shift.counted_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Fark</span><strong className={`block ${Number(shift.variance || 0) === 0 ? 'text-emerald-700' : 'text-red-700'}`}>{Number(shift.variance || 0).toLocaleString('tr-TR')} TL</strong></div></div>}
           </div>)}
         </div>}
       </Section>
@@ -302,7 +304,7 @@ function BarcodeTab() {
       <Section title={t("cm.pages_POSExtensions.barkod_e\u015Fle")}>
         <Input label={t("cm.pages_POSExtensions.barkod")} value={barcode} onChange={setBarcode} placeholder="8690000000000" />
         <Input label={t("cm.pages_POSExtensions.\xFCr\xFCn_ad\u0131")} value={name} onChange={setName} />
-        <Input label={t("cm.pages_POSExtensions.birim_fiyat")} value={price} onChange={setPrice} type="number" />
+        <Input label={t("cm.pages_POSExtensions.birim_fiyat")} value={price} onChange={setPrice} money />
         <div className="flex gap-2 mt-2">
           <Btn onClick={async () => {
           await apiFetch("/api/pos/ext/barcode/map", {
@@ -310,7 +312,7 @@ function BarcodeTab() {
             body: JSON.stringify({
               barcode,
               name,
-              unit_price: Number(price)
+              unit_price: parseMoneyInput(price)
             })
           });
           await load();

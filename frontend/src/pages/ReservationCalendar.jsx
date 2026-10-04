@@ -55,6 +55,7 @@ import { recordInitialPrepayment } from './calendar/prepayment';
 import { hasRole } from '@/utils/authRoles';
 import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import { cachedTenantCurrency } from '@/lib/currency';
+import { parseMoneyInput } from '@/lib/moneyInput';
 import {
   applyCalendarViewPreference,
   CALENDAR_VIEW_PREFERENCES_KEY,
@@ -914,8 +915,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       return;
     }
 
-    const prepaymentAmount = newBooking.prepayment_enabled ? Number(newBooking.prepayment_amount) : 0;
-    const totalAmount = Number(newBooking.total_amount);
+    const prepaymentAmount = newBooking.prepayment_enabled ? parseMoneyInput(newBooking.prepayment_amount) : 0;
+    const totalAmount = parseMoneyInput(newBooking.total_amount);
     const isComplimentary = Boolean(newBooking.is_complimentary);
     const nights = Math.max(1, Math.round(
       (new Date(`${newBooking.check_out}T00:00:00Z`) - new Date(`${newBooking.check_in}T00:00:00Z`)) / 86400000,
@@ -979,7 +980,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         guest_id: guestId,
         total_amount: totalAmount,
         // Total fiyat girildiğinde de raporlama için efektif gecelik tutarı saklanır.
-        base_rate: priceInputMode === 'total' ? totalAmount / nights : Number(bookingFields.base_rate || 0),
+        base_rate: priceInputMode === 'total' ? totalAmount / nights : parseMoneyInput(bookingFields.base_rate || 0),
         apply_occupancy_pricing: priceInputMode !== 'total' && Boolean(bookingFields.apply_occupancy_pricing),
       };
       const response = await axios.post('/pms/bookings', bookingPayload, {

@@ -11,6 +11,7 @@ import { printFolio, printProformaInvoice } from "@/components/pms/PrintTemplate
 import { toast } from "sonner";
 import FolioWindowsPanel from "@/components/folio/FolioWindowsPanel";
 import { cachedTenantCurrency, formatCurrency } from "@/lib/currency";
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 const API = "";
 
 const CATEGORY_LABELS = {
@@ -543,7 +544,8 @@ export default function FolioDetailView({
       setShowChargeForm(false);
       return;
     }
-    if (!chargeForm.description || !chargeForm.amount) {
+    const amount = parseMoneyInput(chargeForm.amount);
+    if (!chargeForm.description || !Number.isFinite(amount) || amount < 0) {
       toast.error("Açıklama ve tutar zorunludur");
       return;
     }
@@ -553,7 +555,7 @@ export default function FolioDetailView({
       const response = await axios.post(`/folio/${folio.id}/charge`, {
         charge_category: chargeForm.category,
         description: chargeForm.description,
-        amount: parseFloat(chargeForm.amount) * (parseInt(chargeForm.quantity) || 1),
+        amount,
         quantity: parseInt(chargeForm.quantity) || 1
       }, {
         headers: { "Idempotency-Key": idempotencyKey }
@@ -605,7 +607,7 @@ export default function FolioDetailView({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-500">Tutar ({currency})</label>
-              <input type="number" className="w-full border rounded-md p-2 text-sm" value={chargeForm.amount} onChange={e => setChargeForm(p => ({
+              <input {...moneyInputProps} className="w-full border rounded-md p-2 text-sm" placeholder="Örn. 150,74" value={chargeForm.amount} onChange={e => setChargeForm(p => ({
               ...p,
               amount: e.target.value
             }))} />

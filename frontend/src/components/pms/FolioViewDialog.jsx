@@ -15,6 +15,7 @@ import {
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 const VAT_OPTIONS = [{
   value: '0',
   label: '%0'
@@ -92,8 +93,8 @@ const FolioViewDialog = ({
     notes: ''
   });
   const chargePreview = useMemo(() => {
-    const sub = (parseFloat(newFolioCharge.amount) || 0) * (parseFloat(newFolioCharge.quantity) || 0);
-    const disc = Math.max(0, Math.min(sub, parseFloat(newFolioCharge.discount_amount) || 0));
+    const sub = (parseMoneyInput(newFolioCharge.amount) || 0) * (parseFloat(newFolioCharge.quantity) || 0);
+    const disc = Math.max(0, Math.min(sub, parseMoneyInput(newFolioCharge.discount_amount) || 0));
     const net = sub - disc;
     const rate = parseFloat(newFolioCharge.vat_rate) || 0;
     const vat = net * rate / 100;
@@ -118,11 +119,11 @@ const FolioViewDialog = ({
       await axios.post(`/folio/${selectedFolio.id}/charge`, {
         charge_category: newFolioCharge.charge_category,
         description: newFolioCharge.description,
-        amount: parseFloat(newFolioCharge.amount) || 0,
+        amount: parseMoneyInput(newFolioCharge.amount) || 0,
         quantity: parseFloat(newFolioCharge.quantity) || 1,
         auto_calculate_tax: !!newFolioCharge.auto_calculate_tax,
         vat_rate: parseFloat(newFolioCharge.vat_rate) || 0,
-        discount_amount: parseFloat(newFolioCharge.discount_amount) || 0,
+        discount_amount: parseMoneyInput(newFolioCharge.discount_amount) || 0,
         discount_reason: newFolioCharge.discount_reason.trim() || null
       });
       toast.success('İşlem eklendi');
@@ -145,10 +146,16 @@ const FolioViewDialog = ({
   const handlePostPayment = async e => {
     e.preventDefault();
     if (!selectedFolio) return;
+    const amount = parseMoneyInput(newFolioPayment.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Geçerli bir ödeme tutarı girin');
+      return;
+    }
     try {
       await axios.post(`/folio/${selectedFolio.id}/payment`, {
         ...newFolioPayment,
-        payment_type: classifyGuestPayment(newFolioPayment.amount, selectedFolio.balance),
+        amount,
+        payment_type: classifyGuestPayment(amount, selectedFolio.balance),
       });
       toast.success('Ödeme alındı');
       onPaymentPosted(selectedFolio.id);
@@ -592,7 +599,7 @@ th{background:#f5f5f5}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Birim Fiyat ({folioCurrency})</Label>
-                <Input type="number" step="0.01" min="0" value={newFolioCharge.amount} onChange={e => setNewFolioCharge({
+                <Input {...moneyInputProps} placeholder="Örn. 150,74" value={newFolioCharge.amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 amount: e.target.value
               })} required />
@@ -608,7 +615,7 @@ th{background:#f5f5f5}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>İndirim ({folioCurrency})</Label>
-                <Input type="number" step="0.01" min="0" value={newFolioCharge.discount_amount} onChange={e => setNewFolioCharge({
+                <Input {...moneyInputProps} placeholder="Örn. 150,74" value={newFolioCharge.discount_amount} onChange={e => setNewFolioCharge({
                 ...newFolioCharge,
                 discount_amount: e.target.value
               })} />
@@ -644,9 +651,9 @@ th{background:#f5f5f5}
           <form onSubmit={handlePostPayment} className="space-y-4">
             <div>
               <Label>Tutar ({folioCurrency})</Label>
-              <Input type="number" step="0.01" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
+              <Input {...moneyInputProps} placeholder="Örn. 150,74" value={newFolioPayment.amount} onChange={e => setNewFolioPayment({
               ...newFolioPayment,
-              amount: parseFloat(e.target.value)
+              amount: e.target.value
             })} required />
             </div>
             <div>
