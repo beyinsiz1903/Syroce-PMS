@@ -86,8 +86,8 @@ if (import.meta.env.DEV) {
   };
 }
 
-// i18n init: kullanıcının dili + fallback indikten sonra render.
-// Toplam ~280 KB JSON (gzip ~50 KB) iniyor; eski statik 1.4 MB yerine.
+// i18n init: ilk render için yalnızca kullanıcının seçtiği dil indirilir.
+// İngilizce fallback, ilk ekran kullanılabilir olduktan sonra idle'da ısınır.
 initI18n().finally(() => {
   const root = ReactDOM.createRoot(document.getElementById("root"));
   root.render(

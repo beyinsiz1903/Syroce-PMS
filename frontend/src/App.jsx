@@ -28,7 +28,7 @@ import {
 } from "@/routes/ProtectedRoute";
 import { registerRoutes } from "@/routes/preload";
 import { EntitlementProvider } from "@/context/EntitlementContext";
-import { prefetchHeavyModules } from "@/lib/prefetch";
+import { scheduleHeavyModulePrefetch } from "@/lib/prefetch";
 import { websocket } from "@/lib/websocket";
 import {
   ADMIN_TENANT_CONTEXT_KEY,
@@ -193,7 +193,7 @@ function App() {
           // Render the verified user's workspace immediately, then reconcile
           // package and module metadata in the background.
           applyAuthenticatedSnapshot(parsedTenant, parsedModules);
-          prefetchHeavyModules();
+          scheduleHeavyModulePrefetch();
 
           if (freshUser?.tenant_id) {
             void axios.get("/subscription/current")
@@ -393,7 +393,7 @@ function App() {
     setTenant(tenantData);
     setIsAuthenticated(true);
     fetchModules();
-    prefetchHeavyModules();
+    scheduleHeavyModulePrefetch();
 
     // Reconnect the realtime socket so the new JWT is sent during the
     // socket.io handshake and the user joins their tenant-scoped rooms

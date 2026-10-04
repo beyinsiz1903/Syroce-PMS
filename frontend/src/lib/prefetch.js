@@ -17,6 +17,7 @@ const ric =
     : (cb) => setTimeout(() => cb({ didTimeout: true, timeRemaining: () => 0 }), 1500);
 
 const prefetched = new Set();
+let scheduledHeavyPrefetch = null;
 
 export function canPrefetchHeavyModules(connection = typeof navigator !== 'undefined' ? navigator.connection : null) {
   // Background chunks must never compete with the page the operator is trying
@@ -54,6 +55,26 @@ export async function prefetchHeavyModules() {
   // butonu çıkarıyor; kullanıcı bastığında chunk hazır olsun diye
   // login sonrası sessizce indirilir (734 satırlık ağır sayfa).
   await prefetchOne('NightAuditDashboard', () => import('@/pages/NightAuditDashboard'));
+}
+
+// Dashboard ve doğrulama istekleri ilk birkaç saniyede kritik yoldadır.
+// Otomatik chunk indirme ancak ilk ekranın ağ ve render işi sakinleştikten
+// sonra başlar. Kullanıcı menüye hover/focus yaptığında `preloadRoute` yine
+// anında ön yükleme yaptığı için doğrudan navigasyon gecikmez.
+export function scheduleHeavyModulePrefetch({ delay = 6000 } = {}) {
+  if (scheduledHeavyPrefetch) return scheduledHeavyPrefetch.cancel;
+  if (!canPrefetchHeavyModules()) return () => {};
+
+  const timer = setTimeout(() => {
+    scheduledHeavyPrefetch = null;
+    void prefetchHeavyModules();
+  }, delay);
+  const cancel = () => {
+    clearTimeout(timer);
+    if (scheduledHeavyPrefetch?.cancel === cancel) scheduledHeavyPrefetch = null;
+  };
+  scheduledHeavyPrefetch = { cancel };
+  return cancel;
 }
 
 // PMSDateBadge gibi az kullanılan ama tıklama anında ağır sayfaya

@@ -39,6 +39,25 @@ function applyDir(lng) {
 }
 
 let initPromise = null;
+let fallbackLoadScheduled = false;
+
+function scheduleFallbackLanguageLoad() {
+  if (fallbackLoadScheduled || i18n.hasResourceBundle(FALLBACK, 'translation')) return;
+  fallbackLoadScheduled = true;
+
+  const load = () => {
+    // A missing fallback key is never part of the critical first paint. Load
+    // this sizeable bundle after the selected language has made the shell
+    // usable instead of competing with login, dashboard and route chunks.
+    void loadLanguage(FALLBACK);
+  };
+
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(load, { timeout: 8000 });
+  } else {
+    setTimeout(load, 4000);
+  }
+}
 
 export function initI18n() {
   if (initPromise) return initPromise;
@@ -68,10 +87,11 @@ export function initI18n() {
         react: { useSuspense: false },
       });
 
-    // İlk yükleme: kullanıcı dili + fallback (paralel).
-    const tasks = [loadLanguage(initialLng)];
-    if (initialLng !== FALLBACK) tasks.push(loadLanguage(FALLBACK));
-    await Promise.all(tasks);
+    // İlk yükleme: first paint için yalnızca seçilen dil gerekir. Önceden
+    // İngilizce fallback de paralel indiriliyordu; Türkçe oturumda bu, ilk
+    // ekrana gereksiz bir ~120 KB gzip ağ rekabeti ekliyordu.
+    await loadLanguage(initialLng);
+    if (initialLng !== FALLBACK) scheduleFallbackLanguageLoad();
 
     applyDir(i18n.language);
 
