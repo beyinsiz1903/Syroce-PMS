@@ -74,6 +74,11 @@ const FolioDetailView = lazyWithPreload(() => import('@/pages/FolioDetailView'))
 const ReservationDetailModal = lazyWithPreload(() => import('@/pages/ReservationDetailModal'));
 const BookingConflictDialog = lazyWithPreload(() => import('@/components/pms/BookingConflictDialog'));
 
+const preloadReservationDetailModal = () => {
+  const pending = ReservationDetailModal.preload?.();
+  pending?.catch?.(() => {});
+};
+
 // ── Unassigned panel constants & virtualized row ──────────────────────────
 const UA_BORDER = {
   overdue: 'border-l-red-500',
@@ -1780,6 +1785,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDragEnd={handleDragEnd}
           onBookingClick={handleBookingClick}
           onBookingDoubleClick={handleBookingDoubleClick}
+          onBookingIntent={preloadReservationDetailModal}
           onOpenRoomBlock={(room) => {
             setRoomToBlock(room);
             setShowRoomBlockDialog(true);

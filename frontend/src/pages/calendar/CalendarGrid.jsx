@@ -134,6 +134,7 @@ const CalendarGrid = ({
   onDragEnd,
   onBookingClick,
   onBookingDoubleClick,
+  onBookingIntent,
   onOpenRoomBlock,
   showOccupancyBand = false,
   dailyRates = {},
@@ -147,6 +148,7 @@ const CalendarGrid = ({
   const pointerResizeRef = useRef(null);
   const suppressCardClickUntilRef = useRef(0);
   const bookingClickTimerRef = useRef(null);
+  const bookingWorkspaceOpenRef = useRef({ bookingId: null, openedAt: 0 });
   const renderStartedAt = typeof performance !== 'undefined' ? performance.now() : 0;
   const [scrollWindow, setScrollWindow] = useState({ top: 0, height: 800 });
   const scrollFrameRef = useRef(null);
@@ -164,9 +166,22 @@ const CalendarGrid = ({
 
   const openBookingWorkspace = (event, booking) => {
     event.stopPropagation();
+    event.preventDefault();
     window.clearTimeout(bookingClickTimerRef.current);
     bookingClickTimerRef.current = null;
-    onBookingDoubleClick(booking);
+    const now = Date.now();
+    const previous = bookingWorkspaceOpenRef.current;
+    if (previous.bookingId === booking.id && now - previous.openedAt < 600) return;
+    bookingWorkspaceOpenRef.current = { bookingId: booking.id, openedAt: now };
+    onBookingDoubleClick?.(booking);
+  };
+
+  const handleBookingMouseDown = (event, booking) => {
+    onBookingIntent?.(booking);
+    // A reservation card is also natively draggable. Even a tiny pointer
+    // movement can make the browser suppress `dblclick`; the second mouse-down
+    // still arrives, so open here and deduplicate the later dblclick event.
+    if (event.button === 0 && event.detail >= 2) openBookingWorkspace(event, booking);
   };
 
   const pointerDate = (event) => {
@@ -620,6 +635,7 @@ const CalendarGrid = ({
                                 aria-label={`${fullGuestName}, ${urgency.label}, atanmamış — odaya sürükleyin`}
                                 onDragStart={(e) => startBookingDrag(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
+                                onMouseDown={(e) => handleBookingMouseDown(e, booking)}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   openBookingQuickPanel(booking);
@@ -843,6 +859,7 @@ const CalendarGrid = ({
                                 aria-label={presentation.ariaLabel}
                                 onDragStart={(e) => startBookingDrag(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
+                                onMouseDown={(e) => handleBookingMouseDown(e, booking)}
                                 // Reservation cards sit above the date cells.  Without their
                                 // own drop handlers, dropping directly on an occupied card never
                                 // reaches the underlying cell, so an intended room swap appears

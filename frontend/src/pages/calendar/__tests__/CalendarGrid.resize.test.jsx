@@ -33,6 +33,7 @@ const renderGrid = (overrides = {}) => {
     onDragEnd: vi.fn(),
     onBookingClick: vi.fn(),
     onBookingDoubleClick: vi.fn(),
+    onBookingIntent: vi.fn(),
   };
   render(
     <CalendarGrid
@@ -208,6 +209,50 @@ describe('CalendarGrid stay resize handle', () => {
       expect(handlers.onBookingDoubleClick).toHaveBeenCalledTimes(1);
       expect(handlers.onBookingDoubleClick).toHaveBeenCalledWith(booking);
       expect(handlers.onBookingClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens on the second mouse-down even when native dblclick is suppressed by dragging', () => {
+    vi.useFakeTimers();
+    try {
+      const handlers = renderGrid();
+      const card = screen.getByTestId('booking-bar-booking-1');
+
+      fireEvent.mouseDown(card, { button: 0, detail: 1 });
+      fireEvent.mouseDown(card, { button: 0, detail: 2 });
+      vi.advanceTimersByTime(250);
+
+      expect(handlers.onBookingDoubleClick).toHaveBeenCalledTimes(1);
+      expect(handlers.onBookingDoubleClick).toHaveBeenCalledWith(booking);
+      expect(handlers.onBookingClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('warms the full reservation workspace on the first pointer intent', () => {
+    const handlers = renderGrid();
+    const card = screen.getByTestId('booking-bar-booking-1');
+
+    fireEvent.mouseDown(card, { button: 0, detail: 1 });
+
+    expect(handlers.onBookingIntent).toHaveBeenCalledTimes(1);
+    expect(handlers.onBookingIntent).toHaveBeenCalledWith(booking);
+    expect(handlers.onBookingDoubleClick).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates the mouse-down fallback and the browser dblclick event', () => {
+    vi.useFakeTimers();
+    try {
+      const handlers = renderGrid();
+      const card = screen.getByTestId('booking-bar-booking-1');
+
+      fireEvent.mouseDown(card, { button: 0, detail: 2 });
+      fireEvent.doubleClick(card);
+
+      expect(handlers.onBookingDoubleClick).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
